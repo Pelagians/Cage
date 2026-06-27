@@ -1,48 +1,188 @@
 # WinForge
 
-WinForge is a reproducible build system for Wine-based Windows execution environments.
+**Deterministic Wine/Proton environment compiler.**
 
-It is a deterministic **environment compiler**: it takes a declarative manifest and produces an immutable execution bundle containing a Wine prefix, runtime binding, launch definition, metadata, and provenance records for a Windows application running under Wine/Proton-class runtimes.
+WinForge takes a declarative manifest and compiles it into an immutable
+execution bundle — a sealed Wine prefix with installed dependencies,
+registry configuration, and application files, packaged for
+containerized deployment.
 
-## What WinForge is
+## Why WinForge?
 
-WinForge parses manifests, constructs deterministic Wine prefixes, installs declared dependency stacks and applications, binds Wine/Proton-family runtimes, emits immutable bundles/optional OCI mappings, and records provenance.
+Running Windows applications in containers today is ad-hoc: hand-written
+Dockerfiles, copy-pasted winetricks commands, unversioned prefixes, no
+provenance tracking. WinForge replaces that with:
 
-## What WinForge is not
+- **Deterministic builds** — Same manifest + same runtime = same bundle
+- **Immutable artifacts** — Sealed after construction, no drift
+- **Provenance recording** — Sources, hashes, versions tracked in metadata
+- **Runtime abstraction** — Swap Wine, Wine-Staging, Proton, or GE-Proton
+  without changing the manifest
+- **OCI-native** — Bundles can be layered onto runtime container images
+
+## What WinForge is Not
 
 WinForge is **not** a Wine fork, Proton fork, container runtime, Kubernetes operator, GUI bottle manager, or tenant/policy/orchestration product layer.
 
 ## Architecture
 
-```text
-manifest v0 -> core/manifest -> runtime/providers -> builder/pipeline -> artifact/bundle -> optional OCI image
+```
+manifest.winforge.json
+  │
+  ▼
+┌─────────────────┐       ┌──────────────────────────┐
+│  Runtime        │──────▶│  OCI Container Base       │
+│  Provider       │       │  (winforge/wine:9.0, etc) │
+│  (wine/proton)  │       └──────────────────────────┘
+└──────┬──────────┘                    │
+       │                               │
+       ▼                               ▼
+┌──────────────────────────────────────────────────┐
+│              Builder Pipeline                      │
+│  init-prefix → install-dependencies → install-apps │
+│  apply-layout → validate → seal-artifact          │
+└──────────────────────────────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────────────────┐
+│         Immutable Execution Bundle             │
+│  prefix/ │ runtime/ │ launch/ │ metadata/     │
+│  (sealed, read-only, deployable)              │
+└──────────────────────────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────────────────┐
+│  OCI Image Layer (on winforge/wine:base)     │
+│  docker build -f- . < bundle-layer            │
+└──────────────────────────────────────────────┘
 ```
 
-Directories: `cmd/`, `core/`, `runtime/`, `builder/`, `artifact/`, `examples/`, and `docs/`.
-
-## Quickstart
+## Quick Start
 
 ```bash
-python3 cmd/winforge.py inspect examples/minimal.winforge.json
-python3 cmd/winforge.py plan examples/minimal.winforge.json
-python3 cmd/winforge.py build examples/minimal.winforge.json --output dist --dry-run
+# Inspect a manifest
+winforge inspect examples/minimal.winforge.json
+
+# Print the build plan
+winforge plan examples/minimal.winforge.json
+
+# Dry-run build (creates bundle contract without executing Wine)
+winforge build examples/minimal.winforge.json --dry-run
+
+# Build for real (requires a runtime container image)
+winforge build examples/minimal.winforge.json
+
+# List available runtime providers
+winforge providers
 ```
 
-The scaffold is dependency-free and currently loads normalized JSON manifests. YAML authoring is part of the v0 direction, but JSON keeps the first CLI runnable without external packages.
+## WinForge WINE Container
 
-## Build pipeline
+The runtime provider containers are the OCI execution substrate.
+See [docs/container-architecture.md](docs/container-architecture.md).
 
-1. `init-prefix` — create an empty prefix, initialize `drive_c`, registry hives, and bind the selected runtime.
-2. `install-dependencies` — install declared Winetricks verbs, runtime components, fonts, DirectX components, and packages.
-3. `install-apps` — run declared MSI, EXE, portable, Chocolatey, or script install steps.
-4. `apply-layout-and-registry` — copy filesystem overlays and apply fixups.
-5. `validate` — verify launch entrypoints, hashes, runtime binding, and prefix state.
-6. `seal-artifact` — write provenance, logs, normalized manifest, runtime binding, launch definition, and optional OCI mapping.
+```bash
+# List available container build definitions
+winforge container list
 
-## Design inspiration
+# Build a Wine Stable 9.0 container
+winforge container build wine 9.0
 
-WinForge borrows concepts from ramalama, OCI images, Nix, Steam Runtime/pressure-vessel, UMU Launcher, umu-protonfixes, Bottles, Lutris, PlayOnLinux, and wine-tkg-style build tooling. See `docs/reference-study.md`.
+# Build Wine Staging
+winforge container build staging 9.0
 
-## Current status
+# Build Proton
+winforge container build proton 9.0
 
-Initial scaffold: manifest inspection, deterministic planning, and dry-run bundle materialization work. Real Wine/Winetricks execution, OCI builds, and Kubernetes jobs are intentionally not implemented yet.
+# Build GE-Proton
+winforge container build proton-ge GE-Proton9-27
+
+# Get the OCI image reference for a provider+version
+winforge container ref wine 9.0
+
+# Build from Docker compose
+docker compose -f container/docker-compose.yml build wine
+```
+
+### Container Directory Layout
+
+```
+container/
+├── build.sh                          # Build all providers
+├── docker-compose.yml                # Local dev compose
+├── common/
+│   ├── xvfb-entrypoint.sh            # Xvfb init + headless Wine exec
+│   └── wine-env.sh                   # Standard Wine environment
+└── providers/
+    ├── wine/Dockerfile               # Wine Stable (WineHQ apt)
+    ├── wine-staging/Dockerfile       # Wine Staging (WineHQ apt)
+    ├── proton/Dockerfile             # Valve Proton (GitHub release)
+    └── proton-ge/Dockerfile          # GE-Proton (GitHub release)
+```
+
+## Reference Repos
+
+WinForge's design draws from the broader Wine/Proton ecosystem:
+
+| Repo | What WinForge Takes |
+|---|---|
+| [Bottles](https://github.com/bottlesdevs/Bottles) | Wine command wrappers, dependency manager pattern, template-based prefix creation, registry rule management |
+| [wine-utils](https://github.com/rmi1974/wine-utils) | Reproducible Wine builds from source, build provenance tracking, patch management |
+| [umu-launcher](https://github.com/Open-Wine-Components/umu-launcher) | Runtime download/verify pipeline, SHA256 verification, file-locking pattern, Proton version management |
+| [umu-protonfixes](https://github.com/Open-Wine-Components/umu-protonfixes) | Verb/component catalog (`*.verb`), game engine detection, store-agnostic fix layering |
+| [Steam Runtime](https://github.com/valvesoftware/steam-runtime) | Layer composition model, build-runtime.py pattern, template-based manifest generation |
+| [MTGOBot](https://github.com/videre-project/MTGOBot) | Headless Wine OCI container pattern (Xvfb entrypoint, DISPLAY=:99, wine --headless) |
+
+Detailed analysis in [docs/reference-study.md](docs/reference-study.md).
+
+## Project Structure
+
+```
+WinForge/
+├── cmd/winforge.py              # CLI entrypoint
+├── core/
+│   ├── manifest.py              # Manifest model, validation, loading
+│   ├── prefix.py                # Prefix abstraction
+│   └── provenance.py            # Provenance tracking
+├── runtime/
+│   ├── providers.py             # Runtime provider abstraction + OCI image binding
+│   └── wine.py / proton.py      # Provider-specific implementations
+├── builder/
+│   ├── pipeline.py              # Build phase orchestration
+│   └── installer.py             # Application installation steps
+├── container/                   # OCI container build definitions
+│   ├── build.sh                 # Build script for all providers
+│   ├── docker-compose.yml       # Local dev compose
+│   ├── common/                  # Shared scripts (xvfb-entrypoint, wine-env)
+│   └── providers/               # Dockerfiles per runtime provider
+├── artifact/
+│   ├── bundle.py                # Bundle writer (sealed artifact)
+│   ├── oci.py                   # OCI image mapping & layering
+│   └── exporter.py              # Bundle export utilities
+├── tests/                       # Unit tests
+├── docs/                        # Architecture docs, ADRs
+└── examples/                    # Example manifests
+```
+
+## Development
+
+```bash
+# Run tests
+python3 -m unittest discover
+
+# Verify CLI works
+python3 cmd/winforge.py --help
+
+# Validate syntax of all Python files
+python3 -m compileall .
+
+# Build all containers (requires Docker)
+bash container/build.sh
+
+# Or build a specific container
+bash container/build.sh wine 9.0
+```
+
+## License
+
+Open source — available under the MIT License.

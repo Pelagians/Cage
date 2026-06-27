@@ -1,0 +1,68 @@
+# WinForge Docker Compose — local development and testing
+#
+# Build a specific provider image, then run the builder or a shell inside it.
+# Examples:
+#   docker compose build wine
+#   docker compose run wine bash
+#   docker compose run --rm wine winforge build /workspace/manifest.json
+
+services:
+  wine:
+    build:
+      context: ..
+      dockerfile: container/providers/wine/Dockerfile
+      args:
+        WINE_VERSION: "9.0"
+    image: winforge/wine:9.0-dev
+    environment:
+      WINEFS: builder
+    volumes:
+      - ..:/workspace
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+
+  wine-staging:
+    build:
+      context: ..
+      dockerfile: container/providers/wine-staging/Dockerfile
+      args:
+        WINE_VERSION: "9.0"
+    image: winforge/wine-staging:9.0-dev
+    environment:
+      WINEFS: builder
+    volumes:
+      - ..:/workspace
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+
+  proton:
+    build:
+      context: ..
+      dockerfile: container/providers/proton/Dockerfile
+      args:
+        PROTON_VERSION: "9.0"
+    image: winforge/proton:9.0-dev
+    environment:
+      WINEFS: builder
+    volumes:
+      - ..:/workspace
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+
+  proton-ge:
+    build:
+      context: ..
+      dockerfile: container/providers/proton-ge/Dockerfile
+      args:
+        GE_PROTON_TAG: "GE-Proton9-27"
+    image: winforge/proton-ge:GE-Proton9-27-dev
+    environment:
+      WINEFS: builder
+    volumes:
+      - ..:/workspace
+    working_dir: /workspace
+    stdin_open: true
+    tty: true

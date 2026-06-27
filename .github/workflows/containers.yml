@@ -1,0 +1,62 @@
+# workflow to build and push WinForge runtime container images to ghcr.io
+name: Build WinForge Runtime Containers
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'container/**'
+      - '.github/workflows/containers.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - provider: wine
+            dockerfile: container/providers/wine/Dockerfile
+            build_arg: WINE_VERSION=9.0
+            version: 9.0
+          - provider: wine-staging
+            dockerfile: container/providers/wine-staging/Dockerfile
+            build_arg: WINE_VERSION=9.0
+            version: 9.0
+          - provider: proton
+            dockerfile: container/providers/proton/Dockerfile
+            build_arg: PROTON_VERSION=9.0
+            version: 9.0
+          - provider: proton-ge
+            dockerfile: container/providers/proton-ge/Dockerfile
+            build_arg: GE_PROTON_TAG=GE-Proton9-27
+            version: GE-Proton9-27
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/winforge-${{ matrix.provider }}:${{ matrix.version }}
+            ${{ env.REGISTRY }}/winforge-${{ matrix.provider }}:latest
+            ${{ env.REGISTRY }}/winforge-${{ matrix.provider }}:${{ github.sha }}
+          build-args: |
+            ${{ matrix.build_arg }}
