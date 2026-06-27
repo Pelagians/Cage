@@ -108,6 +108,10 @@ winforge plan examples/minimal.winforge.json
 
 # Build an execution bundle (dry-run)
 winforge build examples/minimal.winforge.json --dry-run
+
+# Inspect and verify bundle contract before run/export/kube generation
+winforge bundle inspect dist/notepad-plus-plus-portable-0.1.0
+winforge bundle verify dist/notepad-plus-plus-portable-0.1.0
 ```
 
 ## Runtime Binding

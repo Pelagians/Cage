@@ -40,6 +40,12 @@ A v0 bundle must contain `manifest.winforge.json`, `prefix/drive_c/`, `runtime/r
 
 `metadata/graph.json` is the resolved execution contract. It records the application identity, resolved builder runtime, resolved runner runtime, supported graphics modes, launch contract, exact-runtime compatibility policy, and deterministic nodes/edges for the build phases and produced bundle artifact. The graph separates the runtime OCI image from the application/prefix artifact so future `winforge run` can pull a runtime image and a workload artifact independently.
 
+## Bundle inspection and verification
+
+`winforge bundle inspect <bundle>` prints a machine-readable summary of the bundle, including application identity, resolved builder/runner runtimes, graphics contract, launch contract, graph node/edge counts, provenance, and required file presence.
+
+`winforge bundle verify <bundle>` validates the v0 bundle contract and exits `0` only when the bundle is valid. Verification checks required files, JSON parseability, manifest/provenance/graph schema versions, graph application identity, runtime consistency across `runtime/runtime.json`, `builderRuntime`, and `runnerRuntime`, launch consistency, exact-runtime compatibility policy, graphics support for `headless` and `vnc`, and required graph nodes.
+
 ## OCI mapping
 
 A bundle may be copied into an OCI image at `/opt/winforge/bundle`. OCI is a distribution wrapper, not the core artifact contract.

@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
 
 from artifact.bundle import create_bundle
 from artifact.oci import build_oci_image
+from artifact.inspection import inspect_bundle, verify_bundle
 from builder.executor import execute_inside_container
 from builder.pipeline import build_plan
 from container.manager import (
@@ -148,6 +149,21 @@ def cmd_container_ref(args):
     print(ref)
     return 0
 
+# ---- bundle commands ----
+
+
+def cmd_bundle_inspect(args):
+    summary = inspect_bundle(Path(args.bundle))
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_bundle_verify(args):
+    result = verify_bundle(Path(args.bundle))
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0 if result["valid"] else 1
+
+
 
 # ---- provider commands ----
 
@@ -239,6 +255,18 @@ def build_parser():
     cp.add_argument("provider", help="Provider name")
     cp.add_argument("version", help="Version tag")
     cp.set_defaults(func=cmd_container_ref)
+
+    # bundle
+    p = sub.add_parser("bundle", help="Inspect and verify WinForge execution bundles")
+    bsub = p.add_subparsers(dest="bundle_command", required=True)
+
+    bp = bsub.add_parser("inspect", help="Print bundle summary from metadata/graph.json")
+    bp.add_argument("bundle", help="Path to WinForge bundle directory")
+    bp.set_defaults(func=cmd_bundle_inspect)
+
+    bp = bsub.add_parser("verify", help="Validate bundle contract and graph consistency")
+    bp.add_argument("bundle", help="Path to WinForge bundle directory")
+    bp.set_defaults(func=cmd_bundle_verify)
 
     # providers
     p = sub.add_parser("providers", help="List available runtime providers")

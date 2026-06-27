@@ -44,7 +44,11 @@ The deterministic pipeline is `init-prefix`, `install-dependencies`, `install-ap
 
 `metadata/graph.json` is first-class bundle output. It is the bridge from manifest authoring to Ramalama-like `winforge run`: runtime image selection, bundle artifact identity, launch contract, graphics modes, and exact-runtime compatibility live in one deterministic graph.
 
-### 6. Kubernetes / OCI integration
+### 6. Bundle inspection and verification
+
+`winforge bundle inspect` and `winforge bundle verify` form the validation layer between bundle creation and future `winforge run`. Verification consumes the bundle's manifest, runtime binding, launch contract, provenance, build plan, and `metadata/graph.json` without requiring container execution.
+
+### 7. Kubernetes / OCI integration
 
 WinForge supports OCI output for distribution and Kubernetes execution as a downstream substrate, but WinForge must not depend on Kubernetes internally.
 

@@ -72,6 +72,12 @@ winforge build examples/minimal.winforge.json --dry-run
 # Build for real (requires a runtime container image)
 winforge build examples/minimal.winforge.json
 
+# Inspect a built bundle
+winforge bundle inspect dist/notepad-plus-plus-portable-0.1.0
+
+# Verify bundle contract + metadata/graph.json consistency
+winforge bundle verify dist/notepad-plus-plus-portable-0.1.0
+
 # List available runtime providers
 winforge providers
 ```
@@ -150,8 +156,7 @@ WinForge/
 ├── runtime/
 │   ├── catalog.json             # Supported runtime catalog (CI + Forge source of truth)
 │   ├── catalog.py               # Catalog loader + CI matrix generator
-│   ├── providers.py             # Runtime provider abstraction + OCI image binding
-│   └── providers.py             # Catalog-backed provider resolution
+│   └── providers.py             # Catalog-backed provider resolution + OCI image binding
 ├── builder/
 │   ├── pipeline.py              # Build phase orchestration
 │   └── installer.py             # Application installation steps
@@ -163,6 +168,7 @@ WinForge/
 ├── artifact/
 │   ├── bundle.py                # Bundle writer (sealed artifact)
 │   ├── graph.py                 # Resolved execution graph writer
+│   ├── inspection.py            # Bundle inspect/verify contract checks
 │   ├── oci.py                   # OCI image mapping & layering
 │   └── exporter.py              # Bundle export utilities
 ├── tests/                       # Unit tests
