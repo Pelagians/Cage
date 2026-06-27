@@ -10,23 +10,7 @@ WinForge parses manifests, constructs deterministic Wine prefixes, installs decl
 
 ## What WinForge is not
 
-WinForge is **not** a Wine fork, Proton fork, container runtime, Kubernetes operator, GUI bottle manager, VIC component, or tenant/policy/orchestration product layer.
-
-## Relationship to VIC
-
-VIC is a closed-source downstream consumer. VIC may consume WinForge bundles or OCI images, but WinForge must not contain VIC-specific logic.
-
-```text
-WinForge manifest -> WinForge builder -> immutable execution bundle / OCI image
-                                                        |
-                                                        v
-                                      any downstream consumer, including VIC
-                                                        |
-                                                        v
-                                  orchestration, policy, tenancy, product UX
-```
-
-VIC begins after the artifact exists. VIC must not reimplement prefix construction, dependency installation, runtime binding, or artifact sealing. See `docs/vic-boundary.md`.
+WinForge is **not** a Wine fork, Proton fork, container runtime, Kubernetes operator, GUI bottle manager, or tenant/policy/orchestration product layer.
 
 ## Architecture
 
