@@ -9,12 +9,12 @@ WinForge borrows from nearby systems without inheriting their wrong assumptions.
 - Lutris: declarative install ordering and runner configuration, not game-only mutable output.
 - PlayOnLinux: Wine app scriptability, not undocumented scripts as the primary contract.
 - wine-tkg-style tooling: pinned Wine/Proton runtime builds and provenance.
-- ramalama: provider/driver selection pattern, applied to Wine-family runtimes.
-- OCI images: distribution layer, not build-time dependency.
+- ramalama: application-first UX and provider/driver selection pattern, applied to Wine-family runtimes.
+- OCI images: canonical deployable artifact direction, not the user-facing semantic model by itself.
 - Nix: reproducible inputs and immutable outputs.
 
 Summary:
 
 ```text
-declarative manifest -> deterministic prefix build -> sealed execution bundle -> optional OCI distribution -> downstream consumer execution
+application recipe -> resolved build -> sealed application artifact -> OCI deployable image -> run with separate runtime state
 ```

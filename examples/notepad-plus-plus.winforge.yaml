@@ -1,0 +1,54 @@
+schemaVersion: winforge.app/v0
+name: notepad-plus-plus
+version: "8.6.0"
+
+runtime:
+  provider: wine
+  version: "9.0"
+
+sources:
+  - name: installer
+    url: https://example.invalid/notepad-plus-plus.exe
+    sha256: unverified-example-placeholder
+
+dependencies:
+  - kind: winetricks
+    verbs:
+      - corefonts
+      - vcrun2022
+
+install:
+  - kind: exe
+    source: file://sources/notepad-plus-plus.exe
+    args:
+      - /S
+
+filesystem:
+  - source: overlays/notepad-plus-plus/config.xml
+    target: C:/Program Files/Notepad++/config.xml
+
+config:
+  wine:
+    arch: win64
+    dllOverrides:
+      mscoree: disabled
+      mshtml: disabled
+
+registry:
+  - path: HKCU/Software/WinForge/NotepadPlusPlus
+    values:
+      PackagedBy: WinForge
+
+launch:
+  entrypoint: C:/Program Files/Notepad++/notepad++.exe
+  workingDirectory: C:/Program Files/Notepad++
+
+state:
+  persistence: persistent
+
+exports:
+  - name: documents
+    path: C:/users/winforge/Documents
+
+provenance:
+  sources: []

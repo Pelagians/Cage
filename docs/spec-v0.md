@@ -1,61 +1,111 @@
-# WinForge Manifest and Artifact Spec v0
+# WinForge Application Recipe and Artifact Spec v0
 
-Status: proposed initial scaffold.
+Status: proposed application-first v0 contract.
 
-## Required manifest fields
+## Product model
+
+WinForge packages applications, not user-facing Wine prefixes. The primary user/business-authored input is a strict YAML application recipe. JSON remains supported for generated, normalized, or CLI-driven inputs.
+
+Long-term happy path:
+
+```bash
+winforge build notepad-plus-plus.winforge.yaml
+winforge run notepad-plus-plus
+```
+
+The current bundle directory remains a lower-level internal/debug/staging artifact used for tests, inspection, verification, local runs, and future OCI export.
+
+## Required recipe fields
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `schemaVersion` | string | Must be `winforge.dev/v0` |
-| `name` | string | Artifact/environment name |
-| `version` | string | Artifact version |
-| `runtime` | object | Runtime provider request |
-| `launch` | object | Entrypoint definition |
+| `schemaVersion` | string | Prefer `winforge.app/v0`; legacy JSON may use `winforge.dev/v0` |
+| `name` | string | Application artifact name |
+| `version` | string | Application artifact version |
+| `runtime` | object | Build-time runtime provider request |
+| `launch` | object | Application launch definition |
 
-## Runtime
+## Supported authoring formats
 
-`provider` must be one of `wine`, `staging`, or `proton-ge`. `version` is required. `source`, `channel`, and `digest` should pin provenance.
+YAML is the shareable recipe format for users and businesses. JSON remains valid for CLI-generated, normalized, test, and automation workflows.
 
-## Dependencies
+Strict YAML rules:
 
-Allowed kinds: `winetricks`, `font`, `directx`, `package`, `runtime-component`.
+- unknown fields are rejected
+- duplicate keys are rejected
+- anchors are rejected
+- aliases are rejected
+- merge keys are rejected
+- parsed YAML must normalize into the same object model as JSON
 
-## Install steps
+## Application recipe fields
 
-Allowed kinds: `msi`, `exe`, `portable`, `choco`, `script`. MSI/EXE/portable require `source`; script requires `command`.
+`runtime.provider` must be one of `wine`, `staging`, or `proton-ge`. `runtime.version` is required. Provider/version are selected at build time and enforced at run time; changing providers should require rebuilding.
 
-## Filesystem mappings
+`dependencies` supports build-time dependency installation. Allowed kinds: `winetricks`, `font`, `directx`, `package`, `runtime-component`.
 
-Mappings copy declared source files into Windows-style targets under `drive_c`.
+`install` supports build-time application installation. Allowed kinds: `msi`, `exe`, `portable`, `choco`, `script`. MSI/EXE/portable require `source`; script requires `command`.
 
-## Launch
+`filesystem` maps declared source files into Windows-style targets under `drive_c`.
 
-`entrypoint` is required. `args`, `env`, and `workingDirectory` are optional.
+`config` records application/runtime configuration such as Wine architecture, DLL overrides, and other provider-level config.
 
-## Bundle layout
+`registry` records build-time registry tweaks.
 
-A v0 bundle must contain `manifest.winforge.json`, `prefix/drive_c/`, `runtime/runtime.json`, `launch/entrypoint.json`, `metadata/provenance.json`, `metadata/graph.json`, `build/build-plan.json`, and `logs/build.log`.
+`launch.entrypoint` is required. `launch.args`, `launch.env`, and `launch.workingDirectory` are optional.
+
+`state` describes runtime state behavior. The default direction is persistent runtime state separate from the immutable artifact.
+
+`exports` describes user/application outputs such as reports, save exports, screenshots, generated documents, or other files that should be mounted or collected explicitly.
+
+## Artifact model
+
+A WinForge application artifact is the immutable output of a recipe-defined build. The canonical deployable direction is an OCI image digest containing the built application prefix, normalized recipe, metadata, provenance, launch contract, and runtime compatibility metadata.
+
+The current v0 bundle directory contains:
+
+```text
+<name>-<version>/
+  manifest.winforge.json
+  prefix/drive_c/
+  runtime/runtime.json
+  launch/entrypoint.json
+  metadata/provenance.json
+  metadata/graph.json
+  build/build-plan.json
+  logs/build.log
+```
+
+This bundle is an internal/debug/staging representation, not the desired final user-facing artifact forever.
+
+## Immutability and runtime state
+
+The recipe-defined build output is immutable. Runtime execution may mutate application state, create save files, export CSV reports, generate caches, run first-launch setup, or let an application install user-managed additions. Those changes must not mutate the sealed artifact.
+
+Runtime state is separate from artifact contents and should be persisted, discarded, exported, or rebuilt explicitly.
 
 ## Execution graph
 
-`metadata/graph.json` is the resolved execution contract. It records the application identity, resolved builder runtime, resolved runner runtime, supported graphics modes, launch contract, exact-runtime compatibility policy, and deterministic nodes/edges for the build phases and produced bundle artifact. The graph separates the runtime OCI image from the application/prefix artifact so future `winforge run` can pull a runtime image and a workload artifact independently.
+`metadata/graph.json` is build/provenance/contract metadata. It records application identity, resolved builder runtime, resolved runner runtime, supported graphics modes, launch contract, exact-runtime compatibility policy, and deterministic build phase nodes/edges.
+
+The graph should not become a general runtime scheduler. Runtime should be boring: verify artifact, prepare state, start display if requested, and launch the application contract.
 
 ## Bundle inspection and verification
 
 `winforge bundle inspect <bundle>` prints a machine-readable summary of the bundle, including application identity, resolved builder/runner runtimes, graphics contract, launch contract, graph node/edge counts, provenance, and required file presence.
 
-`winforge bundle verify <bundle>` validates the v0 bundle contract and exits `0` only when the bundle is valid. Verification checks required files, JSON parseability, manifest/provenance/graph schema versions, graph application identity, runtime consistency across `runtime/runtime.json`, `builderRuntime`, and `runnerRuntime`, launch consistency, exact-runtime compatibility policy, graphics support for `headless` and `vnc`, and required graph nodes.
+`winforge bundle verify <bundle>` validates the v0 bundle contract and exits `0` only when the bundle is valid. Verification checks required files, JSON parseability, supported manifest schema versions, provenance/graph schema versions, graph application identity, runtime consistency across `runtime/runtime.json`, `builderRuntime`, and `runnerRuntime`, launch consistency, exact-runtime compatibility policy, graphics support for `headless` and `vnc`, and required graph nodes.
 
 ## Bundle run contract
 
-`winforge run <bundle>` consumes a verified bundle and must fail before container planning when `winforge bundle verify <bundle>` would fail. It does not reinterpret the original manifest as the source of truth; it reads `metadata/graph.json` for the resolved `runnerRuntime`, launch contract, graphics modes, and exact-runtime compatibility policy.
+`winforge run <bundle>` currently consumes a verified bundle and must fail before container planning when `winforge bundle verify <bundle>` would fail.
 
 `winforge run --dry-run <bundle>` prints a `winforge.run-plan/v0` document containing the selected runtime image, graphics mode, launch command, container environment, and container argv without starting the container.
 
 `--graphics headless` runs through the runtime image Xvfb entrypoint without publishing ports. `--graphics vnc` publishes loopback-only VNC and noVNC/websockify ports (`127.0.0.1:<vnc-port>:5900` and `127.0.0.1:<novnc-port>:6080`) and starts `x11vnc` plus `websockify` inside the container.
 
-The v0 runner mounts the bundle read-only at `/opt/winforge/bundle`, copies `prefix/` to `/tmp/winforge-prefix`, sets `WINEPREFIX` to that copy, then launches the graph entrypoint. This preserves the sealed bundle while allowing Wine to mutate runtime prefix state.
+The v0 runner mounts the bundle read-only at `/opt/winforge/bundle`, copies `prefix/` to `/tmp/winforge-prefix`, sets `WINEPREFIX` to that copy, then launches the application entrypoint. This preserves the sealed artifact while allowing Wine to mutate runtime state.
 
 ## OCI mapping
 
-A bundle may be copied into an OCI image at `/opt/winforge/bundle`. OCI is a distribution wrapper, not the core artifact contract.
+OCI should become the canonical deployable artifact identity by digest. Embedded WinForge metadata describes artifact semantics. OCI labels should match embedded metadata; a mismatch should fail verification.

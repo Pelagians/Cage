@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 GRAPH_SCHEMA_VERSION = "winforge.execution-graph/v0"
+MANIFEST_SCHEMA_VERSIONS = {"winforge.app/v0", "winforge.dev/v0"}
 INSPECTION_SCHEMA_VERSION = "winforge.bundle-inspection/v0"
 VERIFICATION_SCHEMA_VERSION = "winforge.bundle-verification/v0"
 
@@ -151,9 +152,9 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
 
     add_check(
         "manifest-schema",
-        manifest.get("schemaVersion") == "winforge.dev/v0",
-        "manifest schema is winforge.dev/v0",
-        error="manifest schemaVersion must be winforge.dev/v0",
+        manifest.get("schemaVersion") in MANIFEST_SCHEMA_VERSIONS,
+        "manifest schema is supported WinForge v0",
+        error="manifest schemaVersion must be one of: " + ", ".join(sorted(MANIFEST_SCHEMA_VERSIONS)),
     )
     add_check(
         "provenance-schema",

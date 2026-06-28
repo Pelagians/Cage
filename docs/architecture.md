@@ -1,18 +1,18 @@
 # WinForge Architecture
 
-WinForge compiles declarative Wine/Proton-family execution environment manifests into immutable execution bundles.
+WinForge compiles application recipes into immutable application artifacts for Wine/Proton-family runtimes.
 
 ## Component model
 
 ```text
-manifest authoring -> core/manifest -> runtime/providers -> builder/pipeline -> artifact/bundle -> runtime/launcher -> optional artifact/oci
+application recipe or CLI input -> core/manifest -> runtime/providers -> builder/pipeline -> artifact/bundle -> runtime/launcher -> artifact/oci
 ```
 
 ## Design decisions
 
 ### 1. Artifact model
 
-A v0 execution bundle is a sealed filesystem artifact:
+WinForge is application-first. The user-facing artifact is an application artifact; the current v0 execution bundle is a sealed filesystem staging/debug representation:
 
 ```text
 <name>-<version>/
@@ -26,11 +26,11 @@ A v0 execution bundle is a sealed filesystem artifact:
   logs/build.log
 ```
 
-It includes prefix, runtime binding, manifest, launch definition, metadata, hashes/provenance, logs, and `metadata/graph.json` as the resolved execution graph.
+It includes the built prefix, runtime binding, normalized recipe/manifest, launch definition, metadata, hashes/provenance, logs, and `metadata/graph.json` as build/provenance metadata. The canonical deployable direction is an OCI image digest containing this application artifact and embedded WinForge metadata.
 
-### 2. Manifest schema v0
+### 2. Recipe schema v0
 
-The manifest defines runtime provider, dependencies, install steps, filesystem mappings, launch entrypoint, environment, hashes, and provenance fields.
+The primary shareable authoring format is strict YAML (`winforge.app/v0`). JSON remains supported for generated, normalized, test, and CLI-driven inputs. The recipe defines application identity, runtime provider, dependencies, install steps, filesystem mappings, config, registry tweaks, launch entrypoint, state behavior, exports, hashes, and provenance fields.
 
 ### 3. Runtime abstraction layer
 
@@ -42,7 +42,7 @@ The deterministic pipeline is `init-prefix`, `install-dependencies`, `install-ap
 
 ### 5. Execution graph
 
-`metadata/graph.json` is first-class bundle output. It is the bridge from manifest authoring to Ramalama-like `winforge run`: runtime image selection, bundle artifact identity, launch contract, graphics modes, and exact-runtime compatibility live in one deterministic graph.
+`metadata/graph.json` is first-class build/provenance output. It records runtime image selection, artifact identity, launch contract, graphics modes, build phase order, and exact-runtime compatibility. It should not become a general runtime scheduler; runtime execution should verify the artifact, prepare state, start display services if requested, and launch the application contract.
 
 ### 6. Bundle inspection and verification
 
@@ -50,7 +50,7 @@ The deterministic pipeline is `init-prefix`, `install-dependencies`, `install-ap
 
 ### 7. Run planning and execution
 
-`runtime/launcher.py` implements `winforge run`. It consumes only verified bundle output, reads `metadata/graph.json` for the runner runtime image and launch contract, emits `winforge.run-plan/v0` for dry runs, and executes the plan with Podman/Docker when not in dry-run mode. Headless mode uses Xvfb without host ports; VNC mode exposes loopback-only VNC/noVNC ports and starts `x11vnc` plus `websockify` inside the runtime container. Bundles are mounted read-only and prefixes are copied before launch to preserve sealed artifact semantics.
+`runtime/launcher.py` implements the current `winforge run` path. It consumes verified bundle output, emits `winforge.run-plan/v0` for dry runs, and executes the plan with Podman/Docker when not in dry-run mode. Headless mode uses Xvfb without host ports; VNC mode exposes loopback-only VNC/noVNC ports and starts `x11vnc` plus `websockify` inside the runtime container. Bundles are mounted read-only and prefixes are copied before launch so runtime mutation affects state, not the sealed artifact.
 
 ### 8. Kubernetes / OCI integration
 
@@ -58,4 +58,4 @@ WinForge supports OCI output for distribution and Kubernetes execution as a down
 
 ## Non-goals
 
-Do not fork Wine/Proton, implement a general container runtime, include VIC policy/orchestration/product logic, or make mutable GUI bottle workflows the artifact model.
+Do not fork Wine/Proton, implement a general container runtime, include VIC policy/orchestration/product logic, expose Wine prefix construction as the primary user mental model, or make mutable GUI bottle workflows the artifact model.

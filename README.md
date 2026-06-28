@@ -1,11 +1,12 @@
 # WinForge
 
-**Deterministic Wine/Proton-family environment compiler.**
+**Application-first packager and runner for Wine/Proton-family software.**
 
-WinForge takes a declarative manifest and compiles it into an immutable
-execution bundle — a sealed Wine prefix with installed dependencies,
-registry configuration, and application files, packaged for
-containerized deployment.
+WinForge takes an application recipe and builds a reproducible application
+artifact for Wine/Proton-family runtimes. Users should think “I am packaging
+Notepad++,” not “I am building a Wine prefix.” Wine prefixes, runtime images,
+launch scripts, bundle directories, and OCI layers are implementation details
+behind a simple recipe → build → run workflow.
 
 ## Why WinForge?
 
@@ -18,80 +19,81 @@ provenance tracking. WinForge replaces that with:
 - **Provenance recording** — Sources, hashes, versions tracked in metadata
 - **Runtime abstraction** — Swap Wine, Wine-Staging, or GE-Proton
   without changing the manifest
-- **OCI-native** — Bundles can be layered onto runtime container images
+- **OCI-native direction** — Application artifacts can be distributed and deployed as OCI images
 
 ## What WinForge is Not
 
-WinForge is **not** a Wine fork, Proton fork, container runtime, Kubernetes operator, GUI bottle manager, or tenant/policy/orchestration product layer.
+WinForge is **not** a Wine fork, Proton fork, container runtime, Kubernetes operator, GUI bottle manager, package manager for arbitrary Linux software, or tenant/policy/orchestration product layer.
 
 ## Architecture
 
 ```
-manifest.winforge.json
+application recipe (YAML, CLI-generated, or normalized JSON)
   │
   ▼
 ┌─────────────────┐       ┌──────────────────────────┐
-│  Runtime        │──────▶│  OCI Container Base       │
-│  Provider       │       │  (winforge/wine:9.0, etc) │
-│ (wine/proton-ge)│       └──────────────────────────┘
-└──────┬──────────┘                    │
-       │                               │
-       ▼                               ▼
+│ Runtime Provider│──────▶│ Catalog Runtime Image     │
+│ wine/staging/GE │       │ ghcr.io/.../winforge-wine │
+└──────┬──────────┘       └──────────────────────────┘
+       │
+       ▼
 ┌──────────────────────────────────────────────────┐
 │              Builder Pipeline                      │
-│  init-prefix → install-dependencies → install-apps │
-│  apply-layout → validate → seal-artifact          │
+│ resolve → install deps/app → config/registry → seal │
 └──────────────────────────────────────────────────┘
        │
        ▼
 ┌──────────────────────────────────────────────┐
-│         Immutable Execution Bundle             │
-│  prefix/ │ runtime/ │ launch/ │ metadata/     │
-│  metadata/graph.json is the resolved run graph │
+│ Application Artifact                           │
+│ built prefix + launch contract + metadata      │
+│ bundle dir today, OCI image digest direction   │
 └──────────────────────────────────────────────┘
        │
        ▼
 ┌──────────────────────────────────────────────┐
-│  OCI Image Layer (on winforge/wine:base)     │
-│  docker build -f- . < bundle-layer            │
+│ Runtime State / Exports                        │
+│ persisted separately; never mutates artifact   │
 └──────────────────────────────────────────────┘
 ```
 
 ## Quick Start
 
 ```bash
-# Inspect a manifest
-winforge inspect examples/minimal.winforge.json
+# Build from the user/business-facing YAML recipe format
+winforge build examples/notepad-plus-plus.winforge.yaml --dry-run
 
-# Print the build plan
-winforge plan examples/minimal.winforge.json
-
-# Dry-run build (creates bundle contract + metadata/graph.json without executing Wine)
+# JSON remains supported for generated or CLI-normalized inputs
 winforge build examples/minimal.winforge.json --dry-run
 
-# Build for real (requires a runtime container image)
-winforge build examples/minimal.winforge.json
+# Inspect or verify the lower-level bundle when debugging/automating
+winforge bundle inspect dist/notepad-plus-plus-8.6.0
+winforge bundle verify dist/notepad-plus-plus-8.6.0
 
-# Inspect a built bundle
-winforge bundle inspect dist/notepad-plus-plus-portable-0.1.0
-
-# Verify bundle contract + metadata/graph.json consistency
-winforge bundle verify dist/notepad-plus-plus-portable-0.1.0
-
-# Preview the container invocation without starting Wine
-winforge run --dry-run --graphics headless dist/notepad-plus-plus-portable-0.1.0
-
-# Run headless, or expose loopback VNC/noVNC for visible execution
-winforge run --graphics headless dist/notepad-plus-plus-portable-0.1.0
-winforge run --graphics vnc --vnc-port 5900 --novnc-port 6080 dist/notepad-plus-plus-portable-0.1.0
+# Preview and run the built application artifact
+winforge run --dry-run --graphics headless dist/notepad-plus-plus-8.6.0
+winforge run --graphics headless dist/notepad-plus-plus-8.6.0
+winforge run --graphics vnc --vnc-port 5900 --novnc-port 6080 dist/notepad-plus-plus-8.6.0
 
 # List available runtime providers
 winforge providers
 ```
 
-## Running Bundles
+## Application Recipes
 
-`winforge run` consumes a verified bundle, not the original manifest. The
+WinForge accepts strict YAML application recipes as the primary shareable
+authoring format for users and businesses. JSON remains valid for generated,
+normalized, or CLI-driven workflows. YAML is intentionally strict: unknown
+fields, duplicate keys, anchors, aliases, and merge keys are rejected so
+recipes normalize into one clear object model.
+
+A recipe describes an application: provider/version, dependencies, config,
+registry tweaks, Wine config, launch command, state behavior, and exports. It
+does not ask users to manage Wine prefixes directly.
+
+
+## Running Built Artifacts
+
+`winforge run` currently consumes a verified bundle, not the original manifest. The
 command reads `metadata/graph.json`, verifies the bundle contract, selects the
 graph-resolved `runnerRuntime.image`, and launches the graph-resolved entrypoint
 inside the catalog runtime container.
@@ -203,7 +205,7 @@ WinForge/
 │   └── exporter.py              # Bundle export utilities
 ├── tests/                       # Unit tests
 ├── docs/                        # Architecture docs, ADRs
-└── examples/                    # Example manifests
+└── examples/                    # Example recipes/manifests
 ```
 
 ## Development

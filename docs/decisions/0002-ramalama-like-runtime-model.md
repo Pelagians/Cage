@@ -2,11 +2,11 @@
 
 Date: 2026-06-27
 
-Status: accepted
+Status: accepted (amended by Decision 0003)
 
 ## Decision
 
-WinForge follows a Ramalama-like model: user commands resolve a runtime provider from a catalog, pull the runtime OCI image, apply user-selected execution options, and run a separate application/prefix artifact. OCI is the normal transport and cache surface, but the execution graph and bundle remain the semantic source of truth.
+WinForge follows a Ramalama-like model: user commands resolve a runtime provider from a catalog, pull the runtime OCI image, apply user-selected execution options, and run a separate application/prefix artifact. OCI is the normal deployable/cache surface, while embedded WinForge metadata describes artifact semantics. Decision 0003 shifts the user-facing model from bundle-first to application-first and treats the bundle directory as an internal/debug staging representation.
 
 WinForge has two distinct OCI roles:
 
