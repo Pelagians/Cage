@@ -89,7 +89,14 @@ def build_run_plan(
         "runtime": {
             "provider": runtime.get("provider"),
             "version": runtime.get("version"),
+            "requestedVersion": runtime.get("requestedVersion"),
+            "resolvedVersion": runtime.get("resolvedVersion"),
+            "family": runtime.get("family"),
+            "runner": runtime.get("runner"),
+            "runnerVersion": runtime.get("runnerVersion"),
+            "packageVersion": runtime.get("packageVersion"),
             "launcher": runtime.get("launcher"),
+            "launcherVersion": runtime.get("launcherVersion"),
             "image": image,
             "requiresExactRuntime": bool(
                 (graph.get("compatibility") or {}).get("requiresExactRuntime")

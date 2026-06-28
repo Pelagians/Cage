@@ -38,6 +38,13 @@ def cmd_plan(args):
         "version": manifest.version,
         "runtimeProvider": binding.provider,
         "runtimeVersion": binding.version,
+        "requestedRuntimeVersion": binding.requested_version,
+        "resolvedRuntimeVersion": binding.resolved_version,
+        "runner": binding.runner,
+        "runnerVersion": binding.runner_version,
+        "packageVersion": binding.package_version,
+        "launcher": binding.launcher,
+        "launcherVersion": binding.launcher_version,
         "ociImage": binding.oci_image,
         "localOciImage": binding.local_oci_image,
         "runtimeUsable": binding.runtime_usable,
@@ -197,8 +204,14 @@ def cmd_providers(args):
             print(json.dumps({
                 "provider": binding.provider,
                 "version": binding.version,
+                "requestedVersion": binding.requested_version,
+                "resolvedVersion": binding.resolved_version,
+                "runner": binding.runner,
+                "runnerVersion": binding.runner_version,
+                "packageVersion": binding.package_version,
                 "ociImage": binding.oci_image,
                 "launcher": binding.launcher,
+                "launcherVersion": binding.launcher_version,
                 "notes": binding.notes,
             }, indent=2))
         except Exception as exc:

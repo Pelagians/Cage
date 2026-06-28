@@ -4,18 +4,46 @@
   "providers": {
     "wine": {
       "displayName": "Wine Stable",
+      "family": "wine",
+      "runner": "winehq-stable",
       "launcher": "wine",
       "localImage": "winforge/wine",
       "publishedImageName": "winforge-wine",
       "dockerfile": "container/providers/wine/Dockerfile",
-      "buildArg": "WINE_VERSION",
-      "defaultVersion": "9.0",
-      "notes": "Wine Stable OCI base \u2014 built from WineHQ packages.",
+      "buildArg": "WINE_PACKAGE_VERSION",
+      "defaultVersion": "11.0",
+      "versionAliases": {
+        "latest": "11.0",
+        "stable": "11.0",
+        "previous": "10.0",
+        "legacy": "9.0"
+      },
+      "notes": "Wine Stable OCI base \u2014 built from pinned WineHQ packages.",
       "versions": {
-        "9.0": {
-          "buildValue": "9.0",
-          "tag": "9.0",
+        "11.0": {
+          "buildValue": "11.0.0.0~bookworm-1",
+          "tag": "11.0",
+          "runnerVersion": "11.0",
+          "packageVersion": "11.0.0.0~bookworm-1",
           "channel": "stable",
+          "ciBuild": true,
+          "runtimeUsable": true
+        },
+        "10.0": {
+          "buildValue": "10.0.0.0~bookworm-1",
+          "tag": "10.0",
+          "runnerVersion": "10.0",
+          "packageVersion": "10.0.0.0~bookworm-1",
+          "channel": "previous",
+          "ciBuild": true,
+          "runtimeUsable": true
+        },
+        "9.0": {
+          "buildValue": "9.0.0.0~bookworm-1",
+          "tag": "9.0",
+          "runnerVersion": "9.0",
+          "packageVersion": "9.0.0.0~bookworm-1",
+          "channel": "legacy",
           "ciBuild": true,
           "runtimeUsable": true
         }
@@ -23,18 +51,46 @@
     },
     "staging": {
       "displayName": "Wine Staging",
+      "family": "wine",
+      "runner": "winehq-staging",
       "launcher": "wine",
       "localImage": "winforge/wine-staging",
       "publishedImageName": "winforge-wine-staging",
       "dockerfile": "container/providers/wine-staging/Dockerfile",
-      "buildArg": "WINE_VERSION",
-      "defaultVersion": "9.0",
-      "notes": "Wine Staging OCI base \u2014 WineHQ staging packages.",
+      "buildArg": "WINE_PACKAGE_VERSION",
+      "defaultVersion": "11.10",
+      "versionAliases": {
+        "latest": "11.10",
+        "staging-latest": "11.10",
+        "previous": "11.9",
+        "baseline": "11.0"
+      },
+      "notes": "Wine Staging OCI base \u2014 built from pinned WineHQ staging packages.",
       "versions": {
-        "9.0": {
-          "buildValue": "9.0",
-          "tag": "9.0",
-          "channel": "staging",
+        "11.10": {
+          "buildValue": "11.10~bookworm-1",
+          "tag": "11.10",
+          "runnerVersion": "11.10",
+          "packageVersion": "11.10~bookworm-1",
+          "channel": "staging-latest",
+          "ciBuild": true,
+          "runtimeUsable": true
+        },
+        "11.9": {
+          "buildValue": "11.9~bookworm-1",
+          "tag": "11.9",
+          "runnerVersion": "11.9",
+          "packageVersion": "11.9~bookworm-1",
+          "channel": "previous",
+          "ciBuild": true,
+          "runtimeUsable": true
+        },
+        "11.0": {
+          "buildValue": "11.0.0~bookworm-1",
+          "tag": "11.0",
+          "runnerVersion": "11.0",
+          "packageVersion": "11.0.0~bookworm-1",
+          "channel": "baseline",
           "ciBuild": true,
           "runtimeUsable": true
         }
@@ -42,18 +98,43 @@
     },
     "umu-proton-ge": {
       "displayName": "UMU + GE-Proton",
+      "family": "proton",
+      "runner": "ge-proton",
       "launcher": "umu",
+      "launcherVersion": "1.4.0",
       "localImage": "winforge/umu-proton-ge",
       "publishedImageName": "winforge-umu-proton-ge",
       "dockerfile": "container/providers/umu-proton-ge/Dockerfile",
       "buildArg": "GE_PROTON_TAG",
-      "defaultVersion": "GE-Proton9-27",
+      "defaultVersion": "GE-Proton11-1",
+      "versionAliases": {
+        "latest": "GE-Proton11-1",
+        "previous": "GE-Proton10-34",
+        "legacy": "GE-Proton9-27"
+      },
       "notes": "UMU launcher stack for GE-Proton runner releases.",
       "versions": {
+        "GE-Proton11-1": {
+          "buildValue": "GE-Proton11-1",
+          "tag": "GE-Proton11-1",
+          "runnerVersion": "GE-Proton11-1",
+          "channel": "ge-latest",
+          "ciBuild": true,
+          "runtimeUsable": true
+        },
+        "GE-Proton10-34": {
+          "buildValue": "GE-Proton10-34",
+          "tag": "GE-Proton10-34",
+          "runnerVersion": "GE-Proton10-34",
+          "channel": "ge-previous",
+          "ciBuild": true,
+          "runtimeUsable": true
+        },
         "GE-Proton9-27": {
           "buildValue": "GE-Proton9-27",
           "tag": "GE-Proton9-27",
-          "channel": "ge-stable",
+          "runnerVersion": "GE-Proton9-27",
+          "channel": "ge-legacy",
           "ciBuild": true,
           "runtimeUsable": true
         }

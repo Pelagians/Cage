@@ -7,13 +7,13 @@
 #
 # Build:
 #   docker build \
-#     --build-arg WINE_VERSION=9.0 \
-#     -t winforge/wine:9.0 \
+#     --build-arg WINE_PACKAGE_VERSION=11.0.0.0~bookworm-1 \
+#     -t winforge/wine:11.0 \
 #     -f container/providers/wine/Dockerfile .
 #
 # Architecture: amd64 (Wine Stable does not provide arm64 binaries)
 
-ARG WINE_VERSION=9.0
+ARG WINE_PACKAGE_VERSION=11.0.0.0~bookworm-1
 
 # ---- Stage 1: Base system dependencies ----
 FROM debian:bookworm-slim AS base
@@ -33,7 +33,7 @@ RUN set -eux; \
 
 # ---- Stage 2: WineHQ repository + Wine install ----
 FROM base AS wine-install
-ARG WINE_VERSION
+ARG WINE_PACKAGE_VERSION
 
 RUN set -eux; \
     # Add WineHQ signing key and repo
@@ -44,7 +44,7 @@ RUN set -eux; \
         -o /etc/apt/sources.list.d/winehq.sources; \
     apt-get update -qq; \
     apt-get install -y -qq --no-install-recommends \
-        winehq-stable  \
+        "winehq-stable=${WINE_PACKAGE_VERSION}" \
     ; \
     # Install winetricks
     curl -fsSL "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks" \

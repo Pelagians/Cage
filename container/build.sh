@@ -7,8 +7,8 @@
 # Usage:
 #   ./container/build.sh                         # build all CI-enabled catalog entries
 #   ./container/build.sh wine default            # build catalog default for wine
-#   ./container/build.sh staging 9.0
-#   ./container/build.sh umu-proton-ge GE-Proton9-27
+#   ./container/build.sh staging latest
+#   ./container/build.sh umu-proton-ge latest
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -18,8 +18,8 @@ REGISTRY="${REGISTRY:-}"
 PUSH="${PUSH:-}"
 
 build_entry() {
-    local provider="$1" version="$2" tag="$3" local_image="$4" dockerfile="$5" build_arg="$6" image_name="$7"
-    shift 7
+    local provider="$1" version="$2" tag="$3" local_image="$4" dockerfile="$5" build_arg="$6" image_name="$7" publish_tags="$8"
+    shift 8
 
     echo "=== Building ${local_image}:${tag} from catalog ${provider}:${version} ==="
     local cmd=(
@@ -30,6 +30,17 @@ build_entry() {
 
     if [ -n "$REGISTRY" ]; then
         cmd+=(--tag "${REGISTRY}/${image_name}:${tag}")
+        if [ -n "${publish_tags:-}" ]; then
+            for alias_tag in ${publish_tags}; do
+                cmd+=(--tag "${REGISTRY}/${image_name}:${alias_tag}")
+            done
+        fi
+    else
+        if [ -n "${publish_tags:-}" ]; then
+            for alias_tag in ${publish_tags}; do
+                cmd+=(--tag "${local_image}:${alias_tag}")
+            done
+        fi
     fi
 
     cmd+=( -f "$dockerfile" )
@@ -40,14 +51,20 @@ build_entry() {
     if [ -n "$PUSH" ] && [ -n "$REGISTRY" ]; then
         echo "=== Pushing ${REGISTRY}/${image_name}:${tag} ==="
         "$BUILD_CMD" push "${REGISTRY}/${image_name}:${tag}"
+        if [ -n "${publish_tags:-}" ]; then
+            for alias_tag in ${publish_tags}; do
+                echo "=== Pushing ${REGISTRY}/${image_name}:${alias_tag} ==="
+                "$BUILD_CMD" push "${REGISTRY}/${image_name}:${alias_tag}"
+            done
+        fi
     fi
     echo ""
 }
 
 if [ $# -eq 0 ]; then
-    while IFS=$'\t' read -r provider version tag local_image dockerfile build_arg image_name; do
+    while IFS=$'\t' read -r provider version tag local_image dockerfile build_arg image_name publish_tags; do
         [ -n "$provider" ] || continue
-        build_entry "$provider" "$version" "$tag" "$local_image" "$dockerfile" "$build_arg" "$image_name"
+        build_entry "$provider" "$version" "$tag" "$local_image" "$dockerfile" "$build_arg" "$image_name" "$publish_tags"
     done < <(python3 -m runtime.catalog --shell-build-list)
     echo "=== All catalog-enabled containers built ==="
 elif [ $# -ge 2 ]; then
@@ -55,7 +72,8 @@ elif [ $# -ge 2 ]; then
     eval "$(python3 -m runtime.catalog --shell-build-entry "$provider" "$version")"
     build_entry "$CATALOG_PROVIDER" "$CATALOG_VERSION" "$CATALOG_TAG" \
         "$CATALOG_LOCAL_IMAGE" "$CATALOG_DOCKERFILE" \
-        "$CATALOG_BUILD_ARG_LINE" "$CATALOG_PUBLISHED_IMAGE_NAME" "$@"
+        "$CATALOG_BUILD_ARG_LINE" "$CATALOG_PUBLISHED_IMAGE_NAME" \
+        "$CATALOG_PUBLISH_TAGS" "$@"
 else
     echo "Usage: $0 [provider version]"
     echo "  provider: $(python3 - <<'PY'

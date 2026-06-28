@@ -4,7 +4,7 @@ version: "8.6.0"
 
 runtime:
   provider: wine
-  version: "9.0"
+  version: latest
 
 sources:
   - name: installer

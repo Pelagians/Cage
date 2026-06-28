@@ -2,7 +2,8 @@
 
 The catalog is the single source of truth for supported runtime provider
 versions, local image refs, published GHCR image refs, Dockerfiles, and
-container build arguments.
+container build arguments. Mutable aliases such as ``latest`` resolve to pinned
+runner versions before they enter bundle metadata.
 """
 from __future__ import annotations
 
@@ -21,6 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 class CatalogVersion:
     provider: str
     version: str
+    requested_version: str
+    resolved_version: str
     build_value: str
     tag: str
     channel: str | None
@@ -33,6 +36,13 @@ class CatalogVersion:
     dockerfile: str
     build_arg: str
     default_registry: str
+    family: str | None = None
+    runner: str | None = None
+    runner_version: str | None = None
+    package_version: str | None = None
+    launcher_version: str | None = None
+    aliases: tuple[str, ...] = ()
+    publish_tags: tuple[str, ...] = ()
 
     @property
     def local_ref(self) -> str:
@@ -43,6 +53,13 @@ class CatalogVersion:
         return f"{self.default_registry}/{self.published_image_name}:{self.tag}"
 
     @property
+    def published_alias_refs(self) -> tuple[str, ...]:
+        return tuple(
+            f"{self.default_registry}/{self.published_image_name}:{tag}"
+            for tag in self.publish_tags
+        )
+
+    @property
     def dockerfile_path(self) -> Path:
         return ROOT / self.dockerfile
 
@@ -50,9 +67,11 @@ class CatalogVersion:
         return f"{self.build_arg}={self.build_value}"
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "provider": self.provider,
             "version": self.version,
+            "requestedVersion": self.requested_version,
+            "resolvedVersion": self.resolved_version,
             "buildValue": self.build_value,
             "tag": self.tag,
             "channel": self.channel,
@@ -64,10 +83,19 @@ class CatalogVersion:
             "localRef": self.local_ref,
             "publishedImageName": self.published_image_name,
             "publishedRef": self.published_ref,
+            "publishedAliasRefs": list(self.published_alias_refs),
             "dockerfile": self.dockerfile,
             "buildArg": self.build_arg,
             "buildArgLine": self.build_arg_line(),
+            "aliases": list(self.aliases),
+            "publishTags": list(self.publish_tags),
+            "family": self.family,
+            "runner": self.runner,
+            "runnerVersion": self.runner_version,
+            "packageVersion": self.package_version,
+            "launcherVersion": self.launcher_version,
         }
+        return {k: v for k, v in payload.items() if v not in (None, [], ())}
 
 
 def load_catalog(path: Path = CATALOG_PATH) -> dict[str, Any]:
@@ -96,25 +124,37 @@ def resolve_catalog_version(provider: str, version: str | None = None,
         return None
 
     versions = pdata.get("versions", {})
+    aliases = pdata.get("versionAliases", {}) or {}
     requested = version or "default"
-    if requested in {"default", "latest"}:
-        requested = pdata.get("defaultVersion")
+    if requested == "default":
+        resolved = str(pdata.get("defaultVersion"))
+    else:
+        resolved = str(aliases.get(requested, requested))
 
-    vdata = versions.get(requested)
+    vdata = versions.get(resolved)
     if vdata is None and channel:
         for candidate_version, candidate_data in versions.items():
             if candidate_data.get("channel") == channel:
-                requested = candidate_version
+                resolved = candidate_version
                 vdata = candidate_data
                 break
     if vdata is None:
         return None
 
+    resolved_aliases = tuple(
+        alias for alias, target in aliases.items() if str(target) == resolved
+    )
+    publish_tags = tuple(vdata.get("publishTags") or resolved_aliases)
+    runner = str(vdata.get("runner", pdata.get("runner", provider)))
+    runner_version = str(vdata.get("runnerVersion", resolved))
+
     return CatalogVersion(
         provider=provider,
-        version=requested,
-        build_value=str(vdata.get("buildValue", requested)),
-        tag=str(vdata.get("tag", requested)),
+        version=resolved,
+        requested_version=requested,
+        resolved_version=resolved,
+        build_value=str(vdata.get("buildValue", resolved)),
+        tag=str(vdata.get("tag", resolved)),
         channel=vdata.get("channel"),
         ci_build=bool(vdata.get("ciBuild", False)),
         runtime_usable=bool(vdata.get("runtimeUsable", True)),
@@ -125,6 +165,16 @@ def resolve_catalog_version(provider: str, version: str | None = None,
         dockerfile=str(pdata["dockerfile"]),
         build_arg=str(pdata["buildArg"]),
         default_registry=str(catalog.get("defaultRegistry", "ghcr.io/myos-dev")),
+        family=(str(vdata.get("family", pdata.get("family")))
+                if vdata.get("family", pdata.get("family")) is not None else None),
+        runner=runner,
+        runner_version=runner_version,
+        package_version=(str(vdata.get("packageVersion"))
+                         if vdata.get("packageVersion") is not None else None),
+        launcher_version=(str(vdata.get("launcherVersion", pdata.get("launcherVersion")))
+                          if vdata.get("launcherVersion", pdata.get("launcherVersion")) is not None else None),
+        aliases=resolved_aliases,
+        publish_tags=publish_tags,
     )
 
 
@@ -139,10 +189,14 @@ def ci_matrix() -> dict[str, list[dict[str, str]]]:
             include.append({
                 "provider": entry.provider,
                 "version": entry.version,
+                "requested_version": entry.requested_version,
+                "resolved_version": entry.resolved_version,
                 "tag": entry.tag,
                 "dockerfile": entry.dockerfile,
                 "build_arg": entry.build_arg_line(),
                 "image_name": entry.published_image_name,
+                "published_ref": entry.published_ref,
+                "published_alias_refs": "\n".join(entry.published_alias_refs),
                 "local_image": entry.local_image,
                 "runtime_usable": str(entry.runtime_usable).lower(),
             })
@@ -155,12 +209,15 @@ def shell_build_entry(provider: str, version: str) -> str:
         raise SystemExit(f"Unknown runtime catalog entry: {provider}:{version}")
     values = {
         "CATALOG_PROVIDER": entry.provider,
+        "CATALOG_REQUESTED_VERSION": entry.requested_version,
         "CATALOG_VERSION": entry.version,
+        "CATALOG_RESOLVED_VERSION": entry.resolved_version,
         "CATALOG_TAG": entry.tag,
         "CATALOG_LOCAL_IMAGE": entry.local_image,
         "CATALOG_PUBLISHED_IMAGE_NAME": entry.published_image_name,
         "CATALOG_DOCKERFILE": entry.dockerfile,
         "CATALOG_BUILD_ARG_LINE": entry.build_arg_line(),
+        "CATALOG_PUBLISH_TAGS": " ".join(entry.publish_tags),
     }
     return "\n".join(f"{k}={shlex.quote(v)}" for k, v in values.items())
 
@@ -168,10 +225,12 @@ def shell_build_entry(provider: str, version: str) -> str:
 def shell_build_list() -> str:
     rows = []
     for item in ci_matrix()["include"]:
+        entry = resolve_catalog_version(item["provider"], item["version"])
+        publish_tags = " ".join(entry.publish_tags) if entry is not None else ""
         rows.append("\t".join([
             item["provider"], item["version"], item["tag"],
             item["local_image"], item["dockerfile"], item["build_arg"],
-            item["image_name"],
+            item["image_name"], publish_tags,
         ]))
     return "\n".join(rows)
 

@@ -6,11 +6,11 @@
 #
 # Build:
 #   docker build \
-#     --build-arg WINE_VERSION=9.0 \
-#     -t winforge/wine-staging:9.0 \
+#     --build-arg WINE_PACKAGE_VERSION=11.10~bookworm-1 \
+#     -t winforge/wine-staging:11.10 \
 #     -f container/providers/wine-staging/Dockerfile .
 
-ARG WINE_VERSION=9.0
+ARG WINE_PACKAGE_VERSION=11.10~bookworm-1
 
 # ---- Stage 1: Base system ----
 FROM debian:bookworm-slim AS base
@@ -28,7 +28,7 @@ RUN set -eux; \
 
 # ---- Stage 2: WineHQ staging install ----
 FROM base AS wine-install
-ARG WINE_VERSION
+ARG WINE_PACKAGE_VERSION
 
 RUN set -eux; \
     curl -fsSL https://dl.winehq.org/wine-builds/winehq.key | \
@@ -38,7 +38,7 @@ RUN set -eux; \
         -o /etc/apt/sources.list.d/winehq.sources; \
     apt-get update -qq; \
     apt-get install -y -qq --no-install-recommends \
-        winehq-staging \
+        "winehq-staging=${WINE_PACKAGE_VERSION}" \
     ; \
     curl -fsSL "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks" \
         -o /usr/local/bin/winetricks; \

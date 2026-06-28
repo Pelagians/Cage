@@ -93,6 +93,11 @@ def build_container(
     ]
     if published_tag:
         cmd.extend(["-t", published_tag])
+        for alias_ref in entry.published_alias_refs:
+            cmd.extend(["-t", alias_ref])
+    elif entry.publish_tags:
+        for alias_tag in entry.publish_tags:
+            cmd.extend(["-t", f"{entry.local_image}:{alias_tag}"])
 
     try:
         result = subprocess.run(

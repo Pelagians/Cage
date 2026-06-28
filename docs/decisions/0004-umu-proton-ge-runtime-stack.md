@@ -13,9 +13,9 @@ WinForge uses these terms:
 - **provider ID**: the catalog-facing runtime stack selected by recipes/CLI (`wine`, `staging`, `umu-proton-ge`)
 - **launcher**: how the runtime is invoked (`wine` or `umu`)
 - **runner**: the concrete Wine/Proton build inside the image (Wine Stable, Wine Staging, GE-Proton)
-- **runner version**: the concrete runner version/tag, such as `GE-Proton9-27`
+- **runner version**: the concrete runner version/tag, such as `GE-Proton11-1`
 
-For the Proton-family v0 stack, the provider is `umu-proton-ge`, the launcher is `umu`, and the runner/version is GE-Proton / `GE-Proton9-27`.
+For the Proton-family v0 stack, the provider is `umu-proton-ge`, the launcher is `umu`, and the runner/version is GE-Proton / `GE-Proton11-1` by default.
 
 ## Reasoning
 

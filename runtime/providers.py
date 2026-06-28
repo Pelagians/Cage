@@ -15,6 +15,13 @@ class RuntimeBinding:
     provider: str
     version: str
     launcher: str
+    requested_version: str | None = None
+    resolved_version: str | None = None
+    family: str | None = None
+    runner: str | None = None
+    runner_version: str | None = None
+    package_version: str | None = None
+    launcher_version: str | None = None
     source: str | None = None
     channel: str | None = None
     digest: str | None = None
@@ -27,7 +34,14 @@ class RuntimeBinding:
         d = {k: v for k, v in {
             "provider": self.provider,
             "version": self.version,
+            "requestedVersion": self.requested_version,
+            "resolvedVersion": self.resolved_version,
+            "family": self.family,
+            "runner": self.runner,
+            "runnerVersion": self.runner_version,
+            "packageVersion": self.package_version,
             "launcher": self.launcher,
+            "launcherVersion": self.launcher_version,
             "source": self.source,
             "channel": self.channel,
             "digest": self.digest,
@@ -46,7 +60,6 @@ class RuntimeProvider(Protocol):
 
 _EXTRA_PROVIDERS: dict[str, RuntimeProvider] = {}
 
-
 def resolve_oci_image(provider: str, version: str,
                       channel: str | None = None,
                       *, published: bool = True) -> str | None:
@@ -61,15 +74,12 @@ def resolve_oci_image(provider: str, version: str,
         return None
     return entry.published_ref if published else entry.local_ref
 
-
 def resolve_local_oci_image(provider: str, version: str,
                             channel: str | None = None) -> str | None:
     return resolve_oci_image(provider, version, channel, published=False)
 
-
 def register_provider(provider: RuntimeProvider):
     _EXTRA_PROVIDERS[provider.name] = provider
-
 
 def resolve_runtime(spec: RuntimeSpec) -> RuntimeBinding:
     if spec.provider in _EXTRA_PROVIDERS:
@@ -88,7 +98,14 @@ def resolve_runtime(spec: RuntimeSpec) -> RuntimeBinding:
     return RuntimeBinding(
         provider=spec.provider,
         version=entry.version,
+        requested_version=entry.requested_version,
+        resolved_version=entry.resolved_version,
+        family=entry.family,
+        runner=entry.runner,
+        runner_version=entry.runner_version,
+        package_version=entry.package_version,
         launcher=entry.launcher,
+        launcher_version=entry.launcher_version,
         source=spec.source,
         channel=entry.channel or spec.channel,
         digest=spec.digest,

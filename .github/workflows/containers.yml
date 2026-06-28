@@ -58,8 +58,8 @@ jobs:
           file: ${{ matrix.dockerfile }}
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ matrix.tag }}
-            ${{ env.REGISTRY }}/${{ matrix.image_name }}:latest
-            ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.sha }}
+            ${{ matrix.published_ref }}
+            ${{ matrix.published_alias_refs }}
+            ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.sha }}-${{ matrix.tag }}
           build-args: |
             ${{ matrix.build_arg }}

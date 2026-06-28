@@ -40,7 +40,7 @@ Strict YAML rules:
 
 ## Application recipe fields
 
-`runtime.provider` must be one of `wine`, `staging`, or `umu-proton-ge`. `runtime.version` is required. Provider/version are selected at build time and enforced at run time; changing providers should require rebuilding. For `umu-proton-ge`, the provider identifies the UMU-backed Proton-family stack while `runtime.version` selects the GE-Proton runner tag.
+`runtime.provider` must be one of `wine`, `staging`, or `umu-proton-ge`. `runtime.version` is required and may be either a pinned runner version or a catalog alias such as `latest`, `stable`, `previous`, `legacy`, or `baseline`. Provider/version are selected at build time and enforced at run time; changing providers should require rebuilding. For `umu-proton-ge`, the provider identifies the UMU-backed Proton-family stack while `runtime.version` selects or resolves to the GE-Proton runner tag. Resolved runtime metadata records both `requestedVersion` and `resolvedVersion`; future production artifacts should use the resolved image digest, not a mutable alias, as identity.
 
 `dependencies` supports build-time dependency installation. Allowed kinds: `winetricks`, `font`, `directx`, `package`, `runtime-component`.
 
@@ -86,7 +86,7 @@ Runtime state is separate from artifact contents and should be persisted, discar
 
 ## Execution graph
 
-`metadata/graph.json` is build/provenance/contract metadata. It records application identity, resolved builder runtime, resolved runner runtime, supported graphics modes, launch contract, exact-runtime compatibility policy, and deterministic build phase nodes/edges.
+`metadata/graph.json` is build/provenance/contract metadata. It records application identity, requested and resolved builder runtime, requested and resolved runner runtime, supported graphics modes, launch contract, exact-runtime compatibility policy, and deterministic build phase nodes/edges.
 
 The graph should not become a general runtime scheduler. Runtime should be boring: verify artifact, prepare state, start display if requested, and launch the application contract.
 

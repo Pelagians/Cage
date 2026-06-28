@@ -26,7 +26,7 @@ These images are the **base layer** on which WinForge builds prefixes, installs 
 │  wineboot init, drive_c, registry hive        │    builder pipeline
 ├──────────────────────────────────────────────┤
 │          WinForge Runtime Base                │  ← This repo's container
-│ Wine/Proton-GE + Xvfb/VNC + tools/entrypoints  │    (Dockerfiles)
+│ Wine/UMU+GE-Proton + Xvfb/VNC + tools/entrypoints  │    (Dockerfiles)
 ├──────────────────────────────────────────────┤
 │          Base OS Layer                        │  ← Debian Bookworm Slim
 │  libc, libstdc++, basic runtime deps          │
@@ -46,13 +46,30 @@ where `ciBuild` is true.
 
 | Provider | Local Image | Published Image | Source | Build Arg |
 |---|---|---|---|---|
-| Wine Stable | `winforge/wine:<version>` | `ghcr.io/myos-dev/winforge-wine:<version>` | WineHQ apt (`.deb`) | `WINE_VERSION` |
-| Wine Staging | `winforge/wine-staging:<version>` | `ghcr.io/myos-dev/winforge-wine-staging:<version>` | WineHQ apt (`.deb`) | `WINE_VERSION` |
+| Wine Stable | `winforge/wine:<version>` | `ghcr.io/myos-dev/winforge-wine:<version>` | Pinned WineHQ apt (`.deb`) | `WINE_PACKAGE_VERSION` |
+| Wine Staging | `winforge/wine-staging:<version>` | `ghcr.io/myos-dev/winforge-wine-staging:<version>` | Pinned WineHQ apt (`.deb`) | `WINE_PACKAGE_VERSION` |
 | UMU + GE-Proton | `winforge/umu-proton-ge:<tag>` | `ghcr.io/myos-dev/winforge-umu-proton-ge:<tag>` | GE-Proton GitHub release + UMU launcher | `GE_PROTON_TAG` |
+
+
+### Runner aliases and pinning
+
+The catalog may accept aliases such as `latest`, `stable`, `previous`,
+`legacy`, and `baseline`, but CI builds pinned versions only. Alias tags are
+published only from the pinned matrix entry that owns the alias to avoid
+parallel jobs racing on `:latest`. Resolved bundle metadata preserves both the
+recipe request and the concrete runtime selection.
+
+Current curated build matrix:
+
+| Provider | Pinned versions | Alias tags |
+| --- | --- | --- |
+| `wine` | `11.0`, `10.0`, `9.0` | `latest`, `stable`, `previous`, `legacy` |
+| `staging` | `11.10`, `11.9`, `11.0` | `latest`, `staging-latest`, `previous`, `baseline` |
+| `umu-proton-ge` | `GE-Proton11-1`, `GE-Proton10-34`, `GE-Proton9-27` | `latest`, `previous`, `legacy` |
 
 ### Wine Stable / Staging
 
-Built from official WineHQ Debian packages. Architecture: amd64 + i386 (via multiarch).
+Built from official WineHQ Debian packages pinned by exact package version. Architecture: amd64 + i386 (via multiarch).
 
 ```
 Dockerfile structure:
@@ -99,15 +116,15 @@ published on host loopback only by default.
 # List available build definitions
 winforge container list
 
-# Build a Wine Stable 9.0 container
-winforge container build wine 9.0
+# Build current Wine Stable through the mutable alias
+winforge container build wine latest
 
-# Build and push to registry
-winforge container build wine 9.0 --engine docker --registry ghcr.io/myorg --push
+# Build and push a pinned Wine Stable runtime
+winforge container build wine 11.0 --engine docker --registry ghcr.io/myorg --push
 
-# Get the published OCI image reference for a provider+version
-winforge container ref wine 9.0
-# → ghcr.io/myos-dev/winforge-wine:9.0
+# Get the resolved published OCI image reference for a provider+alias
+winforge container ref wine latest
+# → ghcr.io/myos-dev/winforge-wine:11.0
 
 # Plan a build — includes resolved OCI image
 winforge plan examples/minimal.winforge.json
@@ -135,7 +152,7 @@ The `plan` and `build` CLI commands automatically resolve the catalog-backed OCI
 
 When VIC consumes WinForge artifacts:
 
-1. VIC pulls the catalog-resolved published base image, e.g. `ghcr.io/myos-dev/winforge-wine:<version>`
+1. VIC pulls the catalog-resolved published base image, e.g. `ghcr.io/myos-dev/winforge-wine:<resolved-version>`
 2. VIC pulls the WinForge-produced bundle OCI image (with prefix + app layer)
 3. VIC launches the combined image with the VIC runtime contract
 4. The container starts with Xvfb, enters the entrypoint, and VIC interacts via STDIO

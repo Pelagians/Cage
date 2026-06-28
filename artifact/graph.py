@@ -126,21 +126,9 @@ def build_execution_graph(manifest: Manifest) -> dict[str, Any]:
 
 def _runtime_payload(runtime: RuntimeBinding) -> dict[str, Any]:
     image = runtime.oci_image or runtime.local_oci_image
-    payload = {
-        "provider": runtime.provider,
-        "version": runtime.version,
-        "launcher": runtime.launcher,
-        "image": image,
-        "localImage": runtime.local_oci_image,
-        "runtimeUsable": runtime.runtime_usable,
-    }
-    optional = {
-        "source": runtime.source,
-        "channel": runtime.channel,
-        "digest": runtime.digest,
-        "notes": runtime.notes,
-    }
-    payload.update({k: v for k, v in optional.items() if v is not None})
+    payload = runtime.to_dict()
+    payload["image"] = image
+    payload["localImage"] = runtime.local_oci_image
     return {k: v for k, v in payload.items() if v is not None}
 
 

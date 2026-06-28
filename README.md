@@ -33,7 +33,7 @@ application recipe (YAML, CLI-generated, or normalized JSON)
   ▼
 ┌─────────────────┐       ┌──────────────────────────┐
 │ Runtime Provider│──────▶│ Catalog Runtime Image     │
-│ wine/staging/GE │       │ ghcr.io/.../winforge-wine │
+│ wine/staging/UMU│       │ ghcr.io/.../winforge-wine │
 └──────┬──────────┘       └──────────────────────────┘
        │
        ▼
@@ -132,6 +132,31 @@ registry tweaks, Wine config, launch command, state behavior, and exports. It
 does not ask users to manage Wine prefixes directly.
 
 
+
+## Runtime Providers and Runner Versions
+
+`runtime.version` may be a pinned runner version or a mutable catalog alias.
+Aliases are convenience inputs only; WinForge resolves them before writing bundle
+metadata. For example:
+
+```yaml
+runtime:
+  provider: wine
+  version: latest
+```
+
+currently resolves to Wine `11.0`, and bundle metadata records both
+`requestedVersion: latest` and `resolvedVersion: 11.0`. Use pinned versions or
+resolved OCI digests for customer/production reproducibility.
+
+Current curated runner set:
+
+| Provider | Aliases | Pinned versions |
+| --- | --- | --- |
+| `wine` | `latest`/`stable` -> `11.0`; `previous` -> `10.0`; `legacy` -> `9.0` | `11.0`, `10.0`, `9.0` |
+| `staging` | `latest`/`staging-latest` -> `11.10`; `previous` -> `11.9`; `baseline` -> `11.0` | `11.10`, `11.9`, `11.0` |
+| `umu-proton-ge` | `latest` -> `GE-Proton11-1`; `previous` -> `GE-Proton10-34`; `legacy` -> `GE-Proton9-27` | `GE-Proton11-1`, `GE-Proton10-34`, `GE-Proton9-27` |
+
 ## Running Built Artifacts
 
 `winforge run` currently consumes a verified bundle, not the original manifest. The
@@ -168,18 +193,21 @@ and Forge resolves manifests through the same catalog.
 # List available catalog-backed container build definitions
 winforge container list
 
-# Build a Wine Stable container from the catalog
-winforge container build wine 9.0
+# Build the current Wine Stable runtime alias
+winforge container build wine latest
 
-# Build Wine Staging
-winforge container build staging 9.0
+# Build a pinned previous Wine Stable runtime
+winforge container build wine 10.0
 
-# Build UMU + GE-Proton runtime
-winforge container build umu-proton-ge GE-Proton9-27
+# Build current Wine Staging
+winforge container build staging latest
 
-# Get the published OCI image reference for a provider+version
-winforge container ref wine 9.0
-# → ghcr.io/myos-dev/winforge-wine:9.0
+# Build current UMU + GE-Proton runtime
+winforge container build umu-proton-ge latest
+
+# Get the resolved published OCI image reference for a provider+version alias
+winforge container ref wine latest
+# → ghcr.io/myos-dev/winforge-wine:11.0
 
 # Build from Docker compose for local development
 # (Compose is a dev convenience; runtime/catalog.json is authoritative.)
