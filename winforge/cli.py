@@ -21,6 +21,11 @@ from artifact.index import (
     resolve_artifact,
     resolve_bundle_reference,
 )
+from artifact.kube import (
+    KubeExportError,
+    create_kube_export_plan,
+    export_kube_manifest,
+)
 from builder.executor import execute_inside_container
 from builder.pipeline import build_plan
 from container.manager import (
@@ -246,6 +251,42 @@ def cmd_export_oci(args):
     return 0 if result.get("success") else 1
 
 
+def cmd_export_kube(args):
+    bundle = resolve_bundle_reference(args.bundle, index_path=args.artifact_index)
+    if args.dry_run:
+        plan = create_kube_export_plan(
+            bundle,
+            image=args.image,
+            namespace=args.namespace,
+            name=args.name,
+            state_size=args.state_size,
+            exports_size=args.exports_size,
+            no_pvc=args.no_pvc,
+            replicas=args.replicas,
+            graphics=args.graphics,
+            allow_mutable_tag=args.allow_mutable_tag,
+        )
+        print(json.dumps(plan, indent=2, sort_keys=True))
+        return 0
+
+    if not args.output:
+        raise KubeExportError('export kube requires --output unless --dry-run is used')
+    result = export_kube_manifest(
+        bundle,
+        image=args.image,
+        output_path=Path(args.output),
+        namespace=args.namespace,
+        name=args.name,
+        state_size=args.state_size,
+        exports_size=args.exports_size,
+        no_pvc=args.no_pvc,
+        replicas=args.replicas,
+        graphics=args.graphics,
+        allow_mutable_tag=args.allow_mutable_tag,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
 
 # ---- artifact index commands ----
 
@@ -432,6 +473,23 @@ def build_parser():
     ep.add_argument("--push", action="store_true", help="Push the image after a successful local build")
     ep.set_defaults(func=cmd_export_oci)
 
+    ep = esub.add_parser("kube", help="Export Kubernetes manifests for a WinForge app image")
+    ep.add_argument("bundle", help="Path to WinForge bundle directory or app name from artifact index")
+    ep.add_argument("--artifact-index", default=None,
+                    help="Artifact index path for resolving app names (default: dist/.winforge/artifacts.json)")
+    ep.add_argument("--image", required=True, help="Digest-pinned OCI image ref, e.g. ghcr.io/org/app@sha256:...")
+    ep.add_argument("--namespace", default="default", help="Kubernetes namespace for generated resources")
+    ep.add_argument("--name", help="Kubernetes resource base name; defaults to sanitized app name")
+    ep.add_argument("--state-size", default="10Gi", help="State PVC size when PVCs are enabled")
+    ep.add_argument("--exports-size", default="10Gi", help="Exports PVC size when PVCs are enabled")
+    ep.add_argument("--replicas", type=int, default=1, help="Deployment replica count")
+    ep.add_argument("--graphics", choices=["headless", "vnc"], default="headless", help="WINFORGE_GRAPHICS value")
+    ep.add_argument("--no-pvc", action="store_true", help="Use emptyDir volumes instead of PVCs")
+    ep.add_argument("--allow-mutable-tag", action="store_true", help="Allow tag-only image refs instead of requiring @sha256")
+    ep.add_argument("--output", help="Write Kubernetes YAML to this file; required unless --dry-run")
+    ep.add_argument("--dry-run", action="store_true", help="Print the Kubernetes export plan without writing YAML")
+    ep.set_defaults(func=cmd_export_kube)
+
     # providers
     p = sub.add_parser("providers", help="List available runtime providers")
     p.add_argument("--version", default="latest",
@@ -458,6 +516,9 @@ def main(argv=None):
     except OCIExportError as exc:
         print(f"winforge: export error: {exc}", file=sys.stderr)
         return 5
+    except KubeExportError as exc:
+        print(f"winforge: kube export error: {exc}", file=sys.stderr)
+        return 7
     except ArtifactIndexError as exc:
         print(f"winforge: artifact index error: {exc}", file=sys.stderr)
         return 6

@@ -124,3 +124,14 @@ The runnable application image layout is:
 Embedded artifact metadata uses `schemaVersion: winforge.artifact-image/v0`. OCI labels mirror core metadata such as app name/version, runtime provider, requested/resolved runtime version, runner, launcher, and base image. OCI image digests are the deployable identity; embedded WinForge metadata describes artifact semantics.
 
 `winforge export oci <bundle-or-app-ref> --tag <image> --push` pushes the image and records repo digest identity from image inspection when available. `winforge image verify <image>` emits `winforge.oci-image-verification/v0` and fails if OCI labels disagree with embedded `metadata/artifact.json`, if metadata cannot be read, or if the container engine cannot inspect the image.
+
+
+## Kubernetes manifest export
+
+`winforge export kube <bundle-or-app-ref> --image <image@sha256:...> --dry-run` consumes a verified bundle, either directly by path or resolved through the local artifact index, and emits `winforge.kube-export/v0`. The plan includes application identity, namespace, Kubernetes resource base name, PVC settings, generated resource objects, and rendered YAML.
+
+`winforge export kube <bundle-or-app-ref> --image <image@sha256:...> --output <file>` writes Kubernetes YAML. It does not apply the manifest.
+
+Digest-pinned image refs are required by default because Kubernetes deployment identity should not depend on mutable tags. `--allow-mutable-tag` exists only for explicit local/demo override.
+
+The v0 manifest emitter creates a Deployment plus state/export PVCs by default. Runtime state mounts at `/var/lib/winforge/state`; exports mount at `/exports`. `--no-pvc` replaces the PVCs with `emptyDir` volumes for smoke/demo manifests. Kubernetes labels are normalized for selector/tooling safety; exact WinForge metadata such as schema, raw app name, app version, and image ref is preserved in annotations.

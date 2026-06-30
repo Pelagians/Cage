@@ -5,7 +5,7 @@ WinForge compiles application recipes into immutable application artifacts for W
 ## Component model
 
 ```text
-application recipe or CLI input -> core/manifest -> runtime/providers -> builder/pipeline -> artifact/bundle -> artifact/index -> runtime/launcher -> artifact/oci
+application recipe or CLI input -> core/manifest -> runtime/providers -> builder/pipeline -> artifact/bundle -> artifact/index -> runtime/launcher -> artifact/oci -> artifact/kube
 ```
 
 ## Design decisions
@@ -64,9 +64,11 @@ Exported images are based on the graph-resolved runtime image and embed the bund
 
 When `--push` is used, export records repo digest identity from image inspection. `winforge image verify` then compares OCI labels to embedded `metadata/artifact.json` so registry/scheduler-visible labels cannot silently drift from WinForge artifact semantics.
 
-### 10. Kubernetes integration
+### 10. Kubernetes manifest export
 
-WinForge supports OCI output for distribution and Kubernetes execution as a downstream substrate, but WinForge must not depend on Kubernetes internally.
+`artifact/kube.py` implements `winforge export kube`. It consumes a verified bundle or app-name reference and emits `winforge.kube-export/v0` plus Kubernetes YAML. The emitter requires digest-pinned image refs by default and creates a Deployment plus state/export PVCs unless `--no-pvc` is set. Labels are normalized for Kubernetes selectors, while exact WinForge artifact metadata is preserved in annotations.
+
+WinForge supports OCI output for distribution and Kubernetes execution as a downstream substrate, but WinForge must not depend on Kubernetes internally. The Kubernetes path is manifest generation only: no namespace creation, no `kubectl apply`, no tenant/session policy, and no VIC production automation authority.
 
 ## Non-goals
 

@@ -126,6 +126,12 @@ winforge export oci notepad-plus-plus \
 winforge export oci dist/notepad-plus-plus-8.6.0 \
   --tag ghcr.io/myos-dev/winforge-app-notepad-plus-plus:8.6.0
 
+# Emit Kubernetes YAML for a digest-pinned application image
+winforge export kube notepad-plus-plus \
+  --image ghcr.io/myos-dev/winforge-app-notepad-plus-plus@sha256:... \
+  --namespace winforge-apps \
+  --output k8s/notepad-plus-plus.yaml
+
 # List available runtime providers
 winforge providers
 ```
@@ -259,6 +265,36 @@ The embedded artifact metadata uses `schemaVersion: winforge.artifact-image/v0`
 and records requested/resolved runtime versions, runner, launcher, base image,
 launch contract, graphics contract, state path, and exports path.
 
+## Kubernetes Manifest Export
+
+`winforge export kube` consumes a verified bundle or app-name reference and emits
+Kubernetes YAML for a previously built/pushed WinForge application image. It does
+not call `kubectl`, create namespaces, or apply resources.
+
+Digest-pinned image refs are required by default:
+
+```bash
+winforge export kube my-app \
+  --image ghcr.io/myos-dev/winforge-app-my-app@sha256:... \
+  --namespace winforge-apps \
+  --output k8s/my-app.yaml
+```
+
+Dry-run mode prints the `winforge.kube-export/v0` plan, including generated YAML:
+
+```bash
+winforge export kube my-app \
+  --image ghcr.io/myos-dev/winforge-app-my-app@sha256:... \
+  --dry-run
+```
+
+By default the emitter creates a Deployment plus PVCs for runtime state and
+exports. Use `--no-pvc` for smoke/demo manifests that use `emptyDir` volumes.
+Mutable tags are rejected unless `--allow-mutable-tag` is supplied explicitly.
+Kubernetes labels are normalized for selector/tooling safety; exact WinForge
+metadata such as schema, raw app name, version, and image ref is preserved in
+annotations.
+
 ## WinForge WINE Container
 
 The runtime provider containers are the OCI execution substrate.
@@ -356,6 +392,7 @@ WinForge/
 │   ├── inspection.py            # Bundle inspect/verify contract checks
 │   ├── index.py                 # Local app-name artifact index
 │   ├── oci.py                   # Runnable application OCI export
+│   ├── kube.py                  # Kubernetes manifest export
 │   └── exporter.py              # Bundle export utilities
 ├── tests/                       # Unit tests
 ├── docs/                        # Architecture docs, ADRs
