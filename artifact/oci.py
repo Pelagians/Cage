@@ -19,6 +19,8 @@ from artifact.inspection import verify_bundle
 ARTIFACT_IMAGE_SCHEMA_VERSION = 'winforge.artifact-image/v0'
 OCI_EXPORT_PLAN_SCHEMA_VERSION = 'winforge.oci-export-plan/v0'
 OCI_EXPORT_RESULT_SCHEMA_VERSION = 'winforge.oci-export-result/v0'
+OCI_IMAGE_INSPECTION_SCHEMA_VERSION = 'winforge.oci-image-inspection/v0'
+OCI_IMAGE_VERIFICATION_SCHEMA_VERSION = 'winforge.oci-image-verification/v0'
 
 BUNDLE_ROOT = '/opt/winforge/bundle'
 STATE_ROOT = '/var/lib/winforge/state'
@@ -218,7 +220,217 @@ def export_oci_image(
         result['success'] = result['success'] and push_proc.returncode == 0
         if push_proc.returncode != 0:
             result['error'] = 'OCI image push failed'
+        else:
+            image_identity = inspect_oci_image(tag, engine=selected_engine, timeout=timeout)
+            result['image'] = image_identity
+            if image_identity.get('success') and image_identity.get('digest'):
+                result['push']['digest'] = image_identity['digest']
+                result['push']['repoDigests'] = image_identity.get('repoDigests', [])
+            else:
+                result['success'] = False
+                result['error'] = 'OCI image push succeeded but no repo digest was recorded'
     return result
+
+
+def inspect_oci_image(
+    image_ref: str,
+    *,
+    engine: str | None = None,
+    timeout: int = 60,
+) -> dict[str, Any]:
+    '''Inspect a local OCI image and return digest/label identity metadata.'''
+    selected_engine = _select_engine(engine)
+    requested = engine or 'podman/docker'
+    if selected_engine is None:
+        return {
+            'schemaVersion': OCI_IMAGE_INSPECTION_SCHEMA_VERSION,
+            'success': False,
+            'imageRef': image_ref,
+            'engine': requested,
+            'command': [],
+            'errors': [f'container build engine not found: {requested}'],
+            'warnings': [],
+        }
+
+    command = [selected_engine, 'image', 'inspect', image_ref]
+    try:
+        proc = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        return {
+            'schemaVersion': OCI_IMAGE_INSPECTION_SCHEMA_VERSION,
+            'success': False,
+            'imageRef': image_ref,
+            'engine': selected_engine,
+            'command': command,
+            'errors': [f'container build engine not found: {selected_engine}: {exc}'],
+            'warnings': [],
+        }
+
+    if proc.returncode != 0:
+        return {
+            'schemaVersion': OCI_IMAGE_INSPECTION_SCHEMA_VERSION,
+            'success': False,
+            'imageRef': image_ref,
+            'engine': selected_engine,
+            'command': command,
+            'exitCode': proc.returncode,
+            'stdout': proc.stdout,
+            'stderr': proc.stderr,
+            'errors': ['OCI image inspect failed'],
+            'warnings': [],
+        }
+
+    try:
+        parsed = json.loads(proc.stdout)
+        record = parsed[0] if isinstance(parsed, list) and parsed else parsed
+    except (json.JSONDecodeError, TypeError, IndexError) as exc:
+        return {
+            'schemaVersion': OCI_IMAGE_INSPECTION_SCHEMA_VERSION,
+            'success': False,
+            'imageRef': image_ref,
+            'engine': selected_engine,
+            'command': command,
+            'exitCode': proc.returncode,
+            'stdout': proc.stdout,
+            'stderr': proc.stderr,
+            'errors': [f'OCI image inspect returned invalid JSON: {exc}'],
+            'warnings': [],
+        }
+
+    repo_digests = list(record.get('RepoDigests') or [])
+    labels = dict((record.get('Config') or {}).get('Labels') or {})
+    digest = _digest_from_repo_digests(repo_digests)
+    return {
+        'schemaVersion': OCI_IMAGE_INSPECTION_SCHEMA_VERSION,
+        'success': True,
+        'imageRef': image_ref,
+        'engine': selected_engine,
+        'command': command,
+        'imageId': record.get('Id'),
+        'repoDigests': repo_digests,
+        'digest': digest,
+        'labels': labels,
+        'warnings': [] if digest else ['image has no repo digest recorded locally'],
+        'errors': [],
+    }
+
+
+def verify_oci_image_metadata(
+    image_ref: str,
+    *,
+    engine: str | None = None,
+    timeout: int = 60,
+) -> dict[str, Any]:
+    '''Verify OCI labels match embedded WinForge artifact metadata.'''
+    selected_engine = _select_engine(engine)
+    requested = engine or 'podman/docker'
+    if selected_engine is None:
+        return _image_verification_result(
+            image_ref=image_ref,
+            engine=requested,
+            image=None,
+            artifact=None,
+            checks=[],
+            errors=[f'container build engine not found: {requested}'],
+            warnings=[],
+        )
+
+    image = inspect_oci_image(image_ref, engine=selected_engine, timeout=timeout)
+    if not image.get('success'):
+        return _image_verification_result(
+            image_ref=image_ref,
+            engine=selected_engine,
+            image=image,
+            artifact=None,
+            checks=[],
+            errors=list(image.get('errors') or ['OCI image inspect failed']),
+            warnings=list(image.get('warnings') or []),
+        )
+
+    cat_command = [
+        selected_engine, 'run', '--rm', '--entrypoint', '/bin/cat',
+        image_ref, f'{BUNDLE_ROOT}/metadata/artifact.json',
+    ]
+    proc = subprocess.run(
+        cat_command,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return _image_verification_result(
+            image_ref=image_ref,
+            engine=selected_engine,
+            image=image,
+            artifact=None,
+            checks=[],
+            errors=['unable to read embedded WinForge artifact metadata from image'],
+            warnings=list(image.get('warnings') or []),
+            extra={'metadataCommand': cat_command, 'stderr': proc.stderr, 'stdout': proc.stdout},
+        )
+
+    try:
+        artifact = json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        return _image_verification_result(
+            image_ref=image_ref,
+            engine=selected_engine,
+            image=image,
+            artifact=None,
+            checks=[],
+            errors=[f'embedded WinForge artifact metadata is invalid JSON: {exc}'],
+            warnings=list(image.get('warnings') or []),
+            extra={'metadataCommand': cat_command, 'stdout': proc.stdout},
+        )
+
+    labels = image.get('labels') or {}
+    checks: list[dict[str, Any]] = []
+    errors: list[str] = []
+
+    def add_check(check_id: str, label_key: str, expected: Any) -> None:
+        actual = labels.get(label_key)
+        ok = str(actual) == str(expected)
+        checks.append({
+            'id': check_id,
+            'ok': ok,
+            'label': label_key,
+            'actual': actual,
+            'expected': expected,
+        })
+        if not ok:
+            errors.append(
+                f'label {label_key} mismatch: expected {expected!r}, got {actual!r}'
+            )
+
+    runtime = artifact.get('runtime') or {}
+    application = artifact.get('application') or {}
+    add_check('schema', 'io.winforge.schema', artifact.get('schemaVersion'))
+    add_check('app-name', 'io.winforge.app.name', application.get('name'))
+    add_check('app-version', 'io.winforge.app.version', application.get('version'))
+    add_check('runtime-provider', 'io.winforge.runtime.provider', runtime.get('provider'))
+    add_check('runtime-requested-version', 'io.winforge.runtime.requestedVersion', runtime.get('requestedVersion'))
+    add_check('runtime-resolved-version', 'io.winforge.runtime.resolvedVersion', runtime.get('resolvedVersion'))
+    add_check('runtime-base-image', 'io.winforge.runtime.baseImage', runtime.get('baseImage'))
+    add_check('runner', 'io.winforge.runner', runtime.get('runner'))
+    add_check('launcher', 'io.winforge.launcher', runtime.get('launcher'))
+
+    return _image_verification_result(
+        image_ref=image_ref,
+        engine=selected_engine,
+        image=image,
+        artifact=artifact,
+        checks=checks,
+        errors=errors,
+        warnings=list(image.get('warnings') or []),
+        extra={'metadataCommand': cat_command},
+    )
 
 
 # Backward-compatible mapping helper used by the existing `winforge build` path.
@@ -425,6 +637,42 @@ def _result(
     }
     if error:
         result['error'] = error
+    return result
+
+
+def _digest_from_repo_digests(repo_digests: list[str]) -> str | None:
+    for ref in repo_digests:
+        if '@sha256:' in ref:
+            return 'sha256:' + ref.split('@sha256:', 1)[1]
+    return None
+
+
+def _image_verification_result(
+    *,
+    image_ref: str,
+    engine: str,
+    image: dict[str, Any] | None,
+    artifact: dict[str, Any] | None,
+    checks: list[dict[str, Any]],
+    errors: list[str],
+    warnings: list[str],
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    valid = not errors and bool(checks or artifact is not None)
+    result = {
+        'schemaVersion': OCI_IMAGE_VERIFICATION_SCHEMA_VERSION,
+        'success': valid,
+        'valid': valid,
+        'imageRef': image_ref,
+        'engine': engine,
+        'image': image,
+        'artifactMetadata': artifact,
+        'checks': checks,
+        'errors': errors,
+        'warnings': warnings,
+    }
+    if extra:
+        result.update(extra)
     return result
 
 

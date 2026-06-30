@@ -10,6 +10,7 @@ from artifact.oci import (
     build_oci_image,
     create_oci_export_plan,
     export_oci_image,
+    verify_oci_image_metadata,
 )
 from artifact.inspection import inspect_bundle, verify_bundle
 from artifact.index import (
@@ -176,6 +177,18 @@ def cmd_run(args):
     return 0 if result.get("success") else int(result.get("exitCode") or 1)
 
 
+# ---- image commands ----
+
+def cmd_image_verify(args):
+    result = verify_oci_image_metadata(
+        args.image,
+        engine=args.engine,
+        timeout=args.timeout,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0 if result.get('valid') else 1
+
+
 # ---- container commands ----
 
 
@@ -337,6 +350,18 @@ def build_parser():
     p.add_argument("--timeout", type=int, default=None,
                    help="Optional max seconds for the run process")
     p.set_defaults(func=cmd_run)
+
+    # image
+    p = sub.add_parser("image", help="Inspect and verify WinForge application OCI images")
+    isub = p.add_subparsers(dest="image_command", required=True)
+
+    ip = isub.add_parser("verify", help="Verify OCI labels match embedded WinForge metadata")
+    ip.add_argument("image", help="OCI image reference to verify")
+    ip.add_argument("--engine", default=None,
+                    help="Container engine (podman, docker). Auto-detect if omitted.")
+    ip.add_argument("--timeout", type=int, default=60,
+                    help="Max seconds for image inspect/read commands")
+    ip.set_defaults(func=cmd_image_verify)
 
     # container
     p = sub.add_parser("container", help="Manage WinForge runtime OCI containers")

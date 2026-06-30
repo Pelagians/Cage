@@ -121,4 +121,6 @@ The runnable application image layout is:
 /usr/local/bin/winforge-app-launch
 ```
 
-Embedded artifact metadata uses `schemaVersion: winforge.artifact-image/v0`. OCI labels mirror core metadata such as app name/version, runtime provider, requested/resolved runtime version, runner, launcher, and base image. OCI image digests are the deployable identity; embedded WinForge metadata describes artifact semantics. A future verification command should fail if labels and embedded metadata disagree.
+Embedded artifact metadata uses `schemaVersion: winforge.artifact-image/v0`. OCI labels mirror core metadata such as app name/version, runtime provider, requested/resolved runtime version, runner, launcher, and base image. OCI image digests are the deployable identity; embedded WinForge metadata describes artifact semantics.
+
+`winforge export oci <bundle-or-app-ref> --tag <image> --push` pushes the image and records repo digest identity from image inspection when available. `winforge image verify <image>` emits `winforge.oci-image-verification/v0` and fails if OCI labels disagree with embedded `metadata/artifact.json`, if metadata cannot be read, or if the container engine cannot inspect the image.

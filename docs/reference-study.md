@@ -11,6 +11,8 @@ WinForge borrows from nearby systems without inheriting their wrong assumptions.
 - wine-tkg-style tooling: pinned Wine/Proton runtime builds and provenance.
 - ramalama: application-first UX and provider/driver selection pattern, applied to Wine-family runtimes.
 - OCI images: canonical deployable artifact direction, not the user-facing semantic model by itself.
+- docker-wine: mature Wine-in-container ergonomics (UID/GID mapping, X11/Xvfb/RDP/audio, entrypoint validation), but its goal is a general mutable Wine desktop/container rather than reproducible application artifacts.
+- LSW: useful foundation-first compatibility architecture and path/registry translation reference, but its goal is direct PE/Win32 execution without Wine, including kernel/module work, which is outside WinForge's scope.
 - Nix: reproducible inputs and immutable outputs.
 
 Summary:

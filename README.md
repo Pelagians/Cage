@@ -235,6 +235,15 @@ staged bundle copy, generates a `Containerfile`, adds
 winforge export oci dist/my-app-1.0.0 \
   --tag ghcr.io/myos-dev/winforge-app-my-app:1.0.0 \
   --engine docker
+
+# Build, push, and record repo digest identity when available
+winforge export oci my-app \
+  --tag ghcr.io/myos-dev/winforge-app-my-app:1.0.0 \
+  --engine docker \
+  --push
+
+# Verify OCI labels match embedded WinForge artifact metadata
+winforge image verify ghcr.io/myos-dev/winforge-app-my-app:1.0.0 --engine docker
 ```
 
 The source bundle is not mutated. The image layout is:
@@ -312,6 +321,8 @@ WinForge's design draws from the broader Wine/Proton ecosystem:
 | [umu-protonfixes](https://github.com/Open-Wine-Components/umu-protonfixes) | Verb/component catalog (`*.verb`), game engine detection, store-agnostic fix layering |
 | [Steam Runtime](https://github.com/valvesoftware/steam-runtime) | Layer composition model, build-runtime.py pattern, template-based manifest generation |
 | [MTGOBot](https://github.com/videre-project/MTGOBot) | Headless Wine OCI container pattern (Xvfb entrypoint, DISPLAY=:99, wine --headless) |
+| [docker-wine](https://github.com/scottyhardy/docker-wine) | Container ergonomics: UID/GID mapping, display modes, Xvfb/RDP/audio concerns; WinForge does not adopt its mutable desktop-container goal |
+| [LSW](https://github.com/barrersoftware/lsw) | Foundation-first compatibility architecture and path/registry translation awareness; WinForge does not adopt its no-Wine/kernel/PE-loader goal |
 
 Detailed analysis in [docs/reference-study.md](docs/reference-study.md).
 

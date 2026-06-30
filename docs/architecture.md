@@ -62,6 +62,8 @@ The deterministic pipeline is `init-prefix`, `install-dependencies`, `install-ap
 
 Exported images are based on the graph-resolved runtime image and embed the bundle at `/opt/winforge/bundle`. Runtime state and exports are separate at `/var/lib/winforge/state` and `/exports`.
 
+When `--push` is used, export records repo digest identity from image inspection. `winforge image verify` then compares OCI labels to embedded `metadata/artifact.json` so registry/scheduler-visible labels cannot silently drift from WinForge artifact semantics.
+
 ### 10. Kubernetes integration
 
 WinForge supports OCI output for distribution and Kubernetes execution as a downstream substrate, but WinForge must not depend on Kubernetes internally.
