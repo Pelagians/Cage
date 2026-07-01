@@ -242,6 +242,15 @@ filesystem:
 
 `mode: merge` copies the contents of the source directory into the target directory. That supports BlueBuild-style customer-provided folders such as `Program Files` trees without treating an entire Wine prefix as the source of truth. Installers/ISOs remain modeled through `install[]` and `sources[]`; BYO prefix import is still possible later as a convenience path, but reproducibility should be proven from installers/media/files first.
 
+Use `media stage` to copy or extract local BYO media into a normalized workspace tree before writing/running recipes:
+
+```bash
+winforge media stage ~/Downloads/vendor-suite.zip --name vendor-suite --workspace .
+# writes ./sources/vendor-suite/media and ./sources/vendor-suite/metadata/media-stage.json
+```
+
+The staged copy normalizes ownership/mode issues from read-only media and rejects archive path traversal. ISO staging requires a local extractor such as `bsdtar` or `7z`.
+
 Suite apps can also declare named entrypoints and file associations:
 
 ```yaml
@@ -272,6 +281,14 @@ winforge sources verify examples/notepad-plus-plus.winforge.yaml --workspace .
 ```
 
 The output is `schemaVersion: winforge.source-integrity/v0` and reports every declared source, install source, filesystem overlay, resolved local path, sha256 result, warning, and error. v0 builds consume local workspace files; remote URLs are recorded as provenance but must be materialized locally for install/filesystem steps.
+
+For BYO media, run a separate policy audit before spending time in Wine:
+
+```bash
+winforge sources audit examples/notepad-plus-plus.winforge.yaml --workspace .
+```
+
+The audit emits `schemaVersion: winforge.source-policy/v0`, scans local source paths/names only, and blocks suspicious activation/KMS/crack/bypass/product-key artifact names without reading file contents into the report.
 
 For a compatibility evidence pass:
 

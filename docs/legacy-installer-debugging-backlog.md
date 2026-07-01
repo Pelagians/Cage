@@ -25,29 +25,31 @@ WinForge must not ship Office recipes, Office containers, Office payloads, produ
 
 ### Slice 1: media staging and source-policy preflight
 
+Status: implemented in initial v0 on `hermes-0.1/legacy-installer-followup`.
+
 Goal: make BYO ISO/archive/file media setup reproducible and safe before Wine execution.
 
-Candidate CLI:
+Implemented CLI:
 
 ```bash
 winforge media stage <source> --name <id> --workspace <dir>
 winforge sources audit <recipe> --workspace <dir>
 ```
 
-Likely files:
+Touched files:
 
+- `core/media.py`
 - `core/sources.py`
-- new `core/media.py` or `core/source_policy.py`
 - `winforge/cli.py`
-- tests under `tests/`
+- `tests/test_media_staging_and_policy.py`
 
 Acceptance criteria:
 
 - ISO/archive extraction normalizes ownership and user-writable modes in the staged copy.
 - Staging produces a small metadata file with source path, staged path, file count, byte size, and hash data where available.
 - Policy audit flags suspicious names/patterns such as activation/KMS/crack/bypass artifacts without executing them.
-- Audit output is machine-readable and has a redacted human summary.
-- Tests cover clean media, suspicious media, read-only extracted files, missing source, and path traversal prevention.
+- Audit output is machine-readable and avoids reading source file contents into the report.
+- Tests cover clean media, suspicious media, read-only copied media, missing source, and archive path traversal prevention.
 
 ### Slice 2: installer script linter
 
@@ -176,8 +178,7 @@ Acceptance criteria:
 
 ## Recommended next development order
 
-1. **Slice 1: media staging and source-policy preflight** — low-risk, directly reduces unsafe/manual source setup, and supports every BYO workflow.
-2. **Slice 5: failure analysis** — high leverage for any hard installer and easy to test against synthetic logs.
+1. **Slice 5: failure analysis** — next recommended slice; high leverage for any hard installer and easy to test against synthetic logs.
 3. **Slice 3: checkpoint inspect/resume** — makes slow dependency work reusable.
 4. **Slice 4: visible installer debug command** — removes ad hoc noVNC scripts once the evidence/reporting contracts are in place.
 5. **Slice 2: installer script linter** — small but useful guardrail; can be done earlier if touching install parsing.

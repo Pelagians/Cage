@@ -36,7 +36,8 @@ from container.manager import (
 from compat.corpus import load_default_corpus
 from compat.evidence import run_compat_test
 from core.manifest import ManifestError, RuntimeSpec, load_manifest
-from core.sources import verify_manifest_sources
+from core.sources import audit_manifest_sources, verify_manifest_sources
+from core.media import MediaStageError, stage_media
 from runtime.providers import list_providers, resolve_runtime
 from runtime.launcher import RunError, build_run_plan, execute_run_plan
 from runtime.runner_cache import RunnerCacheError, diagnose_runner, ensure_runner
@@ -88,6 +89,25 @@ def cmd_sources_verify(args):
     result = verify_manifest_sources(manifest, workspace=workspace)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result.get("valid") else 8
+
+
+def cmd_sources_audit(args):
+    manifest = load_manifest(Path(args.manifest))
+    workspace = Path(args.workspace) if args.workspace else Path.cwd()
+    result = audit_manifest_sources(manifest, workspace=workspace)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0 if result.get("valid") else 8
+
+
+def cmd_media_stage(args):
+    result = stage_media(
+        Path(args.source),
+        name=args.name,
+        workspace=Path(args.workspace) if args.workspace else Path.cwd(),
+        overwrite=args.overwrite,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
 
 
 def cmd_compat_test(args):
@@ -594,6 +614,22 @@ def build_parser():
     sp.add_argument("--workspace", help="Workspace root for relative local sources (default: cwd)")
     sp.set_defaults(func=cmd_sources_verify)
 
+    sp = ssub.add_parser("audit", help="Audit local recipe source paths for blocked policy artifacts")
+    sp.add_argument("manifest", help="Path to WinForge manifest")
+    sp.add_argument("--workspace", help="Workspace root for relative local sources (default: cwd)")
+    sp.set_defaults(func=cmd_sources_audit)
+
+    # media
+    p = sub.add_parser("media", help="Stage BYO media into the WinForge workspace")
+    msub = p.add_subparsers(dest="media_command", required=True)
+
+    mp = msub.add_parser("stage", help="Stage local BYO media under sources/<name>/media")
+    mp.add_argument("source", help="Local directory, archive, ISO, or file to stage")
+    mp.add_argument("--name", required=True, help="Safe source id/name for workspace staging")
+    mp.add_argument("--workspace", help="Workspace root for staged media (default: cwd)")
+    mp.add_argument("--overwrite", action="store_true", help="Replace an existing staged media directory")
+    mp.set_defaults(func=cmd_media_stage)
+
     # compatibility evidence
     p = sub.add_parser("compat", help="Collect compatibility evidence for a recipe")
     csub = p.add_subparsers(dest="compat_command", required=True)
@@ -681,6 +717,9 @@ def main(argv=None):
     except (RunnerCatalogError, RunnerCacheError) as exc:
         print(f"winforge: runner error: {exc}", file=sys.stderr)
         return 10
+    except MediaStageError as exc:
+        print(f"winforge: media error: {exc}", file=sys.stderr)
+        return 11
     except ArtifactIndexError as exc:
         print(f"winforge: artifact index error: {exc}", file=sys.stderr)
         return 6
