@@ -112,7 +112,25 @@ def _resolve_image_ref(manifest: Manifest, engine: str) -> str | None:
 RUNNER_CONTAINER_DIR = "/opt/winforge-runner"
 
 
-def _prepare_runner_cache(manifest: Manifest, cache_dir: Path | str | None) -> dict[str, Any] | None:
+def _volume_mount(source: Path | str, target: str, *, engine: str, read_only: bool = False) -> str:
+    """Return a Docker/Podman bind mount string.
+
+    Rootless Podman on SELinux-enforcing hosts needs an SELinux label option
+    for bind-mounted source trees, otherwise scripts such as
+    /opt/winforge/build/run.sh can exist but be unreadable inside the
+    container ("Permission denied"). Use the shared label so the same bundle,
+    workspace, and runner cache can be reused by build and run containers.
+    """
+    options: list[str] = []
+    if read_only:
+        options.append("ro")
+    if engine == "podman":
+        options.append("z")
+    suffix = f":{','.join(options)}" if options else ""
+    return f"{Path(source).resolve()}:{target}{suffix}"
+
+
+def _prepare_runner_cache(manifest: Manifest, cache_dir: Path | str | None, *, engine: str) -> dict[str, Any] | None:
     runner_id = manifest.runtime.runner
     if not runner_id:
         return None
@@ -123,7 +141,7 @@ def _prepare_runner_cache(manifest: Manifest, cache_dir: Path | str | None) -> d
         "runnerId": runner_id,
         "containerDir": RUNNER_CONTAINER_DIR,
         "containerBin": f"{RUNNER_CONTAINER_DIR}/bin",
-        "mount": f"{runner_dir}:{RUNNER_CONTAINER_DIR}:ro",
+        "mount": _volume_mount(runner_dir, RUNNER_CONTAINER_DIR, engine=engine, read_only=True),
         "environment": {
             "WINFORGE_RUNNER_ID": runner_id,
             "WINFORGE_RUNNER_BIN": f"{RUNNER_CONTAINER_DIR}/bin",
@@ -171,7 +189,7 @@ def execute_inside_container(
         img = _img_ref(manifest.runtime.provider, manifest.runtime.version)
 
     # ---- Resolve optional downloadable runner cache ----
-    runner_cache = _prepare_runner_cache(manifest, runner_cache_dir)
+    runner_cache = _prepare_runner_cache(manifest, runner_cache_dir, engine=engine)
 
     # ---- Write the build script into the bundle ----
     script_path = bundle_path / "build" / "run.sh"
@@ -193,8 +211,8 @@ def execute_inside_container(
     host_bundle = bundle_path.resolve()
     host_workspace = Path(workspace or Path.cwd()).resolve()
     mounts = [
-        f"{host_bundle}:/opt/winforge",
-        f"{host_workspace}:/workspace:ro",
+        _volume_mount(host_bundle, "/opt/winforge", engine=engine),
+        _volume_mount(host_workspace, "/workspace", engine=engine, read_only=True),
     ]
     environment: dict[str, str] = {}
     if runner_cache:

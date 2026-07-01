@@ -58,7 +58,8 @@ def build_run_plan(
     suite_entrypoints = list(graph.get("entrypoints") or [])
     file_associations = list(graph.get("fileAssociations") or [])
     selected_entrypoint, launch = _select_launch(launch, suite_entrypoints, entrypoint)
-    file_arguments = _file_arguments(files or [])
+    selected_engine = engine or _find_engine()
+    file_arguments = _file_arguments(files or [], engine=selected_engine)
     graphics_contract = dict(graph.get("graphics") or {})
     compatibility_policy = dict((graph.get("compatibility") or {}).get("requestedPolicy") or {})
     compatibility_env = compatibility_environment(compatibility_policy)
@@ -75,9 +76,8 @@ def build_run_plan(
         )
 
     image = _runtime_image(runtime)
-    selected_engine = engine or _find_engine()
     launch_command = _launch_command(runtime, launch, [item["winePath"] for item in file_arguments])
-    runner_cache = _runner_cache_plan(runtime, runner_cache_dir, require_runner=require_runner)
+    runner_cache = _runner_cache_plan(runtime, runner_cache_dir, require_runner=require_runner, engine=selected_engine)
     environment = _container_environment(mode)
     environment.update(compatibility_env)
     if runner_cache and runner_cache.get("status") == "present":
@@ -147,7 +147,7 @@ def build_run_plan(
         "container": {
             "engine": selected_engine,
             "image": image,
-            "bundleMount": f"{bundle.resolve()}:{BUNDLE_MOUNT}:ro",
+            "bundleMount": _volume_mount(bundle, BUNDLE_MOUNT, engine=selected_engine, read_only=True),
             "fileMounts": [item["mount"] for item in file_arguments],
             "runnerMount": runner_cache["mount"] if runner_cache and runner_cache.get("status") == "present" else None,
             "environment": environment,
@@ -206,6 +206,7 @@ def _runner_cache_plan(
     cache_dir: Path | str | None,
     *,
     require_runner: bool,
+    engine: str,
 ) -> dict[str, Any] | None:
     runner_id = runtime.get("runner")
     runner_source = runtime.get("runnerSource")
@@ -242,7 +243,7 @@ def _runner_cache_plan(
     return {
         **base,
         "status": "present",
-        "mount": f"{runner_dir}:{RUNNER_CONTAINER_DIR}:ro",
+        "mount": _volume_mount(runner_dir, RUNNER_CONTAINER_DIR, engine=engine, read_only=True),
         "environment": {
             "WINFORGE_RUNNER_ID": runner_id,
             "WINFORGE_RUNNER_BIN": f"{RUNNER_CONTAINER_DIR}/bin",
@@ -271,6 +272,21 @@ def _find_engine() -> str:
     raise RunError("No container engine found. Install Podman or Docker, or use --dry-run.")
 
 
+def _volume_mount(source: Path | str, target: str, *, engine: str, read_only: bool = False) -> str:
+    """Return a Docker/Podman bind mount string.
+
+    Rootless Podman on SELinux hosts needs a shared label option for bind
+    mounts; Docker keeps the traditional mount syntax.
+    """
+    options: list[str] = []
+    if read_only:
+        options.append("ro")
+    if engine == "podman":
+        options.append("z")
+    suffix = f":{','.join(options)}" if options else ""
+    return f"{Path(source).resolve()}:{target}{suffix}"
+
+
 def _container_argv(
     engine: str,
     bundle: Path,
@@ -287,7 +303,7 @@ def _container_argv(
     argv = [engine, "run", "--rm"]
     if container_name:
         argv.extend(["--name", container_name])
-    argv.extend(["-v", f"{bundle.resolve()}:{BUNDLE_MOUNT}:ro"])
+    argv.extend(["-v", _volume_mount(bundle, BUNDLE_MOUNT, engine=engine, read_only=True)])
     for mount in file_mounts or []:
         argv.extend(["-v", mount])
     for key, value in environment.items():
@@ -402,7 +418,7 @@ def _select_launch(
     raise RunError(f"unknown suite entrypoint: {requested}{suffix}")
 
 
-def _file_arguments(files: list[Path | str]) -> list[dict[str, str]]:
+def _file_arguments(files: list[Path | str], *, engine: str) -> list[dict[str, str]]:
     arguments: list[dict[str, str]] = []
     for index, raw in enumerate(files):
         host = Path(raw).expanduser().resolve()
@@ -417,7 +433,7 @@ def _file_arguments(files: list[Path | str]) -> list[dict[str, str]]:
             "hostPath": str(host),
             "containerPath": container_path,
             "winePath": wine_path,
-            "mount": f"{host.parent}:{container_dir}:ro",
+            "mount": _volume_mount(host.parent, container_dir, engine=engine, read_only=True),
         })
     return arguments
 

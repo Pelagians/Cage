@@ -114,6 +114,20 @@ For `winforge run --graphics vnc`, the launcher script starts `x11vnc` against
 the Xvfb display and starts `websockify` for browser/noVNC access. Ports are
 published on host loopback only by default.
 
+## Bind Mounts and SELinux
+
+On SELinux-enforcing hosts such as Fedora/myOS, rootless Podman bind mounts need
+a shared SELinux label option. WinForge emits Podman mounts with `z` while
+keeping Docker syntax unchanged:
+
+- writable build bundle: `HOST:/opt/winforge:z`
+- read-only workspace: `HOST:/workspace:ro,z`
+- read-only run bundle: `HOST:/opt/winforge/bundle:ro,z`
+- read-only cached runner: `HOST:/opt/winforge-runner:ro,z`
+
+Without this label, the container can see a bind-mounted path such as
+`/opt/winforge/build/run.sh` but fail to read it with `Permission denied`.
+
 ## CLI Integration
 
 ```bash

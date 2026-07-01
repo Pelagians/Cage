@@ -71,7 +71,7 @@ class RunnerExecutionBuildTests(unittest.TestCase):
         self.assertTrue(result.success)
         ensure_runner.assert_called_once_with("pol-4.3", cache_dir=tmp / "cache")
         argv = run.call_args.args[0]
-        self.assertIn(f"{runner_dir.resolve()}:/opt/winforge-runner:ro", argv)
+        self.assertIn(f"{runner_dir.resolve()}:/opt/winforge-runner:ro,z", argv)
         self.assertIn("WINFORGE_RUNNER_BIN=/opt/winforge-runner/bin", argv)
         self.assertIn("WINFORGE_RUNNER_ID=pol-4.3", argv)
         self.assertIn('export PATH="$WINFORGE_RUNNER_BIN:$PATH"', script)
@@ -98,10 +98,48 @@ class RunnerExecutionRunPlanTests(unittest.TestCase):
         self.assertEqual(plan["runnerCache"]["status"], "present")
         self.assertEqual(plan["runnerCache"]["runnerId"], "pol-4.3")
         self.assertEqual(plan["runnerCache"]["containerDir"], "/opt/winforge-runner")
-        self.assertIn(f"{runner_dir.resolve()}:/opt/winforge-runner:ro", plan["container"]["argv"])
+        self.assertIn(f"{runner_dir.resolve()}:/opt/winforge-runner:ro,z", plan["container"]["argv"])
         self.assertEqual(plan["container"]["environment"]["WINFORGE_RUNNER_BIN"], "/opt/winforge-runner/bin")
         self.assertEqual(plan["container"]["environment"]["WINFORGE_RUNNER_ID"], "pol-4.3")
         self.assertIn('export PATH="$WINFORGE_RUNNER_BIN:$PATH"', plan["container"]["script"])
+
+    def test_podman_run_plan_mounts_include_selinux_shared_relabel_option(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            runner_dir = tmp / "cache" / "pol-4.3"
+            (runner_dir / "bin").mkdir(parents=True)
+            (runner_dir / "bin" / "wine").write_text("#!/bin/sh\n", encoding="utf-8")
+            bundle = create_bundle(Manifest.from_dict(RUNNER_MANIFEST), tmp / "dist", dry_run=True)
+
+            plan = build_run_plan(
+                bundle,
+                graphics="headless",
+                engine="podman",
+                runner_cache_dir=tmp / "cache",
+            )
+
+        self.assertEqual(plan["container"]["bundleMount"], f"{bundle.resolve()}:/opt/winforge/bundle:ro,z")
+        self.assertIn(f"{bundle.resolve()}:/opt/winforge/bundle:ro,z", plan["container"]["argv"])
+        self.assertIn(f"{runner_dir.resolve()}:/opt/winforge-runner:ro,z", plan["container"]["argv"])
+
+    def test_docker_run_plan_mounts_do_not_include_podman_selinux_option(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            runner_dir = tmp / "cache" / "pol-4.3"
+            (runner_dir / "bin").mkdir(parents=True)
+            (runner_dir / "bin" / "wine").write_text("#!/bin/sh\n", encoding="utf-8")
+            bundle = create_bundle(Manifest.from_dict(RUNNER_MANIFEST), tmp / "dist", dry_run=True)
+
+            plan = build_run_plan(
+                bundle,
+                graphics="headless",
+                engine="docker",
+                runner_cache_dir=tmp / "cache",
+            )
+
+        self.assertEqual(plan["container"]["bundleMount"], f"{bundle.resolve()}:/opt/winforge/bundle:ro")
+        self.assertIn(f"{runner_dir.resolve()}:/opt/winforge-runner:ro", plan["container"]["argv"])
+        self.assertNotIn(f"{runner_dir.resolve()}:/opt/winforge-runner:ro,z", plan["container"]["argv"])
 
 
     def test_catalog_runner_label_is_not_treated_as_downloadable_cache(self):

@@ -150,6 +150,65 @@ class ContainerExecutionCommandTests(unittest.TestCase):
         self.assertIn(f"{workspace.resolve()}:/workspace:ro", argv)
         self.assertEqual(argv[-3:], ["local/runtime:test", "bash", "/opt/winforge/build/run.sh"])
 
+    def test_podman_build_mounts_include_selinux_shared_relabel_option(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(MANIFEST_JSON, encoding="utf-8")
+            manifest = load_manifest(manifest_path)
+            bundle = create_bundle(manifest, root / "dist", dry_run=False)
+
+            class Completed:
+                returncode = 0
+                stdout = "container ok"
+                stderr = ""
+
+            with patch("builder.executor.subprocess.run", return_value=Completed()) as run:
+                execute_inside_container(
+                    manifest,
+                    bundle,
+                    engine="podman",
+                    image_ref="local/runtime:test",
+                    timeout=5,
+                    workspace=workspace,
+                )
+
+        argv = run.call_args.args[0]
+        self.assertIn(f"{bundle.resolve()}:/opt/winforge:z", argv)
+        self.assertIn(f"{workspace.resolve()}:/workspace:ro,z", argv)
+
+    def test_docker_build_mounts_do_not_include_podman_selinux_option(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(MANIFEST_JSON, encoding="utf-8")
+            manifest = load_manifest(manifest_path)
+            bundle = create_bundle(manifest, root / "dist", dry_run=False)
+
+            class Completed:
+                returncode = 0
+                stdout = "container ok"
+                stderr = ""
+
+            with patch("builder.executor.subprocess.run", return_value=Completed()) as run:
+                execute_inside_container(
+                    manifest,
+                    bundle,
+                    engine="docker",
+                    image_ref="local/runtime:test",
+                    timeout=5,
+                    workspace=workspace,
+                )
+
+        argv = run.call_args.args[0]
+        self.assertIn(f"{bundle.resolve()}:/opt/winforge", argv)
+        self.assertIn(f"{workspace.resolve()}:/workspace:ro", argv)
+        self.assertNotIn(f"{bundle.resolve()}:/opt/winforge:z", argv)
+
 
 class BuildResultTests(unittest.TestCase):
     """BuildResult dataclass serialization and construction."""
