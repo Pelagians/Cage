@@ -296,15 +296,14 @@ def generate_build_script(
         abs_source = container_source_path(source, workspace_mount=workspace_mount) if source else ""
 
         if step.kind in ("exe", "msi"):
-            quiet_args = "/quiet" if step.kind == "msi" else "/S"
-            env_vars = ""
-            if step.args:
-                env_vars = f"WINEDLLOVERRIDES=\"${{WINEDLLOVERRIDES}}\" "
+            default_args = ["/quiet"] if step.kind == "msi" else ["/S"]
+            installer_args = step.args or default_args
+            args_str = " ".join(shlex.quote(arg) for arg in installer_args)
             lines.append(
                 f'echo "  Running installer: {abs_source}"'
             )
             lines.append(
-                f'{env_vars}wine "{abs_source}" {quiet_args} 2>&1 | while IFS= read -r line; do echo "{indent}$line"; done'
+                f'wine "{abs_source}" {args_str} 2>&1 | while IFS= read -r line; do echo "{indent}$line"; done'
             )
         elif step.kind == "portable":
             # Extract to target directory inside prefix

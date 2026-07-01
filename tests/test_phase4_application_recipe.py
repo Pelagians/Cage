@@ -157,6 +157,36 @@ launch:
                         load_manifest(path)
                     self.assertIn("YAML anchors, aliases, and merge keys are not supported", str(cm.exception))
 
+
+
+    def test_build_script_uses_explicit_install_args_instead_of_default_silent_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            recipe = Path(tmp) / "office-style.winforge.yaml"
+            recipe.write_text("""
+schemaVersion: winforge.app/v0
+name: office-style
+version: "1.0"
+runtime:
+  provider: wine
+  version: "9.0"
+install:
+  - kind: exe
+    source: sources/setup.exe
+    args:
+      - /config
+      - /workspace/sources/office2010/media/silent config.xml
+launch:
+  entrypoint: C:/Program Files/App/app.exe
+""", encoding="utf-8")
+            manifest = load_manifest(recipe)
+
+        from builder.pipeline import generate_build_script
+        script = generate_build_script(manifest)
+
+        self.assertIn('wine "/workspace/sources/setup.exe" /config', script)
+        self.assertIn("'/workspace/sources/office2010/media/silent config.xml'", script)
+        self.assertNotIn('wine "/workspace/sources/setup.exe" /S', script)
+
     def test_json_manifest_remains_supported_for_cli_generated_or_normalized_inputs(self):
         data = {
             "schemaVersion": "winforge.dev/v0",
