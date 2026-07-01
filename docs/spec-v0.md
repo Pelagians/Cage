@@ -50,7 +50,7 @@ Strict YAML rules:
 
 `dependencies` supports build-time dependency installation. Allowed kinds: `winetricks`, `font`, `directx`, `package`, `runtime-component`.
 
-`install` supports build-time application installation. Allowed kinds: `msi`, `exe`, `portable`, `choco`, `script`. MSI/EXE/portable require `source`; script requires `command`.
+`install` supports build-time application installation. Allowed kinds: `msi`, `exe`, `portable`, `choco`, `script`, `bat`, and `cmd`. MSI/EXE/portable/BAT/CMD steps require `source`; script requires `command`. BAT/CMD steps execute through `wine cmd /c`, may declare `workingDirectory`, and are intended for operator-provided installer scripts from legitimate BYO media. Recipes must not use BAT/CMD support to encode activation bypasses, cracked/pre-activated payload flows, or unauthorized licensing automation.
 
 `filesystem` maps declared source files or directories into Windows-style targets under `drive_c`. `filesystem.mode: copy` is the default. `filesystem.mode: merge` copies the contents of a source directory into an existing target directory, enabling BlueBuild-style user-provided file trees such as `Program Files` overlays without nesting the source directory itself.
 

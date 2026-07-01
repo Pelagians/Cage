@@ -16,7 +16,7 @@ SUPPORTED_SCHEMA_VERSIONS = {SCHEMA_VERSION, LEGACY_SCHEMA_VERSION}
 
 ALLOWED_RUNTIME_PROVIDERS = {"wine", "staging", "umu-proton-ge"}
 ALLOWED_DEPENDENCY_KINDS = {"winetricks", "font", "directx", "package", "runtime-component"}
-ALLOWED_INSTALL_KINDS = {"msi", "exe", "portable", "choco", "script"}
+ALLOWED_INSTALL_KINDS = {"msi", "exe", "portable", "choco", "script", "bat", "cmd"}
 
 ROOT_FIELDS = {
     "schemaVersion",
@@ -40,7 +40,7 @@ ROOT_FIELDS = {
 }
 RUNTIME_FIELDS = {"provider", "version", "source", "channel", "digest", "runner"}
 DEPENDENCY_FIELDS = {"kind", "verbs", "name", "version", "sha256"}
-INSTALL_FIELDS = {"kind", "source", "sha256", "target", "command", "args"}
+INSTALL_FIELDS = {"kind", "source", "sha256", "target", "command", "args", "workingDirectory"}
 FILESYSTEM_FIELDS = {"source", "target", "sha256", "mode"}
 LAUNCH_FIELDS = {"entrypoint", "args", "env", "workingDirectory"}
 SOURCE_FIELDS = {"id", "name", "type", "policy", "url", "source", "path", "sha256", "description"}
@@ -130,6 +130,7 @@ class InstallStep:
     target: str | None = None
     command: str | None = None
     args: list[str] = field(default_factory=list)
+    working_directory: str | None = None
 
     @classmethod
     def from_dict(cls, data, index):
@@ -140,7 +141,7 @@ class InstallStep:
         args = data.get("args", []) or []
         if not isinstance(args, list) or not all(isinstance(x, str) for x in args):
             raise ManifestError(f"install[{index}].args must be a list of strings")
-        if kind in {"msi", "exe", "portable"} and not data.get("source"):
+        if kind in {"msi", "exe", "portable", "bat", "cmd"} and not data.get("source"):
             raise ManifestError(f"install[{index}].source is required for {kind}")
         if kind == "script" and not data.get("command"):
             raise ManifestError(f"install[{index}].command is required for script")
@@ -151,6 +152,7 @@ class InstallStep:
             _optional_str(data, "target"),
             _optional_str(data, "command"),
             args,
+            _optional_str(data, "workingDirectory"),
         )
 
     def to_dict(self):
@@ -161,6 +163,7 @@ class InstallStep:
             "target": self.target,
             "command": self.command,
             "args": self.args,
+            "workingDirectory": self.working_directory,
         })
 
 

@@ -15,6 +15,7 @@ WinForge now prioritizes reproducible BYO source materialization over prefix-fir
 - `filesystem.mode: merge` layers the contents of a customer-provided directory into a Windows target directory, enabling Program Files-style BYO file trees.
 - `profiles[]` expands named compatibility/dependency defaults into concrete manifest fields; `office-legacy-32bit` is the first profile.
 - `entrypoints[]` and `fileAssociations[]` record multi-entry suite metadata for apps such as Word, Excel, and PowerPoint.
+- `install.kind: bat|cmd` lets recipes run operator-provided Windows installer scripts through `wine cmd /c` from a declared working directory when legitimate BYO media requires a script-oriented setup entrypoint.
 - The compatibility corpus includes Office BYO installer/media and BYO files candidates.
 
 ## Consequences
@@ -25,4 +26,4 @@ WinForge can now model proprietary/business-suite recipes without containing pro
 
 Suite metadata is recorded in manifests and artifacts. Phase 6E adds `winforge run <app> --entrypoint <id>` and host-file routing; `fileAssociations` remain metadata for higher-level routing and future VIC integration.
 
-WinForge still must not download, encode, or redistribute cracked/pre-activated Office archives or activation bypasses.
+WinForge still must not download, encode, runbook, or redistribute cracked/pre-activated Office archives or activation bypasses. BAT/CMD install support is a generic BYO-media primitive, not approval to automate unauthorized activation scripts.

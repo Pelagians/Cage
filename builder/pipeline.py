@@ -4,7 +4,7 @@ Converts a Manifest into executable build phases that run inside a
 WinForge Wine/Proton OCI container.
 """
 from __future__ import annotations
-import json, shlex
+import json, posixpath, shlex
 from core.compatibility import compatibility_environment
 from core.sources import container_source_path
 from core.manifest import Manifest
@@ -163,6 +163,22 @@ def _shell_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
+def _wine_path_for_container_path(path: str) -> str:
+    """Convert a Linux container path to Wine's Z: drive path."""
+    normalized = path.replace("\\", "/")
+    if normalized.startswith("/"):
+        return "Z:" + normalized.replace("/", "\\")
+    return normalized.replace("/", "\\")
+
+
+def _cmd_quote_arg(value: str) -> str:
+    """Quote one argument for the Windows cmd.exe command line."""
+    escaped = value.replace('"', '\"')
+    if not escaped or any(ch.isspace() for ch in escaped) or any(ch in escaped for ch in "&()[]{}^=;!'+,`~"):
+        return f'"{escaped}"'
+    return escaped
+
+
 def _plan_dep(d):
     if d.kind == "winetricks":
         return "install winetricks verbs: " + ", ".join(d.verbs)
@@ -172,6 +188,9 @@ def _plan_dep(d):
 def _plan_inst(s):
     if s.kind == "script":
         return f"run script command: {s.command}"
+    if s.kind in {"bat", "cmd"}:
+        wd = f" from {s.working_directory}" if s.working_directory else ""
+        return f"run Windows {s.kind} script {s.source}{wd}"
     target = f" into {s.target}" if s.target else ""
     return f"install {s.kind} from {s.source}{target}"
 
@@ -320,6 +339,18 @@ def generate_build_script(
             lines.append(
                 f'unzip -o "{abs_source}" -d "{dest}" 2>&1 | while IFS= read -r line; do echo "{indent}$line"; done'
             )
+        elif step.kind in ("bat", "cmd"):
+            workdir = (
+                container_source_path(step.working_directory, workspace_mount=workspace_mount)
+                if step.working_directory
+                else posixpath.dirname(abs_source) or workspace_mount
+            )
+            windows_source = _wine_path_for_container_path(abs_source)
+            cmd_line = " ".join([_cmd_quote_arg(windows_source), *(_cmd_quote_arg(arg) for arg in step.args)])
+            lines.append(f'echo "  Running Windows script: {abs_source}"')
+            lines.append(f'pushd "{workdir}" >/dev/null')
+            lines.append(f'wine cmd /c {_shell_quote(cmd_line)} 2>&1 | while IFS= read -r line; do echo "{indent}$line"; done')
+            lines.append('popd >/dev/null')
         elif step.kind == "script" and step.command:
             lines.append(f'echo "  Running custom script command: {step.command}"')
             lines.append(f'eval {step.command} 2>&1 | while IFS= read -r line; do echo "{indent}$line"; done')

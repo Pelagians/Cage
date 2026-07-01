@@ -187,6 +187,56 @@ launch:
         self.assertIn("'/workspace/sources/office2010/media/silent config.xml'", script)
         self.assertNotIn('wine "/workspace/sources/setup.exe" /S', script)
 
+    def test_build_script_runs_bat_installer_from_declared_working_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            recipe = Path(tmp) / "office-bat.winforge.yaml"
+            recipe.write_text("""
+schemaVersion: winforge.app/v0
+name: office-bat
+version: "1.0"
+runtime:
+  provider: wine
+  version: "9.0"
+install:
+  - kind: bat
+    source: sources/office2010/media/QUICK INSTALLATION.BAT
+    workingDirectory: sources/office2010/media
+    args:
+      - /fast
+launch:
+  entrypoint: C:/Program Files/Microsoft Office/Office14/WINWORD.EXE
+""", encoding="utf-8")
+            manifest = load_manifest(recipe)
+
+        from builder.pipeline import generate_build_script
+        script = generate_build_script(manifest)
+
+        self.assertEqual(manifest.install[0].kind, "bat")
+        self.assertEqual(manifest.install[0].working_directory, "sources/office2010/media")
+        self.assertIn('pushd "/workspace/sources/office2010/media"', script)
+        self.assertIn('wine cmd /c', script)
+        self.assertIn('Z:\\workspace\\sources\\office2010\\media\\QUICK INSTALLATION.BAT', script)
+        self.assertIn('/fast', script)
+        self.assertIn('popd', script)
+
+    def test_bat_install_step_requires_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            recipe = Path(tmp) / "bad-bat.winforge.yaml"
+            recipe.write_text("""
+schemaVersion: winforge.app/v0
+name: bad-bat
+version: "1.0"
+runtime:
+  provider: wine
+  version: "9.0"
+install:
+  - kind: bat
+launch:
+  entrypoint: C:/Program Files/App/app.exe
+""", encoding="utf-8")
+            with self.assertRaisesRegex(ManifestError, "install\\[0\\].source is required for bat"):
+                load_manifest(recipe)
+
     def test_json_manifest_remains_supported_for_cli_generated_or_normalized_inputs(self):
         data = {
             "schemaVersion": "winforge.dev/v0",
