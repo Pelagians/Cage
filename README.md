@@ -511,6 +511,8 @@ WinForge's design draws from the broader Wine/Proton ecosystem:
 
 Detailed analysis in [docs/reference-study.md](docs/reference-study.md).
 
+Proposed follow-up work from hard BYO installer probes is tracked in [docs/legacy-installer-debugging-backlog.md](docs/legacy-installer-debugging-backlog.md).
+
 ## Project Structure
 
 ```
