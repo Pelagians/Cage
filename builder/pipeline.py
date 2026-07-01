@@ -354,7 +354,7 @@ def generate_build_script(
     lines.append("")
     lines.append('echo "[winforge]   Recording prefix contents"')
     lines.append(
-        f'find "{prefix}/drive_c" -maxdepth 4 -type f 2>/dev/null | head -100 > "{bundle_mount}/logs/prefix-filelist.txt"'
+        f"find \"{prefix}/drive_c\" -maxdepth 4 -type f 2>/dev/null | awk 'NR <= 100 {{ print }}' > \"{bundle_mount}/logs/prefix-filelist.txt\""
     )
     lines.append(
         f'du -sh "{prefix}" > "{bundle_mount}/logs/prefix-size.txt"'

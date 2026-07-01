@@ -96,6 +96,12 @@ class BuildScriptGenerationTests(unittest.TestCase):
         self.assertIn("Entrypoint exists", script)
         self.assertIn("prefix-filelist.txt", script)
 
+    def test_prefix_filelist_recording_is_not_sigpipe_prone_under_pipefail(self):
+        script = generate_build_script(self.manifest)
+
+        self.assertIn("prefix-filelist.txt", script)
+        self.assertNotIn("| head -100", script)
+
     def test_generate_script_has_build_result_marker(self):
         script = generate_build_script(self.manifest)
         self.assertIn("BUILD COMPLETE", script)
