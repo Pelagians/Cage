@@ -169,6 +169,16 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
                 self.assertIn("x11vnc", dockerfile)
                 self.assertIn("websockify", dockerfile)
 
+    def test_wine_image_contains_powershell_wrapper_build_toolchain(self):
+        root = Path(__file__).resolve().parents[1]
+        dockerfile = (root / "container/providers/wine/Dockerfile").read_text(encoding="utf-8")
+
+        self.assertIn("python3 git", dockerfile)
+        self.assertIn("build-essential", dockerfile)
+        self.assertIn("gcc-mingw-w64-x86-64", dockerfile)
+        self.assertIn("rustup target add x86_64-pc-windows-gnu", dockerfile)
+        self.assertIn("x86_64-w64-mingw32-gcc --version", dockerfile)
+
 
 if __name__ == "__main__":
     unittest.main()

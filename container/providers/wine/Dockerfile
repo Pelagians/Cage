@@ -29,6 +29,8 @@ RUN set -eux; \
         # Build / scripting
         python3 git \
         build-essential \
+        # MinGW cross-linker for Rust's x86_64-pc-windows-gnu target
+        gcc-mingw-w64-x86-64 \
     ; \
     rm -rf /var/lib/apt/lists/*
 
@@ -74,6 +76,10 @@ ENV WINFORGE_ROOT=/opt/winforge \
 # Install Rust toolchain (latest stable) via rustup for powershell-wrapper-for-wine
 RUN set -eux; \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
+    /root/.cargo/bin/rustup target add x86_64-pc-windows-gnu; \
+    /root/.cargo/bin/cargo --version; \
+    /root/.cargo/bin/rustc --version; \
+    x86_64-w64-mingw32-gcc --version; \
     echo '[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"' >> /etc/bash.bashrc
 ENV PATH="/root/.cargo/bin:${PATH}"
 
