@@ -107,6 +107,17 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertIn("x11vnc", plan["container"]["script"])
         self.assertIn("websockify", plan["container"]["script"])
 
+    def test_run_plan_clears_inherited_base_image_dll_overrides_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = self._bundle(tmp)
+            plan = build_run_plan(bundle, graphics="headless", engine="docker")
+
+        env = plan["container"]["environment"]
+        argv = plan["container"]["argv"]
+        self.assertIn("WINEDLLOVERRIDES", env)
+        self.assertEqual(env["WINEDLLOVERRIDES"], "")
+        self.assertIn("WINEDLLOVERRIDES=", argv)
+
     def test_cli_run_dry_run_prints_run_plan(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = self._bundle(tmp)

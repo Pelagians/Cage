@@ -349,6 +349,13 @@ def _container_environment(graphics: str) -> dict[str, str]:
         "WINEFS": "launcher",
         "WINFORGE_GRAPHICS": graphics,
         "DISPLAY": ":99",
+        # The runtime image disables mscoree/mshtml by default to keep Wine
+        # prefix initialization fast. Runtime launches consume an already-built
+        # prefix, so clear that inherited DLL override unless the bundle's
+        # compatibility policy explicitly sets one. .NET/CoreCLR apps such as
+        # PowerShell Core fail to resolve System.Runtime.dll when mscoree is
+        # still disabled at launch time.
+        "WINEDLLOVERRIDES": "",
     }
 
 
