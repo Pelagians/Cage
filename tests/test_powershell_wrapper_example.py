@@ -82,5 +82,10 @@ class PowershellWrapperExampleTests(unittest.TestCase):
         self.assertEqual(run_plan["selectedEntrypoint"]["id"], "default")
         self.assertEqual(
             run_plan["launchCommand"],
-            ["wine", "C:/Program Files/PowerShell/7/pwsh.exe", "-NoLogo", "-NoExit"],
+            [
+                "wine",
+                "C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe",
+                "-NoLogo",
+                "-NoExit",
+            ],
         )

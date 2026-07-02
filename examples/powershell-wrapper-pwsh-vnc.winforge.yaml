@@ -32,8 +32,11 @@ compatibility:
   env:
     WINEDEBUG: "-all"
 
+# Launch the Wine wrapper by default. Direct pwsh.exe can crash under Wine
+# because the .NET host does not always resolve assemblies correctly; the
+# wrapper path is the point of this recipe and forwards powershell.exe to pwsh.
 launch:
-  entrypoint: C:/Program Files/PowerShell/7/pwsh.exe
+  entrypoint: C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe
   args:
     - -NoLogo
     - -NoExit
