@@ -39,7 +39,6 @@ compatibility:
 launch:
   entrypoint: C:/windows/system32/wineconsole.exe
   args:
-    - "--backend=user"
     - "C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe"
     - -NoLogo
     - -NoExit
@@ -53,7 +52,6 @@ entrypoints:
     name: Visible wineconsole running the powershell.exe wrapper
     executable: C:/windows/system32/wineconsole.exe
     args:
-      - "--backend=user"
       - "C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe"
       - -NoLogo
       - -NoExit

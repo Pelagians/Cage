@@ -118,6 +118,31 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertEqual(env["WINEDLLOVERRIDES"], "")
         self.assertIn("WINEDLLOVERRIDES=", argv)
 
+    def test_wineconsole_entrypoints_use_native_helper_and_strip_legacy_backend_option(self):
+        data = dict(VALID)
+        data["launch"] = {
+            "entrypoint": "C:/windows/system32/wineconsole.exe",
+            "args": [
+                "--backend=user",
+                "C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe",
+                "-NoLogo",
+                "-NoExit",
+            ],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=True)
+            plan = build_run_plan(bundle, graphics="headless", engine="docker")
+
+        self.assertEqual(
+            plan["launchCommand"],
+            [
+                "wineconsole",
+                "C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe",
+                "-NoLogo",
+                "-NoExit",
+            ],
+        )
+
     def test_cli_run_dry_run_prints_run_plan(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = self._bundle(tmp)

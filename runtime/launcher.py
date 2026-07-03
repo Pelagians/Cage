@@ -488,8 +488,11 @@ def _launch_command(runtime: dict[str, Any], launch: dict[str, Any], file_args: 
         # wineconsole is a Unix-side Wine helper. Running it as
         # `wine C:/windows/system32/wineconsole.exe ...` exits with usage-like
         # code 2 and no useful stderr in containerized VNC launches. Invoke the
-        # native helper so it can create a visible console window.
-        return ["wineconsole", *args, *extra_args]
+        # native helper so it can create a visible console window. Modern Wine
+        # documents `wineconsole [command]`; older --backend=... forms exit 2,
+        # so drop that legacy option for both old bundles and new recipes.
+        console_args = [arg for arg in args if not arg.startswith("--backend=")]
+        return ["wineconsole", *console_args, *extra_args]
     return [launcher, entrypoint, *args, *extra_args]
 
 

@@ -84,7 +84,6 @@ class PowershellWrapperExampleTests(unittest.TestCase):
             run_plan["launchCommand"],
             [
                 "wineconsole",
-                "--backend=user",
                 "C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe",
                 "-NoLogo",
                 "-NoExit",
