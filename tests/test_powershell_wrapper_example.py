@@ -20,7 +20,7 @@ class PowershellWrapperExampleTests(unittest.TestCase):
         self.assertEqual([step.kind for step in manifest.install], ["script"])
         winetricks = [dep for dep in manifest.dependencies if dep.kind == "winetricks"]
         self.assertTrue(winetricks)
-        self.assertEqual(winetricks[0].verbs, ["dotnet48", "powershell_core"])
+        self.assertEqual(winetricks[0].verbs, ["dotnet48", "win10", "powershell_core"])
         self.assertNotIn("winetricks -q powershell", manifest.install[0].command or "")
         self.assertEqual([entry.id for entry in manifest.entrypoints], ["console", "powershell-wrapper", "pwsh"])
 

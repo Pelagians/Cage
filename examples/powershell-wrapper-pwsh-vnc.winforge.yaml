@@ -19,6 +19,7 @@ dependencies:
   - kind: winetricks
     verbs:
       - dotnet48
+      - win10
       - powershell_core
 
 install:
