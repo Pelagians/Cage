@@ -27,6 +27,8 @@ class ChocolateyForWineRecipeTests(unittest.TestCase):
         self.assertIn("choc_install.ps1", script)
         self.assertIn("winepath -w", script)
         self.assertIn("Chocolatey-for-wine installer returned without choco.exe", script)
+        self.assertIn("Normalizing ChocolateyInstall payload path", script)
+        self.assertIn("-iname chocolateyInstall", script)
         self.assertIn("-iname pwsh.exe", script)
         self.assertNotIn("powershell-wrapper-for-wine", script)
         self.assertNotIn("cargo", script)
