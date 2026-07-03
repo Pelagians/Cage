@@ -83,8 +83,7 @@ class PowershellWrapperExampleTests(unittest.TestCase):
         self.assertEqual(
             run_plan["launchCommand"],
             [
-                "wine",
-                "C:/windows/system32/wineconsole.exe",
+                "wineconsole",
                 "--backend=user",
                 "C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe",
                 "-NoLogo",
