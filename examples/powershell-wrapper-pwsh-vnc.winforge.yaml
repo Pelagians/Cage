@@ -32,12 +32,15 @@ compatibility:
   env:
     WINEDEBUG: "-all"
 
-# Launch the Wine wrapper by default. Direct pwsh.exe can crash under Wine
-# because the .NET host does not always resolve assemblies correctly; the
-# wrapper path is the point of this recipe and forwards powershell.exe to pwsh.
+# Launch through Wine's visible console host by default. VNC needs a windowed
+# process to remain alive; a bare console process exits immediately under the
+# non-interactive container runner. wineconsole then starts the wrapper, which
+# forwards legacy powershell.exe semantics to PowerShell Core.
 launch:
-  entrypoint: C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe
+  entrypoint: C:/windows/system32/wineconsole.exe
   args:
+    - "--backend=user"
+    - "C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe"
     - -NoLogo
     - -NoExit
   env:
@@ -46,10 +49,12 @@ launch:
   workingDirectory: C:/users/winforge
 
 entrypoints:
-  - id: pwsh
-    name: PowerShell Core
-    executable: C:/Program Files/PowerShell/7/pwsh.exe
+  - id: console
+    name: Visible wineconsole running the powershell.exe wrapper
+    executable: C:/windows/system32/wineconsole.exe
     args:
+      - "--backend=user"
+      - "C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe"
       - -NoLogo
       - -NoExit
     env:
@@ -57,8 +62,18 @@ entrypoints:
       POWERSHELL_UPDATECHECK: Off
     workingDirectory: C:/users/winforge
   - id: powershell-wrapper
-    name: powershell.exe wrapper forwarding to pwsh
+    name: Headless powershell.exe wrapper forwarding to pwsh
     executable: C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe
+    args:
+      - -NoLogo
+      - -NoExit
+    env:
+      NO_COLOR: "1"
+      POWERSHELL_UPDATECHECK: Off
+    workingDirectory: C:/users/winforge
+  - id: pwsh
+    name: Headless PowerShell Core direct launch
+    executable: C:/Program Files/PowerShell/7/pwsh.exe
     args:
       - -NoLogo
       - -NoExit

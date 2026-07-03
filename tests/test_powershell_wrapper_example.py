@@ -19,7 +19,7 @@ class PowershellWrapperExampleTests(unittest.TestCase):
         self.assertEqual(manifest.name, "powershell-wrapper-pwsh-vnc")
         self.assertEqual([step.kind for step in manifest.install], ["script"])
         self.assertNotIn("winetricks -q powershell", manifest.install[0].command or "")
-        self.assertEqual([entry.id for entry in manifest.entrypoints], ["pwsh", "powershell-wrapper"])
+        self.assertEqual([entry.id for entry in manifest.entrypoints], ["console", "powershell-wrapper", "pwsh"])
 
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "dist"
@@ -84,6 +84,8 @@ class PowershellWrapperExampleTests(unittest.TestCase):
             run_plan["launchCommand"],
             [
                 "wine",
+                "C:/windows/system32/wineconsole.exe",
+                "--backend=user",
                 "C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe",
                 "-NoLogo",
                 "-NoExit",
