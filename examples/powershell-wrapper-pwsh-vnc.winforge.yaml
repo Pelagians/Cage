@@ -47,6 +47,7 @@ launch:
   env:
     NO_COLOR: "1"
     POWERSHELL_UPDATECHECK: Off
+    chocolateyVersion: "1.4.0"
   workingDirectory: C:/users/winforge
 
 entrypoints:
@@ -60,6 +61,7 @@ entrypoints:
     env:
       NO_COLOR: "1"
       POWERSHELL_UPDATECHECK: Off
+      chocolateyVersion: "1.4.0"
     workingDirectory: C:/users/winforge
   - id: powershell-wrapper
     name: Headless powershell.exe wrapper forwarding to pwsh
@@ -70,6 +72,7 @@ entrypoints:
     env:
       NO_COLOR: "1"
       POWERSHELL_UPDATECHECK: Off
+      chocolateyVersion: "1.4.0"
     workingDirectory: C:/users/winforge
   - id: pwsh
     name: Headless PowerShell Core direct launch
@@ -80,6 +83,7 @@ entrypoints:
     env:
       NO_COLOR: "1"
       POWERSHELL_UPDATECHECK: Off
+      chocolateyVersion: "1.4.0"
     workingDirectory: C:/users/winforge
 
 state:

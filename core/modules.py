@@ -34,7 +34,7 @@ CHOCOLATEY_SETUP_COMMAND = (
     'mkdir -p "$(dirname "$wrapper")"; '
     'cp "$repo"/target/x86_64-pc-windows-gnu/release/*.exe "$wrapper"; '
     'wine "$pwsh" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command '
-    '"iex ((New-Object System.Net.WebClient).DownloadString(\'https://community.chocolatey.org/install.ps1\'))"'
+    "\"$env:chocolateyVersion = '1.4.0'; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))\""
 )
 
 
