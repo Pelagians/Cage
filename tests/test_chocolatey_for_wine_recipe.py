@@ -16,6 +16,7 @@ class ChocolateyForWineRecipeTests(unittest.TestCase):
         self.assertEqual(manifest.runtime.network, "bridge")
         self.assertEqual(manifest.launch.entrypoint, "C:/windows/system32/wineconsole.exe")
         self.assertIn("C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe", manifest.launch.args)
+        self.assertEqual(manifest.launch.env.get("ChocolateyInstall"), "C:/ProgramData/chocolatey")
 
         script = generate_build_script(manifest)
         self.assertIn("Chocolatey-for-wine/releases/download/v0.5c.755/Chocolatey-for-wine.7z", script)
@@ -30,6 +31,10 @@ class ChocolateyForWineRecipeTests(unittest.TestCase):
         self.assertIn("Normalizing ChocolateyInstall payload path", script)
         self.assertIn("-iname chocolateyInstall", script)
         self.assertIn("-iname pwsh.exe", script)
+        self.assertIn("minimal Chocolatey payload fallback", script)
+        self.assertIn("choco.exe --version", script)
+        self.assertIn("feature disable --name=powershellHost", script)
+        self.assertIn("feature enable -n allowGlobalConfirmation", script)
         self.assertNotIn("powershell-wrapper-for-wine", script)
         self.assertNotIn("cargo", script)
         self.assertNotIn("rustup", script)
