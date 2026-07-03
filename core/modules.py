@@ -78,7 +78,7 @@ def apply_modules(data: dict[str, Any]) -> dict[str, Any]:
         module = ModuleSpec.from_dict(raw_module, index)
         if module.type == "chocolatey":
             packages = list(module.install["packages"])
-            injected_dependencies.append({"kind": "winetricks", "verbs": ["powershell_core"]})
+            injected_dependencies.append({"kind": "winetricks", "verbs": ["dotnet48", "powershell_core"]})
             injected_install.append({"kind": "script", "command": CHOCOLATEY_SETUP_COMMAND})
             for package in packages:
                 injected_install.append({"kind": "choco", "command": "install", "args": [package, "-y", "--no-progress"]})
@@ -86,7 +86,7 @@ def apply_modules(data: dict[str, Any]) -> dict[str, Any]:
                 "schemaVersion": MODULE_EXPANSION_SCHEMA_VERSION,
                 "type": "chocolatey",
                 "install": {"packages": packages},
-                "injectedDependencies": [{"kind": "winetricks", "verbs": ["powershell_core"]}],
+                "injectedDependencies": [{"kind": "winetricks", "verbs": ["dotnet48", "powershell_core"]}],
                 "injectedInstallStepCount": 1 + len(packages),
             })
 

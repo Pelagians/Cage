@@ -62,13 +62,17 @@ class ChocolateyModuleManifestTests(unittest.TestCase):
         self.assertEqual(manifest.modules[0].install["packages"], ["firefox", "7zip.install"])
         winetricks = [dep for dep in manifest.dependencies if dep.kind == "winetricks"]
         self.assertTrue(winetricks)
-        self.assertIn("powershell_core", winetricks[0].verbs)
+        self.assertEqual(winetricks[0].verbs, ["dotnet48", "powershell_core"])
         self.assertEqual([step.kind for step in manifest.install[:3]], ["script", "choco", "choco"])
         self.assertIn("powershell-wrapper-for-wine", manifest.install[0].command or "")
         self.assertEqual(manifest.install[1].command, "install")
         self.assertEqual(manifest.install[1].args, ["firefox", "-y", "--no-progress"])
         self.assertEqual(manifest.install[2].args, ["7zip.install", "-y", "--no-progress"])
         self.assertEqual(manifest.provenance["moduleExpansions"][0]["type"], "chocolatey")
+        self.assertEqual(
+            manifest.provenance["moduleExpansions"][0]["injectedDependencies"],
+            [{"kind": "winetricks", "verbs": ["dotnet48", "powershell_core"]}],
+        )
 
     def test_strict_yaml_accepts_myos_bluebuild_style_modules_shape(self):
         with tempfile.TemporaryDirectory() as tmp:

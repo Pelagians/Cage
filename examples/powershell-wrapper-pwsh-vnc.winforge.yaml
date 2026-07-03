@@ -18,6 +18,7 @@ sources:
 dependencies:
   - kind: winetricks
     verbs:
+      - dotnet48
       - powershell_core
 
 install:
