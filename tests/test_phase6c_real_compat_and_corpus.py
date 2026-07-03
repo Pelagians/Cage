@@ -191,6 +191,33 @@ class RealCompatibilityEvidenceTests(unittest.TestCase):
         self.assertEqual(payload["classification"], "dry-run-planned")
         self.assertEqual(payload["run"], {"attempted": False, "reason": "mode=dry-run"})
 
+    def test_cli_build_accepts_timeout_alias_for_long_dotnet_builds(self):
+        repo = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest_path = _write_fixture_workspace(root)
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    "cmd/winforge.py",
+                    "build",
+                    str(manifest_path),
+                    "--dry-run",
+                    "--output",
+                    str(root / "dist"),
+                    "--timeout",
+                    "777",
+                ],
+                cwd=repo,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        payload = json.loads(proc.stdout)
+        self.assertTrue(payload["dryRun"])
+
 
     def test_cli_compat_vnc_requires_and_accepts_bridge_network(self):
         repo = Path(__file__).resolve().parents[1]

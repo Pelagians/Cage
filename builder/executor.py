@@ -280,6 +280,7 @@ def execute_inside_container(
         manifest,
         bundle_mount="/opt/winforge",
         workspace_mount="/workspace",
+        timeout_per_phase=timeout,
         stop_before=stop_before,
     )
     script_path.parent.mkdir(parents=True, exist_ok=True)

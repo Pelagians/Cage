@@ -158,6 +158,36 @@ class ContainerExecutionCommandTests(unittest.TestCase):
         self.assertIn(f"{workspace.resolve()}:/workspace:ro", argv)
         self.assertEqual(argv[-3:], ["local/runtime:test", "bash", "/opt/winforge/build/run.sh"])
 
+    def test_execute_inside_container_uses_timeout_for_generated_phase_script(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(MANIFEST_JSON, encoding="utf-8")
+            manifest = load_manifest(manifest_path)
+            bundle = create_bundle(manifest, root / "dist", dry_run=False)
+
+            class Completed:
+                returncode = 0
+                stdout = "container ok"
+                stderr = ""
+
+            with patch("builder.executor._run_container_command", return_value=Completed()), patch("sys.stderr", io.StringIO()):
+                execute_inside_container(
+                    manifest,
+                    bundle,
+                    engine="docker",
+                    image_ref="local/runtime:test",
+                    timeout=777,
+                    workspace=workspace,
+                )
+
+            script = (bundle / "build" / "run.sh").read_text(encoding="utf-8")
+
+        self.assertIn("wineboot timeout: 777s", script)
+        self.assertIn("timeout 777s wine wineboot --init", script)
+
     def test_podman_build_mounts_include_selinux_shared_relabel_option(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
