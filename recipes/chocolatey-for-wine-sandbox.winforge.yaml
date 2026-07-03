@@ -1,0 +1,77 @@
+schemaVersion: winforge.app/v0
+name: chocolatey-for-wine-sandbox
+version: "0.1.0"
+
+runtime:
+  provider: wine
+  version: latest
+  # This sandbox is for interactive VNC choco/package experiments.
+  # Keep bridge networking here; production app artifacts should normally use none.
+  network: bridge
+
+sources:
+  - id: chocolatey-for-wine
+    type: archive
+    policy: redistributable
+    url: https://github.com/PietJankbal/Chocolatey-for-wine/releases/download/v0.5c.755/Chocolatey-for-wine.7z
+    sha256: 87f4ecc08a9b22f16aa5633ca107c151ddf3fed0b256fed9fb99680af7095d14
+    description: PietJankbal Chocolatey-for-wine prebuilt installer bundle.
+
+install:
+  - kind: script
+    command: set -eu; url='https://github.com/PietJankbal/Chocolatey-for-wine/releases/download/v0.5c.755/Chocolatey-for-wine.7z'; sha='87f4ecc08a9b22f16aa5633ca107c151ddf3fed0b256fed9fb99680af7095d14'; work='/tmp/chocolatey-for-wine'; archive="$work/Chocolatey-for-wine.7z"; extract="$work/extracted"; rm -rf "$work"; mkdir -p "$extract"; echo '=== Downloading Chocolatey-for-wine release ==='; curl -fL "$url" -o "$archive"; echo "$sha  $archive" | sha256sum -c -; echo '=== Extracting Chocolatey-for-wine release ==='; 7z x -y "$archive" "-o$extract"; installer="$(find "$extract" -maxdepth 4 -type f -iname 'ChoCinstaller_*.exe' | sort -V | tail -n 1)"; if [ -z "$installer" ]; then echo 'ERROR: ChoCinstaller_*.exe not found in Chocolatey-for-wine release' >&2; find "$extract" -maxdepth 4 -type f | sort >&2; exit 1; fi; echo "=== Running Chocolatey-for-wine installer: $installer ==="; cd "$(dirname "$installer")"; wine "$(basename "$installer")" /q; echo '=== Verifying Chocolatey-for-wine install markers ==='; test -f "$WINEPREFIX/drive_c/ProgramData/chocolatey/bin/choco.exe"; test -f "$WINEPREFIX/drive_c/windows/system32/WindowsPowerShell/v1.0/powershell.exe"
+compatibility:
+  arch: win64
+  windowsVersion: win10
+  graphics:
+    backend: wined3d
+  env:
+    WINEDEBUG: "-all"
+
+# Chocolatey-for-wine makes wine powershell.exe start the PowerShell Core-backed
+# wrapper environment. Use wineconsole for visible VNC/noVNC interaction.
+launch:
+  entrypoint: C:/windows/system32/wineconsole.exe
+  args:
+    - "C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe"
+    - -NoLogo
+    - -NoExit
+  env:
+    NO_COLOR: "1"
+    POWERSHELL_UPDATECHECK: Off
+  workingDirectory: C:/
+
+entrypoints:
+  - id: chocolatey-powershell
+    name: Chocolatey-for-wine PowerShell console
+    executable: C:/windows/system32/wineconsole.exe
+    args:
+      - "C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe"
+      - -NoLogo
+      - -NoExit
+    env:
+      NO_COLOR: "1"
+      POWERSHELL_UPDATECHECK: Off
+    workingDirectory: C:/
+  - id: cmd
+    name: Command Prompt fallback
+    executable: C:/windows/system32/cmd.exe
+    args:
+      - /k
+      - set PATH=C:\ProgramData\chocolatey\bin;%PATH%
+    workingDirectory: C:/
+
+state:
+  persistence: persistent
+
+exports:
+  - name: chocolatey-for-wine-tools
+    path: C:/ProgramData/Chocolatey-for-wine
+  - name: chocolatey-install
+    path: C:/ProgramData/chocolatey
+
+provenance:
+  sources:
+    - uri: https://github.com/PietJankbal/Chocolatey-for-wine/releases/download/v0.5c.755/Chocolatey-for-wine.7z
+      sha256: 87f4ecc08a9b22f16aa5633ca107c151ddf3fed0b256fed9fb99680af7095d14
+      note: Prebuilt Chocolatey-for-wine release asset; installer is run with /q for install-only/no auto-launch.
