@@ -20,7 +20,7 @@ from .constants import ROOT_FIELDS, SCHEMA_VERSION, LEGACY_SCHEMA_VERSION, SUPPO
 from .errors import ManifestError
 from core.compatibility import CompatibilityPolicyError, normalize_compatibility_policy
 from core.profiles import ProfileError, apply_profiles
-from core.modules import ModuleError, ModuleSpec, apply_modules
+from core.modules import ModuleError, apply_modules, parse_module, ModuleSpec
 
 @dataclass(frozen=True)
 class Manifest:
@@ -50,6 +50,8 @@ class Manifest:
             raise ManifestError("manifest root must be an object")
         _reject_unknown(data, ROOT_FIELDS, "manifest")
         try:
+            # Parse modules BEFORE apply_modules removes them
+            modules = [parse_module(x, i) for i, x in enumerate(_list(data.get("modules", []), "modules"))]
             data = apply_profiles(data)
             data = apply_modules(data)
         except (ProfileError, ModuleError) as exc:
@@ -76,7 +78,6 @@ class Manifest:
             raise ManifestError(str(exc)) from exc
         state = _object(data.get("state", {}) or {}, "state")
         profiles = _string_list(data.get("profiles", []), "profiles")
-        modules = [ModuleSpec.from_dict(x, i) for i, x in enumerate(_list(data.get("modules", []), "modules"))]
         sources = [SourceDeclaration.from_dict(x, i) for i, x in enumerate(_list(data.get("sources", []), "sources"))]
         registry = _list(data.get("registry", []), "registry")
         exports = _list(data.get("exports", []), "exports")

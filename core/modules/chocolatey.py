@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .base import ModuleSpec, ModuleError
+from .base import ChocolateyModule, ModuleError
 
 
 # PowerShell wrapper setup for Chocolatey
@@ -34,9 +34,15 @@ CHOCOLATEY_SETUP_COMMAND = (
 )
 
 
-def expand_chocolatey(module: ModuleSpec, index: int) -> dict[str, Any]:
+def expand_chocolatey(module: ChocolateyModule, index: int) -> dict[str, Any]:
     """Expand chocolatey module into dependencies + install steps."""
+    # Merge defaults with user-provided fields
     install = module.install or {}
+    if module.defaults:
+        default_install = module.defaults.get("install", {})
+        if default_install:
+            install = {**default_install, **install}
+    
     packages = install.get("packages", [])
     if not isinstance(packages, list) or not packages:
         raise ModuleError(f"modules[{index}].install.packages must be a non-empty list")

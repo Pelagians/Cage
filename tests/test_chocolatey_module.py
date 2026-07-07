@@ -47,12 +47,12 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("moduleExpansions", result["provenance"])
 
     def test_modulespec_round_trip(self):
-        from core.modules import ModuleSpec
-        orig = ModuleSpec.from_dict({"type": "chocolatey", "install": {"packages": ["firefox", "7zip.install"]}}, 0)
-        d = orig.to_dict()
-        restored = ModuleSpec.from_dict(d, 0)
-        self.assertEqual(orig.type, restored.type)
-        self.assertEqual(orig.install, restored.install)
+        from core.modules import parse_module
+        orig = parse_module({"type": "chocolatey", "install": {"packages": ["firefox", "7zip.install"]}}, 0)
+        self.assertEqual(orig.type, "chocolatey")
+        self.assertEqual(orig.install, {"packages": ["firefox", "7zip.install"]})
+        # Note: to_dict() no longer exists in the new module system
+        # Modules are now typed dataclasses, not dict-based
 
 class ChocolateyModuleManifestTests(unittest.TestCase):
     def test_bluebuild_style_chocolatey_module_expands_to_dependencies_and_install_steps(self):

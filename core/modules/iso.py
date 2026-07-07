@@ -3,18 +3,26 @@ from __future__ import annotations
 
 from typing import Any
 
-from .base import ModuleSpec, ModuleError
+from .base import IsoModule, ModuleError
 
 
-def expand_iso(module: ModuleSpec, index: int) -> dict[str, Any]:
+def expand_iso(module: IsoModule, index: int) -> dict[str, Any]:
     """Expand iso module into mount + autorun script."""
-    if not module.source:
+    # Merge defaults with user-provided fields
+    source = module.source
+    autorun = module.autorun
+    
+    if module.defaults:
+        source = source or module.defaults.get("source")
+        autorun = autorun if autorun is not None else module.defaults.get("autorun", False)
+    
+    if not source:
         raise ModuleError(f"modules[{index}].source is required for iso module")
     
     # Build ISO mount and autorun script
     script_parts = [
         "# Mount ISO and run autorun",
-        f'ISO_SOURCE="{module.source}"',
+        f'ISO_SOURCE="{source}"',
         'ISO_MOUNT="/tmp/cage-iso-$RANDOM"',
         'mkdir -p "$ISO_MOUNT"',
         'mount -o loop,ro "$ISO_SOURCE" "$ISO_MOUNT" 2>/dev/null || '
@@ -22,7 +30,7 @@ def expand_iso(module: ModuleSpec, index: int) -> dict[str, Any]:
         '(echo "Failed to mount ISO: $ISO_SOURCE" >&2; exit 1)',
     ]
     
-    if module.autorun:
+    if autorun:
         script_parts.extend([
             '# Run autorun',
             'if [ -f "$ISO_MOUNT/AUTORUN.INF" ]; then',
