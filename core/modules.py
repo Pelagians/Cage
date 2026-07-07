@@ -1,17 +1,84 @@
-"""BlueBuild-style module expansion for Cage manifests."""
+"""Module expansion for Cage recipes.
+
+Modules are high-level installation intents that expand into low-level
+dependencies, install steps, and configuration. This keeps recipes simple
+while allowing modules to handle Wine-specific complexity.
+"""
 from __future__ import annotations
 
-from copy import deepcopy
-from dataclasses import dataclass, field
-import re
+from dataclasses import dataclass
 from typing import Any
 
-MODULE_EXPANSION_SCHEMA_VERSION = "cage.module-expansion/v0"
 
-MODULE_FIELDS = {"type", "install"}
-CHOCOLATEY_INSTALL_FIELDS = {"packages"}
-CHOCOLATEY_PACKAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+-]*$")
+class ModuleError(ValueError):
+    pass
 
+
+@dataclass
+class ModuleSpec:
+    type: str
+    install: dict[str, Any] | None = None
+    source: str | None = None
+    sha256: str | None = None
+    silentArgs: str | list[str] | None = None
+    verbs: list[str] | None = None
+    target: str | None = None
+    command: str | None = None
+    config: str | None = None
+    autorun: bool | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], index: int) -> ModuleSpec:
+        if not isinstance(data, dict):
+            raise ModuleError(f"modules[{index}] must be a dict")
+        module_type = data.get("type")
+        if not isinstance(module_type, str) or not module_type:
+            raise ModuleError(f"modules[{index}].type must be a non-empty string")
+        
+        allowed_types = {"chocolatey", "exe", "msi", "iso", "winetricks", "portable", "script"}
+        if module_type not in allowed_types:
+            raise ModuleError(
+                f"modules[{index}].type must be one of: {', '.join(sorted(allowed_types))}"
+            )
+        
+        return cls(
+            type=module_type,
+            install=data.get("install"),
+            source=data.get("source"),
+            sha256=data.get("sha256"),
+            silentArgs=data.get("silentArgs"),
+            verbs=data.get("verbs"),
+            target=data.get("target"),
+            command=data.get("command"),
+            config=data.get("config"),
+            autorun=data.get("autorun"),
+        )
+    
+    def to_dict(self) -> dict[str, Any]:
+        """Convert back to dict for serialization."""
+        result = {"type": self.type}
+        if self.install is not None:
+            result["install"] = self.install
+        if self.source is not None:
+            result["source"] = self.source
+        if self.sha256 is not None:
+            result["sha256"] = self.sha256
+        if self.silentArgs is not None:
+            result["silentArgs"] = self.silentArgs
+        if self.verbs is not None:
+            result["verbs"] = self.verbs
+        if self.target is not None:
+            result["target"] = self.target
+        if self.command is not None:
+            result["command"] = self.command
+        if self.config is not None:
+            result["config"] = self.config
+        if self.autorun is not None:
+            result["autorun"] = self.autorun
+        return result
+
+
+# PowerShell wrapper setup for Chocolatey
 CHOCOLATEY_SETUP_COMMAND = (
     'set -eu; '
     'pwsh="$WINEPREFIX/drive_c/Program Files/PowerShell/7/pwsh.exe"; '
@@ -19,11 +86,11 @@ CHOCOLATEY_SETUP_COMMAND = (
     'choco="$WINEPREFIX/drive_c/ProgramData/chocolatey/bin/choco.exe"; '
     'if [ -f "$choco" ] && [ -f "$wrapper" ]; then exit 0; fi; '
     'if ! command -v git >/dev/null 2>&1; then '
-    '  apt-get update -qq && apt-get install -y -qq --no-install-recommends git gcc libc-dev pkg-config gcc-mingw-w64-x86-64; '
+    'apt-get update -qq && apt-get install -y -qq --no-install-recommends git gcc libc-dev pkg-config gcc-mingw-w64-x86-64; '
     'fi; '
     'if ! command -v cargo >/dev/null 2>&1; then '
-    '  curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal -q 2>/dev/null; '
-    '  . "$HOME/.cargo/env"; '
+    'curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal -q 2>/dev/null; '
+    '. "$HOME/.cargo/env"; '
     'fi; '
     'if command -v rustup >/dev/null; then rustup target add x86_64-pc-windows-gnu; fi; '
     'repo="$WINEPREFIX/drive_c/cage/powershell-wrapper-for-wine"; '
@@ -33,109 +100,245 @@ CHOCOLATEY_SETUP_COMMAND = (
     '(cd "$repo" && cargo run --package xtask -- build --arch 64); '
     'mkdir -p "$(dirname "$wrapper")"; '
     'cp "$repo"/target/x86_64-pc-windows-gnu/release/*.exe "$wrapper"; '
-    'wine "$pwsh" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command '
-    "\"$env:chocolateyVersion = '1.4.0'; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))\""
+    'wine "$WINEPREFIX/drive_c/Program Files/PowerShell/7/pwsh.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command '
+    '"$env:chocolateyVersion = \'1.4.0\'; iex ((New-Object System.Net.WebClient).DownloadString(\'https://community.chocolatey.org/install.ps1\'))"'
 )
 
 
-class ModuleError(ValueError):
-    pass
+def _expand_chocolatey(module: ModuleSpec, index: int) -> dict[str, Any]:
+    """Expand chocolatey module into dependencies + install steps."""
+    install = module.install or {}
+    packages = install.get("packages", [])
+    if not isinstance(packages, list) or not packages:
+        raise ModuleError(f"modules[{index}].install.packages must be a non-empty list")
+    
+    # Validate package names
+    import re
+    CHOCO_ARG_RE = re.compile(r"^(?:[A-Za-z0-9][A-Za-z0-9_.+-]*|--?[A-Za-z0-9][A-Za-z0-9_.-]*)$")
+    for pkg_index, pkg in enumerate(packages):
+        if not CHOCO_ARG_RE.fullmatch(pkg):
+            raise ModuleError(f"modules[{index}].install.packages[{pkg_index}] must use letters, numbers, dot, underscore, plus, or dash")
+    
+    # Setup script (runs once)
+    setup_step = {"kind": "script", "command": CHOCOLATEY_SETUP_COMMAND}
+    
+    # Separate install step per package (kind: choco)
+    install_steps = [setup_step]
+    for pkg in packages:
+        install_steps.append({
+            "kind": "choco",
+            "command": "install",
+            "args": [pkg, "-y", "--no-progress"]
+        })
+    
+    return {
+        "dependencies": [
+            {"kind": "winetricks", "verbs": ["dotnet48", "win10", "powershell_core"]}
+        ],
+        "install": install_steps,
+    }
 
 
-@dataclass(frozen=True)
-class ModuleSpec:
-    type: str
-    install: dict[str, Any] = field(default_factory=dict)
-
-    @classmethod
-    def from_dict(cls, data: Any, index: int) -> "ModuleSpec":
-        if not isinstance(data, dict):
-            raise ModuleError(f"modules[{index}] must be an object")
-        _reject_unknown(data, MODULE_FIELDS, f"modules[{index}]")
-        module_type = _required_str(data, "type", f"modules[{index}].type")
-        if module_type != "chocolatey":
-            raise ModuleError("modules[%d].type must be one of: chocolatey" % index)
-        install = _object(data.get("install", {}) or {}, f"modules[{index}].install")
-        _parse_chocolatey_packages(install, index)
-        return cls(module_type, {"packages": list(install.get("packages", []))})
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"type": self.type, "install": {"packages": list(self.install.get("packages", []))}}
-
-
-def apply_modules(data: dict[str, Any]) -> dict[str, Any]:
-    """Expand BlueBuild-style modules into concrete dependencies/install steps."""
-    result = deepcopy(data)
-    raw_modules = result.get("modules", []) or []
-    if not isinstance(raw_modules, list):
-        raise ModuleError("modules must be a list")
-
-    injected_dependencies: list[dict[str, Any]] = []
-    injected_install: list[dict[str, Any]] = []
-    expansions: list[dict[str, Any]] = []
-
-    for index, raw_module in enumerate(raw_modules):
-        module = ModuleSpec.from_dict(raw_module, index)
-        if module.type == "chocolatey":
-            packages = list(module.install["packages"])
-            injected_dependencies.append({"kind": "winetricks", "verbs": ["dotnet48", "win10", "powershell_core"]})
-            injected_install.append({"kind": "script", "command": CHOCOLATEY_SETUP_COMMAND})
-            for package in packages:
-                injected_install.append({"kind": "choco", "command": "install", "args": [package, "-y", "--no-progress"]})
-            expansions.append({
-                "schemaVersion": MODULE_EXPANSION_SCHEMA_VERSION,
-                "type": "chocolatey",
-                "install": {"packages": packages},
-                "injectedDependencies": [{"kind": "winetricks", "verbs": ["dotnet48", "win10", "powershell_core"]}],
-                "injectedInstallStepCount": 1 + len(packages),
-            })
-
-    if injected_dependencies:
-        dependencies = result.get("dependencies", []) or []
-        if not isinstance(dependencies, list):
-            raise ModuleError("dependencies must be a list")
-        result["dependencies"] = injected_dependencies + dependencies
-
-    if injected_install:
-        install = result.get("install", []) or []
-        if not isinstance(install, list):
-            raise ModuleError("install must be a list")
-        result["install"] = injected_install + install
-
-    if expansions:
-        provenance = result.setdefault("provenance", {})
-        if isinstance(provenance, dict):
-            provenance["moduleExpansions"] = expansions
+def _expand_exe(module: ModuleSpec, index: int) -> dict[str, Any]:
+    """Expand exe module into install steps."""
+    if not module.source:
+        raise ModuleError(f"modules[{index}].source is required for exe")
+    
+    args = []
+    if module.silentArgs:
+        if isinstance(module.silentArgs, str):
+            args = module.silentArgs.split()
+        else:
+            args = module.silentArgs
+    
+    install_step = {
+        "kind": "exe",
+        "source": module.source,
+        "args": args,
+    }
+    if module.sha256:
+        install_step["sha256"] = module.sha256
+    
+    result = {"install": [install_step]}
+    
+    # Optional config overlay
+    if module.config:
+        result["filesystem"] = [
+            {"source": module.config, "target": f"C:/config/{module.type}-config"}
+        ]
+    
     return result
 
 
-def _parse_chocolatey_packages(install: dict[str, Any], index: int) -> list[str]:
-    _reject_unknown(install, CHOCOLATEY_INSTALL_FIELDS, f"modules[{index}].install")
-    packages = install.get("packages")
-    if not isinstance(packages, list) or not packages:
-        raise ModuleError(f"modules[{index}].install.packages must be a non-empty list")
-    for package_index, package in enumerate(packages):
-        if not isinstance(package, str) or not package or not CHOCOLATEY_PACKAGE_RE.fullmatch(package):
-            raise ModuleError(
-                f"modules[{index}].install.packages[{package_index}] must be a package name using letters, numbers, dot, underscore, plus, or dash"
-            )
-    return packages
+def _expand_msi(module: ModuleSpec, index: int) -> dict[str, Any]:
+    """Expand msi module into install steps."""
+    if not module.source:
+        raise ModuleError(f"modules[{index}].source is required for msi")
+    
+    args = []
+    if module.silentArgs:
+        if isinstance(module.silentArgs, str):
+            args = module.silentArgs.split()
+        else:
+            args = module.silentArgs
+    else:
+        args = ["/qn", "/norestart"]  # Default silent install
+    
+    install_step = {
+        "kind": "msi",
+        "source": module.source,
+        "args": args,
+    }
+    if module.sha256:
+        install_step["sha256"] = module.sha256
+    
+    return {"install": [install_step]}
 
 
-def _reject_unknown(data: dict[str, Any], allowed: set[str], location: str) -> None:
-    unknown = sorted(set(data) - allowed)
-    if unknown:
-        raise ModuleError(f"unknown manifest field at {location}: " + ", ".join(unknown))
+def _expand_iso(module: ModuleSpec, index: int) -> dict[str, Any]:
+    """Expand iso module into install steps."""
+    if not module.source:
+        raise ModuleError(f"modules[{index}].source is required for iso")
+    
+    # ISO mounting and autorun script
+    script = f"""set -eu
+iso_path="$WINEPREFIX/drive_c/cage/iso-{index}.iso"
+# Stage ISO (assumes source is already staged)
+mount_point="$WINEPREFIX/drive_c/cage/iso-mount-{index}"
+mkdir -p "$mount_point"
+# Try to mount (may need root or fuseiso)
+if command -v mount >/dev/null 2>&1; then
+    mount -o loop,ro "$iso_path" "$mount_point" || true
+fi
+# Run setup if autorun enabled
+if [ {str(module.autorun).lower()} = "true" ] && [ -f "$mount_point/setup.exe" ]; then
+    wine "$mount_point/setup.exe" /S || wine "$mount_point/setup.exe" /qn || true
+fi
+# Cleanup
+umount "$mount_point" 2>/dev/null || true
+rmdir "$mount_point" 2>/dev/null || true
+"""
+    
+    install_step = {
+        "kind": "script",
+        "command": script,
+    }
+    
+    return {"install": [install_step]}
 
 
-def _object(value: Any, location: str) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise ModuleError(f"{location} must be an object")
-    return value
+def _expand_winetricks(module: ModuleSpec, index: int) -> dict[str, Any]:
+    """Expand winetricks module into dependencies."""
+    if not module.verbs:
+        raise ModuleError(f"modules[{index}].verbs must be a non-empty list")
+    
+    return {
+        "dependencies": [
+            {"kind": "winetricks", "verbs": module.verbs}
+        ]
+    }
 
 
-def _required_str(data: dict[str, Any], key: str, location: str) -> str:
-    value = data.get(key)
-    if not isinstance(value, str) or not value:
-        raise ModuleError(f"{location} is required")
-    return value
+def _expand_portable(module: ModuleSpec, index: int) -> dict[str, Any]:
+    """Expand portable module into install steps."""
+    if not module.source:
+        raise ModuleError(f"modules[{index}].source is required for portable")
+    if not module.target:
+        raise ModuleError(f"modules[{index}].target is required for portable")
+    
+    install_step = {
+        "kind": "portable",
+        "source": module.source,
+        "target": module.target,
+    }
+    if module.sha256:
+        install_step["sha256"] = module.sha256
+    
+    return {"install": [install_step]}
+
+
+def _expand_script(module: ModuleSpec, index: int) -> dict[str, Any]:
+    """Expand script module into install steps."""
+    if not module.command:
+        raise ModuleError(f"modules[{index}].command is required for script")
+    
+    return {
+        "install": [
+            {"kind": "script", "command": module.command}
+        ]
+    }
+
+
+EXPANDERS = {
+    "chocolatey": _expand_chocolatey,
+    "exe": _expand_exe,
+    "msi": _expand_msi,
+    "iso": _expand_iso,
+    "winetricks": _expand_winetricks,
+    "portable": _expand_portable,
+    "script": _expand_script,
+}
+
+
+def apply_modules(data: dict[str, Any]) -> dict[str, Any]:
+    """Expand all modules and merge into data dict.
+    
+    Modifies data in place, adding to:
+    - data["dependencies"]
+    - data["install"]
+    - data["filesystem"]
+    - data["provenance"]["moduleExpansions"]
+    
+    Returns the modified data dict.
+    """
+    modules_data = data.get("modules", [])
+    if not modules_data:
+        return data
+    
+    dependencies: list[dict[str, Any]] = data.get("dependencies", [])
+    install: list[dict[str, Any]] = data.get("install", [])
+    filesystem: list[dict[str, Any]] = data.get("filesystem", [])
+    provenance_expansions: list[dict[str, Any]] = []
+    
+    for index, module_data in enumerate(modules_data):
+        module = ModuleSpec.from_dict(module_data, index)
+        expander = EXPANDERS.get(module.type)
+        if not expander:
+            raise ModuleError(f"Unknown module type: {module.type}")
+        
+        expansion = expander(module, index)
+        
+        # Merge dependencies
+        for dep in expansion.get("dependencies", []):
+            dependencies.append(dep)
+        
+        # Merge install steps
+        for step in expansion.get("install", []):
+            install.append(step)
+        
+        # Merge filesystem mappings
+        for mapping in expansion.get("filesystem", []):
+            filesystem.append(mapping)
+        
+        # Record provenance
+        provenance_expansions.append({
+            "type": module.type,
+            "install": module.install,
+            "schemaVersion": "cage.module-expansion/v0",
+            "injectedDependencies": expansion.get("dependencies", []),
+            "injectedInstallStepCount": len(expansion.get("install", [])),
+        })
+    
+    # Update data dict
+    if dependencies:
+        data["dependencies"] = dependencies
+    if install:
+        data["install"] = install
+    if filesystem:
+        data["filesystem"] = filesystem
+    if provenance_expansions:
+        if "provenance" not in data:
+            data["provenance"] = {}
+        data["provenance"]["moduleExpansions"] = provenance_expansions
+    
+    return data
