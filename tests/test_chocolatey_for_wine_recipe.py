@@ -7,7 +7,7 @@ from core.manifest import load_manifest
 
 class ChocolateyForWineRecipeTests(unittest.TestCase):
     def test_sandbox_recipe_uses_chocolatey_for_wine_release_without_rust_wrapper(self):
-        recipe = Path("recipes/chocolatey-for-wine-sandbox.cage.yaml")
+        recipe = Path("recipes/_sandbox/chocolatey-for-wine-sandbox.cage.yaml")
         manifest = load_manifest(recipe)
 
         self.assertEqual(manifest.name, "chocolatey-for-wine-sandbox")

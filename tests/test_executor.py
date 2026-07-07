@@ -1,483 +1,219 @@
-"""Tests for the Cage container executor and build-script generator."""
+"""Tests for Cage bundle runtime execution planning."""
 from __future__ import annotations
-import io, json, os, stat, tempfile, unittest
-from unittest.mock import patch
+
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
 from pathlib import Path
-from types import SimpleNamespace
 
 from artifact.bundle import create_bundle
-from builder.pipeline import build_plan, generate_build_script
-from builder.executor import (
-    BuildResult,
-    _check_image,
-    _find_engine,
-    _pull_image,
-    _resolve_image_ref,
-    execute_inside_container,
-    _run_container_command,
-)
-from core.manifest import load_manifest
+from core.manifest import Manifest
+from runtime.launcher import RunError, build_run_plan
 
 
-MANIFEST_JSON = json.dumps({
+VALID = {
     "schemaVersion": "cage.dev/v0",
-    "name": "test-app",
-    "version": "0.1.0",
+    "name": "sample",
+    "version": "1.0.0",
     "runtime": {"provider": "wine", "version": "9.0"},
-    "dependencies": [
-        {"kind": "winetricks", "verbs": ["corefonts", "vcrun2022"]},
-    ],
-    "install": [
-        {"kind": "portable", "source": "file://./sources/app.zip",
-         "target": "C:/Program Files/TestApp"},
-    ],
-    "filesystem": [
-        {"source": "./overlays/config.xml",
-         "target": "C:/Program Files/TestApp/config.xml"},
-    ],
+    "dependencies": [{"kind": "winetricks", "verbs": ["corefonts"]}],
+    "install": [{
+        "kind": "portable",
+        "source": "file://app.zip",
+        "target": "C:/Program Files/App",
+    }],
+    "filesystem": [{
+        "source": "config.ini",
+        "target": "C:/Program Files/App/config.ini",
+    }],
     "launch": {
-        "entrypoint": "C:/Program Files/TestApp/app.exe",
-        "args": [],
-        "env": {},
-        "workingDirectory": "C:/Program Files/TestApp",
+        "entrypoint": "C:/Program Files/App/App.exe",
+        "args": ["--profile", "default"],
+        "env": {"APP_ENV": "test"},
+        "workingDirectory": "C:/Program Files/App",
     },
-})
+    "provenance": {"sources": []},
+}
 
 
-class BuildScriptGenerationTests(unittest.TestCase):
-    """The build script is generated from a manifest and contains the
-    correct phase commands for execution inside the Wine container."""
+class Phase3ExecutionPlanTests(unittest.TestCase):
 
-    def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="cage_test_"))
-        manifest_path = self.tmpdir / "manifest.json"
-        manifest_path.write_text(MANIFEST_JSON, encoding="utf-8")
-        self.manifest = load_manifest(manifest_path)
+    def _bundle(self, tmp: str) -> Path:
+        return create_bundle(Manifest.from_dict(VALID), Path(tmp), dry_run=True)
 
-    def tearDown(self):
-        import shutil
-        shutil.rmtree(self.tmpdir, ignore_errors=True)
-
-    def test_generate_script_includes_shebang(self):
-        script = generate_build_script(self.manifest)
-        self.assertTrue(script.startswith("#!/bin/bash"),
-                        "Script must have bash shebang")
-        self.assertIn("set -euo pipefail", script)
-
-    def test_generate_script_includes_all_phases(self):
-        script = generate_build_script(self.manifest)
-        for phase_name in ("init-prefix", "install-dependencies",
-                           "install-apps", "apply-layout-and-registry",
-                           "validate", "seal-artifact"):
-            self.assertIn(phase_name, script,
-                          f"Phase {phase_name} must appear in script")
-
-    def test_generate_script_has_wineboot(self):
-        script = generate_build_script(self.manifest)
-        self.assertIn("wineboot --init", script)
-
-    def test_generate_script_has_winetricks_verbs(self):
-        script = generate_build_script(self.manifest)
-        self.assertIn("corefonts", script)
-        self.assertIn("vcrun2022", script)
-        self.assertIn("winetricks -q", script)
-
-    def test_generate_script_has_filesystem_mapping(self):
-        script = generate_build_script(self.manifest)
-        self.assertIn("config.xml", script)
-        self.assertIn("cp -r", script)
-
-    def test_generate_script_has_portable_extraction(self):
-        script = generate_build_script(self.manifest)
-        self.assertIn("unzip -o", script)
-        self.assertIn("app.zip", script)
-
-    def test_generate_script_has_validation(self):
-        script = generate_build_script(self.manifest)
-        self.assertIn("Entrypoint exists", script)
-        self.assertIn("prefix-filelist.txt", script)
-
-    def test_prefix_filelist_recording_is_not_sigpipe_prone_under_pipefail(self):
-        script = generate_build_script(self.manifest)
-
-        self.assertIn("prefix-filelist.txt", script)
-        self.assertNotIn("| head -100", script)
-
-    def test_generate_script_has_build_result_marker(self):
-        script = generate_build_script(self.manifest)
-        self.assertIn("BUILD COMPLETE", script)
-        self.assertIn('"build": "complete"', script)
-
-    def test_generate_script_executable_structure(self):
-        """The script should be valid bash syntax by basic check."""
-        script = generate_build_script(self.manifest)
-        # Count only bash keyword 'fi' at line start (ignores substrings
-        # in words like 'prefix', 'FileCount')
-        fi_lines = sum(1 for line in script.split('\n')
-                       if line.strip().startswith('fi'))
-        if_lines = sum(1 for line in script.split('\n')
-                       if line.strip().startswith('if ') or
-                       line.strip().startswith('if\t') or
-                       line.strip() == 'if')
-        self.assertGreaterEqual(if_lines, 1,
-                            "Script should have at least one if block")
-        self.assertGreaterEqual(fi_lines, 1,
-                            "Script should have at least one fi")
-        self.assertGreater(script.count('echo'), 10,
-                           "Script should have many echo statements")
-
-
-class ContainerExecutionCommandTests(unittest.TestCase):
-    def test_execute_inside_container_uses_selected_workspace_and_container_script_path(self):
+    def test_build_run_plan_uses_verified_graph_contract(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            workspace = root / "workspace"
-            workspace.mkdir()
-            manifest_path = root / "manifest.json"
-            manifest_path.write_text(MANIFEST_JSON, encoding="utf-8")
-            manifest = load_manifest(manifest_path)
-            bundle = create_bundle(manifest, root / "dist", dry_run=False)
+            bundle = self._bundle(tmp)
+            plan = build_run_plan(bundle, graphics="headless", engine="podman")
 
-            class Completed:
-                returncode = 0
-                stdout = "container ok"
-                stderr = ""
+        self.assertEqual(plan["schemaVersion"], "cage.run-plan/v0")
+        self.assertEqual(plan["graphics"]["mode"], "headless")
+        self.assertEqual(plan["runtime"]["provider"], "wine")
+        self.assertEqual(plan["runtime"]["version"], "9.0")
+        self.assertEqual(plan["runtime"]["image"], "ghcr.io/pelagians/cage-wine:9.0")
+        self.assertEqual(plan["launch"]["entrypoint"], "C:/Program Files/App/App.exe")
+        self.assertEqual(plan["container"]["engine"], "podman")
+        self.assertIn("/opt/cage/bundle/metadata/graph.json", plan["container"]["environment"]["CAGE_GRAPH"])
+        self.assertIn("wine", plan["launchCommand"])
+        self.assertIn("--profile", plan["launchCommand"])
+        self.assertEqual(plan["verification"]["valid"], True)
 
-            with patch("builder.executor._run_container_command", return_value=Completed()) as run, patch("sys.stderr", io.StringIO()):
-                result = execute_inside_container(
-                    manifest,
-                    bundle,
-                    engine="docker",
-                    image_ref="local/runtime:test",
-                    timeout=5,
-                    workspace=workspace,
-                )
-
-        self.assertTrue(result.success)
-        argv = run.call_args.args[0]
-        self.assertIn(f"{workspace.resolve()}:/workspace:ro", argv)
-        self.assertEqual(argv[-3:], ["local/runtime:test", "bash", "/opt/cage/build/run.sh"])
-
-    def test_execute_inside_container_uses_timeout_for_generated_phase_script(self):
+    def test_build_run_plan_rejects_invalid_bundle_before_planning(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            workspace = root / "workspace"
-            workspace.mkdir()
-            manifest_path = root / "manifest.json"
-            manifest_path.write_text(MANIFEST_JSON, encoding="utf-8")
-            manifest = load_manifest(manifest_path)
-            bundle = create_bundle(manifest, root / "dist", dry_run=False)
+            bundle = self._bundle(tmp)
+            (bundle / "metadata" / "graph.json").unlink()
+            with self.assertRaises(RunError) as cm:
+                build_run_plan(bundle, graphics="headless", engine="podman")
 
-            class Completed:
-                returncode = 0
-                stdout = "container ok"
-                stderr = ""
+        self.assertIn("missing required file: metadata/graph.json", str(cm.exception))
 
-            with patch("builder.executor._run_container_command", return_value=Completed()), patch("sys.stderr", io.StringIO()):
-                execute_inside_container(
-                    manifest,
-                    bundle,
-                    engine="docker",
-                    image_ref="local/runtime:test",
-                    timeout=777,
-                    workspace=workspace,
-                )
-
-            script = (bundle / "build" / "run.sh").read_text(encoding="utf-8")
-
-        self.assertIn("wineboot timeout: 777s", script)
-        self.assertIn("timeout 777s wine wineboot --init", script)
-
-    def test_podman_build_mounts_include_selinux_shared_relabel_option(self):
+    def test_build_run_plan_rejects_invalid_graphics_mode(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            workspace = root / "workspace"
-            workspace.mkdir()
-            manifest_path = root / "manifest.json"
-            manifest_path.write_text(MANIFEST_JSON, encoding="utf-8")
-            manifest = load_manifest(manifest_path)
-            bundle = create_bundle(manifest, root / "dist", dry_run=False)
+            bundle = self._bundle(tmp)
+            with self.assertRaises(RunError) as cm:
+                build_run_plan(bundle, graphics="wayland", engine="docker")
 
-            class Completed:
-                returncode = 0
-                stdout = "container ok"
-                stderr = ""
+        self.assertIn("graphics mode 'wayland' must be one of", str(cm.exception))
 
-            with patch("builder.executor._run_container_command", return_value=Completed()) as run, patch("sys.stderr", io.StringIO()):
-                execute_inside_container(
-                    manifest,
-                    bundle,
-                    engine="podman",
-                    image_ref="local/runtime:test",
-                    timeout=5,
-                    workspace=workspace,
-                )
-
-        argv = run.call_args.args[0]
-        self.assertIn(f"{bundle.resolve()}:/opt/cage:z", argv)
-        self.assertIn(f"{workspace.resolve()}:/workspace:ro,z", argv)
-
-    def test_docker_build_mounts_do_not_include_podman_selinux_option(self):
+    def test_build_run_plan_rejects_invalid_graphics_contract_before_planning(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            workspace = root / "workspace"
-            workspace.mkdir()
-            manifest_path = root / "manifest.json"
-            manifest_path.write_text(MANIFEST_JSON, encoding="utf-8")
-            manifest = load_manifest(manifest_path)
-            bundle = create_bundle(manifest, root / "dist", dry_run=False)
+            bundle = self._bundle(tmp)
+            graph_path = bundle / "metadata" / "graph.json"
+            graph = json.loads(graph_path.read_text(encoding="utf-8"))
+            graph["graphics"]["supportedModes"] = ["headless"]
+            graph_path.write_text(json.dumps(graph, indent=2), encoding="utf-8")
+            with self.assertRaises(RunError) as cm:
+                build_run_plan(bundle, graphics="vnc", engine="docker")
 
-            class Completed:
-                returncode = 0
-                stdout = "container ok"
-                stderr = ""
+        self.assertIn("graph graphics must include defaultMode", str(cm.exception))
 
-            with patch("builder.executor._run_container_command", return_value=Completed()) as run, patch("sys.stderr", io.StringIO()):
-                execute_inside_container(
-                    manifest,
-                    bundle,
-                    engine="docker",
-                    image_ref="local/runtime:test",
-                    timeout=5,
-                    workspace=workspace,
-                )
-
-        argv = run.call_args.args[0]
-        self.assertIn(f"{bundle.resolve()}:/opt/cage", argv)
-        self.assertIn(f"{workspace.resolve()}:/workspace:ro", argv)
-        self.assertNotIn(f"{bundle.resolve()}:/opt/cage:z", argv)
-
-    def test_run_container_command_streams_output_to_stderr_and_returns_log_text(self):
-        import io
-        import sys
-
-        stderr = io.StringIO()
-        with patch("sys.stderr", stderr):
-            result = _run_container_command(
-                [sys.executable, "-c", "print('[cage] Phase 1/6: Initializing Wine prefix'); print('container still working')"],
-                timeout=5,
+    def test_vnc_run_plan_publishes_loopback_vnc_and_novnc_ports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = self._bundle(tmp)
+            plan = build_run_plan(
+                bundle,
+                graphics="vnc",
+                engine="docker",
+                network="bridge",
+                vnc_port=5901,
+                novnc_port=6081,
             )
 
-        self.assertEqual(result.returncode, 0)
-        self.assertIn("[cage] Phase 1/6: Initializing Wine prefix", stderr.getvalue())
-        self.assertIn("container still working", stderr.getvalue())
-        self.assertIn("[cage] Phase 1/6: Initializing Wine prefix", result.stdout)
-        self.assertIn("container still working", result.stdout)
+        argv = plan["container"]["argv"]
+        self.assertIn("127.0.0.1:5901:5900", argv)
+        self.assertIn("127.0.0.1:6081:6080", argv)
+        self.assertIn("x11vnc", plan["container"]["script"])
+        self.assertIn("websockify", plan["container"]["script"])
 
+    def test_run_plan_clears_inherited_base_image_dll_overrides_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = self._bundle(tmp)
+            plan = build_run_plan(bundle, graphics="headless", engine="docker")
 
-class BuildResultTests(unittest.TestCase):
-    """BuildResult dataclass serialization and construction."""
+        env = plan["container"]["environment"]
+        argv = plan["container"]["argv"]
+        self.assertIn("WINEDLLOVERRIDES", env)
+        self.assertEqual(env["WINEDLLOVERRIDES"], "")
+        self.assertIn("WINEDLLOVERRIDES=", argv)
 
-    def test_success_result(self):
-        r = BuildResult(
-            success=True,
-            bundle_path="/tmp/test",
-            runtime_provider="wine",
-            runtime_version="9.0",
-            image_ref="cage/wine:9.0",
-            engine="docker",
-            exit_code=0,
-            log="build complete",
-            prefix_size=1048576,
-            prefix_file_count=42,
-        )
-        d = r.to_dict()
-        self.assertTrue(d["success"])
-        self.assertEqual(d["prefixSize"], 1048576)
-        self.assertEqual(d["prefixFileCount"], 42)
-        self.assertEqual(d["exitCode"], 0)
-
-    def test_failure_result(self):
-        r = BuildResult(
-            success=False,
-            bundle_path="/tmp/test",
-            runtime_provider="wine",
-            runtime_version="9.0",
-            image_ref="",
-            engine="docker",
-            error="Engine not found",
-        )
-        d = r.to_dict()
-        self.assertFalse(d["success"])
-        self.assertEqual(d["error"], "Engine not found")
-
-    def test_result_with_none_fields(self):
-        r = BuildResult(
-            success=True,
-            bundle_path="/tmp/test",
-            runtime_provider="wine",
-            runtime_version="9.0",
-            image_ref="cage/wine:9.0",
-            engine="docker",
-        )
-        d = r.to_dict()
-        self.assertIsNone(d["exitCode"])
-        self.assertIsNone(d["prefixSize"])
-
-
-class EngineDetectionTests(unittest.TestCase):
-    """Container engine auto-detection."""
-
-    def test_find_engine_prefer_docker(self):
-        """At the very least, 'docker' or 'podman' should be in PATH or
-        _find_engine raises RuntimeError with a helpful message."""
-        try:
-            engine = _find_engine()
-            self.assertIn(engine, ("docker", "podman"))
-        except RuntimeError as e:
-            self.assertIn("Install Docker or Podman", str(e))
-
-    def test_image_check_no_hang_on_bogus_ref(self):
-        """_check_image should return False for made-up refs, not hang."""
-        try:
-            result = _check_image("cage/nonexistent:999.999", "docker")
-            self.assertFalse(result)
-        except FileNotFoundError:
-            pass  # Docker not installed — acceptable
-
-    def test_pull_bogus_image(self):
-        """_pull_image should return False for non-existent images."""
-        try:
-            result = _pull_image("cage/nonexistent:999.999", "docker")
-            self.assertFalse(result)
-        except FileNotFoundError:
-            pass  # Docker not installed — acceptable
-
-    def test_resolve_image_prefers_local_developer_image_without_pull(self):
-        """Local runtime images are explicit developer overrides."""
-        binding = SimpleNamespace(
-            local_oci_image="cage/wine:11.0",
-            oci_image="ghcr.io/pelagians/cage-wine:11.0",
-        )
-        manifest = SimpleNamespace(runtime=SimpleNamespace(provider="wine", version="11.0"))
-
-        with patch("builder.executor.resolve_runtime", return_value=binding),              patch("builder.executor._check_image", return_value=True) as check,              patch("builder.executor._pull_image") as pull:
-            result = _resolve_image_ref(manifest, "podman")
-
-        self.assertEqual(result, "cage/wine:11.0")
-        check.assert_called_once_with("cage/wine:11.0", "podman")
-        pull.assert_not_called()
-
-    def test_resolve_image_pulls_published_tag_before_cached_copy(self):
-        """Mutable GHCR catalog tags must refresh after CI image rebuilds."""
-        binding = SimpleNamespace(
-            local_oci_image="cage/wine:11.0",
-            oci_image="ghcr.io/pelagians/cage-wine:11.0",
-        )
-        manifest = SimpleNamespace(runtime=SimpleNamespace(provider="wine", version="11.0"))
-
-        def check_image(ref, engine):
-            # Local developer image is absent, but a stale published tag exists.
-            return ref == "ghcr.io/pelagians/cage-wine:11.0"
-
-        with patch("builder.executor.resolve_runtime", return_value=binding),              patch("builder.executor._check_image", side_effect=check_image) as check,              patch("builder.executor._pull_image", return_value=True) as pull:
-            result = _resolve_image_ref(manifest, "podman")
-
-        self.assertEqual(result, "ghcr.io/pelagians/cage-wine:11.0")
-        check.assert_called_once_with("cage/wine:11.0", "podman")
-        pull.assert_called_once_with("ghcr.io/pelagians/cage-wine:11.0", "podman")
-
-    def test_resolve_image_can_fallback_to_cached_published_tag_when_pull_fails(self):
-        """Offline users can still use an already-local published runtime image."""
-        binding = SimpleNamespace(
-            local_oci_image="cage/wine:11.0",
-            oci_image="ghcr.io/pelagians/cage-wine:11.0",
-        )
-        manifest = SimpleNamespace(runtime=SimpleNamespace(provider="wine", version="11.0"))
-
-        with patch("builder.executor.resolve_runtime", return_value=binding),              patch("builder.executor._check_image", side_effect=[False, True]) as check,              patch("builder.executor._pull_image", return_value=False) as pull:
-            result = _resolve_image_ref(manifest, "podman")
-
-        self.assertEqual(result, "ghcr.io/pelagians/cage-wine:11.0")
-        self.assertEqual(check.call_count, 2)
-        check.assert_any_call("cage/wine:11.0", "podman")
-        check.assert_any_call("ghcr.io/pelagians/cage-wine:11.0", "podman")
-        pull.assert_called_once_with("ghcr.io/pelagians/cage-wine:11.0", "podman")
-
-
-class BuildPlanTests(unittest.TestCase):
-    """build_plan produces the correct phase structure."""
-
-    def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="cage_test_"))
-        manifest_path = self.tmpdir / "manifest.json"
-        manifest_path.write_text(MANIFEST_JSON, encoding="utf-8")
-        self.manifest = load_manifest(manifest_path)
-
-    def tearDown(self):
-        import shutil
-        shutil.rmtree(self.tmpdir, ignore_errors=True)
-
-    def test_plan_has_6_phases(self):
-        plan = build_plan(self.manifest)
-        self.assertEqual(len(plan), 6)
-
-    def test_plan_each_phase_has_phase_action_inputs_keys(self):
-        plan = build_plan(self.manifest)
-        for phase in plan:
-            for key in ("phase", "inputs", "actions"):
-                self.assertIn(key, phase, f"Phase missing key '{key}': {phase}")
-
-    def test_plan_contains_winetricks_verbs(self):
-        plan = build_plan(self.manifest)
-        dep_phase = plan[1]  # install-dependencies
-        actions_str = " ".join(str(a) for a in dep_phase["actions"])
-        self.assertIn("corefonts", actions_str)
-        self.assertIn("vcrun2022", actions_str)
-
-    def test_plan_phase_order_is_correct(self):
-        plan = build_plan(self.manifest)
-        expected = [
-            "init-prefix", "install-dependencies", "install-apps",
-            "apply-layout-and-registry", "validate", "seal-artifact",
-        ]
-        actual = [p["phase"] for p in plan]
-        self.assertEqual(actual, expected)
-
-
-class BuildScriptNoDepsTests(unittest.TestCase):
-    """Script generation with an empty manifest (no deps, no installs)."""
-
-    def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="cage_test_"))
-        data = {
-            "schemaVersion": "cage.dev/v0",
-            "name": "empty-app",
-            "version": "0.0.1",
-            "runtime": {"provider": "wine", "version": "9.0"},
-            "dependencies": [],
-            "install": [],
-            "filesystem": [],
-            "launch": {"entrypoint": "C:/app.exe", "args": [],
-                       "env": {}, "workingDirectory": "C:/"},
+    def test_wineconsole_entrypoints_use_native_helper_and_strip_legacy_backend_option(self):
+        data = dict(VALID)
+        data["launch"] = {
+            "entrypoint": "C:/windows/system32/wineconsole.exe",
+            "args": [
+                "--backend=user",
+                "C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe",
+                "-NoLogo",
+                "-NoExit",
+            ],
         }
-        manifest_path = self.tmpdir / "manifest.json"
-        manifest_path.write_text(json.dumps(data), encoding="utf-8")
-        self.manifest = load_manifest(manifest_path)
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=True)
+            plan = build_run_plan(bundle, graphics="headless", engine="docker")
 
-    def tearDown(self):
-        import shutil
-        shutil.rmtree(self.tmpdir, ignore_errors=True)
+        self.assertEqual(
+            plan["launchCommand"],
+            [
+                "wineconsole",
+                "C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe",
+                "-NoLogo",
+                "-NoExit",
+            ],
+        )
 
-    def test_empty_deps_skips_winetricks(self):
-        script = generate_build_script(self.manifest)
-        self.assertIn("No dependencies declared", script)
-        self.assertNotIn("winetricks", script)
+    def test_cli_run_dry_run_prints_run_plan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = self._bundle(tmp)
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    "cmd/cage.py",
+                    "run",
+                    "--dry-run",
+                    "--graphics",
+                    "headless",
+                    "--engine",
+                    "podman",
+                    str(bundle),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
 
-    def test_empty_install_skips_installers(self):
-        script = generate_build_script(self.manifest)
-        self.assertIn("No application install steps declared", script)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["schemaVersion"], "cage.run-plan/v0")
+        self.assertEqual(payload["graphics"]["mode"], "headless")
+        self.assertEqual(payload["container"]["engine"], "podman")
 
-    def test_empty_filesystem_skips_mappings(self):
-        script = generate_build_script(self.manifest)
-        self.assertIn("No filesystem mappings declared", script)
 
-    def test_script_still_has_6_phases(self):
-        script = generate_build_script(self.manifest)
-        for phase in ("init-prefix", "install-dependencies",
-                      "install-apps", "apply-layout-and-registry",
-                      "validate", "seal-artifact"):
-            self.assertIn(phase, script)
+    def test_umu_proton_ge_run_plan_uses_umu_launcher(self):
+        data = dict(VALID)
+        data["runtime"] = {"provider": "umu-proton-ge", "version": "GE-Proton9-27"}
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=True)
+            plan = build_run_plan(bundle, graphics="headless", engine="podman")
+
+        self.assertEqual(plan["runtime"]["provider"], "umu-proton-ge")
+        self.assertEqual(plan["runtime"]["launcher"], "umu")
+        self.assertEqual(plan["runtime"]["image"], "ghcr.io/pelagians/cage-umu-proton-ge:GE-Proton9-27")
+        self.assertIn("umu-run", plan["launchCommand"])
+
+
+    def test_umu_proton_ge_image_installs_umu_launcher(self):
+        root = Path(__file__).resolve().parents[1]
+        dockerfile = (root / "container/runtimes/umu-proton-ge/Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("umu-launcher", dockerfile)
+        self.assertIn("umu-run", dockerfile)
+        self.assertIn("UMU_LAUNCHER_REF", dockerfile)
+        self.assertIn("test -x /opt/umu/bin/umu-run", dockerfile)
+
+    def test_runtime_container_images_include_vnc_helpers(self):
+        root = Path(__file__).resolve().parents[1]
+        dockerfiles = [
+            "container/runtimes/wine/Dockerfile",
+            "container/runtimes/wine-staging/Dockerfile",
+            "container/runtimes/umu-proton-ge/Dockerfile",
+        ]
+        for rel in dockerfiles:
+            with self.subTest(rel=rel):
+                dockerfile = (root / rel).read_text(encoding="utf-8")
+                self.assertIn("x11vnc", dockerfile)
+                self.assertIn("websockify", dockerfile)
+
+    def test_wine_image_contains_powershell_wrapper_build_toolchain(self):
+        root = Path(__file__).resolve().parents[1]
+        dockerfile = (root / "container/runtimes/wine/Dockerfile").read_text(encoding="utf-8")
+
+        self.assertIn("python3 git", dockerfile)
+        self.assertIn("build-essential", dockerfile)
+        self.assertIn("gcc-mingw-w64-x86-64", dockerfile)
+        self.assertIn("rustup target add x86_64-pc-windows-gnu", dockerfile)
+        self.assertIn("x86_64-w64-mingw32-gcc --version", dockerfile)
 
 
 if __name__ == "__main__":

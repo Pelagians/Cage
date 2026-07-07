@@ -55,8 +55,8 @@ class Phase5ARunnerCatalogTests(unittest.TestCase):
 
     def test_wine_dockerfiles_pin_package_versions_from_catalog_build_arg(self):
         root = Path(__file__).resolve().parents[1]
-        wine = (root / "container/providers/wine/Dockerfile").read_text(encoding="utf-8")
-        staging = (root / "container/providers/wine-staging/Dockerfile").read_text(encoding="utf-8")
+        wine = (root / "container/runtimes/wine/Dockerfile").read_text(encoding="utf-8")
+        staging = (root / "container/runtimes/wine-staging/Dockerfile").read_text(encoding="utf-8")
 
         self.assertIn("ARG WINE_PACKAGE_VERSION=11.0.0.0~bookworm-1", wine)
         self.assertIn("winehq-stable=${WINE_PACKAGE_VERSION}", wine)
