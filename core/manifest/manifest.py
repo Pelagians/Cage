@@ -1,159 +1,43 @@
-"""Main Manifest class."""
+"""Simplified Manifest for module-first architecture.
+
+This is the new Manifest that parses modules directly without expansion.
+"""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
 from pathlib import Path
+from dataclasses import dataclass, field
 from typing import Any
 
-from .types import (
-    RuntimeSpec, DependencySpec, InstallStep, FileMapping,
-    SourceDeclaration, SuiteEntrypoint, FileAssociation,
-    LaunchSpec,
-)
-from .helpers import (
-    _object, _required_str, _optional_str, _list,
-    _reject_unknown, _drop_none, _string_list,
-    _tokenize_yaml, _load_strict_yaml,
-)
-from .constants import ROOT_FIELDS, SCHEMA_VERSION, LEGACY_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS
 from .errors import ManifestError
-from core.compatibility import CompatibilityPolicyError, normalize_compatibility_policy
-from core.profiles import ProfileError, apply_profiles
-from core.modules import ModuleError, apply_modules, parse_module, ModuleSpec
+from .helpers import _reject_unknown, _required_str, _optional_str, _drop_none
+from .constants import ROOT_FIELDS, RUNTIME_FIELDS, LAUNCH_FIELDS, SOURCE_FIELDS
+from ..modules import parse_module, ModuleBase
 
-@dataclass(frozen=True)
-class Manifest:
-    schema_version: str
-    name: str
-    version: str
-    runtime: RuntimeSpec
-    profiles: list[str]
-    modules: list[ModuleSpec]
-    dependencies: list[DependencySpec]
-    install: list[InstallStep]
-    filesystem: list[FileMapping]
-    launch: LaunchSpec
-    provenance: dict[str, Any] = field(default_factory=dict)
-    sources: list[SourceDeclaration] = field(default_factory=list)
-    config: dict[str, Any] = field(default_factory=dict)
-    compatibility: dict[str, Any] = field(default_factory=dict)
-    registry: list[dict[str, Any]] = field(default_factory=list)
-    state: dict[str, Any] = field(default_factory=dict)
-    exports: list[dict[str, Any]] = field(default_factory=list)
-    entrypoints: list[SuiteEntrypoint] = field(default_factory=list)
-    file_associations: list[FileAssociation] = field(default_factory=list)
 
-    @classmethod
-    def from_dict(cls, data):
+def _load_strict_yaml(text: str) -> dict[str, Any]:
+    """Load YAML with strict parsing."""
+    try:
+        import yaml
+        data = yaml.safe_load(text)
         if not isinstance(data, dict):
-            raise ManifestError("manifest root must be an object")
-        _reject_unknown(data, ROOT_FIELDS, "manifest")
-        try:
-            # Parse modules BEFORE apply_modules removes them
-            modules = [parse_module(x, i) for i, x in enumerate(_list(data.get("modules", []), "modules"))]
-            data = apply_profiles(data)
-            data = apply_modules(data)
-            # Re-parse modules after apply_modules to include auto-injected modules
-            # apply_modules stores the expanded modules list in provenance
-            if "provenance" in data and "expandedModules" in data["provenance"]:
-                modules = [parse_module(x, i) for i, x in enumerate(data["provenance"]["expandedModules"])]
-        except (ProfileError, ModuleError) as exc:
-            raise ManifestError(str(exc)) from exc
-        schema = _required_str(data, "schemaVersion")
-        if schema not in SUPPORTED_SCHEMA_VERSIONS:
-            raise ManifestError(
-                "schemaVersion must be one of: " + ", ".join(sorted(SUPPORTED_SCHEMA_VERSIONS))
-            )
-        if not isinstance(data.get("runtime"), dict):
-            raise ManifestError("runtime must be an object")
-        if not isinstance(data.get("launch"), dict):
-            raise ManifestError("launch must be an object")
-
-        provenance = _object(data.get("provenance", {}) or {}, "provenance")
-        config = _object(data.get("config", {}) or {}, "config")
-        raw_compatibility = _object(data.get("compatibility", {}) or {}, "compatibility")
-        try:
-            compatibility = normalize_compatibility_policy(
-                config=config,
-                compatibility=raw_compatibility,
-            )
-        except CompatibilityPolicyError as exc:
-            raise ManifestError(str(exc)) from exc
-        state = _object(data.get("state", {}) or {}, "state")
-        profiles = _string_list(data.get("profiles", []), "profiles")
-        sources = [SourceDeclaration.from_dict(x, i) for i, x in enumerate(_list(data.get("sources", []), "sources"))]
-        registry = _list(data.get("registry", []), "registry")
-        exports = _list(data.get("exports", []), "exports")
-        entrypoints = [SuiteEntrypoint.from_dict(x, i) for i, x in enumerate(_list(data.get("entrypoints", []), "entrypoints"))]
-        _validate_entrypoint_ids(entrypoints)
-        file_associations = [FileAssociation.from_dict(x, i) for i, x in enumerate(_list(data.get("fileAssociations", []), "fileAssociations"))]
-        _validate_file_associations(file_associations, entrypoints)
-
-        return cls(
-            schema,
-            _required_str(data, "name"),
-            _required_str(data, "version"),
-            RuntimeSpec.from_dict(data["runtime"]),
-            profiles,
-            modules,
-            [DependencySpec.from_dict(x, i) for i, x in enumerate(_list(data.get("dependencies", []), "dependencies"))],
-            [InstallStep.from_dict(x, i) for i, x in enumerate(_list(data.get("install", []), "install"))],
-            [FileMapping.from_dict(x, i) for i, x in enumerate(_list(data.get("filesystem", []), "filesystem"))],
-            LaunchSpec.from_dict(data["launch"]),
-            provenance,
-            sources,
-            config,
-            compatibility,
-            registry,
-            state,
-            exports,
-            entrypoints,
-            file_associations,
-        )
-
-    def to_dict(self):
-        return _drop_none({
-            "schemaVersion": self.schema_version,
-            "name": self.name,
-            "version": self.version,
-            "runtime": self.runtime.to_dict(),
-            "profiles": self.profiles,
-            "modules": [x.to_dict() for x in self.modules],
-            "sources": [x.to_dict() for x in self.sources],
-            "dependencies": [x.to_dict() for x in self.dependencies],
-            "install": [x.to_dict() for x in self.install],
-            "filesystem": [x.to_dict() for x in self.filesystem],
-            "launch": self.launch.to_dict(),
-            "compatibility": self.compatibility,
-            "registry": self.registry,
-            "entrypoints": [x.to_dict() for x in self.entrypoints],
-            "fileAssociations": [x.to_dict() for x in self.file_associations],
-            "state": self.state,
-            "exports": self.exports,
-            "provenance": self.provenance,
-        })
+            raise ManifestError("YAML root must be a dict")
+        return data
+    except ImportError:
+        raise ManifestError("PyYAML is required for YAML support")
+    except yaml.YAMLError as exc:
+        raise ManifestError(f"invalid YAML: {exc}") from exc
 
 
-
-def _validate_entrypoint_ids(entrypoints: list[SuiteEntrypoint]) -> None:
-    seen: set[str] = set()
-    for index, entrypoint in enumerate(entrypoints):
-        if entrypoint.id in seen:
-            raise ManifestError(f"entrypoints[{index}].id is duplicated: {entrypoint.id}")
-        seen.add(entrypoint.id)
-
-
-def _validate_file_associations(associations: list[FileAssociation], entrypoints: list[SuiteEntrypoint]) -> None:
-    ids = {entrypoint.id for entrypoint in entrypoints}
-    if not ids and associations:
-        raise ManifestError("fileAssociations require entrypoints")
-    for index, association in enumerate(associations):
-        if association.entrypoint not in ids:
-            raise ManifestError(f"fileAssociations[{index}].entrypoint references unknown entrypoint: {association.entrypoint}")
-
-
-def load_manifest(path: Path):
+def load_manifest(path: Path) -> Manifest:
+    """Load a manifest from a file (YAML or JSON).
+    
+    Args:
+        path: Path to the manifest file
+    
+    Returns:
+        Parsed Manifest instance
+    """
     suffix = path.suffix.lower()
     try:
         text = path.read_text(encoding="utf-8")
@@ -168,3 +52,223 @@ def load_manifest(path: Path):
         except json.JSONDecodeError as exc:
             raise ManifestError(f"invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}") from exc
     return Manifest.from_dict(data)
+
+
+@dataclass(frozen=True)
+class RuntimeSpec:
+    """Runtime configuration."""
+    provider: str
+    version: str
+    source: str | None = None
+    channel: str | None = None
+    digest: str | None = None
+    runner: str | None = None
+    network: str = "none"
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RuntimeSpec:
+        _reject_unknown(data, RUNTIME_FIELDS, "runtime")
+        provider = _required_str(data, "runtime.provider")
+        version = _required_str(data, "runtime.version")
+        network = _optional_str(data, "network") or "none"
+        return cls(
+            provider=provider,
+            version=version,
+            source=_optional_str(data, "source"),
+            channel=_optional_str(data, "channel"),
+            digest=_optional_str(data, "digest"),
+            runner=_optional_str(data, "runner"),
+            network=network,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return _drop_none({
+            "provider": self.provider,
+            "version": self.version,
+            "source": self.source,
+            "channel": self.channel,
+            "digest": self.digest,
+            "runner": self.runner,
+            "network": self.network,
+        })
+
+
+@dataclass(frozen=True)
+class LaunchSpec:
+    """Launch configuration."""
+    entrypoint: str | None = None
+    args: list[str] = field(default_factory=list)
+    env: dict[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> LaunchSpec:
+        _reject_unknown(data, LAUNCH_FIELDS, "launch")
+        args = data.get("args", []) or []
+        env = data.get("env", {}) or {}
+        if not isinstance(args, list):
+            raise ManifestError("launch.args must be a list")
+        if not isinstance(env, dict):
+            raise ManifestError("launch.env must be a dict")
+        return cls(
+            entrypoint=_optional_str(data, "entrypoint"),
+            args=args,
+            env=env,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return _drop_none({
+            "entrypoint": self.entrypoint,
+            "args": self.args,
+            "env": self.env,
+        })
+
+
+@dataclass(frozen=True)
+class SourceSpec:
+    """Source declaration for integrity verification."""
+    id: str
+    type: str
+    policy: str
+    url: str | None = None
+    source: str | None = None
+    path: str | None = None
+    sha256: str | None = None
+    description: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], index: int) -> SourceSpec:
+        _reject_unknown(data, SOURCE_FIELDS, f"sources[{index}]")
+        sid = _optional_str(data, "id") or _optional_str(data, "name")
+        if not sid:
+            raise ManifestError(f"sources[{index}].id or sources[{index}].name is required")
+        return cls(
+            id=sid,
+            type=_required_str(data, f"sources[{index}].type"),
+            policy=_required_str(data, f"sources[{index}].policy"),
+            url=_optional_str(data, "url"),
+            source=_optional_str(data, "source"),
+            path=_optional_str(data, "path"),
+            sha256=_optional_str(data, "sha256"),
+            description=_optional_str(data, "description"),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return _drop_none({
+            "id": self.id,
+            "type": self.type,
+            "policy": self.policy,
+            "url": self.url,
+            "source": self.source,
+            "path": self.path,
+            "sha256": self.sha256,
+            "description": self.description,
+        })
+
+
+@dataclass(frozen=True)
+class Manifest:
+    """Simplified Manifest for module-first architecture.
+    
+    This Manifest parses modules directly without expansion into intermediate fields.
+    Modules are first-class build directives that generate build steps.
+    """
+    name: str
+    version: str
+    runtime: RuntimeSpec
+    modules: list[ModuleBase] = field(default_factory=list)
+    sources: list[SourceSpec] = field(default_factory=list)
+    launch: LaunchSpec | None = None
+    compatibility: dict[str, Any] = field(default_factory=dict)
+    config: dict[str, Any] = field(default_factory=dict)
+    provenance: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Manifest:
+        """Parse a manifest from a dict.
+        
+        This is the new simplified parser that handles modules directly.
+        """
+        _reject_unknown(data, ROOT_FIELDS, "manifest")
+        
+        name = _required_str(data, "name")
+        version = _required_str(data, "version")
+        
+        # Parse runtime
+        runtime_data = data.get("runtime", {})
+        if not isinstance(runtime_data, dict):
+            raise ManifestError("runtime must be a dict")
+        runtime = RuntimeSpec.from_dict(runtime_data)
+        
+        # Parse modules (first-class, no expansion)
+        modules_data = data.get("modules", []) or []
+        if not isinstance(modules_data, list):
+            raise ManifestError("modules must be a list")
+        modules = [parse_module(m, i) for i, m in enumerate(modules_data)]
+        
+        # Parse sources
+        sources_data = data.get("sources", []) or []
+        if not isinstance(sources_data, list):
+            raise ManifestError("sources must be a list")
+        sources = [SourceSpec.from_dict(s, i) for i, s in enumerate(sources_data)]
+        
+        # Parse launch
+        launch_data = data.get("launch")
+        launch = LaunchSpec.from_dict(launch_data) if launch_data else None
+        
+        # Parse compatibility (runtime policy, not a build step)
+        compatibility = data.get("compatibility", {}) or {}
+        if not isinstance(compatibility, dict):
+            raise ManifestError("compatibility must be a dict")
+        
+        # Parse config
+        config = data.get("config", {}) or {}
+        if not isinstance(config, dict):
+            raise ManifestError("config must be a dict")
+        
+        # Parse provenance
+        provenance = data.get("provenance", {}) or {}
+        if not isinstance(provenance, dict):
+            raise ManifestError("provenance must be a dict")
+        
+        return cls(
+            name=name,
+            version=version,
+            runtime=runtime,
+            modules=modules,
+            sources=sources,
+            launch=launch,
+            compatibility=compatibility,
+            config=config,
+            provenance=provenance,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert manifest to dict."""
+        result = {
+            "name": self.name,
+            "version": self.version,
+            "runtime": self.runtime.to_dict(),
+        }
+        
+        if self.modules:
+            result["modules"] = [m.to_dict() for m in self.modules]
+        
+        if self.sources:
+            result["sources"] = [s.to_dict() for s in self.sources]
+        
+        if self.launch:
+            result["launch"] = self.launch.to_dict()
+        
+        if self.compatibility:
+            result["compatibility"] = self.compatibility
+        
+        if self.config:
+            result["config"] = self.config
+        
+        if self.provenance:
+            result["provenance"] = self.provenance
+        
+        return result
+
+
+__all__ = ["Manifest", "RuntimeSpec", "LaunchSpec", "SourceSpec"]
