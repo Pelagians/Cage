@@ -38,8 +38,8 @@ curl -fsSL -o "$wrapper_dir/powershell-wrapper.exe" "{url}"
 chmod +x "$wrapper_dir/powershell-wrapper.exe"
 """
 
-# Install wrapper to system location
-INSTALL_WRAPPER_COMMAND = """set -eu
+# Copy wrapper to system32 location
+COPY_WRAPPER_COMMAND = """set -eu
 wrapper_src="$WINEPREFIX/drive_c/cage/powershell-wrapper/powershell-wrapper.exe"
 wrapper_dst="$WINEPREFIX/drive_c/windows/system32/WindowsPowerShell/v1.0/powershell.exe"
 if [ ! -f "$wrapper_src" ]; then
@@ -47,6 +47,16 @@ if [ ! -f "$wrapper_src" ]; then
 fi
 mkdir -p "$(dirname "$wrapper_dst")"
 cp "$wrapper_src" "$wrapper_dst"
+"""
+
+# Install Chocolatey using PietJankbal's Wine-optimized script
+# This script works around Wine's limitations with the standard Chocolatey installer
+INSTALL_CHOCOLATEY_COMMAND = """set -eu
+curl -fsSL -o "$WINEPREFIX/drive_c/cage/choc_install.ps1" \\
+  "https://raw.githubusercontent.com/PietJankbal/Chocolatey-for-wine/main/choc_install.ps1"
+wine "$WINEPREFIX/drive_c/windows/system32/WindowsPowerShell/v1.0/powershell.exe" \\
+  -NoLogo -NoProfile -ExecutionPolicy Bypass \\
+  -File "C:\\cage\\choc_install.ps1"
 """
 
 # Cleanup build artifacts
@@ -127,18 +137,25 @@ def expand_powershell(module: PowerShellModule, index: int) -> dict[str, Any]:
             "command": download_cmd
         })
         
-        # Install wrapper to system location
+        # Copy wrapper to system32 location
         install_steps.append({
             "kind": "script",
-            "command": INSTALL_WRAPPER_COMMAND
+            "command": COPY_WRAPPER_COMMAND
         })
-        
-        # Cleanup
+    
+        # Install Chocolatey using PietJankbal's Wine-optimized script
+        # This script works around Wine's limitations with the standard Chocolatey installer
         install_steps.append({
             "kind": "script",
-            "command": CLEANUP_BUILD_COMMAND
+            "command": INSTALL_CHOCOLATEY_COMMAND
         })
-    else:  # mode == "build"
+    
+        if mode == "build":
+            # Install build dependencies
+            install_steps.append({
+                "kind": "script",
+                "command": INSTALL_BUILD_DEPS_COMMAND
+            })
         # Build mode - install deps, build from source, cleanup
         install_steps.append({
             "kind": "script",
@@ -153,7 +170,7 @@ def expand_powershell(module: PowerShellModule, index: int) -> dict[str, Any]:
         
         install_steps.append({
             "kind": "script",
-            "command": INSTALL_WRAPPER_COMMAND
+            "command": COPY_WRAPPER_COMMAND
         })
         
         # Cleanup build artifacts and dependencies

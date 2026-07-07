@@ -125,10 +125,14 @@ launch:
         self.assertEqual(manifest.modules[0].type, "powershell")
         self.assertEqual(manifest.modules[1].type, "chocolatey")
         self.assertEqual(manifest.modules[1].install["packages"], ["firefox"])
-        # PowerShell module injects 3 script steps (download, install, cleanup wrapper)
-        # Then chocolatey adds the choco install step at index 3
-        self.assertEqual(manifest.install[3].kind, "choco")
-        self.assertEqual(manifest.install[3].args, ["firefox", "-y", "--no-progress"])
+        # PowerShell module injects 8 script steps:
+        # 1. Download wrapper
+        # 2. Copy wrapper to system32
+        # 3. Install Chocolatey (PietJankbal's script)
+        # 4-8. Build mode steps (install deps, build, copy, cleanup, remove deps)
+        # Then chocolatey adds the choco install step at index 8
+        self.assertEqual(manifest.install[8].kind, "choco")
+        self.assertEqual(manifest.install[8].args, ["firefox", "-y", "--no-progress"])
 
     def test_chocolatey_module_rejects_shell_like_package_names(self):
         data = _module_manifest()
