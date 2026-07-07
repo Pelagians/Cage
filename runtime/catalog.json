@@ -9,7 +9,7 @@
       "launcher": "wine",
       "localImage": "cage/wine",
       "publishedImageName": "cage-wine",
-      "dockerfile": "container/providers/wine/Dockerfile",
+      "dockerfile": "container/runtimes/wine/Dockerfile",
       "buildArg": "WINE_PACKAGE_VERSION",
       "defaultVersion": "11.0",
       "versionAliases": {
@@ -56,7 +56,7 @@
       "launcher": "wine",
       "localImage": "cage/wine-staging",
       "publishedImageName": "cage-wine-staging",
-      "dockerfile": "container/providers/wine-staging/Dockerfile",
+      "dockerfile": "container/runtimes/wine-staging/Dockerfile",
       "buildArg": "WINE_PACKAGE_VERSION",
       "defaultVersion": "11.10",
       "versionAliases": {
@@ -104,7 +104,7 @@
       "launcherVersion": "1.4.0",
       "localImage": "cage/umu-proton-ge",
       "publishedImageName": "cage-umu-proton-ge",
-      "dockerfile": "container/providers/umu-proton-ge/Dockerfile",
+      "dockerfile": "container/runtimes/umu-proton-ge/Dockerfile",
       "buildArg": "GE_PROTON_TAG",
       "defaultVersion": "GE-Proton11-1",
       "versionAliases": {
