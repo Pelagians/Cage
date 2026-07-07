@@ -57,6 +57,11 @@ def expand_files(module: FilesModule, index: int) -> dict[str, Any]:
                 )
             entry["mode"] = mode
         
+        # Optional sha256 for source integrity verification
+        sha256 = mapping.get("sha256")
+        if sha256:
+            entry["sha256"] = sha256
+        
         filesystem_entries.append(entry)
     
     return {"filesystem": filesystem_entries}

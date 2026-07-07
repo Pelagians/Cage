@@ -19,12 +19,22 @@ def _sha256(path: Path) -> str:
 
 
 def _write_byo_files_workspace(root: Path) -> dict[str, str]:
-    program_dir = root / "sources/office-files/Program Files/Microsoft Office/root/Office16"
-    program_dir.mkdir(parents=True)
-    word = program_dir / "WINWORD.EXE"
-    excel = program_dir / "EXCEL.EXE"
+    # Create the directory structure that the manifest expects
+    (root / "sources/office-files/Program Files/Microsoft Office").mkdir(parents=True)
+    (root / "sources/office-files/Program Files/Common Files").mkdir(parents=True)
+    (root / "sources/office-files/windows/system32").mkdir(parents=True)
+    
+    # Create the files that the manifest references
+    word = root / "sources/office-files/Program Files/Microsoft Office/WINWORD.EXE"
+    excel = root / "sources/office-files/Program Files/Microsoft Office/EXCEL.EXE"
     word.write_bytes(b"fake word exe\n")
     excel.write_bytes(b"fake excel exe\n")
+    
+    # Create the DLL files
+    (root / "sources/office-files/windows/system32/riched32.dll").write_bytes(b"riched32")
+    (root / "sources/office-files/windows/system32/riched20.dll").write_bytes(b"riched20")
+    (root / "sources/office-files/windows/system32/mso.dll").write_bytes(b"mso")
+    
     installer = root / "sources/office2016/setup.exe"
     installer.parent.mkdir(parents=True)
     installer.write_bytes(b"fake office installer\n")
@@ -41,6 +51,7 @@ def _office_files_manifest(hashes: dict[str, str]) -> dict[str, object]:
         "name": "office-suite-byo-files",
         "version": "2016-byo",
         "runtime": {"provider": "wine", "version": "latest"},
+        "profiles": ["office-legacy-32bit"],
         "sources": [
             {
                 "id": "office-files",

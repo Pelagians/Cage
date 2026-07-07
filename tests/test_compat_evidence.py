@@ -103,8 +103,8 @@ class SourceIntegrityTests(unittest.TestCase):
 
         self.assertEqual(result["schemaVersion"], SOURCE_INTEGRITY_SCHEMA_VERSION)
         self.assertEqual(result["valid"], True)
-        self.assertEqual(result["summary"]["checked"], 3)
-        self.assertEqual(result["summary"]["verified"], 3)
+        self.assertEqual(result["summary"]["checked"], 4)
+        self.assertEqual(result["summary"]["verified"], 4)
         locations = {item["location"]: item for item in result["items"]}
         self.assertEqual(locations["install[0].source"]["status"], "verified")
         self.assertEqual(locations["filesystem[0].source"]["sha256"], hashes["config"])
@@ -121,11 +121,16 @@ class SourceIntegrityTests(unittest.TestCase):
                     "sha256": "0" * 64,
                 }
             ]
-            data["filesystem"] = [
+            data["modules"] = [
                 {
-                    "source": "overlays/demo/config.ini",
-                    "target": "C:/Program Files/Demo/config.ini",
-                    "sha256": "1" * 64,
+                    "type": "files",
+                    "mappings": [
+                        {
+                            "source": "overlays/demo/config.ini",
+                            "target": "C:/Program Files/Demo/config.ini",
+                            "sha256": "1" * 64,
+                        }
+                    ]
                 }
             ]
             manifest = Manifest.from_dict(data)
