@@ -83,7 +83,20 @@ class ChocolateyModule(ModuleBase):
                 raise ModuleError(f"chocolatey package name '{pkg}' must use letters, numbers, dot, underscore, plus, or dash")
         
         packages_str = " ".join(packages)
+        
+        # Install Chocolatey first via PowerShell
+        install_choco_ps = (
+            "Set-ExecutionPolicy Bypass -Scope Process -Force; "
+            "[System.Net.ServicePointManager]::SecurityProtocol = "
+            "[System.Net.ServicePointManager]::SecurityProtocol -bor 3072; "
+            "iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))"
+        )
+        
         commands = [
+            'echo "Installing Chocolatey package manager..."',
+            f'powershell -Command "{install_choco_ps}"',
+            'echo "Refreshing environment..."',
+            'powershell -Command "refreshenv"',
             f'echo "  Installing Chocolatey packages: {packages_str}"',
             f"choco install {packages_str} -y --no-progress",
         ]
