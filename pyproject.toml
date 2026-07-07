@@ -24,6 +24,9 @@ classifiers = [
   "Topic :: Software Development :: Build Tools",
   "Topic :: System :: Emulators",
 ]
+dependencies = [
+  "PyYAML>=6.0",
+]
 
 [project.urls]
 Repository = "https://github.com/pelagians/Cage"
