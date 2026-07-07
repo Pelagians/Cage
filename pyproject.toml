@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [
-  { name = "myOS-dev" }
+  { name = "Pelagians" }
 ]
 keywords = ["wine", "proton", "oci", "packaging", "cage"]
 classifiers = [
@@ -26,7 +26,7 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/myos-dev/Cage"
+Repository = "https://github.com/pelagians/Cage"
 
 [project.scripts]
 cage = "cage.cli:main"

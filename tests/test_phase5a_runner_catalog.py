@@ -36,10 +36,10 @@ class Phase5ARunnerCatalogTests(unittest.TestCase):
         self.assertEqual(runtime["version"], "11.0")
         self.assertEqual(runtime["runner"], "winehq-stable")
         self.assertEqual(runtime["packageVersion"], "11.0.0.0~bookworm-1")
-        self.assertEqual(runtime["ociImage"], "ghcr.io/myos-dev/cage-wine:11.0")
+        self.assertEqual(runtime["ociImage"], "ghcr.io/pelagians/cage-wine:11.0")
         self.assertEqual(graph["runnerRuntime"]["requestedVersion"], "latest")
         self.assertEqual(graph["runnerRuntime"]["resolvedVersion"], "11.0")
-        self.assertEqual(graph["runnerRuntime"]["image"], "ghcr.io/myos-dev/cage-wine:11.0")
+        self.assertEqual(graph["runnerRuntime"]["image"], "ghcr.io/pelagians/cage-wine:11.0")
         self.assertEqual(provenance["runtime"]["resolvedVersion"], "11.0")
 
     def test_run_plan_for_latest_uses_resolved_runtime_image(self):
@@ -51,7 +51,7 @@ class Phase5ARunnerCatalogTests(unittest.TestCase):
         self.assertEqual(plan["runtime"]["requestedVersion"], "latest")
         self.assertEqual(plan["runtime"]["resolvedVersion"], "11.0")
         self.assertEqual(plan["runtime"]["version"], "11.0")
-        self.assertEqual(plan["runtime"]["image"], "ghcr.io/myos-dev/cage-wine:11.0")
+        self.assertEqual(plan["runtime"]["image"], "ghcr.io/pelagians/cage-wine:11.0")
 
     def test_wine_dockerfiles_pin_package_versions_from_catalog_build_arg(self):
         root = Path(__file__).resolve().parents[1]

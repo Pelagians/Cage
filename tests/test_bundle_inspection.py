@@ -49,7 +49,7 @@ class BundleInspectionTests(unittest.TestCase):
 
         self.assertEqual(summary["schemaVersion"], "cage.bundle-inspection/v0")
         self.assertEqual(summary["application"], {"name": "sample", "version": "1.0.0"})
-        self.assertEqual(summary["runtime"]["runner"]["image"], "ghcr.io/myos-dev/cage-wine:9.0")
+        self.assertEqual(summary["runtime"]["runner"]["image"], "ghcr.io/pelagians/cage-wine:9.0")
         self.assertEqual(summary["graph"]["schemaVersion"], "cage.execution-graph/v0")
         self.assertEqual(summary["graph"]["nodes"], 11)
         self.assertEqual(summary["graph"]["edges"], 13)

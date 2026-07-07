@@ -46,9 +46,9 @@ where `ciBuild` is true.
 
 | Provider | Local Image | Published Image | Source | Build Arg |
 |---|---|---|---|---|
-| Wine Stable | `cage/wine:<version>` | `ghcr.io/myos-dev/cage-wine:<version>` | Pinned WineHQ apt (`.deb`) | `WINE_PACKAGE_VERSION` |
-| Wine Staging | `cage/wine-staging:<version>` | `ghcr.io/myos-dev/cage-wine-staging:<version>` | Pinned WineHQ apt (`.deb`) | `WINE_PACKAGE_VERSION` |
-| UMU + GE-Proton | `cage/umu-proton-ge:<tag>` | `ghcr.io/myos-dev/cage-umu-proton-ge:<tag>` | GE-Proton GitHub release + UMU launcher | `GE_PROTON_TAG` |
+| Wine Stable | `cage/wine:<version>` | `ghcr.io/pelagians/cage-wine:<version>` | Pinned WineHQ apt (`.deb`) | `WINE_PACKAGE_VERSION` |
+| Wine Staging | `cage/wine-staging:<version>` | `ghcr.io/pelagians/cage-wine-staging:<version>` | Pinned WineHQ apt (`.deb`) | `WINE_PACKAGE_VERSION` |
+| UMU + GE-Proton | `cage/umu-proton-ge:<tag>` | `ghcr.io/pelagians/cage-umu-proton-ge:<tag>` | GE-Proton GitHub release + UMU launcher | `GE_PROTON_TAG` |
 
 
 ### Runner aliases and pinning
@@ -141,7 +141,7 @@ cage container build wine 11.0 --engine docker --registry ghcr.io/myorg --push
 
 # Get the resolved published OCI image reference for a provider+alias
 cage container ref wine latest
-# → ghcr.io/myos-dev/cage-wine:11.0
+# → ghcr.io/pelagians/cage-wine:11.0
 
 # Plan a build — includes resolved OCI image
 cage plan examples/minimal.cage.json
@@ -160,10 +160,10 @@ cage run --graphics vnc --network bridge --vnc-port 5900 --novnc-port 6080 dist/
 
 # Export the verified bundle as a runnable application OCI image
 cage export oci dist/notepad-plus-plus-portable-0.1.0 \
-  --tag ghcr.io/myos-dev/cage-app-notepad-plus-plus:0.1.0 \
+  --tag ghcr.io/pelagians/cage-app-notepad-plus-plus:0.1.0 \
   --dry-run
 cage export oci dist/notepad-plus-plus-portable-0.1.0 \
-  --tag ghcr.io/myos-dev/cage-app-notepad-plus-plus:0.1.0
+  --tag ghcr.io/pelagians/cage-app-notepad-plus-plus:0.1.0
 ```
 
 ## Runtime Binding
@@ -184,7 +184,7 @@ long-running Wine/winetricks/installer progress.
 
 When VIC consumes Cage artifacts:
 
-1. VIC pulls the catalog-resolved published base image, e.g. `ghcr.io/myos-dev/cage-wine:<resolved-version>`
+1. VIC pulls the catalog-resolved published base image, e.g. `ghcr.io/pelagians/cage-wine:<resolved-version>`
 2. VIC pulls the Cage-produced bundle OCI image (with prefix + app layer)
 3. VIC launches the combined image with the VIC runtime contract
 4. The container starts with Xvfb, enters the entrypoint, and VIC interacts via STDIO

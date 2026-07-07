@@ -52,13 +52,13 @@ class OCIExportPlanTests(unittest.TestCase):
             bundle = _bundle(tmp)
             plan = create_oci_export_plan(
                 bundle,
-                tag="ghcr.io/myos-dev/cage-app-oci-demo-app:1.2.3",
+                tag="ghcr.io/pelagians/cage-app-oci-demo-app:1.2.3",
             )
 
         self.assertEqual(plan["schemaVersion"], OCI_EXPORT_PLAN_SCHEMA_VERSION)
         self.assertEqual(plan["imageType"], "runnable-application-image")
-        self.assertEqual(plan["tag"], "ghcr.io/myos-dev/cage-app-oci-demo-app:1.2.3")
-        self.assertEqual(plan["baseImage"], "ghcr.io/myos-dev/cage-wine:11.0")
+        self.assertEqual(plan["tag"], "ghcr.io/pelagians/cage-app-oci-demo-app:1.2.3")
+        self.assertEqual(plan["baseImage"], "ghcr.io/pelagians/cage-wine:11.0")
         self.assertEqual(plan["application"], {"name": "oci-demo-app", "version": "1.2.3"})
         self.assertEqual(plan["runtime"]["provider"], "wine")
         self.assertEqual(plan["runtime"]["requestedVersion"], "latest")
@@ -71,11 +71,11 @@ class OCIExportPlanTests(unittest.TestCase):
         self.assertEqual(plan["layout"]["entrypoint"], "/usr/local/bin/cage-app-launch")
         self.assertEqual(plan["artifactMetadata"]["schemaVersion"], ARTIFACT_IMAGE_SCHEMA_VERSION)
         self.assertEqual(plan["artifactMetadata"]["runtime"]["resolvedVersion"], "11.0")
-        self.assertEqual(plan["artifactMetadata"]["runtime"]["baseImage"], "ghcr.io/myos-dev/cage-wine:11.0")
+        self.assertEqual(plan["artifactMetadata"]["runtime"]["baseImage"], "ghcr.io/pelagians/cage-wine:11.0")
         self.assertEqual(plan["labels"]["io.cage.schema"], ARTIFACT_IMAGE_SCHEMA_VERSION)
         self.assertEqual(plan["labels"]["io.cage.runtime.resolvedVersion"], "11.0")
         self.assertEqual(plan["containerfile"]["path"], "Containerfile")
-        self.assertIn("FROM ghcr.io/myos-dev/cage-wine:11.0", plan["containerfile"]["content"])
+        self.assertIn("FROM ghcr.io/pelagians/cage-wine:11.0", plan["containerfile"]["content"])
         self.assertIn("COPY bundle /opt/cage/bundle", plan["containerfile"]["content"])
         self.assertIn('ENTRYPOINT ["/usr/local/bin/cage-app-launch"]', plan["containerfile"]["content"])
 
@@ -143,7 +143,7 @@ class OCIExportPlanTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertEqual(payload["schemaVersion"], OCI_EXPORT_PLAN_SCHEMA_VERSION)
         self.assertEqual(payload["tag"], "oci-demo-app:1.2.3")
-        self.assertEqual(payload["baseImage"], "ghcr.io/myos-dev/cage-wine:11.0")
+        self.assertEqual(payload["baseImage"], "ghcr.io/pelagians/cage-wine:11.0")
         self.assertEqual(payload["runtime"]["resolvedVersion"], "11.0")
 
 

@@ -64,17 +64,17 @@ installation path is `uv tool install`; `pipx install` should work anywhere
 
 ```bash
 # Preferred on myOS
-uv tool install "git+ssh://git@github.com/myos-dev/Cage.git"
+uv tool install "git+ssh://git@github.com/pelagians/Cage.git"
 
 # Alternative when pipx is installed
-pipx install "git+ssh://git@github.com/myos-dev/Cage.git"
+pipx install "git+ssh://git@github.com/pelagians/Cage.git"
 ```
 
 If your machine uses a Git SSH host alias, substitute the host in the URL:
 
 ```bash
-uv tool install "git+ssh://git@github-noahgiroux/myos-dev/Cage.git"
-pipx install "git+ssh://git@github-noahgiroux/myos-dev/Cage.git"
+uv tool install "git+ssh://git@github-noahgiroux/pelagians/Cage.git"
+pipx install "git+ssh://git@github-noahgiroux/pelagians/Cage.git"
 ```
 
 Verify the installed console script:
@@ -133,14 +133,14 @@ cage run --graphics vnc --network bridge --vnc-port 5900 --novnc-port 6080 dist/
 
 # Export a runnable application OCI image by app name or bundle path
 cage export oci notepad-plus-plus \
-  --tag ghcr.io/myos-dev/cage-app-notepad-plus-plus:8.6.0 \
+  --tag ghcr.io/pelagians/cage-app-notepad-plus-plus:8.6.0 \
   --dry-run
 cage export oci dist/notepad-plus-plus-8.6.0 \
-  --tag ghcr.io/myos-dev/cage-app-notepad-plus-plus:8.6.0
+  --tag ghcr.io/pelagians/cage-app-notepad-plus-plus:8.6.0
 
 # Emit Kubernetes YAML for a digest-pinned application image
 cage export kube notepad-plus-plus \
-  --image ghcr.io/myos-dev/cage-app-notepad-plus-plus@sha256:... \
+  --image ghcr.io/pelagians/cage-app-notepad-plus-plus@sha256:... \
   --namespace cage-apps \
   --output k8s/notepad-plus-plus.yaml
 
@@ -374,7 +374,7 @@ cage artifacts resolve my-app
 cage artifacts resolve my-app@1.0.0
 
 cage run --dry-run --graphics headless my-app
-cage export oci my-app --tag ghcr.io/myos-dev/cage-app-my-app:1.0.0 --dry-run
+cage export oci my-app --tag ghcr.io/pelagians/cage-app-my-app:1.0.0 --dry-run
 ```
 
 A bare app name resolves to the latest registered version for that application.
@@ -416,7 +416,7 @@ contract without requiring Docker or Podman:
 
 ```bash
 cage export oci dist/my-app-1.0.0 \
-  --tag ghcr.io/myos-dev/cage-app-my-app:1.0.0 \
+  --tag ghcr.io/pelagians/cage-app-my-app:1.0.0 \
   --dry-run
 ```
 
@@ -426,17 +426,17 @@ staged bundle copy, generates a `Containerfile`, adds
 
 ```bash
 cage export oci dist/my-app-1.0.0 \
-  --tag ghcr.io/myos-dev/cage-app-my-app:1.0.0 \
+  --tag ghcr.io/pelagians/cage-app-my-app:1.0.0 \
   --engine docker
 
 # Build, push, and record repo digest identity when available
 cage export oci my-app \
-  --tag ghcr.io/myos-dev/cage-app-my-app:1.0.0 \
+  --tag ghcr.io/pelagians/cage-app-my-app:1.0.0 \
   --engine docker \
   --push
 
 # Verify OCI labels match embedded Cage artifact metadata
-cage image verify ghcr.io/myos-dev/cage-app-my-app:1.0.0 --engine docker
+cage image verify ghcr.io/pelagians/cage-app-my-app:1.0.0 --engine docker
 ```
 
 The source bundle is not mutated. The image layout is:
@@ -462,7 +462,7 @@ Digest-pinned image refs are required by default:
 
 ```bash
 cage export kube my-app \
-  --image ghcr.io/myos-dev/cage-app-my-app@sha256:... \
+  --image ghcr.io/pelagians/cage-app-my-app@sha256:... \
   --namespace cage-apps \
   --output k8s/my-app.yaml
 ```
@@ -471,7 +471,7 @@ Dry-run mode prints the `cage.kube-export/v0` plan, including generated YAML:
 
 ```bash
 cage export kube my-app \
-  --image ghcr.io/myos-dev/cage-app-my-app@sha256:... \
+  --image ghcr.io/pelagians/cage-app-my-app@sha256:... \
   --dry-run
 ```
 
@@ -510,7 +510,7 @@ cage container build umu-proton-ge latest
 
 # Get the resolved published OCI image reference for a provider+version alias
 cage container ref wine latest
-# → ghcr.io/myos-dev/cage-wine:11.0
+# → ghcr.io/pelagians/cage-wine:11.0
 
 # Build from Docker compose for local development
 # (Compose is a dev convenience; runtime/catalog.json is authoritative.)

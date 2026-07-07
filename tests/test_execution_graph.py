@@ -45,7 +45,7 @@ class ExecutionGraphTests(unittest.TestCase):
         self.assertEqual(graph["artifact"]["kind"], "cage.bundle")
         self.assertEqual(graph["builderRuntime"]["provider"], "wine")
         self.assertEqual(graph["builderRuntime"]["version"], "9.0")
-        self.assertEqual(graph["builderRuntime"]["image"], "ghcr.io/myos-dev/cage-wine:9.0")
+        self.assertEqual(graph["builderRuntime"]["image"], "ghcr.io/pelagians/cage-wine:9.0")
         self.assertNotIn("network", graph["builderRuntime"])
         self.assertEqual(graph["runnerRuntime"]["network"], "none")
         self.assertEqual(
@@ -81,7 +81,7 @@ class ExecutionGraphTests(unittest.TestCase):
             self.assertTrue(graph_path.exists())
             graph = json.loads(graph_path.read_text(encoding="utf-8"))
             self.assertEqual(graph["schemaVersion"], "cage.execution-graph/v0")
-            self.assertEqual(graph["builderRuntime"]["image"], "ghcr.io/myos-dev/cage-wine:9.0")
+            self.assertEqual(graph["builderRuntime"]["image"], "ghcr.io/pelagians/cage-wine:9.0")
 
 
 if __name__ == "__main__":

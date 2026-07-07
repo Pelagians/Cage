@@ -168,7 +168,7 @@ def _resolve_image_ref(manifest: Manifest, engine: str) -> str | None:
     Resolution is catalog-backed:
       1. Prefer a local developer image if it exists.
       2. Pull the published GHCR tag so mutable catalog tags such as
-         ghcr.io/myos-dev/cage-wine:11.0 refresh after CI rebuilds.
+         ghcr.io/pelagians/cage-wine:11.0 refresh after CI rebuilds.
       3. Fall back to an already-local published tag when offline.
     Returns the image ref, or None if unresolvable.
     """

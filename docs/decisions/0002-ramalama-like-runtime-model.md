@@ -10,7 +10,7 @@ Cage follows a Ramalama-like model: user commands resolve a runtime provider fro
 
 Cage has two distinct OCI roles:
 
-1. **Runtime image** — e.g. `ghcr.io/myos-dev/cage-wine:9.0`; provides Wine/Staging/UMU+GE-Proton runtime, tools, entrypoints, and graphics support.
+1. **Runtime image** — e.g. `ghcr.io/pelagians/cage-wine:9.0`; provides Wine/Staging/UMU+GE-Proton runtime, tools, entrypoints, and graphics support.
 2. **Application/prefix artifact** — the future OCI wrapper for a resolved Cage execution bundle containing prefix state, launch contract, graph metadata, and provenance.
 
 The active v0 runtime providers are:

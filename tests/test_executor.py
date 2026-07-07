@@ -347,7 +347,7 @@ class EngineDetectionTests(unittest.TestCase):
         """Local runtime images are explicit developer overrides."""
         binding = SimpleNamespace(
             local_oci_image="cage/wine:11.0",
-            oci_image="ghcr.io/myos-dev/cage-wine:11.0",
+            oci_image="ghcr.io/pelagians/cage-wine:11.0",
         )
         manifest = SimpleNamespace(runtime=SimpleNamespace(provider="wine", version="11.0"))
 
@@ -362,37 +362,37 @@ class EngineDetectionTests(unittest.TestCase):
         """Mutable GHCR catalog tags must refresh after CI image rebuilds."""
         binding = SimpleNamespace(
             local_oci_image="cage/wine:11.0",
-            oci_image="ghcr.io/myos-dev/cage-wine:11.0",
+            oci_image="ghcr.io/pelagians/cage-wine:11.0",
         )
         manifest = SimpleNamespace(runtime=SimpleNamespace(provider="wine", version="11.0"))
 
         def check_image(ref, engine):
             # Local developer image is absent, but a stale published tag exists.
-            return ref == "ghcr.io/myos-dev/cage-wine:11.0"
+            return ref == "ghcr.io/pelagians/cage-wine:11.0"
 
         with patch("builder.executor.resolve_runtime", return_value=binding),              patch("builder.executor._check_image", side_effect=check_image) as check,              patch("builder.executor._pull_image", return_value=True) as pull:
             result = _resolve_image_ref(manifest, "podman")
 
-        self.assertEqual(result, "ghcr.io/myos-dev/cage-wine:11.0")
+        self.assertEqual(result, "ghcr.io/pelagians/cage-wine:11.0")
         check.assert_called_once_with("cage/wine:11.0", "podman")
-        pull.assert_called_once_with("ghcr.io/myos-dev/cage-wine:11.0", "podman")
+        pull.assert_called_once_with("ghcr.io/pelagians/cage-wine:11.0", "podman")
 
     def test_resolve_image_can_fallback_to_cached_published_tag_when_pull_fails(self):
         """Offline users can still use an already-local published runtime image."""
         binding = SimpleNamespace(
             local_oci_image="cage/wine:11.0",
-            oci_image="ghcr.io/myos-dev/cage-wine:11.0",
+            oci_image="ghcr.io/pelagians/cage-wine:11.0",
         )
         manifest = SimpleNamespace(runtime=SimpleNamespace(provider="wine", version="11.0"))
 
         with patch("builder.executor.resolve_runtime", return_value=binding),              patch("builder.executor._check_image", side_effect=[False, True]) as check,              patch("builder.executor._pull_image", return_value=False) as pull:
             result = _resolve_image_ref(manifest, "podman")
 
-        self.assertEqual(result, "ghcr.io/myos-dev/cage-wine:11.0")
+        self.assertEqual(result, "ghcr.io/pelagians/cage-wine:11.0")
         self.assertEqual(check.call_count, 2)
         check.assert_any_call("cage/wine:11.0", "podman")
-        check.assert_any_call("ghcr.io/myos-dev/cage-wine:11.0", "podman")
-        pull.assert_called_once_with("ghcr.io/myos-dev/cage-wine:11.0", "podman")
+        check.assert_any_call("ghcr.io/pelagians/cage-wine:11.0", "podman")
+        pull.assert_called_once_with("ghcr.io/pelagians/cage-wine:11.0", "podman")
 
 
 class BuildPlanTests(unittest.TestCase):

@@ -162,7 +162,7 @@ def get_image_ref(provider: str, version: str,
         return entry.published_ref if published else entry.local_ref
     image_name = provider if provider.startswith("cage-") else f"cage-{provider}"
     if published:
-        return f"ghcr.io/myos-dev/{image_name}:{version}"
+        return f"ghcr.io/pelagians/{image_name}:{version}"
     return f"cage/{provider}:{version}"
 
 

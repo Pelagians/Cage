@@ -164,7 +164,7 @@ def resolve_catalog_version(provider: str, version: str | None = None,
         published_image_name=str(pdata["publishedImageName"]),
         dockerfile=str(pdata["dockerfile"]),
         build_arg=str(pdata["buildArg"]),
-        default_registry=str(catalog.get("defaultRegistry", "ghcr.io/myos-dev")),
+        default_registry=str(catalog.get("defaultRegistry", "ghcr.io/pelagians")),
         family=(str(vdata.get("family", pdata.get("family")))
                 if vdata.get("family", pdata.get("family")) is not None else None),
         runner=runner,

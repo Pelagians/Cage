@@ -27,6 +27,6 @@ Wine and Wine Staging remain direct Wine-launcher runners. UMU is not a generic 
 
 - Active provider IDs are now `wine`, `staging`, and `umu-proton-ge`.
 - Legacy `proton-ge` is not an active provider alias in v0.
-- Runtime images use `cage/umu-proton-ge` locally and `ghcr.io/myos-dev/cage-umu-proton-ge` when published.
+- Runtime images use `cage/umu-proton-ge` locally and `ghcr.io/pelagians/cage-umu-proton-ge` when published.
 - The UMU-backed image installs `umu-launcher` and exposes `umu-run`.
 - Recipes still select an application runtime provider/version; future recipe/schema work can add more explicit `family`, `runner`, and `launcher` fields if needed.

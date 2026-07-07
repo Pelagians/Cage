@@ -1,6 +1,6 @@
 {
   "schemaVersion": "cage.runtime-catalog/v0",
-  "defaultRegistry": "ghcr.io/myos-dev",
+  "defaultRegistry": "ghcr.io/pelagians",
   "providers": {
     "wine": {
       "displayName": "Wine Stable",

@@ -42,7 +42,7 @@ LABELS = {
     "io.cage.runtime.provider": "wine",
     "io.cage.runtime.requestedVersion": "latest",
     "io.cage.runtime.resolvedVersion": "11.0",
-    "io.cage.runtime.baseImage": "ghcr.io/myos-dev/cage-wine:11.0",
+    "io.cage.runtime.baseImage": "ghcr.io/pelagians/cage-wine:11.0",
     "io.cage.runner": "winehq-stable",
     "io.cage.launcher": "wine",
 }
@@ -55,7 +55,7 @@ ARTIFACT = {
         "provider": "wine",
         "requestedVersion": "latest",
         "resolvedVersion": "11.0",
-        "baseImage": "ghcr.io/myos-dev/cage-wine:11.0",
+        "baseImage": "ghcr.io/pelagians/cage-wine:11.0",
         "runner": "winehq-stable",
         "launcher": "wine",
     },

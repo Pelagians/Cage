@@ -22,13 +22,13 @@ class ContainerManagerTests(unittest.TestCase):
 
     def test_get_image_ref_known_provider_returns_published_ref(self):
         self.assertEqual(get_image_ref("wine", "latest"),
-                         "ghcr.io/myos-dev/cage-wine:11.0")
+                         "ghcr.io/pelagians/cage-wine:11.0")
         self.assertEqual(get_image_ref("wine", "10.0"),
-                         "ghcr.io/myos-dev/cage-wine:10.0")
+                         "ghcr.io/pelagians/cage-wine:10.0")
         self.assertEqual(get_image_ref("staging", "latest"),
-                         "ghcr.io/myos-dev/cage-wine-staging:11.10")
+                         "ghcr.io/pelagians/cage-wine-staging:11.10")
         self.assertEqual(get_image_ref("umu-proton-ge", "latest"),
-                         "ghcr.io/myos-dev/cage-umu-proton-ge:GE-Proton11-1")
+                         "ghcr.io/pelagians/cage-umu-proton-ge:GE-Proton11-1")
 
     def test_get_local_image_ref_known_provider(self):
         self.assertEqual(get_local_image_ref("wine", "latest"),
@@ -38,7 +38,7 @@ class ContainerManagerTests(unittest.TestCase):
 
     def test_get_image_ref_unknown_falls_back_to_published_name(self):
         self.assertEqual(get_image_ref("unknown", "1.0"),
-                         "ghcr.io/myos-dev/cage-unknown:1.0")
+                         "ghcr.io/pelagians/cage-unknown:1.0")
         self.assertEqual(get_local_image_ref("unknown", "1.0"),
                          "cage/unknown:1.0")
 
@@ -79,7 +79,7 @@ class RuntimeCatalogTests(unittest.TestCase):
         self.assertEqual(entry.aliases, ("latest", "stable"))
         self.assertEqual(entry.package_version, "11.0.0.0~bookworm-1")
         self.assertEqual(entry.published_ref,
-                         "ghcr.io/myos-dev/cage-wine:11.0")
+                         "ghcr.io/pelagians/cage-wine:11.0")
 
 
     def test_latest_and_channel_aliases_resolve_to_pinned_versions(self):
@@ -161,7 +161,7 @@ class RuntimeProviderOCITests(unittest.TestCase):
         self.assertEqual(binding.runner, "winehq-stable")
         self.assertEqual(binding.package_version, "11.0.0.0~bookworm-1")
         self.assertEqual(binding.oci_image,
-                         "ghcr.io/myos-dev/cage-wine:11.0")
+                         "ghcr.io/pelagians/cage-wine:11.0")
         self.assertEqual(binding.local_oci_image,
                          "cage/wine:11.0")
         self.assertTrue(binding.runtime_usable)
@@ -175,7 +175,7 @@ class RuntimeProviderOCITests(unittest.TestCase):
         self.assertEqual(binding.version, "11.9")
         self.assertEqual(binding.requested_version, "previous")
         self.assertEqual(binding.oci_image,
-                         "ghcr.io/myos-dev/cage-wine-staging:11.9")
+                         "ghcr.io/pelagians/cage-wine-staging:11.9")
         self.assertEqual(binding.local_oci_image,
                          "cage/wine-staging:11.9")
 
@@ -191,7 +191,7 @@ class RuntimeProviderOCITests(unittest.TestCase):
         self.assertEqual(binding.runner, "ge-proton")
         self.assertEqual(binding.launcher_version, "1.4.0")
         self.assertEqual(binding.oci_image,
-                         "ghcr.io/myos-dev/cage-umu-proton-ge:GE-Proton11-1")
+                         "ghcr.io/pelagians/cage-umu-proton-ge:GE-Proton11-1")
         self.assertEqual(binding.local_oci_image,
                          "cage/umu-proton-ge:GE-Proton11-1")
         self.assertEqual(binding.launcher, "umu")
@@ -206,7 +206,7 @@ class RuntimeProviderOCITests(unittest.TestCase):
         self.assertIn("ociImage", d)
         self.assertIn("localOciImage", d)
         self.assertEqual(d["ociImage"],
-                         "ghcr.io/myos-dev/cage-umu-proton-ge:GE-Proton11-1")
+                         "ghcr.io/pelagians/cage-umu-proton-ge:GE-Proton11-1")
         self.assertEqual(d["requestedVersion"], "latest")
         self.assertEqual(d["resolvedVersion"], "GE-Proton11-1")
         self.assertEqual(d["runner"], "ge-proton")

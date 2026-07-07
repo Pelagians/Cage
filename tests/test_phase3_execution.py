@@ -52,7 +52,7 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertEqual(plan["graphics"]["mode"], "headless")
         self.assertEqual(plan["runtime"]["provider"], "wine")
         self.assertEqual(plan["runtime"]["version"], "9.0")
-        self.assertEqual(plan["runtime"]["image"], "ghcr.io/myos-dev/cage-wine:9.0")
+        self.assertEqual(plan["runtime"]["image"], "ghcr.io/pelagians/cage-wine:9.0")
         self.assertEqual(plan["launch"]["entrypoint"], "C:/Program Files/App/App.exe")
         self.assertEqual(plan["container"]["engine"], "podman")
         self.assertIn("/opt/cage/bundle/metadata/graph.json", plan["container"]["environment"]["CAGE_GRAPH"])
@@ -180,7 +180,7 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
 
         self.assertEqual(plan["runtime"]["provider"], "umu-proton-ge")
         self.assertEqual(plan["runtime"]["launcher"], "umu")
-        self.assertEqual(plan["runtime"]["image"], "ghcr.io/myos-dev/cage-umu-proton-ge:GE-Proton9-27")
+        self.assertEqual(plan["runtime"]["image"], "ghcr.io/pelagians/cage-umu-proton-ge:GE-Proton9-27")
         self.assertIn("umu-run", plan["launchCommand"])
 
 
