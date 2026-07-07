@@ -28,6 +28,11 @@ dependencies = [
   "PyYAML>=6.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0",
+]
+
 [project.urls]
 Repository = "https://github.com/pelagians/Cage"
 
