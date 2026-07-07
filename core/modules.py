@@ -26,6 +26,13 @@ class ModuleSpec:
     command: str | None = None
     config: str | None = None
     autorun: bool | None = None
+    # containerfile module fields
+    dependencies: list[dict[str, Any]] | None = None
+    filesystem: list[dict[str, Any]] | None = None
+    registry: list[dict[str, Any]] | None = None
+    compatibility: dict[str, Any] | None = None
+    sources: list[dict[str, Any]] | None = None
+    exports: list[dict[str, Any]] | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], index: int) -> ModuleSpec:
@@ -35,7 +42,7 @@ class ModuleSpec:
         if not isinstance(module_type, str) or not module_type:
             raise ModuleError(f"modules[{index}].type must be a non-empty string")
         
-        allowed_types = {"chocolatey", "exe", "msi", "iso", "winetricks", "portable", "script"}
+        allowed_types = {"chocolatey", "exe", "msi", "iso", "winetricks", "portable", "script", "containerfile"}
         if module_type not in allowed_types:
             raise ModuleError(
                 f"modules[{index}].type must be one of: {', '.join(sorted(allowed_types))}"
@@ -52,6 +59,13 @@ class ModuleSpec:
             command=data.get("command"),
             config=data.get("config"),
             autorun=data.get("autorun"),
+            # containerfile fields
+            dependencies=data.get("dependencies"),
+            filesystem=data.get("filesystem"),
+            registry=data.get("registry"),
+            compatibility=data.get("compatibility"),
+            sources=data.get("sources"),
+            exports=data.get("exports"),
         )
     
     def to_dict(self) -> dict[str, Any]:
@@ -75,6 +89,19 @@ class ModuleSpec:
             result["config"] = self.config
         if self.autorun is not None:
             result["autorun"] = self.autorun
+        # containerfile fields
+        if self.dependencies is not None:
+            result["dependencies"] = self.dependencies
+        if self.filesystem is not None:
+            result["filesystem"] = self.filesystem
+        if self.registry is not None:
+            result["registry"] = self.registry
+        if self.compatibility is not None:
+            result["compatibility"] = self.compatibility
+        if self.sources is not None:
+            result["sources"] = self.sources
+        if self.exports is not None:
+            result["exports"] = self.exports
         return result
 
 
@@ -269,6 +296,47 @@ def _expand_script(module: ModuleSpec, index: int) -> dict[str, Any]:
     }
 
 
+def _expand_containerfile(module: ModuleSpec, index: int) -> dict[str, Any]:
+    """Expand containerfile module by merging raw fields into recipe.
+    
+    This module type allows complex/odd-fix recipes to use raw fields
+    (dependencies, install, filesystem, registry, compatibility, sources, exports)
+    nested inside the module, similar to BlueBuild's approach.
+    
+    Returns dict with all raw fields that will be merged into the recipe.
+    """
+    result = {}
+    
+    if module.dependencies:
+        result["dependencies"] = module.dependencies
+    
+    if module.install:
+        # install field in containerfile is a dict with raw install steps
+        # Convert to list format expected by recipe
+        if isinstance(module.install, dict):
+            # If it's a dict, treat it as a single install step
+            result["install"] = [module.install]
+        else:
+            result["install"] = module.install
+    
+    if module.filesystem:
+        result["filesystem"] = module.filesystem
+    
+    if module.registry:
+        result["registry"] = module.registry
+    
+    if module.compatibility:
+        result["compatibility"] = module.compatibility
+    
+    if module.sources:
+        result["sources"] = module.sources
+    
+    if module.exports:
+        result["exports"] = module.exports
+    
+    return result
+
+
 EXPANDERS = {
     "chocolatey": _expand_chocolatey,
     "exe": _expand_exe,
@@ -277,6 +345,7 @@ EXPANDERS = {
     "winetricks": _expand_winetricks,
     "portable": _expand_portable,
     "script": _expand_script,
+    "containerfile": _expand_containerfile,
 }
 
 
@@ -287,6 +356,10 @@ def apply_modules(data: dict[str, Any]) -> dict[str, Any]:
     - data["dependencies"]
     - data["install"]
     - data["filesystem"]
+    - data["registry"]
+    - data["compatibility"]
+    - data["sources"]
+    - data["exports"]
     - data["provenance"]["moduleExpansions"]
     
     Returns the modified data dict.
@@ -298,6 +371,10 @@ def apply_modules(data: dict[str, Any]) -> dict[str, Any]:
     dependencies: list[dict[str, Any]] = data.get("dependencies", [])
     install: list[dict[str, Any]] = data.get("install", [])
     filesystem: list[dict[str, Any]] = data.get("filesystem", [])
+    registry: list[dict[str, Any]] = data.get("registry", [])
+    compatibility: dict[str, Any] = data.get("compatibility", {})
+    sources: list[dict[str, Any]] = data.get("sources", [])
+    exports: list[dict[str, Any]] = data.get("exports", [])
     provenance_expansions: list[dict[str, Any]] = []
     
     for index, module_data in enumerate(modules_data):
@@ -320,6 +397,22 @@ def apply_modules(data: dict[str, Any]) -> dict[str, Any]:
         for mapping in expansion.get("filesystem", []):
             filesystem.append(mapping)
         
+        # Merge registry tweaks
+        for tweak in expansion.get("registry", []):
+            registry.append(tweak)
+        
+        # Merge compatibility settings
+        if "compatibility" in expansion:
+            compatibility.update(expansion["compatibility"])
+        
+        # Merge sources
+        for source in expansion.get("sources", []):
+            sources.append(source)
+        
+        # Merge exports
+        for export in expansion.get("exports", []):
+            exports.append(export)
+        
         # Record provenance
         provenance_expansions.append({
             "type": module.type,
@@ -336,6 +429,14 @@ def apply_modules(data: dict[str, Any]) -> dict[str, Any]:
         data["install"] = install
     if filesystem:
         data["filesystem"] = filesystem
+    if registry:
+        data["registry"] = registry
+    if compatibility:
+        data["compatibility"] = compatibility
+    if sources:
+        data["sources"] = sources
+    if exports:
+        data["exports"] = exports
     if provenance_expansions:
         if "provenance" not in data:
             data["provenance"] = {}

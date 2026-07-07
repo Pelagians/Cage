@@ -1,0 +1,34 @@
+schemaVersion: cage.app/v0
+name: test-containerfile
+version: "1.0.0"
+
+runtime:
+  provider: wine
+  version: latest
+
+modules:
+  - type: containerfile
+    dependencies:
+      - kind: winetricks
+        verbs: [dotnet48, vcrun2019]
+    install:
+      - kind: exe
+        source: https://example.com/app.exe
+        args: ["/S"]
+    filesystem:
+      - source: config/app.xml
+        target: C:/Program Files/App/config.xml
+    registry:
+      - key: HKCU\Software\MyApp
+        value: Setting1
+        data: "1"
+    compatibility:
+      windowsVersion: win10
+      dllPolicy:
+        d3d11: native,builtin
+
+launch:
+  entrypoint: C:/Program Files/App/app.exe
+
+state:
+  persistence: persistent
