@@ -9,9 +9,10 @@ from typing import Any
 
 from .base import (
     ModuleBase, ModuleError, parse_module,
-    ChocolateyModule, ExeModule, MsiModule, IsoModule,
+    ExeModule, MsiModule, IsoModule,
     WinetricksModule, PortableModule, FilesModule, ScriptModule, PowerShellModule, ContainerfileModule,
 )
+from .chocolatey import ChocolateyModule
 from ..build_step import BuildStep
 
 
