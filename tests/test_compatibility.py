@@ -22,7 +22,6 @@ BASE_MANIFEST = {
     "runtime": {"provider": "staging", "version": "latest"},
     "dependencies": [{"kind": "winetricks", "verbs": ["corefonts"]}],
     "install": [{"kind": "exe", "source": "file://sources/setup.exe", "args": ["/S"]}],
-    "filesystem": [],
     "launch": {
         "entrypoint": "C:/Program Files/HardApp/hard.exe",
         "workingDirectory": "C:/Program Files/HardApp",

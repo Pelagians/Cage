@@ -29,7 +29,6 @@ APP = {
     "runtime": {"provider": "wine", "version": "latest"},
     "dependencies": [],
     "install": [],
-    "filesystem": [],
     "launch": {
         "entrypoint": "C:/Program Files/OciDemo/demo.exe",
         "args": ["--safe"],

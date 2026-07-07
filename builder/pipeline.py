@@ -45,9 +45,8 @@ def build_plan(manifest: Manifest) -> list[dict[str, object]]:
         },
         {
             "phase": "apply-layout-and-registry",
-            "inputs": ["filesystem", "registry/scripts"],
-            "actions": [f"map {m.source} -> {m.target}" for m in manifest.filesystem]
-            or ["no explicit filesystem mappings declared"],
+            "inputs": ["registry/scripts"],
+            "actions": ["no explicit filesystem mappings declared"],
         },
         {
             "phase": "validate",

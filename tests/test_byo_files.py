@@ -57,15 +57,36 @@ def _office_files_manifest(hashes: dict[str, str]) -> dict[str, object]:
                 "policy": "bring-your-own-licensed-media",
             },
         ],
-        "profiles": ["office-legacy-32bit"],
-        "install": [],
-        "filesystem": [
+        "modules": [
             {
-                "source": "sources/office-files/Program Files/Microsoft Office",
-                "target": "C:/Program Files/Microsoft Office",
-                "mode": "merge",
+                "type": "files",
+                "mappings": [
+                    {
+                        "source": "sources/office-files/Program Files/Microsoft Office",
+                        "target": "C:/Program Files/Microsoft Office",
+                        "mode": "merge"
+                    },
+                    {
+                        "source": "sources/office-files/Program Files/Common Files",
+                        "target": "C:/Program Files/Common Files",
+                        "mode": "merge"
+                    },
+                    {
+                        "source": "sources/office-files/windows/system32/riched32.dll",
+                        "target": "C:/windows/system32/riched32.dll"
+                    },
+                    {
+                        "source": "sources/office-files/windows/system32/riched20.dll",
+                        "target": "C:/windows/system32/riched20.dll"
+                    },
+                    {
+                        "source": "sources/office-files/windows/system32/mso.dll",
+                        "target": "C:/windows/system32/mso.dll"
+                    }
+                ]
             }
         ],
+        "install": [],
         "entrypoints": [
             {
                 "id": "word",

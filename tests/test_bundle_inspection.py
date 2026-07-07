@@ -23,10 +23,6 @@ VALID = {
         "source": "file://app.zip",
         "target": "C:/Program Files/App",
     }],
-    "filesystem": [{
-        "source": "config.ini",
-        "target": "C:/Program Files/App/config.ini",
-    }],
     "launch": {
         "entrypoint": "C:/Program Files/App/App.exe",
         "args": [],

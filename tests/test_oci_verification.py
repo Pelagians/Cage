@@ -25,7 +25,6 @@ APP = {
     "runtime": {"provider": "wine", "version": "latest"},
     "dependencies": [],
     "install": [],
-    "filesystem": [],
     "launch": {
         "entrypoint": "C:/Program Files/VerifyDemo/demo.exe",
         "workingDirectory": "C:/Program Files/VerifyDemo",

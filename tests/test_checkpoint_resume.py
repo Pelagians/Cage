@@ -34,7 +34,6 @@ VALID = {
         "source": "file://app.zip",
         "target": "C:/Program Files/App",
     }],
-    "filesystem": [],
     "launch": {
         "entrypoint": "C:/Program Files/App/App.exe",
         "args": [],

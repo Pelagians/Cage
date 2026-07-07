@@ -48,13 +48,6 @@ def _write_fixture_workspace(root: Path) -> Path:
                 "args": ["/S"],
             }
         ],
-        "filesystem": [
-            {
-                "source": "overlays/demo/config.ini",
-                "target": "C:/Program Files/Demo/config.ini",
-                "sha256": _sha256(config),
-            }
-        ],
         "compatibility": {
             "arch": "win64",
             "windowsVersion": "win10",

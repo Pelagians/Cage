@@ -22,7 +22,6 @@ ROOT_FIELDS = {
     "sources",
     "dependencies",
     "install",
-    "filesystem",
     "config",
     "compatibility",
     "registry",

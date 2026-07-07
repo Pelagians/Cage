@@ -17,7 +17,6 @@ LATEST_WINE = {
     "runtime": {"provider": "wine", "version": "latest"},
     "dependencies": [],
     "install": [],
-    "filesystem": [],
     "launch": {"entrypoint": "C:/App/App.exe"},
     "provenance": {"sources": []},
 }

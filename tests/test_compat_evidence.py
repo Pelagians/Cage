@@ -22,13 +22,17 @@ def _sha256(path: Path) -> str:
 def _write_fixture_workspace(root: Path) -> dict[str, str]:
     (root / "sources").mkdir(parents=True)
     (root / "overlays/demo").mkdir(parents=True)
+    (root / "cache/winetricks").mkdir(parents=True)
     installer = root / "sources/demo-installer.exe"
     config = root / "overlays/demo/config.ini"
+    winetricks = root / "cache/winetricks/d3dx9_43.dll"
     installer.write_bytes(b"fake windows installer\n")
     config.write_text("[demo]\nmode=test\n", encoding="utf-8")
+    winetricks.write_bytes(b"fake winetricks dll\n")
     return {
         "installer": _sha256(installer),
         "config": _sha256(config),
+        "winetricks": _sha256(winetricks),
     }
 
 
@@ -43,6 +47,24 @@ def _manifest_data(hashes: dict[str, str]) -> dict[str, object]:
                 "name": "installer",
                 "url": "file://sources/demo-installer.exe",
                 "sha256": hashes["installer"],
+            },
+            {
+                "name": "winetricks-cache",
+                "url": "file://cache/winetricks/d3dx9_43.dll",
+                "sha256": hashes["winetricks"],
+                "policy": "redistributable",
+            }
+        ],
+        "modules": [
+            {
+                "type": "files",
+                "mappings": [
+                    {
+                        "source": "overlays/demo/config.ini",
+                        "target": "C:/Program Files/Demo/config.ini",
+                        "sha256": hashes["config"]
+                    }
+                ]
             }
         ],
         "dependencies": [],
@@ -52,13 +74,6 @@ def _manifest_data(hashes: dict[str, str]) -> dict[str, object]:
                 "source": "file://sources/demo-installer.exe",
                 "sha256": hashes["installer"],
                 "args": ["/S"],
-            }
-        ],
-        "filesystem": [
-            {
-                "source": "overlays/demo/config.ini",
-                "target": "C:/Program Files/Demo/config.ini",
-                "sha256": hashes["config"],
             }
         ],
         "compatibility": {

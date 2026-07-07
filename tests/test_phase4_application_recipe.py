@@ -247,7 +247,6 @@ launch:
             "runtime": {"provider": "wine", "version": "9.0"},
             "dependencies": [],
             "install": [],
-            "filesystem": [],
             "launch": {"entrypoint": "C:/App/App.exe"},
             "provenance": {"sources": []},
         }

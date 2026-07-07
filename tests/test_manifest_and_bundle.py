@@ -4,7 +4,7 @@ from pathlib import Path
 from artifact.bundle import create_bundle
 from builder.pipeline import build_plan
 from core.manifest import Manifest, ManifestError
-VALID = {"schemaVersion":"cage.dev/v0","name":"sample","version":"1.0.0","runtime":{"provider":"wine","version":"9.0"},"dependencies":[{"kind":"winetricks","verbs":["corefonts"]}],"install":[{"kind":"portable","source":"file://app.zip","target":"C:/Program Files/App"}],"filesystem":[{"source":"config.ini","target":"C:/Program Files/App/config.ini"}],"launch":{"entrypoint":"C:/Program Files/App/App.exe"},"provenance":{"sources":[]}}
+VALID = {"schemaVersion":"cage.dev/v0","name":"sample","version":"1.0.0","runtime":{"provider":"wine","version":"9.0"},"dependencies":[{"kind":"winetricks","verbs":["corefonts"]}],"install":[{"kind":"portable","source":"file://app.zip","target":"C:/Program Files/App"}],"launch":{"entrypoint":"C:/Program Files/App/App.exe"},"provenance":{"sources":[]}}
 class ManifestAndBundleTests(unittest.TestCase):
     def test_valid_manifest_parses(self):
         manifest = Manifest.from_dict(VALID); self.assertEqual(manifest.name, "sample"); self.assertEqual(manifest.runtime.provider, "wine")
