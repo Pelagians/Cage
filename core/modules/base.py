@@ -88,8 +88,8 @@ class ChocolateyModule(ModuleBase):
         install_powershell = (
             'echo "Installing PowerShell wrapper for Wine..."; '
             'cd /tmp && '
-            'wget -q https://codeberg.org/Rustring/powershell-wrapper-for-wine/releases/download/v0.1.0/powershell-wrapper.tar.xz && '
-            'tar -xf powershell-wrapper.tar.xz && '
+            'curl -fsSL https://codeberg.org/Rustring/powershell-wrapper-for-wine/releases/download/v0.1.0/powershell-wrapper.tar.xz -o powershell-wrapper.tar.xz && '
+            'tar -xJf powershell-wrapper.tar.xz && '
             'cd powershell-wrapper && '
             './install.sh && '
             'cd / && rm -rf /tmp/powershell-wrapper*'
