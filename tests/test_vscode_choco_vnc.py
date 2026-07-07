@@ -20,3 +20,8 @@ class VSCodeChocoVNCTests(unittest.TestCase):
         self.assertEqual(manifest.launch.entrypoint, "/opt/wine/bin/winevnc.sh")
         self.assertIn("C:/Program Files/Microsoft VS Code/Code.exe", manifest.launch.args)
         self.assertEqual(manifest.launch.env.get("VNC_GEOMETRY"), "1920x1080")
+        
+        # Verify chocolatey module structure
+        choco_module = manifest.modules[0]
+        self.assertEqual(choco_module.type, "chocolatey")
+        self.assertIn("visualstudio.code", choco_module.install["packages"])

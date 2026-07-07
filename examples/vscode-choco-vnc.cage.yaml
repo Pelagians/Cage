@@ -17,5 +17,6 @@ launch:
 
 modules:
   - type: chocolatey
-    packages:
-      - visualstudio.code
+    install:
+      packages:
+        - visualstudio.code
