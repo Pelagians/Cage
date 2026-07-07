@@ -32,9 +32,11 @@ install:
     source: file://sources/npp.exe
     args:
       - /S
-filesystem:
-  - source: config.xml
-    target: C:/Program Files/Notepad++/config.xml
+modules:
+  - type: files
+    mappings:
+      - source: config.xml
+        target: C:/Program Files/Notepad++/config.xml
 config:
   wine:
     arch: win64
