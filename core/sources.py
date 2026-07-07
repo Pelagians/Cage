@@ -129,7 +129,8 @@ def verify_manifest_sources(manifest: Manifest, *, workspace: Path | str | None 
         items.append(item)
 
     for index, source in enumerate(manifest.sources):
-        ref = source.ref
+        # For files-type sources, use path; for others, use url
+        ref = source.path if source.path else source.url
         add_item(
             location=f"sources[{index}]",
             usage="declared-source",
@@ -141,24 +142,16 @@ def verify_manifest_sources(manifest: Manifest, *, workspace: Path | str | None 
             source_policy=source.policy,
         )
 
-    for index, step in enumerate(manifest.install):
-        if step.source:
+    # Check modules for source references
+    for index, module in enumerate(manifest.modules):
+        if hasattr(module, 'source') and module.source:
             add_item(
-                location=f"install[{index}].source",
-                usage=f"install:{step.kind}",
-                source=step.source,
-                expected_sha256=step.sha256,
+                location=f"modules[{index}].source",
+                usage=f"module:{module.type}",
+                source=module.source,
+                expected_sha256=getattr(module, 'sha256', None),
                 require_local=True,
             )
-
-    for index, mapping in enumerate(manifest.filesystem):
-        add_item(
-            location=f"filesystem[{index}].source",
-            usage="filesystem",
-            source=mapping.source,
-            expected_sha256=mapping.sha256,
-            require_local=True,
-        )
 
     summary = {
         "checked": len(items),
@@ -294,7 +287,8 @@ def audit_manifest_sources(manifest: Manifest, *, workspace: Path | str | None =
         items.append(item)
 
     for index, source in enumerate(manifest.sources):
-        ref = source.ref
+        # For files-type sources, use path; for others, use url
+        ref = source.path if source.path else source.url
         add_item(
             location=f"sources[{index}]",
             usage="declared-source",
@@ -304,20 +298,14 @@ def audit_manifest_sources(manifest: Manifest, *, workspace: Path | str | None =
             source_policy=source.policy,
         )
 
-    for index, step in enumerate(manifest.install):
-        if step.source:
+    # Check modules for source references
+    for index, module in enumerate(manifest.modules):
+        if hasattr(module, 'source') and module.source:
             add_item(
-                location=f"install[{index}].source",
-                usage=f"install:{step.kind}",
-                source=step.source,
+                location=f"modules[{index}].source",
+                usage=f"module:{module.type}",
+                source=module.source,
             )
-
-    for index, mapping in enumerate(manifest.filesystem):
-        add_item(
-            location=f"filesystem[{index}].source",
-            usage="filesystem",
-            source=mapping.source,
-        )
 
     blocked = sum(1 for finding in findings if finding.get("severity") == "blocked")
     summary = {

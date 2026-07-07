@@ -34,18 +34,19 @@ def _write_fixture_workspace(root: Path) -> Path:
         "runtime": {"provider": "wine", "version": "latest"},
         "sources": [
             {
-                "name": "installer",
+                "id": "installer",
+                "type": "http",
                 "url": "file://sources/demo-installer.exe",
                 "sha256": _sha256(installer),
+                "policy": "required",
             }
         ],
-        "dependencies": [],
-        "install": [
+        "modules": [
             {
-                "kind": "exe",
+                "type": "exe",
                 "source": "file://sources/demo-installer.exe",
                 "sha256": _sha256(installer),
-                "args": ["/S"],
+                "silentArgs": "/S",
             }
         ],
         "compatibility": {

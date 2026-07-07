@@ -62,13 +62,13 @@ class ExecutionGraphTests(unittest.TestCase):
         node_ids = [node["id"] for node in first["nodes"]]
         self.assertIn("runtime:wine:9.0", node_ids)
         self.assertIn("phase:init-prefix", node_ids)
-        self.assertIn("phase:seal-artifact", node_ids)
+        self.assertIn("phase:export", node_ids)
         self.assertIn("artifact:bundle", node_ids)
 
         edges = {(edge["from"], edge["to"], edge["type"]) for edge in first["edges"]}
         self.assertIn(("manifest:sample:1.0.0", "runtime:wine:9.0", "resolves"), edges)
-        self.assertIn(("phase:validate", "phase:seal-artifact", "precedes"), edges)
-        self.assertIn(("phase:seal-artifact", "artifact:bundle", "produces"), edges)
+        self.assertIn(("phase:launch", "phase:export", "precedes"), edges)
+        self.assertIn(("phase:export", "artifact:bundle", "produces"), edges)
 
     def test_bundle_writes_metadata_graph_json(self):
         with tempfile.TemporaryDirectory() as tmp:

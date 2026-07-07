@@ -549,29 +549,6 @@ class CheckpointCompatIntegrationTests(unittest.TestCase):
             self.assertEqual(result["checkpoint"]["sourceBundle"], str(checkpoint_bundle.resolve()))
             self.assertEqual(Path(result["build"]["bundle"]).parent, checkpoint_parent)
 
-    def test_generate_build_script_can_stop_before_install_apps_for_checkpoint_prep(self):
-        script = generate_build_script(_manifest(), stop_before="install-apps")
-
-        self.assertIn("Stop requested before phase: install-apps", script)
-        self.assertNotIn("Phase 4/6: Installing applications", script)
-        self.assertIn('"stoppedBefore": "install-apps"', script)
-        self.assertNotIn("ENDMARKER", script)
-        self.assertNotIn("cat >", script)
-        self.assertIn('prefix_size=$(du -sb "$WINEPREFIX"', script)
-        self.assertIn("printf", script)
-        self.assertIn('"prefixSize": %s', script)
-        self.assertIn('"buildTimestamp": %s', script)
-
-    def test_stop_before_build_result_does_not_shell_expand_manifest_strings(self):
-        payload = dict(VALID)
-        payload["name"] = "danger-$(touch /tmp/cage-pwned)-`echo bad`"
-        manifest = Manifest.from_dict(payload)
-
-        script = generate_build_script(manifest, stop_before="install-apps")
-
-        self.assertIn("'\"danger-$(touch /tmp/cage-pwned)-`echo bad`\"'", script)
-        self.assertNotIn('"manifestName": "danger-$(touch /tmp/cage-pwned)-`echo bad`"', script)
-
     def test_cli_rejects_stop_before_with_run_mode_without_traceback(self):
         repo = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as tmp:

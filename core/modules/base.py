@@ -75,6 +75,13 @@ class ChocolateyModule(ModuleBase):
         if not packages:
             raise ModuleError("chocolatey module 'install.packages' cannot be empty")
         
+        # Validate package names (alphanumeric with dots, underscores, plus, dashes)
+        import re
+        package_pattern = re.compile(r'^[a-zA-Z0-9._+\-]+$')
+        for pkg in packages:
+            if not package_pattern.match(pkg):
+                raise ModuleError(f"chocolatey package name '{pkg}' must use letters, numbers, dot, underscore, plus, or dash")
+        
         packages_str = " ".join(packages)
         commands = [
             f'echo "  Installing Chocolatey packages: {packages_str}"',

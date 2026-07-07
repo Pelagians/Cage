@@ -241,13 +241,13 @@ def run_compat_test(
     return payload
 
 
-
 def _requested_entrypoints(manifest, entrypoints: list[str], all_entrypoints: bool) -> list[str]:
+    """Return the list of entrypoint IDs to run."""
     if all_entrypoints and entrypoints:
         raise ValueError("entrypoints and all_entrypoints are mutually exclusive")
     if all_entrypoints:
-        return [entrypoint.id for entrypoint in manifest.entrypoints]
-    return list(entrypoints)
+        return [entrypoint["id"] if isinstance(entrypoint, dict) else entrypoint.id for entrypoint in manifest.entrypoints]
+    return entrypoints
 
 
 def _build_run_plans(

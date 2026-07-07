@@ -86,10 +86,9 @@ def build_execution_graph(manifest: Manifest) -> dict[str, Any]:
         })
     edges.extend([
         {"from": "phase:init-prefix", "to": "prefix:wineprefix", "type": "creates"},
-        {"from": "prefix:wineprefix", "to": "phase:install-dependencies", "type": "mutates"},
-        {"from": "prefix:wineprefix", "to": "phase:install-apps", "type": "mutates"},
-        {"from": "launch:entrypoint", "to": "phase:validate", "type": "validates"},
-        {"from": "phase:seal-artifact", "to": "artifact:bundle", "type": "produces"},
+        {"from": "prefix:wineprefix", "to": "phase:launch", "type": "mutates"},
+        {"from": "launch:entrypoint", "to": "phase:launch", "type": "validates"},
+        {"from": "phase:export", "to": "artifact:bundle", "type": "produces"},
     ])
 
     return {
@@ -113,8 +112,8 @@ def build_execution_graph(manifest: Manifest) -> dict[str, Any]:
             "supportedModes": SUPPORTED_GRAPHICS_MODES,
         },
         "launch": manifest.launch.to_dict(),
-        "entrypoints": [entrypoint.to_dict() for entrypoint in manifest.entrypoints],
-        "fileAssociations": [association.to_dict() for association in manifest.file_associations],
+        "entrypoints": [entrypoint if isinstance(entrypoint, dict) else entrypoint.to_dict() for entrypoint in manifest.entrypoints],
+        "fileAssociations": [association if isinstance(association, dict) else association.to_dict() for association in manifest.file_associations],
         "compatibility": {
             "requiresExactRuntime": True,
             "policy": "exact-provider-version",

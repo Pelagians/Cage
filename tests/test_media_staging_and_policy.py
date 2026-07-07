@@ -189,7 +189,10 @@ class SourcePolicyAuditTests(unittest.TestCase):
                     "path": "sources/office2010/media",
                     "policy": "bring-your-own-licensed-media",
                 }],
-                "install": [{"kind": "exe", "source": "sources/office2010/media/setup.exe"}],
+                "modules": [{
+                    "type": "exe",
+                    "source": "sources/office2010/media/setup.exe",
+                }],
                 "launch": {"entrypoint": "C:/Program Files/Microsoft Office/Office14/WINWORD.EXE"},
                 "provenance": {"sources": []},
             })
@@ -248,7 +251,7 @@ class SourcePolicyAuditTests(unittest.TestCase):
                     "path": "sources/clean-media",
                     "policy": "bring-your-own-licensed-media",
                 }],
-                "install": [{"kind": "exe", "source": "sources/clean-media/setup.exe"}],
+                "modules": [{"type": "exe", "source": "sources/clean-media/setup.exe"}],
                 "launch": {"entrypoint": "C:/Program Files/App/App.exe"},
                 "provenance": {"sources": []},
             }
@@ -281,7 +284,10 @@ class SourcePolicyAuditTests(unittest.TestCase):
                     "path": "sources/office2010/media",
                     "policy": "bring-your-own-licensed-media",
                 }],
-                "install": [{"kind": "exe", "source": "sources/office2010/media/setup.exe"}],
+                "modules": [{
+                    "type": "exe",
+                    "source": "sources/office2010/media/setup.exe",
+                }],
                 "launch": {"entrypoint": "C:/Program Files/Microsoft Office/Office14/WINWORD.EXE"},
                 "provenance": {"sources": []},
             }), encoding="utf-8")

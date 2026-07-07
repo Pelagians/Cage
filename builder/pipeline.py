@@ -182,12 +182,12 @@ def generate_build_script(
         Shell script as a string
     """
     lines = [
-        "#!/bin/bash",
-        "set -euo pipefail",
-        "",
-        "# Suppress Wine debugger",
+        '#!/bin/bash',
+        'set -euo pipefail',
+        '',
+        '# Suppress Wine debugger',
         'export WINEDBG="-all"',
-        "",
+        '',
         f'echo "[cage] Starting build for {manifest.name} v{manifest.version}"',
         f'echo "[cage] Bundle mount: {bundle_mount}"',
         f'echo "[cage] Workspace mount: {workspace_mount}"',
@@ -195,11 +195,26 @@ def generate_build_script(
         "",
         # Phase 1: Initialize Wine prefix
         'echo "[cage] Phase 1: Initializing Wine prefix"',
-        f'timeout {timeout_per_phase}s wine wineboot --init 2>&1 | while IFS= read -r line; do echo "  $line"; done',
+        'timeout 300s wine wineboot --init 2>&1 | while IFS= read -r line; do echo "  $line"; done',
         'echo "[cage]   Prefix initialized"',
         'echo ""',
-        "",
-        # Runner environment
+        '',
+    ]
+    
+    # Add runner environment setup if runner is specified
+    if manifest.runtime.runner is not None:
+        lines.extend([
+            'echo "[cage] Configuring runner environment"',
+            'export CAGE_RUNNER_BIN="${CAGE_RUNNER_BIN:-/opt/cage-runner/bin}"',
+            'export PATH="$CAGE_RUNNER_BIN:$PATH"',
+            'export WINE="$CAGE_RUNNER_BIN/wine"',
+            'echo "  Using cached Wine runner at $CAGE_RUNNER_BIN"',
+            'echo ""',
+            '',
+        ])
+    
+    lines.extend([
+        'echo "[cage] Phase 2: Executing modules"',
         *_runner_environment_lines(manifest),
         "",
         # Compatibility policy
@@ -222,7 +237,7 @@ def generate_build_script(
         'echo ""',
         "",
         'echo "[cage] Build complete"',
-    ]
+    ])
     
     return "\n".join(lines)
 

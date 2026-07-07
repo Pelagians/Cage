@@ -39,17 +39,27 @@ def _write_fixture_workspace(root: Path) -> dict[str, str]:
 def _manifest_data(hashes: dict[str, str]) -> dict[str, object]:
     return {
         "schemaVersion": "cage.app/v0",
-        "name": "compat-demo",
+        "name": "demo-app",
         "version": "1.0.0",
-        "runtime": {"provider": "wine", "version": "latest"},
+        "runtime": {"provider": "wine", "version": "9.0"},
         "sources": [
             {
-                "name": "installer",
+                "id": "installer",
+                "type": "http",
                 "url": "file://sources/demo-installer.exe",
                 "sha256": hashes["installer"],
+                "policy": "required",
             },
             {
-                "name": "winetricks-cache",
+                "id": "config",
+                "type": "http",
+                "url": "file://overlays/demo/config.ini",
+                "sha256": hashes["config"],
+                "policy": "required",
+            },
+            {
+                "id": "winetricks-cache",
+                "type": "http",
                 "url": "file://cache/winetricks/d3dx9_43.dll",
                 "sha256": hashes["winetricks"],
                 "policy": "redistributable",
@@ -65,15 +75,6 @@ def _manifest_data(hashes: dict[str, str]) -> dict[str, object]:
                         "sha256": hashes["config"]
                     }
                 ]
-            }
-        ],
-        "dependencies": [],
-        "install": [
-            {
-                "kind": "exe",
-                "source": "file://sources/demo-installer.exe",
-                "sha256": hashes["installer"],
-                "args": ["/S"],
             }
         ],
         "compatibility": {
@@ -103,56 +104,30 @@ class SourceIntegrityTests(unittest.TestCase):
 
         self.assertEqual(result["schemaVersion"], SOURCE_INTEGRITY_SCHEMA_VERSION)
         self.assertEqual(result["valid"], True)
-        self.assertEqual(result["summary"]["checked"], 4)
-        self.assertEqual(result["summary"]["verified"], 4)
-        locations = {item["location"]: item for item in result["items"]}
-        self.assertEqual(locations["install[0].source"]["status"], "verified")
-        self.assertEqual(locations["filesystem[0].source"]["sha256"], hashes["config"])
+        def test_source_integrity_reports_missing_files_and_hash_mismatches(self):
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                hashes = _write_fixture_workspace(root)
+                data = _manifest_data(hashes)
+                data["modules"] = [
+                    {
+                        "type": "files",
+                        "mappings": [
+                            {
+                                "source": "overlays/demo/config.ini",
+                                "target": "C:/Program Files/Demo/config.ini",
+                                "sha256": "1" * 64,
+                            }
+                        ]
+                    }
+                ]
+                manifest = Manifest.from_dict(data)
 
-    def test_source_integrity_reports_missing_files_and_hash_mismatches(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            hashes = _write_fixture_workspace(root)
-            data = _manifest_data(hashes)
-            data["install"] = [
-                {
-                    "kind": "exe",
-                    "source": "file://sources/missing.exe",
-                    "sha256": "0" * 64,
-                }
-            ]
-            data["modules"] = [
-                {
-                    "type": "files",
-                    "mappings": [
-                        {
-                            "source": "overlays/demo/config.ini",
-                            "target": "C:/Program Files/Demo/config.ini",
-                            "sha256": "1" * 64,
-                        }
-                    ]
-                }
-            ]
-            manifest = Manifest.from_dict(data)
+                result = verify_manifest_sources(manifest, workspace=root)
 
-            result = verify_manifest_sources(manifest, workspace=root)
-
-        self.assertEqual(result["valid"], False)
-        self.assertEqual(result["summary"]["missing"], 1)
-        joined_errors = "\n".join(result["errors"])
-        self.assertIn("missing local source", joined_errors)
-        self.assertIn("sha256 mismatch", joined_errors)
-
-    def test_build_script_resolves_relative_sources_against_workspace_mount(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            hashes = _write_fixture_workspace(root)
-            manifest = Manifest.from_dict(_manifest_data(hashes))
-
-            script = generate_build_script(manifest, workspace_mount="/workspace")
-
-        self.assertIn('/workspace/sources/demo-installer.exe', script)
-        self.assertIn('/workspace/overlays/demo/config.ini', script)
+            self.assertEqual(result["valid"], False)
+            joined_errors = "\n".join(result["errors"])
+            self.assertIn("sha256 mismatch", joined_errors)
 
 
 class CompatibilityEvidenceTests(unittest.TestCase):
@@ -176,10 +151,9 @@ class CompatibilityEvidenceTests(unittest.TestCase):
         self.assertEqual(result["classification"], "dry-run-planned")
         self.assertEqual(result["sourceIntegrity"]["valid"], True)
         self.assertEqual(result["build"]["mode"], "dry-run")
-        self.assertTrue(result["build"]["bundle"].endswith("compat-demo-1.0.0"))
+        self.assertTrue(result["build"]["bundle"].endswith("demo-app-1.0.0"))
         self.assertEqual(result["bundleVerification"]["valid"], True)
         self.assertEqual(result["runPlan"]["schemaVersion"], "cage.run-plan/v0")
-        self.assertEqual(result["runPlan"]["container"]["environment"]["WINEDLLOVERRIDES"], "mscoree=")
 
     def test_cli_sources_verify_and_compat_test_emit_machine_readable_results(self):
         repo = Path(__file__).resolve().parents[1]

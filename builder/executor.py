@@ -281,7 +281,6 @@ def execute_inside_container(
         bundle_mount="/opt/cage",
         workspace_mount="/workspace",
         timeout_per_phase=timeout,
-        stop_before=stop_before,
     )
     script_path.parent.mkdir(parents=True, exist_ok=True)
     script_path.write_text(script, encoding="utf-8")

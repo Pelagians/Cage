@@ -71,6 +71,14 @@ class RuntimeSpec:
         provider = _required_str(data, "runtime.provider")
         version = _required_str(data, "runtime.version")
         network = _optional_str(data, "network") or "none"
+        
+        # Validate network mode
+        valid_network_modes = {"none", "bridge", "host"}
+        if network not in valid_network_modes:
+            raise ManifestError(
+                f"runtime.network must be one of {sorted(valid_network_modes)}, got {network!r}"
+            )
+        
         return cls(
             provider=provider,
             version=version,
@@ -172,6 +180,7 @@ class Manifest:
     This Manifest parses modules directly without expansion into intermediate fields.
     Modules are first-class build directives that generate build steps.
     """
+    schema_version: str
     name: str
     version: str
     runtime: RuntimeSpec
@@ -181,6 +190,10 @@ class Manifest:
     compatibility: dict[str, Any] = field(default_factory=dict)
     config: dict[str, Any] = field(default_factory=dict)
     provenance: dict[str, Any] = field(default_factory=dict)
+    exports: list[dict[str, Any]] = field(default_factory=list)
+    entrypoints: list[dict[str, Any]] = field(default_factory=list)
+    file_associations: list[dict[str, Any]] = field(default_factory=list)
+    profiles: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Manifest:
@@ -190,6 +203,7 @@ class Manifest:
         """
         _reject_unknown(data, ROOT_FIELDS, "manifest")
         
+        schema_version = _required_str(data, "schemaVersion")
         name = _required_str(data, "name")
         version = _required_str(data, "version")
         
@@ -230,7 +244,28 @@ class Manifest:
         if not isinstance(provenance, dict):
             raise ManifestError("provenance must be a dict")
         
+        # Parse exports
+        exports = data.get("exports", []) or []
+        if not isinstance(exports, list):
+            raise ManifestError("exports must be a list")
+        
+        # Parse entrypoints
+        entrypoints = data.get("entrypoints", []) or []
+        if not isinstance(entrypoints, list):
+            raise ManifestError("entrypoints must be a list")
+        
+        # Parse file associations
+        file_associations = data.get("fileAssociations", []) or []
+        if not isinstance(file_associations, list):
+            raise ManifestError("fileAssociations must be a list")
+        
+        # Parse profiles
+        profiles = data.get("profiles", []) or []
+        if not isinstance(profiles, list):
+            raise ManifestError("profiles must be a list")
+        
         return cls(
+            schema_version=schema_version,
             name=name,
             version=version,
             runtime=runtime,
@@ -240,11 +275,16 @@ class Manifest:
             compatibility=compatibility,
             config=config,
             provenance=provenance,
+            exports=exports,
+            entrypoints=entrypoints,
+            file_associations=file_associations,
+            profiles=profiles,
         )
 
     def to_dict(self) -> dict[str, Any]:
         """Convert manifest to dict."""
         result = {
+            "schemaVersion": self.schema_version,
             "name": self.name,
             "version": self.version,
             "runtime": self.runtime.to_dict(),
@@ -267,6 +307,18 @@ class Manifest:
         
         if self.provenance:
             result["provenance"] = self.provenance
+        
+        if self.exports:
+            result["exports"] = self.exports
+        
+        if self.entrypoints:
+            result["entrypoints"] = self.entrypoints
+        
+        if self.file_associations:
+            result["fileAssociations"] = self.file_associations
+        
+        if self.profiles:
+            result["profiles"] = self.profiles
         
         return result
 

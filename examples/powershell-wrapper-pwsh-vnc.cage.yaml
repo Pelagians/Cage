@@ -5,6 +5,7 @@ version: "0.1.0"
 runtime:
   provider: wine
   version: latest
+  network: bridge
 
 sources:
   - id: powershell-wrapper-for-wine
@@ -22,8 +23,8 @@ dependencies:
       - win10
       - powershell_core
 
-install:
-  - kind: script
+modules:
+  - type: script
     command: set -eu; wrapper="$WINEPREFIX/drive_c/windows/system32/WindowsPowerShell/v1.0/powershell.exe"; profile="$WINEPREFIX/drive_c/Program Files/PowerShell/7/profile.ps1"; if [ -f "$wrapper" ] && [ -f "$profile" ]; then exit 0; fi; command -v git >/dev/null; command -v cargo >/dev/null; if command -v rustup >/dev/null; then rustup target add x86_64-pc-windows-gnu; fi; repo="$WINEPREFIX/drive_c/cage/powershell-wrapper-for-wine"; rm -rf "$repo"; mkdir -p "$(dirname "$repo")"; git clone --depth=1 https://codeberg.org/Synchro/powershell-wrapper-for-wine.git "$repo"; cd "$repo"; cargo run --package xtask -- build --arch 64; mkdir -p "$WINEPREFIX/drive_c/windows/system32/WindowsPowerShell/v1.0" "$WINEPREFIX/drive_c/Program Files/PowerShell/7"; cp powershell64.exe "$wrapper"; cp wrapper/src/profile.ps1 "$profile"
 
 compatibility:
@@ -46,8 +47,9 @@ launch:
     - -NoExit
   env:
     NO_COLOR: "1"
-    POWERSHELL_UPDATECHECK: Off
+    POWERSHELL_UPDATECHECK: "Off"
     chocolateyVersion: "1.4.0"
+    VNC_GEOMETRY: "1920x1080"
   workingDirectory: C:/users/cage
 
 entrypoints:
