@@ -1,0 +1,28 @@
+schemaVersion: cage.app/v0
+name: files-example
+version: 1.0.0
+description: Example demonstrating the files module for copying files and directories
+
+runtime:
+  provider: wine
+  version: latest
+
+modules:
+  # Copy configuration files and directories to the Wine prefix
+  - type: files
+    mappings:
+      # Copy a single file
+      - source: ./config/app.ini
+        target: C:/app/config/app.ini
+      
+      # Copy a directory (recursive)
+      - source: ./data
+        target: C:/app/data
+      
+      # Copy with merge mode (merges into existing directory)
+      - source: ./logs
+        target: C:/app/logs
+        mode: merge
+
+launch:
+  entrypoint: C:/app/app.exe

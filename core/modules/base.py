@@ -100,6 +100,13 @@ class PortableModule(ModuleBase):
 
 
 @dataclass
+class FilesModule(ModuleBase):
+    """Files mapping module for copying files/directories to container."""
+    type: str = "files"
+    mappings: list[dict[str, Any]] | None = None
+
+
+@dataclass
 class ScriptModule(ModuleBase):
     """Arbitrary bash script module."""
     type: str = "script"
@@ -198,10 +205,17 @@ def parse_module(data: dict[str, Any], index: int) -> ModuleSpec:
         )
     elif module_type == "portable":
         return PortableModule(
+            type=module_type,
             defaults=defaults,
             source=data.get("source"),
             target=data.get("target"),
             config=data.get("config"),
+        )
+    elif module_type == "files":
+        return FilesModule(
+            type=module_type,
+            defaults=defaults,
+            mappings=data.get("mappings"),
         )
     elif module_type == "script":
         return ScriptModule(

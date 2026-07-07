@@ -6,7 +6,7 @@ from typing import Any
 from .base import (
     ModuleSpec, ModuleBase, ModuleError, parse_module,
     ChocolateyModule, ExeModule, MsiModule, IsoModule,
-    WinetricksModule, PortableModule, ScriptModule, PowerShellModule, ContainerfileModule,
+    WinetricksModule, PortableModule, FilesModule, ScriptModule, PowerShellModule, ContainerfileModule,
 )
 from .chocolatey import expand_chocolatey
 from .exe import expand_exe
@@ -14,6 +14,7 @@ from .msi import expand_msi
 from .iso import expand_iso
 from .winetricks import expand_winetricks
 from .portable import expand_portable
+from .files import expand_files
 from .script import expand_script
 from .powershell import expand_powershell
 from .containerfile import expand_containerfile
@@ -38,6 +39,8 @@ def _expand_single_module(module: ModuleSpec, index: int) -> dict[str, Any]:
         return expand_winetricks(module, index)
     elif isinstance(module, PortableModule):
         return expand_portable(module, index)
+    elif isinstance(module, FilesModule):
+        return expand_files(module, index)
     elif isinstance(module, ScriptModule):
         return expand_script(module, index)
     elif isinstance(module, PowerShellModule):
@@ -143,6 +146,7 @@ __all__ = [
     "IsoModule",
     "WinetricksModule",
     "PortableModule",
+    "FilesModule",
     "ScriptModule",
     "PowerShellModule",
     "ContainerfileModule",
