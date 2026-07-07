@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# WinForge Xvfb Entrypoint
+# Cage Xvfb Entrypoint
 #
 # Starts a virtual X server for headless Wine/Proton execution,
-# then runs the provided command (typically a winforge builder step).
+# then runs the provided command (typically a cage builder step).
 #
 # Derived from the MTGO / videreproject headless Wine container pattern.
 #
@@ -10,15 +10,15 @@
 #   DISPLAY       - X display number (default: :99)
 #   WINE_DISPLAY  - Resolution/bit depth (default: 1024x768x16)
 #   WINEDEBUG     - Wine debug channels (default: -all)
-#   WINEPREFIX    - Wine prefix path (default: /opt/winforge/prefix)
-#   WINEFS        - WinForge execution phase (builder|launcher)
+#   WINEPREFIX    - Wine prefix path (default: /opt/cage/prefix)
+#   WINEFS        - Cage execution phase (builder|launcher)
 
 set -euo pipefail
 
 : "${DISPLAY:=:99}"
 : "${WINE_DISPLAY:=1024x768x16}"
 : "${WINEDEBUG:=-all}"
-: "${WINEPREFIX:=/opt/winforge/prefix}"
+: "${WINEPREFIX:=/opt/cage/prefix}"
 : "${WINEFS:=launcher}"
 
 export DISPLAY WINEDEBUG WINEPREFIX

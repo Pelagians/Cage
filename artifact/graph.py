@@ -1,7 +1,7 @@
-"""Execution graph generation for WinForge bundles.
+"""Execution graph generation for Cage bundles.
 
 The execution graph is the resolved, machine-readable contract that sits
-between a declarative manifest and a runnable WinForge bundle.  It keeps the
+between a declarative manifest and a runnable Cage bundle.  It keeps the
 Ramalama-like concepts distinct:
 
 - runtime OCI image selected from the catalog;
@@ -16,7 +16,7 @@ from builder.pipeline import build_plan
 from core.manifest import Manifest
 from runtime.providers import RuntimeBinding, resolve_runtime
 
-SCHEMA_VERSION = "winforge.execution-graph/v0"
+SCHEMA_VERSION = "cage.execution-graph/v0"
 DEFAULT_GRAPHICS_MODE = "headless"
 SUPPORTED_GRAPHICS_MODES = ["headless", "vnc"]
 
@@ -67,7 +67,7 @@ def build_execution_graph(manifest: Manifest) -> dict[str, Any]:
             "kind": "artifact",
             "label": f"{manifest.name}-{manifest.version}",
             "artifact": {
-                "kind": "winforge.bundle",
+                "kind": "cage.bundle",
                 "path": ".",
             },
         },
@@ -100,10 +100,10 @@ def build_execution_graph(manifest: Manifest) -> dict[str, Any]:
         },
         "manifest": {
             "schemaVersion": manifest.schema_version,
-            "path": "manifest.winforge.json",
+            "path": "manifest.cage.json",
         },
         "artifact": {
-            "kind": "winforge.bundle",
+            "kind": "cage.bundle",
             "path": ".",
         },
         "builderRuntime": dict(builder_runtime_payload),

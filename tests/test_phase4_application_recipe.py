@@ -1,4 +1,4 @@
-"""Tests for application-first WinForge recipes and strict YAML loading."""
+"""Tests for application-first Cage recipes and strict YAML loading."""
 from __future__ import annotations
 
 import json
@@ -12,7 +12,7 @@ from core.manifest import ManifestError, load_manifest
 
 
 APPLICATION_YAML = """
-schemaVersion: winforge.app/v0
+schemaVersion: cage.app/v0
 name: notepad-plus-plus
 version: "8.6.0"
 runtime:
@@ -39,9 +39,9 @@ config:
   wine:
     arch: win64
 registry:
-  - path: HKCU/Software/WinForge/Test
+  - path: HKCU/Software/Cage/Test
     values:
-      InstalledBy: WinForge
+      InstalledBy: Cage
 launch:
   entrypoint: C:/Program Files/Notepad++/notepad++.exe
   args:
@@ -53,7 +53,7 @@ state:
   persistence: persistent
 exports:
   - name: documents
-    path: C:/users/winforge/Documents
+    path: C:/users/cage/Documents
 provenance:
   sources: []
 """
@@ -63,24 +63,24 @@ class ApplicationRecipeYamlTests(unittest.TestCase):
 
     def test_load_manifest_accepts_application_yaml_recipe(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "notepad-plus-plus.winforge.yaml"
+            path = Path(tmp) / "notepad-plus-plus.cage.yaml"
             path.write_text(APPLICATION_YAML, encoding="utf-8")
             manifest = load_manifest(path)
 
-        self.assertEqual(manifest.schema_version, "winforge.app/v0")
+        self.assertEqual(manifest.schema_version, "cage.app/v0")
         self.assertEqual(manifest.name, "notepad-plus-plus")
         self.assertEqual(manifest.runtime.provider, "wine")
         self.assertEqual(manifest.runtime.version, "9.0")
         self.assertEqual(manifest.sources[0]["name"], "installer")
         self.assertEqual(manifest.config["wine"]["arch"], "win64")
-        self.assertEqual(manifest.registry[0]["values"]["InstalledBy"], "WinForge")
+        self.assertEqual(manifest.registry[0]["values"]["InstalledBy"], "Cage")
         self.assertEqual(manifest.state["persistence"], "persistent")
         self.assertEqual(manifest.exports[0]["name"], "documents")
         self.assertEqual(manifest.launch.entrypoint, "C:/Program Files/Notepad++/notepad++.exe")
 
     def test_yaml_recipe_can_build_and_verify_bundle(self):
         with tempfile.TemporaryDirectory() as tmp:
-            recipe = Path(tmp) / "notepad-plus-plus.winforge.yaml"
+            recipe = Path(tmp) / "notepad-plus-plus.cage.yaml"
             recipe.write_text(APPLICATION_YAML, encoding="utf-8")
             manifest = load_manifest(recipe)
             bundle = create_bundle(manifest, Path(tmp) / "dist", dry_run=True)
@@ -90,7 +90,7 @@ class ApplicationRecipeYamlTests(unittest.TestCase):
 
     def test_unknown_root_fields_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "bad.winforge.yaml"
+            path = Path(tmp) / "bad.cage.yaml"
             path.write_text(APPLICATION_YAML + "surprise: nope\n", encoding="utf-8")
             with self.assertRaises(ManifestError) as cm:
                 load_manifest(path)
@@ -99,9 +99,9 @@ class ApplicationRecipeYamlTests(unittest.TestCase):
 
     def test_duplicate_yaml_keys_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "duplicate.winforge.yaml"
+            path = Path(tmp) / "duplicate.cage.yaml"
             path.write_text("""
-schemaVersion: winforge.app/v0
+schemaVersion: cage.app/v0
 name: first
 name: second
 version: "1.0.0"
@@ -119,7 +119,7 @@ launch:
     def test_yaml_anchors_aliases_and_merge_keys_are_rejected(self):
         cases = {
             "anchor": """
-schemaVersion: winforge.app/v0
+schemaVersion: cage.app/v0
 name: anchored
 version: "1.0.0"
 runtime: &runtime
@@ -129,7 +129,7 @@ launch:
   entrypoint: C:/App/App.exe
 """,
             "alias": """
-schemaVersion: winforge.app/v0
+schemaVersion: cage.app/v0
 name: alias
 version: "1.0.0"
 runtime: *runtime
@@ -137,7 +137,7 @@ launch:
   entrypoint: C:/App/App.exe
 """,
             "merge": """
-schemaVersion: winforge.app/v0
+schemaVersion: cage.app/v0
 name: merge
 version: "1.0.0"
 runtime:
@@ -151,7 +151,7 @@ launch:
         with tempfile.TemporaryDirectory() as tmp:
             for name, content in cases.items():
                 with self.subTest(name=name):
-                    path = Path(tmp) / f"{name}.winforge.yaml"
+                    path = Path(tmp) / f"{name}.cage.yaml"
                     path.write_text(content, encoding="utf-8")
                     with self.assertRaises(ManifestError) as cm:
                         load_manifest(path)
@@ -161,9 +161,9 @@ launch:
 
     def test_build_script_uses_explicit_install_args_instead_of_default_silent_flag(self):
         with tempfile.TemporaryDirectory() as tmp:
-            recipe = Path(tmp) / "office-style.winforge.yaml"
+            recipe = Path(tmp) / "office-style.cage.yaml"
             recipe.write_text("""
-schemaVersion: winforge.app/v0
+schemaVersion: cage.app/v0
 name: office-style
 version: "1.0"
 runtime:
@@ -189,9 +189,9 @@ launch:
 
     def test_build_script_runs_bat_installer_from_declared_working_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
-            recipe = Path(tmp) / "office-bat.winforge.yaml"
+            recipe = Path(tmp) / "office-bat.cage.yaml"
             recipe.write_text("""
-schemaVersion: winforge.app/v0
+schemaVersion: cage.app/v0
 name: office-bat
 version: "1.0"
 runtime:
@@ -221,9 +221,9 @@ launch:
 
     def test_bat_install_step_requires_source(self):
         with tempfile.TemporaryDirectory() as tmp:
-            recipe = Path(tmp) / "bad-bat.winforge.yaml"
+            recipe = Path(tmp) / "bad-bat.cage.yaml"
             recipe.write_text("""
-schemaVersion: winforge.app/v0
+schemaVersion: cage.app/v0
 name: bad-bat
 version: "1.0"
 runtime:
@@ -239,7 +239,7 @@ launch:
 
     def test_json_manifest_remains_supported_for_cli_generated_or_normalized_inputs(self):
         data = {
-            "schemaVersion": "winforge.dev/v0",
+            "schemaVersion": "cage.dev/v0",
             "name": "json-app",
             "version": "1.0.0",
             "runtime": {"provider": "wine", "version": "9.0"},
@@ -250,11 +250,11 @@ launch:
             "provenance": {"sources": []},
         }
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "generated.winforge.json"
+            path = Path(tmp) / "generated.cage.json"
             path.write_text(json.dumps(data), encoding="utf-8")
             manifest = load_manifest(path)
 
-        self.assertEqual(manifest.schema_version, "winforge.dev/v0")
+        self.assertEqual(manifest.schema_version, "cage.dev/v0")
         self.assertEqual(manifest.name, "json-app")
 
 

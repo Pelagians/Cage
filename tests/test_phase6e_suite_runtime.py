@@ -16,7 +16,7 @@ from runtime.launcher import RunError, build_run_plan
 
 def suite_manifest_data() -> dict:
     return {
-        "schemaVersion": "winforge.app/v0",
+        "schemaVersion": "cage.app/v0",
         "name": "acme-document-suite",
         "version": "1.0.0",
         "runtime": {"provider": "wine", "version": "9.0"},
@@ -75,12 +75,12 @@ class SuiteRunPlanTests(unittest.TestCase):
         self.assertEqual(plan["selectedEntrypoint"]["id"], "sheet")
         self.assertEqual(plan["launch"]["entrypoint"], "C:/Program Files/Acme Suite/Sheet.exe")
         self.assertIn("C:/Program Files/Acme Suite/Sheet.exe", plan["launchCommand"])
-        self.assertIn("Z:\\mnt\\winforge-inputs\\0\\budget.xlsx", plan["launchCommand"])
+        self.assertIn("Z:\\mnt\\cage-inputs\\0\\budget.xlsx", plan["launchCommand"])
         self.assertEqual(plan["fileArguments"][0]["hostPath"], str(doc.resolve()))
-        self.assertEqual(plan["fileArguments"][0]["containerPath"], "/mnt/winforge-inputs/0/budget.xlsx")
-        self.assertEqual(plan["fileArguments"][0]["winePath"], "Z:\\mnt\\winforge-inputs\\0\\budget.xlsx")
-        self.assertIn(f"{doc.parent.resolve()}:/mnt/winforge-inputs/0:ro", plan["container"]["fileMounts"])
-        self.assertIn(f"{doc.parent.resolve()}:/mnt/winforge-inputs/0:ro", plan["container"]["argv"])
+        self.assertEqual(plan["fileArguments"][0]["containerPath"], "/mnt/cage-inputs/0/budget.xlsx")
+        self.assertEqual(plan["fileArguments"][0]["winePath"], "Z:\\mnt\\cage-inputs\\0\\budget.xlsx")
+        self.assertIn(f"{doc.parent.resolve()}:/mnt/cage-inputs/0:ro", plan["container"]["fileMounts"])
+        self.assertIn(f"{doc.parent.resolve()}:/mnt/cage-inputs/0:ro", plan["container"]["argv"])
 
     def test_run_plan_rejects_unknown_suite_entrypoint(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -100,7 +100,7 @@ class SuiteRunPlanTests(unittest.TestCase):
             proc = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "run",
                     str(bundle),
                     "--dry-run",
@@ -121,14 +121,14 @@ class SuiteRunPlanTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertEqual(payload["selectedEntrypoint"]["id"], "writer")
         self.assertIn("--safe-mode", payload["launchCommand"])
-        self.assertIn("Z:\\mnt\\winforge-inputs\\0\\notes.docx", payload["launchCommand"])
+        self.assertIn("Z:\\mnt\\cage-inputs\\0\\notes.docx", payload["launchCommand"])
 
 
 class SuiteCompatEvidenceTests(unittest.TestCase):
     def test_compat_dry_run_records_requested_suite_entrypoint_plans(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
-            manifest = tmp / "suite.winforge.json"
+            manifest = tmp / "suite.cage.json"
             write_suite_manifest(manifest)
 
             result = run_compat_test(
@@ -151,7 +151,7 @@ class SuiteCompatEvidenceTests(unittest.TestCase):
     def test_compat_all_entrypoints_uses_manifest_suite_metadata(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
-            manifest = tmp / "suite.winforge.json"
+            manifest = tmp / "suite.cage.json"
             write_suite_manifest(manifest)
 
             result = run_compat_test(

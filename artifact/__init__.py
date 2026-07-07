@@ -1,1 +1,1 @@
-"""Artifact and OCI mapping code for immutable WinForge bundles."""
+"""Artifact and OCI mapping code for immutable Cage bundles."""

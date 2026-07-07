@@ -6,13 +6,13 @@ Status: accepted
 
 ## Decision
 
-`winforge compat test` now supports three evidence depths:
+`cage compat test` now supports three evidence depths:
 
 - `--mode dry-run`: source integrity, dry-run bundle, bundle verification, and run-plan evidence;
 - `--mode build`: source integrity plus real container build evidence;
 - `--mode run`: real build evidence plus bounded app launch evidence.
 
-WinForge also packages a seed compatibility corpus exposed by `winforge compat corpus` as `winforge.compat-corpus/v0`.
+Cage also packages a seed compatibility corpus exposed by `cage compat corpus` as `cage.compat-corpus/v0`.
 
 ## Reasoning
 
@@ -22,7 +22,7 @@ A curated corpus gives the project a stable starting set for repeatable compatib
 
 ## Implemented behavior
 
-`winforge.compat-test/v0` records the selected mode, manifest/application/runtime/compatibility metadata, source integrity, build evidence, bundle verification, run plan, optional run result, success, and classification.
+`cage.compat-test/v0` records the selected mode, manifest/application/runtime/compatibility metadata, source integrity, build evidence, bundle verification, run plan, optional run result, success, and classification.
 
 Current classifications include:
 
@@ -35,7 +35,7 @@ Current classifications include:
 - `run-failed`
 - `harness-error`
 
-Real build mode passes the selected workspace to the container executor so local recipe sources are mounted from the same workspace used by `sources verify`. The executor runs `/opt/winforge/build/run.sh` inside the mounted bundle, not the host-side script path.
+Real build mode passes the selected workspace to the container executor so local recipe sources are mounted from the same workspace used by `sources verify`. The executor runs `/opt/cage/build/run.sh` inside the mounted bundle, not the host-side script path.
 
 The seed corpus includes starter entries such as Notepad++, 7-Zip, PuTTY, WinSCP, DB Browser for SQLite, synthetic .NET/COM fixtures, and blocked driver-required app classes.
 

@@ -11,12 +11,12 @@ The first 7040 manual test downloaded and extracted those tarballs successfully,
 
 ## Decision
 
-WinForge models these as downloadable Wine runner archives, separate from runtime image providers:
+Cage models these as downloadable Wine runner archives, separate from runtime image providers:
 
 - keep `runtime.provider: wine`;
 - allow optional `runtime.runner: <alias>`;
 - resolve runner aliases through `runtime/runner_catalog.py`;
-- download, hash-verify, extract, and diagnose runners through `winforge runners`;
+- download, hash-verify, extract, and diagnose runners through `cage runners`;
 - record runner URL/SHA/source/arch metadata in resolved runtime metadata and execution graphs.
 
 Initial built-in aliases:
@@ -29,12 +29,12 @@ Initial built-in aliases:
 
 ## Consequences
 
-- WinForge does not need a `pol` provider.
+- Cage does not need a `pol` provider.
 - The runtime image catalog remains responsible for container images.
 - The runner cache is responsible for archive acquisition/provenance/diagnostics.
-- Office-shaped recipes remain private under `vic-legacy` or customer repositories; public WinForge only ships generic primitives.
+- Office-shaped recipes remain private under `vic-legacy` or customer repositories; public Cage only ships generic primitives.
 - Real execution still needs a runtime/container environment that contains the 32-bit loader and libraries required by the selected runner.
 
 ## Review trigger
 
-Revisit this decision if WinForge starts embedding downloadable runners directly into OCI runtime images, adds a signed runner mirror, or supports a non-Wine runner archive family whose acquisition semantics are materially different.
+Revisit this decision if Cage starts embedding downloadable runners directly into OCI runtime images, adds a signed runner mirror, or supports a non-Wine runner archive family whose acquisition semantics are materially different.

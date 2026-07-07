@@ -10,7 +10,7 @@ from core.manifest import Manifest, ManifestError, load_manifest
 
 def _module_manifest() -> dict[str, object]:
     return {
-        "schemaVersion": "winforge.app/v0",
+        "schemaVersion": "cage.app/v0",
         "name": "choco-demo",
         "version": "1.0.0",
         "runtime": {"provider": "wine", "version": "latest"},
@@ -32,13 +32,13 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
 
     def test_apply_modules_empty(self):
         from core.modules import apply_modules
-        result = apply_modules({"schemaVersion": "winforge.app/v0"})
+        result = apply_modules({"schemaVersion": "cage.app/v0"})
         self.assertNotIn("provenance", result)
 
     def test_apply_modules_preserves_existing_provenance(self):
         from core.modules import apply_modules
         data = {
-            "schemaVersion": "winforge.app/v0",
+            "schemaVersion": "cage.app/v0",
             "modules": [{"type": "chocolatey", "install": {"packages": ["firefox"]}}],
             "provenance": {"builtBy": "test"}
         }
@@ -78,9 +78,9 @@ class ChocolateyModuleManifestTests(unittest.TestCase):
 
     def test_strict_yaml_accepts_myos_bluebuild_style_modules_shape(self):
         with tempfile.TemporaryDirectory() as tmp:
-            recipe = Path(tmp) / "choco-demo.winforge.yaml"
+            recipe = Path(tmp) / "choco-demo.cage.yaml"
             recipe.write_text(
-                """schemaVersion: winforge.app/v0
+                """schemaVersion: cage.app/v0
 name: choco-demo
 version: 1.0.0
 runtime:
@@ -104,7 +104,7 @@ launch:
 
 
     def test_public_chocolatey_example_uses_modules_shape(self):
-        manifest = load_manifest(Path("examples/chocolatey-firefox.winforge.yaml"))
+        manifest = load_manifest(Path("examples/chocolatey-firefox.cage.yaml"))
 
         self.assertEqual(manifest.modules[0].type, "chocolatey")
         self.assertEqual(manifest.modules[0].install["packages"], ["firefox"])

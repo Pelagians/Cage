@@ -1,4 +1,4 @@
-"""Tests for WinForge execution graph generation."""
+"""Tests for Cage execution graph generation."""
 from __future__ import annotations
 import json
 import tempfile
@@ -11,7 +11,7 @@ from core.manifest import Manifest
 
 
 VALID = {
-    "schemaVersion": "winforge.dev/v0",
+    "schemaVersion": "cage.dev/v0",
     "name": "sample",
     "version": "1.0.0",
     "runtime": {"provider": "wine", "version": "9.0"},
@@ -40,12 +40,12 @@ class ExecutionGraphTests(unittest.TestCase):
     def test_graph_records_resolved_runtime_launch_graphics_and_compatibility(self):
         graph = build_execution_graph(Manifest.from_dict(VALID))
 
-        self.assertEqual(graph["schemaVersion"], "winforge.execution-graph/v0")
+        self.assertEqual(graph["schemaVersion"], "cage.execution-graph/v0")
         self.assertEqual(graph["application"], {"name": "sample", "version": "1.0.0"})
-        self.assertEqual(graph["artifact"]["kind"], "winforge.bundle")
+        self.assertEqual(graph["artifact"]["kind"], "cage.bundle")
         self.assertEqual(graph["builderRuntime"]["provider"], "wine")
         self.assertEqual(graph["builderRuntime"]["version"], "9.0")
-        self.assertEqual(graph["builderRuntime"]["image"], "ghcr.io/myos-dev/winforge-wine:9.0")
+        self.assertEqual(graph["builderRuntime"]["image"], "ghcr.io/myos-dev/cage-wine:9.0")
         self.assertNotIn("network", graph["builderRuntime"])
         self.assertEqual(graph["runnerRuntime"]["network"], "none")
         self.assertEqual(
@@ -80,8 +80,8 @@ class ExecutionGraphTests(unittest.TestCase):
             graph_path = bundle / "metadata" / "graph.json"
             self.assertTrue(graph_path.exists())
             graph = json.loads(graph_path.read_text(encoding="utf-8"))
-            self.assertEqual(graph["schemaVersion"], "winforge.execution-graph/v0")
-            self.assertEqual(graph["builderRuntime"]["image"], "ghcr.io/myos-dev/winforge-wine:9.0")
+            self.assertEqual(graph["schemaVersion"], "cage.execution-graph/v0")
+            self.assertEqual(graph["builderRuntime"]["image"], "ghcr.io/myos-dev/cage-wine:9.0")
 
 
 if __name__ == "__main__":

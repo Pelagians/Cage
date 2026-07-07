@@ -81,7 +81,7 @@ def _write_fake_elf_with_missing_interpreter(path: Path, interpreter: str = '/mi
 
 def runner_manifest_data() -> dict:
     return {
-        'schemaVersion': 'winforge.app/v0',
+        'schemaVersion': 'cage.app/v0',
         'name': 'runner-aware-suite',
         'version': '1.0.0',
         'runtime': {'provider': 'wine', 'version': '9.0', 'runner': 'pol-8.2'},
@@ -124,7 +124,7 @@ class RunnerCatalogTests(unittest.TestCase):
 
             wine = Path(result['winePath'])
             self.assertTrue(wine.exists(), result)
-            self.assertEqual(result['schemaVersion'], 'winforge.runner-cache/v0')
+            self.assertEqual(result['schemaVersion'], 'cage.runner-cache/v0')
             self.assertEqual(result['runner']['id'], 'fixture-pol-8.2')
             self.assertEqual(result['runner']['version'], '8.2')
             self.assertEqual(result['runner']['sha256'], _sha256(tarball))
@@ -169,7 +169,7 @@ class RunnerCatalogTests(unittest.TestCase):
 
             result = diagnose_runner(runner)
 
-            self.assertEqual(result['schemaVersion'], 'winforge.runner-diagnostic/v0')
+            self.assertEqual(result['schemaVersion'], 'cage.runner-diagnostic/v0')
             self.assertFalse(result['executable'])
             self.assertEqual(result['status'], 'missing-elf-interpreter')
             self.assertEqual(result['elf']['interpreter'], '/missing/ld-linux.so.2')
@@ -178,7 +178,7 @@ class RunnerCatalogTests(unittest.TestCase):
 
     def test_cli_runners_list_reports_builtin_aliases(self):
         proc = subprocess.run(
-            [sys.executable, 'cmd/winforge.py', 'runners', 'list'],
+            [sys.executable, 'cmd/cage.py', 'runners', 'list'],
             capture_output=True,
             text=True,
             check=False,
@@ -199,7 +199,7 @@ class RunnerCatalogTests(unittest.TestCase):
             proc = subprocess.run(
                 [
                     sys.executable,
-                    'cmd/winforge.py',
+                    'cmd/cage.py',
                     'runners',
                     'ensure',
                     'custom-runner',

@@ -1,4 +1,4 @@
-schemaVersion: winforge.app/v0
+schemaVersion: cage.app/v0
 name: chocolatey-firefox
 version: "0.1.0"
 
@@ -37,4 +37,4 @@ state:
 provenance:
   sources:
     - uri: https://community.chocolatey.org/packages/firefox
-      note: Chocolatey package installed during the online WinForge build phase.
+      note: Chocolatey package installed during the online Cage build phase.

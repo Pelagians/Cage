@@ -1,11 +1,11 @@
-"""Curated compatibility corpus metadata for WinForge."""
+"""Curated compatibility corpus metadata for Cage."""
 from __future__ import annotations
 
 import json
 from importlib import resources
 from typing import Any
 
-CORPUS_SCHEMA_VERSION = "winforge.compat-corpus/v0"
+CORPUS_SCHEMA_VERSION = "cage.compat-corpus/v0"
 
 
 def load_default_corpus() -> dict[str, Any]:

@@ -24,7 +24,7 @@ from core.manifest import Manifest
 
 
 VALID = {
-    "schemaVersion": "winforge.dev/v0",
+    "schemaVersion": "cage.dev/v0",
     "name": "checkpoint-demo",
     "version": "1.0.0",
     "runtime": {"provider": "wine", "version": "9.0"},
@@ -121,13 +121,13 @@ class CheckpointInspectionTests(unittest.TestCase):
             bundle = self._bundle_under_parent(root)
             outside = root / "outside-manifest.json"
             outside.write_text(json.dumps({"name": "secret-outside", "version": "9.9.9"}), encoding="utf-8")
-            (bundle / "manifest.winforge.json").unlink()
-            (bundle / "manifest.winforge.json").symlink_to(outside)
+            (bundle / "manifest.cage.json").unlink()
+            (bundle / "manifest.cage.json").symlink_to(outside)
 
             result = inspect_checkpoint(bundle)
 
         self.assertFalse(result["valid"])
-        self.assertIn("checkpoint manifest.winforge.json must not be a symlink", result["errors"])
+        self.assertIn("checkpoint manifest.cage.json must not be a symlink", result["errors"])
         self.assertNotEqual(result["application"].get("name"), "secret-outside")
         self.assertEqual(result["application"], {"name": None, "version": None})
 
@@ -339,14 +339,14 @@ class CheckpointInspectionTests(unittest.TestCase):
             source_parent.mkdir()
             source_bundle = self._bundle_under_parent(source_parent)
             attempt_bundle = create_bundle(_manifest(), root / "attempt-output", dry_run=True)
-            (attempt_bundle / "manifest.winforge.json").write_text(
+            (attempt_bundle / "manifest.cage.json").write_text(
                 json.dumps({**VALID, "name": "attempt-manifest"}, indent=2),
                 encoding="utf-8",
             )
 
             result = seed_bundle_from_checkpoint(source_parent, attempt_bundle)
             (attempt_bundle / "prefix" / "drive_c" / "attempt-only.txt").write_text("changed\n", encoding="utf-8")
-            manifest_payload = json.loads((attempt_bundle / "manifest.winforge.json").read_text(encoding="utf-8"))
+            manifest_payload = json.loads((attempt_bundle / "manifest.cage.json").read_text(encoding="utf-8"))
             self.assertEqual(result["sourceBundle"], str(source_bundle.resolve()))
             self.assertEqual(result["attemptBundle"], str(attempt_bundle.resolve()))
             self.assertTrue((attempt_bundle / "prefix" / "drive_c" / "prepared.txt").exists())
@@ -390,7 +390,7 @@ class CheckpointInspectionTests(unittest.TestCase):
             source_parent.mkdir()
             self._bundle_under_parent(source_parent)
             inspect_proc = subprocess.run(
-                [sys.executable, "cmd/winforge.py", "debug", "checkpoint", "inspect", str(source_parent)],
+                [sys.executable, "cmd/cage.py", "debug", "checkpoint", "inspect", str(source_parent)],
                 cwd=repo,
                 text=True,
                 capture_output=True,
@@ -399,7 +399,7 @@ class CheckpointInspectionTests(unittest.TestCase):
             resume_proc = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "debug",
                     "checkpoint",
                     "resume",
@@ -429,7 +429,7 @@ class CheckpointCompatIntegrationTests(unittest.TestCase):
             checkpoint_parent.mkdir()
             checkpoint_bundle = create_bundle(_manifest(), checkpoint_parent, dry_run=True)
             (checkpoint_bundle / "prefix" / "drive_c" / "prepared.txt").write_text("prepared\n", encoding="utf-8")
-            manifest_path = _write_manifest(root / "recipe.winforge.json")
+            manifest_path = _write_manifest(root / "recipe.cage.json")
 
             def fake_build(manifest, bundle_path, *, engine, image_ref, timeout, workspace, runner_cache_dir=None, stop_before=None):
                 self.assertTrue((bundle_path / "prefix" / "drive_c" / "prepared.txt").exists())
@@ -472,7 +472,7 @@ class CheckpointCompatIntegrationTests(unittest.TestCase):
             real_output.mkdir()
             linked_output = root / "linked-output"
             linked_output.symlink_to(real_output, target_is_directory=True)
-            manifest_path = _write_manifest(root / "recipe.winforge.json", {**VALID, "version": "2.0.0"})
+            manifest_path = _write_manifest(root / "recipe.cage.json", {**VALID, "version": "2.0.0"})
 
             result = run_compat_test(
                 manifest_path,
@@ -495,7 +495,7 @@ class CheckpointCompatIntegrationTests(unittest.TestCase):
             checkpoint_parent = root / "checkpoint-output"
             checkpoint_parent.mkdir()
             checkpoint_bundle = create_bundle(_manifest(), checkpoint_parent, dry_run=True)
-            manifest_path = _write_manifest(root / "recipe.winforge.json", {**VALID, "version": "2.0.0"})
+            manifest_path = _write_manifest(root / "recipe.cage.json", {**VALID, "version": "2.0.0"})
             nested_output = checkpoint_bundle / "nested-output"
 
             result = run_compat_test(
@@ -521,7 +521,7 @@ class CheckpointCompatIntegrationTests(unittest.TestCase):
             checkpoint_bundle = create_bundle(_manifest(), checkpoint_parent, dry_run=True)
             (checkpoint_bundle / "prefix" / "drive_c" / "prepared.txt").write_text("prepared\n", encoding="utf-8")
             attempt_payload = {**VALID, "version": "2.0.0"}
-            manifest_path = _write_manifest(root / "recipe.winforge.json", attempt_payload)
+            manifest_path = _write_manifest(root / "recipe.cage.json", attempt_payload)
 
             def fake_build(manifest, bundle_path, *, engine, image_ref, timeout, workspace, runner_cache_dir=None, stop_before=None):
                 self.assertTrue((bundle_path / "prefix" / "drive_c" / "prepared.txt").exists())
@@ -565,23 +565,23 @@ class CheckpointCompatIntegrationTests(unittest.TestCase):
 
     def test_stop_before_build_result_does_not_shell_expand_manifest_strings(self):
         payload = dict(VALID)
-        payload["name"] = "danger-$(touch /tmp/winforge-pwned)-`echo bad`"
+        payload["name"] = "danger-$(touch /tmp/cage-pwned)-`echo bad`"
         manifest = Manifest.from_dict(payload)
 
         script = generate_build_script(manifest, stop_before="install-apps")
 
-        self.assertIn("'\"danger-$(touch /tmp/winforge-pwned)-`echo bad`\"'", script)
-        self.assertNotIn('"manifestName": "danger-$(touch /tmp/winforge-pwned)-`echo bad`"', script)
+        self.assertIn("'\"danger-$(touch /tmp/cage-pwned)-`echo bad`\"'", script)
+        self.assertNotIn('"manifestName": "danger-$(touch /tmp/cage-pwned)-`echo bad`"', script)
 
     def test_cli_rejects_stop_before_with_run_mode_without_traceback(self):
         repo = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            manifest_path = _write_manifest(root / "recipe.winforge.json")
+            manifest_path = _write_manifest(root / "recipe.cage.json")
             proc = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "compat",
                     "test",
                     str(manifest_path),
@@ -607,7 +607,7 @@ class CheckpointCompatIntegrationTests(unittest.TestCase):
     def test_compat_test_rejects_stop_before_install_apps_with_run_mode(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            manifest_path = _write_manifest(root / "recipe.winforge.json")
+            manifest_path = _write_manifest(root / "recipe.cage.json")
 
             with self.assertRaises(ValueError):
                 run_compat_test(

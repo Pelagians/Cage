@@ -1,4 +1,4 @@
-"""Source integrity checks for WinForge recipes."""
+"""Source integrity checks for Cage recipes."""
 from __future__ import annotations
 
 import hashlib
@@ -9,7 +9,7 @@ from typing import Any
 from core.manifest import Manifest
 from core.media import SOURCE_POLICY_SCHEMA_VERSION, audit_source_path
 
-SOURCE_INTEGRITY_SCHEMA_VERSION = "winforge.source-integrity/v0"
+SOURCE_INTEGRITY_SCHEMA_VERSION = "cage.source-integrity/v0"
 _SHA256_RE = re.compile(r"^[A-Fa-f0-9]{64}$")
 _REMOTE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
 

@@ -6,7 +6,7 @@ Status: accepted
 
 ## Decision
 
-WinForge supports a first-class `compatibility` recipe block for harder Wine/Proton application images. This block is a high-level app/runtime policy layer above Wine internals, not a raw Wine loader-control DSL.
+Cage supports a first-class `compatibility` recipe block for harder Wine/Proton application images. This block is a high-level app/runtime policy layer above Wine internals, not a raw Wine loader-control DSL.
 
 Supported v0 fields:
 
@@ -30,26 +30,26 @@ Legacy `config.wine.arch`, `config.wine.windowsVersion`, `config.wine.dllOverrid
 
 ## Implemented behavior
 
-WinForge now:
+Cage now:
 
-- normalizes compatibility policy into `schemaVersion: winforge.compatibility-policy/v0`;
+- normalizes compatibility policy into `schemaVersion: cage.compatibility-policy/v0`;
 - rejects unsupported graphics backends, DLL policy values, env names, and architecture/window-version values;
 - compiles DLL policy to deterministic `WINEDLLOVERRIDES`;
 - applies `WINEARCH`, compatibility env, and DLL overrides during prefix build;
 - applies `winecfg -v <windowsVersion>` after prefix initialization;
 - installs requested `dxvk` or `vkd3d` graphics backend into the prefix through winetricks during build;
-- records the requested policy in `manifest.winforge.json`, `metadata/graph.json`, provenance, OCI artifact metadata, run plans, and the OCI app launcher path;
+- records the requested policy in `manifest.cage.json`, `metadata/graph.json`, provenance, OCI artifact metadata, run plans, and the OCI app launcher path;
 - propagates the same policy when running bundles and exported app images.
 
 ## Boundary
 
-WinForge should expose compatibility intent, not raw implementation internals. `dllPolicy` supports stable native/builtin/disabled choices. Explicit DLL load ordering, loader traces, COM timing controls, per-function hooks, and automatic fixup engines remain advanced/debug/research territory until concrete app failures require them.
+Cage should expose compatibility intent, not raw implementation internals. `dllPolicy` supports stable native/builtin/disabled choices. Explicit DLL load ordering, loader traces, COM timing controls, per-function hooks, and automatic fixup engines remain advanced/debug/research territory until concrete app failures require them.
 
 Graphics backend selection is now part of the artifact contract, but runtime-image capability metadata is still future work. For v0, `dxvk` and `vkd3d` use winetricks during prefix build; runtime images still need host/container graphics capability to execute those apps correctly.
 
 ## Reasoning
 
-Founder/operator experience says harder Windows applications often need deliberate graphics backend and DLL override policy. Testing hard apps against a generic Wine image produces weak evidence; WinForge needs to compile declared compatibility policy into the artifact before collecting compatibility results.
+Founder/operator experience says harder Windows applications often need deliberate graphics backend and DLL override policy. Testing hard apps against a generic Wine image produces weak evidence; Cage needs to compile declared compatibility policy into the artifact before collecting compatibility results.
 
 ## Rejected alternatives
 

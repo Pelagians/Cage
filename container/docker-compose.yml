@@ -1,10 +1,10 @@
-# WinForge Docker Compose — local development and testing
+# Cage Docker Compose — local development and testing
 #
 # Build a specific provider image, then run the builder or a shell inside it.
 # Examples:
 #   docker compose build wine
 #   docker compose run wine bash
-#   docker compose run --rm wine winforge build /workspace/manifest.json
+#   docker compose run --rm wine cage build /workspace/manifest.json
 
 services:
   wine:
@@ -13,7 +13,7 @@ services:
       dockerfile: container/providers/wine/Dockerfile
       args:
         WINE_PACKAGE_VERSION: "11.0.0.0~bookworm-1"
-    image: winforge/wine:11.0-dev
+    image: cage/wine:11.0-dev
     environment:
       WINEFS: builder
     volumes:
@@ -28,7 +28,7 @@ services:
       dockerfile: container/providers/wine-staging/Dockerfile
       args:
         WINE_PACKAGE_VERSION: "11.10~bookworm-1"
-    image: winforge/wine-staging:11.10-dev
+    image: cage/wine-staging:11.10-dev
     environment:
       WINEFS: builder
     volumes:
@@ -43,7 +43,7 @@ services:
       dockerfile: container/providers/umu-proton-ge/Dockerfile
       args:
         GE_PROTON_TAG: "GE-Proton11-1"
-    image: winforge/umu-proton-ge:GE-Proton11-1-dev
+    image: cage/umu-proton-ge:GE-Proton11-1-dev
     environment:
       WINEFS: builder
     volumes:

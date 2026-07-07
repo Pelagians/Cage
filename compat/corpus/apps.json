@@ -8,7 +8,7 @@
       ],
       "name": "Notepad++",
       "notes": "Current repo recipe is a contract fixture until sources/notepad-plus-plus.exe and overlays/notepad-plus-plus/config.xml are provided.",
-      "recipe": "examples/notepad-plus-plus.winforge.yaml",
+      "recipe": "examples/notepad-plus-plus.cage.yaml",
       "slug": "notepad-plus-plus",
       "sourcePolicy": "requires-local-installer-and-overlay",
       "status": "fixture",
@@ -125,13 +125,13 @@
         "file-associations"
       ],
       "name": "Microsoft Office BYO pre-installed files tree",
-      "notes": "Customer provides pre-installed Office file directories such as Program Files trees; WinForge layers them reproducibly without shipping Office.",
+      "notes": "Customer provides pre-installed Office file directories such as Program Files trees; Cage layers them reproducibly without shipping Office.",
       "slug": "microsoft-office-byo-files",
       "sourcePolicy": "bring-your-own-files",
       "status": "candidate",
       "tier": 4
     }
   ],
-  "description": "Seed compatibility corpus for evidence-driven WinForge app testing.",
-  "schemaVersion": "winforge.compat-corpus/v0"
+  "description": "Seed compatibility corpus for evidence-driven Cage app testing.",
+  "schemaVersion": "cage.compat-corpus/v0"
 }

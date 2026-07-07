@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1
-# WinForge Wine Stable OCI Base
+# Cage Wine Stable OCI Base
 #
-# Produces the winforge/wine:<version> image — a headless Wine Stable
+# Produces the cage/wine:<version> image — a headless Wine Stable
 # runtime suitable for prefix construction and headless application
-# execution inside the WinForge builder pipeline.
+# execution inside the Cage builder pipeline.
 #
 # Build:
 #   docker build \
 #     --build-arg WINE_PACKAGE_VERSION=11.0.0.0~bookworm-1 \
-#     -t winforge/wine:11.0 \
+#     -t cage/wine:11.0 \
 #     -f container/providers/wine/Dockerfile .
 #
 # Architecture: amd64 (Wine Stable does not provide arm64 binaries)
@@ -64,9 +64,9 @@ RUN set -eux; \
 # ---- Stage 3: Final image ----
 FROM wine-install
 
-# WinForge paths
-ENV WINFORGE_ROOT=/opt/winforge \
-    WINEPREFIX=/opt/winforge/prefix \
+# Cage paths
+ENV CAGE_ROOT=/opt/cage \
+    WINEPREFIX=/opt/cage/prefix \
     WINEARCH=win64 \
     WINEDEBUG=-all \
     WINEDLLOVERRIDES="mscoree,mshtml=" \
@@ -85,13 +85,13 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Common scripts
 COPY container/common/xvfb-entrypoint.sh /usr/local/bin/xvfb-entrypoint.sh
-COPY container/common/wine-env.sh /opt/winforge/common/wine-env.sh
+COPY container/common/wine-env.sh /opt/cage/common/wine-env.sh
 RUN chmod +x /usr/local/bin/xvfb-entrypoint.sh
 
 # Minimal font cache
 RUN fc-cache -fv 2>/dev/null || true
 
-WORKDIR /opt/winforge
+WORKDIR /opt/cage
 
 ENTRYPOINT ["/usr/local/bin/xvfb-entrypoint.sh"]
 CMD ["/bin/bash"]

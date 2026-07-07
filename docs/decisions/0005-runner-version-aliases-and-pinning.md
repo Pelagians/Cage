@@ -6,7 +6,7 @@ Status: accepted
 
 ## Decision
 
-WinForge supports mutable runtime version aliases such as `latest`, `stable`, `previous`, `legacy`, and `baseline`, but aliases are not artifact identity. The runtime catalog resolves aliases to pinned runner versions before a bundle, graph, run plan, or future OCI application image is written.
+Cage supports mutable runtime version aliases such as `latest`, `stable`, `previous`, `legacy`, and `baseline`, but aliases are not artifact identity. The runtime catalog resolves aliases to pinned runner versions before a bundle, graph, run plan, or future OCI application image is written.
 
 Runtime metadata records both:
 
@@ -17,7 +17,7 @@ Runtime metadata records both:
 
 ## Current curated runner set
 
-WinForge does not mirror every upstream release. v0 carries a small curated support matrix:
+Cage does not mirror every upstream release. v0 carries a small curated support matrix:
 
 | Provider | Alias policy | Pinned versions |
 | --- | --- | --- |

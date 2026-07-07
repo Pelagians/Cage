@@ -1,1 +1,1 @@
-"""WinForge container build and management subpackage."""
+"""Cage container build and management subpackage."""

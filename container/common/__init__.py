@@ -1,1 +1,1 @@
-"""Packaged container helper scripts for WinForge runtime images."""
+"""Packaged container helper scripts for Cage runtime images."""

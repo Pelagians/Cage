@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
-# WinForge UMU + GE-Proton OCI Base
+# Cage UMU + GE-Proton OCI Base
 #
-# Produces the winforge/umu-proton-ge:<tag> image — GloriousEggroll's
+# Produces the cage/umu-proton-ge:<tag> image — GloriousEggroll's
 # GE-Proton runner stack, built from community releases and launched through the UMU capability contract.
 #
 # Build:
@@ -9,7 +9,7 @@
 #     --build-arg GE_PROTON_TAG=GE-Proton9-27 \
 #     --build-arg GE_PROTON_SHA256=replace-with-actual-sha256 \
 #     --build-arg UMU_LAUNCHER_REF=1.4.0 \
-#     -t winforge/umu-proton-ge:GE-Proton9-27 \
+#     -t cage/umu-proton-ge:GE-Proton9-27 \
 #     -f container/providers/umu-proton-ge/Dockerfile .
 
 ARG GE_PROTON_TAG=GE-Proton9-27
@@ -55,14 +55,14 @@ RUN set -eux; \
     test -x /opt/umu/bin/umu-run; \
     ln -s /opt/umu/bin/umu-run /usr/local/bin/umu-run; \
     /usr/local/bin/umu-run --help >/tmp/umu-run-help.txt
-ENV WINFORGE_ROOT=/opt/winforge WINEPREFIX=/opt/winforge/prefix \
-    STEAM_COMPAT_DATA_PATH=/opt/winforge/prefix \
-    STEAM_COMPAT_CLIENT_INSTALL_PATH=/opt/winforge \
+ENV CAGE_ROOT=/opt/cage WINEPREFIX=/opt/cage/prefix \
+    STEAM_COMPAT_DATA_PATH=/opt/cage/prefix \
+    STEAM_COMPAT_CLIENT_INSTALL_PATH=/opt/cage \
     PROTONPATH=/opt/proton-ge \
     PATH=/opt/umu/bin:$PATH \
     WINEDEBUG=-all DISPLAY=:99
 COPY container/common/xvfb-entrypoint.sh /usr/local/bin/xvfb-entrypoint.sh
 RUN chmod +x /usr/local/bin/xvfb-entrypoint.sh
-WORKDIR /opt/winforge
+WORKDIR /opt/cage
 ENTRYPOINT ["/usr/local/bin/xvfb-entrypoint.sh"]
 CMD ["/bin/bash"]

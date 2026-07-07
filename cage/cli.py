@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""WinForge CLI — package and run application recipes for Wine/Proton-family runtimes."""
+"""Cage CLI — package and run application recipes for Wine/Proton-family runtimes."""
 from __future__ import annotations
 import argparse, json, sys
 from pathlib import Path
@@ -138,7 +138,7 @@ def cmd_failure_analyze(args):
 
 def cmd_compat_test(args):
     if args.stop_before and args.mode == "run":
-        print("winforge: compat error: --stop-before is only supported with --mode dry-run or --mode build", file=sys.stderr)
+        print("cage: compat error: --stop-before is only supported with --mode dry-run or --mode build", file=sys.stderr)
         return 2
     result = run_compat_test(
         Path(args.manifest),
@@ -199,7 +199,7 @@ def cmd_build(args):
         return 0
 
     # ---- Real execution inside container ----
-    print(f"[winforge] Starting real build in container ({base_image})...",
+    print(f"[cage] Starting real build in container ({base_image})...",
           file=sys.stderr)
     sys.stderr.flush()
 
@@ -243,15 +243,15 @@ def cmd_build(args):
     print(json.dumps(result, indent=2))
 
     if build_result.success:
-        print(f"\n[winforge] Build SUCCESS — bundle at {bundle_path}",
+        print(f"\n[cage] Build SUCCESS — bundle at {bundle_path}",
               file=sys.stderr)
         if build_result.prefix_size is not None:
             size_mb = build_result.prefix_size / (1024 * 1024)
-            print(f"[winforge] Prefix: {size_mb:.1f} MB, "
+            print(f"[cage] Prefix: {size_mb:.1f} MB, "
                   f"{build_result.prefix_file_count} files",
                   file=sys.stderr)
     else:
-        print(f"\n[winforge] Build FAILED — see {bundle_path}/logs/build.log",
+        print(f"\n[cage] Build FAILED — see {bundle_path}/logs/build.log",
               file=sys.stderr)
         return 1
 
@@ -361,7 +361,7 @@ def cmd_runners_ensure(args):
 
 def cmd_runners_diagnose(args):
     candidate = Path(args.runner_or_path).expanduser()
-    path = candidate if candidate.exists() else Path(args.cache_dir or "~/.cache/winforge/runners").expanduser() / args.runner_or_path
+    path = candidate if candidate.exists() else Path(args.cache_dir or "~/.cache/cage/runners").expanduser() / args.runner_or_path
     result = diagnose_runner(path)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
@@ -492,7 +492,7 @@ def cmd_providers(args):
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        prog="winforge",
+        prog="cage",
         description="Package and run application recipes for Wine/Proton-family runtimes.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
@@ -528,10 +528,10 @@ def build_parser():
     p.set_defaults(func=cmd_build)
 
     # run
-    p = sub.add_parser("run", help="Run a verified WinForge execution bundle")
-    p.add_argument("bundle", help="Path to WinForge bundle directory or app name from artifact index")
+    p = sub.add_parser("run", help="Run a verified Cage execution bundle")
+    p.add_argument("bundle", help="Path to Cage bundle directory or app name from artifact index")
     p.add_argument("--artifact-index", default=None,
-                   help="Artifact index path for resolving app names (default: dist/.winforge/artifacts.json)")
+                   help="Artifact index path for resolving app names (default: dist/.cage/artifacts.json)")
     p.add_argument("--graphics", choices=["headless", "vnc"],
                    help="Graphics mode; defaults to metadata/graph.json defaultMode")
     p.add_argument("--engine", default=None,
@@ -554,10 +554,10 @@ def build_parser():
     p.set_defaults(func=cmd_run)
 
     # image
-    p = sub.add_parser("image", help="Inspect and verify WinForge application OCI images")
+    p = sub.add_parser("image", help="Inspect and verify Cage application OCI images")
     isub = p.add_subparsers(dest="image_command", required=True)
 
-    ip = isub.add_parser("verify", help="Verify OCI labels match embedded WinForge metadata")
+    ip = isub.add_parser("verify", help="Verify OCI labels match embedded Cage metadata")
     ip.add_argument("image", help="OCI image reference to verify")
     ip.add_argument("--engine", default=None,
                     help="Container engine (podman, docker). Auto-detect if omitted.")
@@ -566,7 +566,7 @@ def build_parser():
     ip.set_defaults(func=cmd_image_verify)
 
     # container
-    p = sub.add_parser("container", help="Manage WinForge runtime OCI containers")
+    p = sub.add_parser("container", help="Manage Cage runtime OCI containers")
     csub = p.add_subparsers(dest="container_command", required=True)
 
     cp = csub.add_parser("list", help="List available container build definitions")
@@ -600,7 +600,7 @@ def build_parser():
 
     rp = rsub.add_parser("ensure", help="Download/extract a runner into the local cache")
     rp.add_argument("runner", help="Runner alias such as pol-8.2, or custom id when --url is supplied")
-    rp.add_argument("--cache-dir", help="Runner cache directory (default: ~/.cache/winforge/runners)")
+    rp.add_argument("--cache-dir", help="Runner cache directory (default: ~/.cache/cage/runners)")
     rp.add_argument("--url", help="Override/download URL for a custom runner archive")
     rp.add_argument("--sha256", help="Expected archive SHA-256 when --url is supplied")
     rp.add_argument("--provider", help="Provider for a custom --url runner (default: wine)")
@@ -612,34 +612,34 @@ def build_parser():
 
     rp = rsub.add_parser("diagnose", help="Diagnose a cached runner alias or runner directory")
     rp.add_argument("runner_or_path", help="Runner alias such as pol-8.2, or a runner directory/bin/wine path")
-    rp.add_argument("--cache-dir", help="Runner cache directory (default: ~/.cache/winforge/runners)")
+    rp.add_argument("--cache-dir", help="Runner cache directory (default: ~/.cache/cage/runners)")
     rp.set_defaults(func=cmd_runners_diagnose)
 
     # bundle
-    p = sub.add_parser("bundle", help="Inspect and verify WinForge execution bundles")
+    p = sub.add_parser("bundle", help="Inspect and verify Cage execution bundles")
     bsub = p.add_subparsers(dest="bundle_command", required=True)
 
     bp = bsub.add_parser("inspect", help="Print bundle summary from metadata/graph.json")
-    bp.add_argument("bundle", help="Path to WinForge bundle directory")
+    bp.add_argument("bundle", help="Path to Cage bundle directory")
     bp.set_defaults(func=cmd_bundle_inspect)
 
     bp = bsub.add_parser("verify", help="Validate bundle contract and graph consistency")
-    bp.add_argument("bundle", help="Path to WinForge bundle directory")
+    bp.add_argument("bundle", help="Path to Cage bundle directory")
     bp.set_defaults(func=cmd_bundle_verify)
 
     # artifacts
-    p = sub.add_parser("artifacts", help="List and resolve locally indexed WinForge artifacts")
+    p = sub.add_parser("artifacts", help="List and resolve locally indexed Cage artifacts")
     asub = p.add_subparsers(dest="artifacts_command", required=True)
 
     ap = asub.add_parser("list", help="Print the local artifact index")
     ap.add_argument("--index", default=None,
-                    help="Artifact index path (default: dist/.winforge/artifacts.json)")
+                    help="Artifact index path (default: dist/.cage/artifacts.json)")
     ap.set_defaults(func=cmd_artifacts_list)
 
     ap = asub.add_parser("resolve", help="Resolve app or app@version to a bundle")
     ap.add_argument("reference", help="Artifact reference, e.g. notepad-plus-plus or notepad-plus-plus@8.6.0")
     ap.add_argument("--index", default=None,
-                    help="Artifact index path (default: dist/.winforge/artifacts.json)")
+                    help="Artifact index path (default: dist/.cage/artifacts.json)")
     ap.set_defaults(func=cmd_artifacts_resolve)
 
     # sources
@@ -647,17 +647,17 @@ def build_parser():
     ssub = p.add_subparsers(dest="sources_command", required=True)
 
     sp = ssub.add_parser("verify", help="Verify local recipe sources and sha256 values")
-    sp.add_argument("manifest", help="Path to WinForge manifest")
+    sp.add_argument("manifest", help="Path to Cage manifest")
     sp.add_argument("--workspace", help="Workspace root for relative local sources (default: cwd)")
     sp.set_defaults(func=cmd_sources_verify)
 
     sp = ssub.add_parser("audit", help="Audit local recipe source paths for blocked policy artifacts")
-    sp.add_argument("manifest", help="Path to WinForge manifest")
+    sp.add_argument("manifest", help="Path to Cage manifest")
     sp.add_argument("--workspace", help="Workspace root for relative local sources (default: cwd)")
     sp.set_defaults(func=cmd_sources_audit)
 
     # media
-    p = sub.add_parser("media", help="Stage BYO media into the WinForge workspace")
+    p = sub.add_parser("media", help="Stage BYO media into the Cage workspace")
     msub = p.add_subparsers(dest="media_command", required=True)
 
     mp = msub.add_parser("stage", help="Stage local BYO media under sources/<name>/media")
@@ -669,7 +669,7 @@ def build_parser():
 
 
     # debug helpers
-    p = sub.add_parser("debug", help="Debug WinForge bundles and installer workflows")
+    p = sub.add_parser("debug", help="Debug Cage bundles and installer workflows")
     dsub = p.add_subparsers(dest="debug_command", required=True)
 
     dp = dsub.add_parser("checkpoint", help="Inspect or resume prepared-prefix checkpoints")
@@ -690,7 +690,7 @@ def build_parser():
     p = sub.add_parser("failure", help="Analyze Windows/Wine installer failure logs")
     fsub = p.add_subparsers(dest="failure_command", required=True)
 
-    fp = fsub.add_parser("analyze", help="Analyze a WinForge bundle, log directory, or log file")
+    fp = fsub.add_parser("analyze", help="Analyze a Cage bundle, log directory, or log file")
     fp.add_argument("path", help="Bundle directory, log directory, or log file to analyze")
     fp.add_argument("--no-write", action="store_true", help="Do not write metadata/failure-analysis.json or failure-summary.md")
     fp.set_defaults(func=cmd_failure_analyze)
@@ -700,7 +700,7 @@ def build_parser():
     csub = p.add_subparsers(dest="compat_command", required=True)
 
     cp = csub.add_parser("test", help="Run source/build/verify/run-plan compatibility evidence pass")
-    cp.add_argument("manifest", help="Path to WinForge manifest")
+    cp.add_argument("manifest", help="Path to Cage manifest")
     cp.add_argument("--workspace", help="Workspace root for relative local sources (default: cwd)")
     cp.add_argument("--output", default="dist", help="Output directory for evidence bundles")
     cp.add_argument("--graphics", choices=["headless", "vnc"], default="headless", help="Graphics mode for run-plan/run evidence")
@@ -721,13 +721,13 @@ def build_parser():
     cp.set_defaults(func=cmd_compat_corpus)
 
     # export
-    p = sub.add_parser("export", help="Export WinForge bundles to deployable artifacts")
+    p = sub.add_parser("export", help="Export Cage bundles to deployable artifacts")
     esub = p.add_subparsers(dest="export_command", required=True)
 
     ep = esub.add_parser("oci", help="Export a verified bundle as a runnable OCI application image")
-    ep.add_argument("bundle", help="Path to WinForge bundle directory or app name from artifact index")
+    ep.add_argument("bundle", help="Path to Cage bundle directory or app name from artifact index")
     ep.add_argument("--artifact-index", default=None,
-                    help="Artifact index path for resolving app names (default: dist/.winforge/artifacts.json)")
+                    help="Artifact index path for resolving app names (default: dist/.cage/artifacts.json)")
     ep.add_argument("--tag", required=True, help="Output OCI image tag")
     ep.add_argument("--dry-run", action="store_true", help="Print the OCI export plan without building")
     ep.add_argument("--engine", default=None, help="Container build engine (podman, docker). Auto-detect if omitted.")
@@ -736,17 +736,17 @@ def build_parser():
     ep.add_argument("--push", action="store_true", help="Push the image after a successful local build")
     ep.set_defaults(func=cmd_export_oci)
 
-    ep = esub.add_parser("kube", help="Export Kubernetes manifests for a WinForge app image")
-    ep.add_argument("bundle", help="Path to WinForge bundle directory or app name from artifact index")
+    ep = esub.add_parser("kube", help="Export Kubernetes manifests for a Cage app image")
+    ep.add_argument("bundle", help="Path to Cage bundle directory or app name from artifact index")
     ep.add_argument("--artifact-index", default=None,
-                    help="Artifact index path for resolving app names (default: dist/.winforge/artifacts.json)")
+                    help="Artifact index path for resolving app names (default: dist/.cage/artifacts.json)")
     ep.add_argument("--image", required=True, help="Digest-pinned OCI image ref, e.g. ghcr.io/org/app@sha256:...")
     ep.add_argument("--namespace", default="default", help="Kubernetes namespace for generated resources")
     ep.add_argument("--name", help="Kubernetes resource base name; defaults to sanitized app name")
     ep.add_argument("--state-size", default="10Gi", help="State PVC size when PVCs are enabled")
     ep.add_argument("--exports-size", default="10Gi", help="Exports PVC size when PVCs are enabled")
     ep.add_argument("--replicas", type=int, default=1, help="Deployment replica count")
-    ep.add_argument("--graphics", choices=["headless", "vnc"], default="headless", help="WINFORGE_GRAPHICS value")
+    ep.add_argument("--graphics", choices=["headless", "vnc"], default="headless", help="CAGE_GRAPHICS value")
     ep.add_argument("--no-pvc", action="store_true", help="Use emptyDir volumes instead of PVCs")
     ep.add_argument("--allow-mutable-tag", action="store_true", help="Allow tag-only image refs instead of requiring @sha256")
     ep.add_argument("--output", help="Write Kubernetes YAML to this file; required unless --dry-run")
@@ -768,34 +768,34 @@ def main(argv=None):
     try:
         return args.func(args)
     except ManifestError as exc:
-        print(f"winforge: manifest error: {exc}", file=sys.stderr)
+        print(f"cage: manifest error: {exc}", file=sys.stderr)
         return 2
     except FileExistsError as exc:
-        print(f"winforge: artifact exists: {exc}", file=sys.stderr)
+        print(f"cage: artifact exists: {exc}", file=sys.stderr)
         return 3
     except RunError as exc:
-        print(f"winforge: run error: {exc}", file=sys.stderr)
+        print(f"cage: run error: {exc}", file=sys.stderr)
         return 4
     except OCIExportError as exc:
-        print(f"winforge: export error: {exc}", file=sys.stderr)
+        print(f"cage: export error: {exc}", file=sys.stderr)
         return 5
     except KubeExportError as exc:
-        print(f"winforge: kube export error: {exc}", file=sys.stderr)
+        print(f"cage: kube export error: {exc}", file=sys.stderr)
         return 7
     except (RunnerCatalogError, RunnerCacheError) as exc:
-        print(f"winforge: runner error: {exc}", file=sys.stderr)
+        print(f"cage: runner error: {exc}", file=sys.stderr)
         return 10
     except MediaStageError as exc:
-        print(f"winforge: media error: {exc}", file=sys.stderr)
+        print(f"cage: media error: {exc}", file=sys.stderr)
         return 11
     except FailureAnalysisError as exc:
-        print(f"winforge: failure-analysis error: {exc}", file=sys.stderr)
+        print(f"cage: failure-analysis error: {exc}", file=sys.stderr)
         return 12
     except CheckpointError as exc:
-        print(f"winforge: checkpoint error: {exc}", file=sys.stderr)
+        print(f"cage: checkpoint error: {exc}", file=sys.stderr)
         return 13
     except ArtifactIndexError as exc:
-        print(f"winforge: artifact index error: {exc}", file=sys.stderr)
+        print(f"cage: artifact index error: {exc}", file=sys.stderr)
         return 6
     except KeyboardInterrupt:
         print("", file=sys.stderr)

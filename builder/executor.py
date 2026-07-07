@@ -1,6 +1,6 @@
-"""Container-executor for real WinForge builds.
+"""Container-executor for real Cage builds.
 
-Runs the WinForge build pipeline inside a WinForge Wine/Proton OCI
+Runs the Cage build pipeline inside a Cage Wine/Proton OCI
 container, producing a real built prefix with installed dependencies
 and applications.
 """
@@ -64,11 +64,11 @@ def _run_container_command(cmd: list[str], *, timeout: int) -> _CommandResult:
         try:
             item = output_queue.get(timeout=min(0.2, remaining))
         except queue.Empty:
-            item = "__WINFORGE_NO_OUTPUT__"
+            item = "__CAGE_NO_OUTPUT__"
 
         if item is None:
             stream_done = True
-        elif item != "__WINFORGE_NO_OUTPUT__":
+        elif item != "__CAGE_NO_OUTPUT__":
             lines.append(item)
             print(item, end="", file=sys.stderr, flush=True)
 
@@ -80,7 +80,7 @@ def _run_container_command(cmd: list[str], *, timeout: int) -> _CommandResult:
 
 @dataclass
 class BuildResult:
-    """Result of a real container-executed WinForge build."""
+    """Result of a real container-executed Cage build."""
 
     success: bool
     bundle_path: str
@@ -168,7 +168,7 @@ def _resolve_image_ref(manifest: Manifest, engine: str) -> str | None:
     Resolution is catalog-backed:
       1. Prefer a local developer image if it exists.
       2. Pull the published GHCR tag so mutable catalog tags such as
-         ghcr.io/myos-dev/winforge-wine:11.0 refresh after CI rebuilds.
+         ghcr.io/myos-dev/cage-wine:11.0 refresh after CI rebuilds.
       3. Fall back to an already-local published tag when offline.
     Returns the image ref, or None if unresolvable.
     """
@@ -190,7 +190,7 @@ def _resolve_image_ref(manifest: Manifest, engine: str) -> str | None:
     return None
 
 
-RUNNER_CONTAINER_DIR = "/opt/winforge-runner"
+RUNNER_CONTAINER_DIR = "/opt/cage-runner"
 
 
 def _volume_mount(source: Path | str, target: str, *, engine: str, read_only: bool = False) -> str:
@@ -198,7 +198,7 @@ def _volume_mount(source: Path | str, target: str, *, engine: str, read_only: bo
 
     Rootless Podman on SELinux-enforcing hosts needs an SELinux label option
     for bind-mounted source trees, otherwise scripts such as
-    /opt/winforge/build/run.sh can exist but be unreadable inside the
+    /opt/cage/build/run.sh can exist but be unreadable inside the
     container ("Permission denied"). Use the shared label so the same bundle,
     workspace, and runner cache can be reused by build and run containers.
     """
@@ -224,8 +224,8 @@ def _prepare_runner_cache(manifest: Manifest, cache_dir: Path | str | None, *, e
         "containerBin": f"{RUNNER_CONTAINER_DIR}/bin",
         "mount": _volume_mount(runner_dir, RUNNER_CONTAINER_DIR, engine=engine, read_only=True),
         "environment": {
-            "WINFORGE_RUNNER_ID": runner_id,
-            "WINFORGE_RUNNER_BIN": f"{RUNNER_CONTAINER_DIR}/bin",
+            "CAGE_RUNNER_ID": runner_id,
+            "CAGE_RUNNER_BIN": f"{RUNNER_CONTAINER_DIR}/bin",
         },
     })
     return payload
@@ -246,10 +246,10 @@ def execute_inside_container(
     runner_cache_dir: Path | str | None = None,
     stop_before: str | None = None,
 ) -> BuildResult:
-    """Run the WinForge build inside the runtime provider's Docker/Podman container.
+    """Run the Cage build inside the runtime provider's Docker/Podman container.
 
     Args:
-        manifest:         The parsed WinForge manifest.
+        manifest:         The parsed Cage manifest.
         bundle_path:      Host-path to the bundle output directory (must exist).
         engine:           Container engine (docker, podman). Auto-detect if None.
         image_ref:        Explicit OCI image reference. Resolve from manifest if None.
@@ -278,7 +278,7 @@ def execute_inside_container(
     script_path = bundle_path / "build" / "run.sh"
     script = generate_build_script(
         manifest,
-        bundle_mount="/opt/winforge",
+        bundle_mount="/opt/cage",
         workspace_mount="/workspace",
         timeout_per_phase=timeout,
         stop_before=stop_before,
@@ -291,12 +291,12 @@ def execute_inside_container(
     (bundle_path / "logs").mkdir(parents=True, exist_ok=True)
 
     # ---- Determine mount points ----
-    # Bundle:       /host/bundle-name → /opt/winforge (inside container)
+    # Bundle:       /host/bundle-name → /opt/cage (inside container)
     # Workspace:     selected workspace → /workspace       (for source-file access)
     host_bundle = bundle_path.resolve()
     host_workspace = Path(workspace or Path.cwd()).resolve()
     mounts = [
-        _volume_mount(host_bundle, "/opt/winforge", engine=engine),
+        _volume_mount(host_bundle, "/opt/cage", engine=engine),
         _volume_mount(host_workspace, "/workspace", engine=engine, read_only=True),
     ]
     environment: dict[str, str] = {}
@@ -317,16 +317,16 @@ def execute_inside_container(
     cmd.append(img)
 
     # Pass through xvfb-entrypoint.sh (which starts Xvfb, then execs CMD)
-    cmd.extend(["bash", "/opt/winforge/build/run.sh"])
+    cmd.extend(["bash", "/opt/cage/build/run.sh"])
 
     # ---- Execute ----
     log_lines: list[str] = []
-    log_lines.append(f"[winforge] Engine: {engine}")
-    log_lines.append(f"[winforge] Image:  {img}")
-    log_lines.append(f"[winforge] Bundle: {host_bundle}")
-    log_lines.append(f"[winforge] CWD:    {host_workspace}")
+    log_lines.append(f"[cage] Engine: {engine}")
+    log_lines.append(f"[cage] Image:  {img}")
+    log_lines.append(f"[cage] Bundle: {host_bundle}")
+    log_lines.append(f"[cage] CWD:    {host_workspace}")
     if runner_cache:
-        log_lines.append(f"[winforge] Runner: {runner_cache['runnerId']} mounted at {runner_cache['containerDir']}")
+        log_lines.append(f"[cage] Runner: {runner_cache['runnerId']} mounted at {runner_cache['containerDir']}")
     log_lines.append("")
 
     try:
@@ -360,7 +360,7 @@ def execute_inside_container(
         prefix_path = bundle_path / "prefix"
         if success and not prefix_path.exists():
             success = True  # Still success if the script completed with 0
-            log_lines.append("[winforge] Note: prefix directory not found at expected path")
+            log_lines.append("[cage] Note: prefix directory not found at expected path")
             log_text = "\n".join(log_lines)
             (bundle_path / "logs" / "build.log").write_text(log_text, encoding="utf-8")
 

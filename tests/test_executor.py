@@ -1,4 +1,4 @@
-"""Tests for the WinForge container executor and build-script generator."""
+"""Tests for the Cage container executor and build-script generator."""
 from __future__ import annotations
 import io, json, os, stat, tempfile, unittest
 from unittest.mock import patch
@@ -20,7 +20,7 @@ from core.manifest import load_manifest
 
 
 MANIFEST_JSON = json.dumps({
-    "schemaVersion": "winforge.dev/v0",
+    "schemaVersion": "cage.dev/v0",
     "name": "test-app",
     "version": "0.1.0",
     "runtime": {"provider": "wine", "version": "9.0"},
@@ -49,7 +49,7 @@ class BuildScriptGenerationTests(unittest.TestCase):
     correct phase commands for execution inside the Wine container."""
 
     def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="winforge_test_"))
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="cage_test_"))
         manifest_path = self.tmpdir / "manifest.json"
         manifest_path.write_text(MANIFEST_JSON, encoding="utf-8")
         self.manifest = load_manifest(manifest_path)
@@ -156,7 +156,7 @@ class ContainerExecutionCommandTests(unittest.TestCase):
         self.assertTrue(result.success)
         argv = run.call_args.args[0]
         self.assertIn(f"{workspace.resolve()}:/workspace:ro", argv)
-        self.assertEqual(argv[-3:], ["local/runtime:test", "bash", "/opt/winforge/build/run.sh"])
+        self.assertEqual(argv[-3:], ["local/runtime:test", "bash", "/opt/cage/build/run.sh"])
 
     def test_execute_inside_container_uses_timeout_for_generated_phase_script(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -214,7 +214,7 @@ class ContainerExecutionCommandTests(unittest.TestCase):
                 )
 
         argv = run.call_args.args[0]
-        self.assertIn(f"{bundle.resolve()}:/opt/winforge:z", argv)
+        self.assertIn(f"{bundle.resolve()}:/opt/cage:z", argv)
         self.assertIn(f"{workspace.resolve()}:/workspace:ro,z", argv)
 
     def test_docker_build_mounts_do_not_include_podman_selinux_option(self):
@@ -243,9 +243,9 @@ class ContainerExecutionCommandTests(unittest.TestCase):
                 )
 
         argv = run.call_args.args[0]
-        self.assertIn(f"{bundle.resolve()}:/opt/winforge", argv)
+        self.assertIn(f"{bundle.resolve()}:/opt/cage", argv)
         self.assertIn(f"{workspace.resolve()}:/workspace:ro", argv)
-        self.assertNotIn(f"{bundle.resolve()}:/opt/winforge:z", argv)
+        self.assertNotIn(f"{bundle.resolve()}:/opt/cage:z", argv)
 
     def test_run_container_command_streams_output_to_stderr_and_returns_log_text(self):
         import io
@@ -254,14 +254,14 @@ class ContainerExecutionCommandTests(unittest.TestCase):
         stderr = io.StringIO()
         with patch("sys.stderr", stderr):
             result = _run_container_command(
-                [sys.executable, "-c", "print('[winforge] Phase 1/6: Initializing Wine prefix'); print('container still working')"],
+                [sys.executable, "-c", "print('[cage] Phase 1/6: Initializing Wine prefix'); print('container still working')"],
                 timeout=5,
             )
 
         self.assertEqual(result.returncode, 0)
-        self.assertIn("[winforge] Phase 1/6: Initializing Wine prefix", stderr.getvalue())
+        self.assertIn("[cage] Phase 1/6: Initializing Wine prefix", stderr.getvalue())
         self.assertIn("container still working", stderr.getvalue())
-        self.assertIn("[winforge] Phase 1/6: Initializing Wine prefix", result.stdout)
+        self.assertIn("[cage] Phase 1/6: Initializing Wine prefix", result.stdout)
         self.assertIn("container still working", result.stdout)
 
 
@@ -274,7 +274,7 @@ class BuildResultTests(unittest.TestCase):
             bundle_path="/tmp/test",
             runtime_provider="wine",
             runtime_version="9.0",
-            image_ref="winforge/wine:9.0",
+            image_ref="cage/wine:9.0",
             engine="docker",
             exit_code=0,
             log="build complete",
@@ -307,7 +307,7 @@ class BuildResultTests(unittest.TestCase):
             bundle_path="/tmp/test",
             runtime_provider="wine",
             runtime_version="9.0",
-            image_ref="winforge/wine:9.0",
+            image_ref="cage/wine:9.0",
             engine="docker",
         )
         d = r.to_dict()
@@ -330,7 +330,7 @@ class EngineDetectionTests(unittest.TestCase):
     def test_image_check_no_hang_on_bogus_ref(self):
         """_check_image should return False for made-up refs, not hang."""
         try:
-            result = _check_image("winforge/nonexistent:999.999", "docker")
+            result = _check_image("cage/nonexistent:999.999", "docker")
             self.assertFalse(result)
         except FileNotFoundError:
             pass  # Docker not installed — acceptable
@@ -338,7 +338,7 @@ class EngineDetectionTests(unittest.TestCase):
     def test_pull_bogus_image(self):
         """_pull_image should return False for non-existent images."""
         try:
-            result = _pull_image("winforge/nonexistent:999.999", "docker")
+            result = _pull_image("cage/nonexistent:999.999", "docker")
             self.assertFalse(result)
         except FileNotFoundError:
             pass  # Docker not installed — acceptable
@@ -346,60 +346,60 @@ class EngineDetectionTests(unittest.TestCase):
     def test_resolve_image_prefers_local_developer_image_without_pull(self):
         """Local runtime images are explicit developer overrides."""
         binding = SimpleNamespace(
-            local_oci_image="winforge/wine:11.0",
-            oci_image="ghcr.io/myos-dev/winforge-wine:11.0",
+            local_oci_image="cage/wine:11.0",
+            oci_image="ghcr.io/myos-dev/cage-wine:11.0",
         )
         manifest = SimpleNamespace(runtime=SimpleNamespace(provider="wine", version="11.0"))
 
         with patch("builder.executor.resolve_runtime", return_value=binding),              patch("builder.executor._check_image", return_value=True) as check,              patch("builder.executor._pull_image") as pull:
             result = _resolve_image_ref(manifest, "podman")
 
-        self.assertEqual(result, "winforge/wine:11.0")
-        check.assert_called_once_with("winforge/wine:11.0", "podman")
+        self.assertEqual(result, "cage/wine:11.0")
+        check.assert_called_once_with("cage/wine:11.0", "podman")
         pull.assert_not_called()
 
     def test_resolve_image_pulls_published_tag_before_cached_copy(self):
         """Mutable GHCR catalog tags must refresh after CI image rebuilds."""
         binding = SimpleNamespace(
-            local_oci_image="winforge/wine:11.0",
-            oci_image="ghcr.io/myos-dev/winforge-wine:11.0",
+            local_oci_image="cage/wine:11.0",
+            oci_image="ghcr.io/myos-dev/cage-wine:11.0",
         )
         manifest = SimpleNamespace(runtime=SimpleNamespace(provider="wine", version="11.0"))
 
         def check_image(ref, engine):
             # Local developer image is absent, but a stale published tag exists.
-            return ref == "ghcr.io/myos-dev/winforge-wine:11.0"
+            return ref == "ghcr.io/myos-dev/cage-wine:11.0"
 
         with patch("builder.executor.resolve_runtime", return_value=binding),              patch("builder.executor._check_image", side_effect=check_image) as check,              patch("builder.executor._pull_image", return_value=True) as pull:
             result = _resolve_image_ref(manifest, "podman")
 
-        self.assertEqual(result, "ghcr.io/myos-dev/winforge-wine:11.0")
-        check.assert_called_once_with("winforge/wine:11.0", "podman")
-        pull.assert_called_once_with("ghcr.io/myos-dev/winforge-wine:11.0", "podman")
+        self.assertEqual(result, "ghcr.io/myos-dev/cage-wine:11.0")
+        check.assert_called_once_with("cage/wine:11.0", "podman")
+        pull.assert_called_once_with("ghcr.io/myos-dev/cage-wine:11.0", "podman")
 
     def test_resolve_image_can_fallback_to_cached_published_tag_when_pull_fails(self):
         """Offline users can still use an already-local published runtime image."""
         binding = SimpleNamespace(
-            local_oci_image="winforge/wine:11.0",
-            oci_image="ghcr.io/myos-dev/winforge-wine:11.0",
+            local_oci_image="cage/wine:11.0",
+            oci_image="ghcr.io/myos-dev/cage-wine:11.0",
         )
         manifest = SimpleNamespace(runtime=SimpleNamespace(provider="wine", version="11.0"))
 
         with patch("builder.executor.resolve_runtime", return_value=binding),              patch("builder.executor._check_image", side_effect=[False, True]) as check,              patch("builder.executor._pull_image", return_value=False) as pull:
             result = _resolve_image_ref(manifest, "podman")
 
-        self.assertEqual(result, "ghcr.io/myos-dev/winforge-wine:11.0")
+        self.assertEqual(result, "ghcr.io/myos-dev/cage-wine:11.0")
         self.assertEqual(check.call_count, 2)
-        check.assert_any_call("winforge/wine:11.0", "podman")
-        check.assert_any_call("ghcr.io/myos-dev/winforge-wine:11.0", "podman")
-        pull.assert_called_once_with("ghcr.io/myos-dev/winforge-wine:11.0", "podman")
+        check.assert_any_call("cage/wine:11.0", "podman")
+        check.assert_any_call("ghcr.io/myos-dev/cage-wine:11.0", "podman")
+        pull.assert_called_once_with("ghcr.io/myos-dev/cage-wine:11.0", "podman")
 
 
 class BuildPlanTests(unittest.TestCase):
     """build_plan produces the correct phase structure."""
 
     def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="winforge_test_"))
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="cage_test_"))
         manifest_path = self.tmpdir / "manifest.json"
         manifest_path.write_text(MANIFEST_JSON, encoding="utf-8")
         self.manifest = load_manifest(manifest_path)
@@ -439,9 +439,9 @@ class BuildScriptNoDepsTests(unittest.TestCase):
     """Script generation with an empty manifest (no deps, no installs)."""
 
     def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="winforge_test_"))
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="cage_test_"))
         data = {
-            "schemaVersion": "winforge.dev/v0",
+            "schemaVersion": "cage.dev/v0",
             "name": "empty-app",
             "version": "0.0.1",
             "runtime": {"provider": "wine", "version": "9.0"},

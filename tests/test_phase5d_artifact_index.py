@@ -19,7 +19,7 @@ from artifact.index import (
 from core.manifest import Manifest
 
 APP = {
-    "schemaVersion": "winforge.app/v0",
+    "schemaVersion": "cage.app/v0",
     "name": "indexed-demo",
     "version": "1.2.3",
     "runtime": {"provider": "wine", "version": "latest"},
@@ -44,7 +44,7 @@ class ArtifactIndexModuleTests(unittest.TestCase):
     def test_register_bundle_writes_index_entry_with_latest_pointer(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = _make_bundle(tmp)
-            index_path = Path(tmp) / ".winforge" / "artifacts.json"
+            index_path = Path(tmp) / ".cage" / "artifacts.json"
 
             entry = register_bundle(bundle, index_path=index_path)
             index = json.loads(index_path.read_text(encoding="utf-8"))
@@ -59,7 +59,7 @@ class ArtifactIndexModuleTests(unittest.TestCase):
     def test_resolve_artifact_supports_latest_and_specific_versions(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = _make_bundle(tmp)
-            index_path = register_bundle(bundle, index_path=Path(tmp) / ".winforge" / "artifacts.json")["indexPath"]
+            index_path = register_bundle(bundle, index_path=Path(tmp) / ".cage" / "artifacts.json")["indexPath"]
 
             latest = resolve_artifact("indexed-demo", index_path=index_path)
             versioned = resolve_artifact("indexed-demo@1.2.3", index_path=index_path)
@@ -71,7 +71,7 @@ class ArtifactIndexModuleTests(unittest.TestCase):
     def test_default_index_path_lives_under_output_directory(self):
         self.assertEqual(
             default_index_path(Path("dist")),
-            Path("dist/.winforge/artifacts.json"),
+            Path("dist/.cage/artifacts.json"),
         )
 
 
@@ -83,9 +83,9 @@ class ArtifactIndexCLITests(unittest.TestCase):
             build = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "build",
-                    "examples/notepad-plus-plus.winforge.yaml",
+                    "examples/notepad-plus-plus.cage.yaml",
                     "--dry-run",
                     "--output",
                     str(output),
@@ -97,14 +97,14 @@ class ArtifactIndexCLITests(unittest.TestCase):
             )
             self.assertEqual(build.returncode, 0, build.stderr)
             build_payload = json.loads(build.stdout)
-            index_path = output / ".winforge" / "artifacts.json"
+            index_path = output / ".cage" / "artifacts.json"
             self.assertEqual(build_payload["artifactIndex"], str(index_path))
             self.assertTrue(index_path.exists())
 
             listed = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "artifacts",
                     "list",
                     "--index",
@@ -128,9 +128,9 @@ class ArtifactIndexCLITests(unittest.TestCase):
             build = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "build",
-                    "examples/notepad-plus-plus.winforge.yaml",
+                    "examples/notepad-plus-plus.cage.yaml",
                     "--dry-run",
                     "--output",
                     str(output),
@@ -141,12 +141,12 @@ class ArtifactIndexCLITests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(build.returncode, 0, build.stderr)
-            index_path = output / ".winforge" / "artifacts.json"
+            index_path = output / ".cage" / "artifacts.json"
 
             resolved = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "artifacts",
                     "resolve",
                     "notepad-plus-plus",
@@ -161,7 +161,7 @@ class ArtifactIndexCLITests(unittest.TestCase):
             run = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "run",
                     "notepad-plus-plus",
                     "--artifact-index",
@@ -180,7 +180,7 @@ class ArtifactIndexCLITests(unittest.TestCase):
             export = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "export",
                     "oci",
                     "notepad-plus-plus",
@@ -200,8 +200,8 @@ class ArtifactIndexCLITests(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(export.returncode, 0, export.stderr)
         self.assertTrue(json.loads(resolved.stdout)["bundle"].endswith("notepad-plus-plus-8.6.0"))
-        self.assertEqual(json.loads(run.stdout)["schemaVersion"], "winforge.run-plan/v0")
-        self.assertEqual(json.loads(export.stdout)["schemaVersion"], "winforge.oci-export-plan/v0")
+        self.assertEqual(json.loads(run.stdout)["schemaVersion"], "cage.run-plan/v0")
+        self.assertEqual(json.loads(export.stdout)["schemaVersion"], "cage.oci-export-plan/v0")
 
 
 if __name__ == "__main__":

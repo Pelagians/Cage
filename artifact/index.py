@@ -1,4 +1,4 @@
-"""Local WinForge artifact index.
+"""Local Cage artifact index.
 
 The v0 index is a small local cache that maps application names and versions to
 verified bundle directories. It is intentionally local and filesystem-based: a
@@ -13,7 +13,7 @@ from typing import Any
 
 from artifact.inspection import inspect_bundle, verify_bundle
 
-ARTIFACT_INDEX_SCHEMA_VERSION = "winforge.artifact-index/v0"
+ARTIFACT_INDEX_SCHEMA_VERSION = "cage.artifact-index/v0"
 
 
 class ArtifactIndexError(RuntimeError):
@@ -22,7 +22,7 @@ class ArtifactIndexError(RuntimeError):
 
 def default_index_path(output_dir: Path | str = "dist") -> Path:
     """Return the default artifact index path under an output directory."""
-    return Path(output_dir) / ".winforge" / "artifacts.json"
+    return Path(output_dir) / ".cage" / "artifacts.json"
 
 
 def empty_index() -> dict[str, Any]:

@@ -6,12 +6,12 @@ Status: accepted (amended by Decisions 0003 and 0004)
 
 ## Decision
 
-WinForge follows a Ramalama-like model: user commands resolve a runtime provider from a catalog, pull the runtime OCI image, apply user-selected execution options, and run a separate application/prefix artifact. OCI is the normal deployable/cache surface, while embedded WinForge metadata describes artifact semantics. Decision 0003 shifts the user-facing model from bundle-first to application-first and treats the bundle directory as an internal/debug staging representation.
+Cage follows a Ramalama-like model: user commands resolve a runtime provider from a catalog, pull the runtime OCI image, apply user-selected execution options, and run a separate application/prefix artifact. OCI is the normal deployable/cache surface, while embedded Cage metadata describes artifact semantics. Decision 0003 shifts the user-facing model from bundle-first to application-first and treats the bundle directory as an internal/debug staging representation.
 
-WinForge has two distinct OCI roles:
+Cage has two distinct OCI roles:
 
-1. **Runtime image** — e.g. `ghcr.io/myos-dev/winforge-wine:9.0`; provides Wine/Staging/UMU+GE-Proton runtime, tools, entrypoints, and graphics support.
-2. **Application/prefix artifact** — the future OCI wrapper for a resolved WinForge execution bundle containing prefix state, launch contract, graph metadata, and provenance.
+1. **Runtime image** — e.g. `ghcr.io/myos-dev/cage-wine:9.0`; provides Wine/Staging/UMU+GE-Proton runtime, tools, entrypoints, and graphics support.
+2. **Application/prefix artifact** — the future OCI wrapper for a resolved Cage execution bundle containing prefix state, launch contract, graph metadata, and provenance.
 
 The active v0 runtime providers are:
 
@@ -23,7 +23,7 @@ Valve Proton is removed as an active provider for now because upstream GitHub re
 
 ## Scope
 
-WinForge should be Podman-native in UX and support local build/test/deploy, OCI export/import, graphics modes (`headless` and visible/VNC), and Kubernetes manifest generation. WinForge should not become the full production orchestrator; advanced multi-tenant/session orchestration belongs to downstream systems such as VIC.
+Cage should be Podman-native in UX and support local build/test/deploy, OCI export/import, graphics modes (`headless` and visible/VNC), and Kubernetes manifest generation. Cage should not become the full production orchestrator; advanced multi-tenant/session orchestration belongs to downstream systems such as VIC.
 
 ## Reasoning
 
@@ -40,8 +40,8 @@ For Wine, the divergence is that prefixes are stateful OS-like artifacts, so the
 
 - Treat each app environment as a single monolithic Docker image with runtime, prefix, app, and execution semantics baked together.
 - Keep Valve Proton as an active runtime while it is only a source seed.
-- Make WinForge responsible for production-grade orchestration rather than local/devops-oriented build, run, export, and manifest generation.
+- Make Cage responsible for production-grade orchestration rather than local/devops-oriented build, run, export, and manifest generation.
 
 ## Review triggers
 
-Review this decision when WinForge adds a real Valve Proton binary acquisition path, introduces new Proton-family launchers/runners beyond UMU+GE-Proton, or starts implementing production orchestration beyond local/devops/kube-manifest flows.
+Review this decision when Cage adds a real Valve Proton binary acquisition path, introduces new Proton-family launchers/runners beyond UMU+GE-Proton, or starts implementing production orchestration beyond local/devops/kube-manifest flows.

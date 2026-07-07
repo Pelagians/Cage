@@ -1,4 +1,4 @@
-"""Runtime catalog loader and matrix generator for WinForge.
+"""Runtime catalog loader and matrix generator for Cage.
 
 The catalog is the single source of truth for supported runtime provider
 versions, local image refs, published GHCR image refs, Dockerfiles, and
@@ -100,8 +100,8 @@ class CatalogVersion:
 
 def load_catalog(path: Path = CATALOG_PATH) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
-    if data.get("schemaVersion") != "winforge.runtime-catalog/v0":
-        raise ValueError("runtime catalog schemaVersion must be winforge.runtime-catalog/v0")
+    if data.get("schemaVersion") != "cage.runtime-catalog/v0":
+        raise ValueError("runtime catalog schemaVersion must be cage.runtime-catalog/v0")
     if not isinstance(data.get("providers"), dict):
         raise ValueError("runtime catalog providers must be an object")
     return data

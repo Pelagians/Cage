@@ -1,4 +1,4 @@
-"""Tests for WinForge bundle runtime execution planning."""
+"""Tests for Cage bundle runtime execution planning."""
 from __future__ import annotations
 
 import json
@@ -14,7 +14,7 @@ from runtime.launcher import RunError, build_run_plan
 
 
 VALID = {
-    "schemaVersion": "winforge.dev/v0",
+    "schemaVersion": "cage.dev/v0",
     "name": "sample",
     "version": "1.0.0",
     "runtime": {"provider": "wine", "version": "9.0"},
@@ -48,14 +48,14 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
             bundle = self._bundle(tmp)
             plan = build_run_plan(bundle, graphics="headless", engine="podman")
 
-        self.assertEqual(plan["schemaVersion"], "winforge.run-plan/v0")
+        self.assertEqual(plan["schemaVersion"], "cage.run-plan/v0")
         self.assertEqual(plan["graphics"]["mode"], "headless")
         self.assertEqual(plan["runtime"]["provider"], "wine")
         self.assertEqual(plan["runtime"]["version"], "9.0")
-        self.assertEqual(plan["runtime"]["image"], "ghcr.io/myos-dev/winforge-wine:9.0")
+        self.assertEqual(plan["runtime"]["image"], "ghcr.io/myos-dev/cage-wine:9.0")
         self.assertEqual(plan["launch"]["entrypoint"], "C:/Program Files/App/App.exe")
         self.assertEqual(plan["container"]["engine"], "podman")
-        self.assertIn("/opt/winforge/bundle/metadata/graph.json", plan["container"]["environment"]["WINFORGE_GRAPH"])
+        self.assertIn("/opt/cage/bundle/metadata/graph.json", plan["container"]["environment"]["CAGE_GRAPH"])
         self.assertIn("wine", plan["launchCommand"])
         self.assertIn("--profile", plan["launchCommand"])
         self.assertEqual(plan["verification"]["valid"], True)
@@ -149,7 +149,7 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
             proc = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "run",
                     "--dry-run",
                     "--graphics",
@@ -166,7 +166,7 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
 
         self.assertEqual(proc.returncode, 0, proc.stderr)
         payload = json.loads(proc.stdout)
-        self.assertEqual(payload["schemaVersion"], "winforge.run-plan/v0")
+        self.assertEqual(payload["schemaVersion"], "cage.run-plan/v0")
         self.assertEqual(payload["graphics"]["mode"], "headless")
         self.assertEqual(payload["container"]["engine"], "podman")
 
@@ -180,7 +180,7 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
 
         self.assertEqual(plan["runtime"]["provider"], "umu-proton-ge")
         self.assertEqual(plan["runtime"]["launcher"], "umu")
-        self.assertEqual(plan["runtime"]["image"], "ghcr.io/myos-dev/winforge-umu-proton-ge:GE-Proton9-27")
+        self.assertEqual(plan["runtime"]["image"], "ghcr.io/myos-dev/cage-umu-proton-ge:GE-Proton9-27")
         self.assertIn("umu-run", plan["launchCommand"])
 
 

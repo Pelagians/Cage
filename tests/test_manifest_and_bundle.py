@@ -4,7 +4,7 @@ from pathlib import Path
 from artifact.bundle import create_bundle
 from builder.pipeline import build_plan
 from core.manifest import Manifest, ManifestError
-VALID = {"schemaVersion":"winforge.dev/v0","name":"sample","version":"1.0.0","runtime":{"provider":"wine","version":"9.0"},"dependencies":[{"kind":"winetricks","verbs":["corefonts"]}],"install":[{"kind":"portable","source":"file://app.zip","target":"C:/Program Files/App"}],"filesystem":[{"source":"config.ini","target":"C:/Program Files/App/config.ini"}],"launch":{"entrypoint":"C:/Program Files/App/App.exe"},"provenance":{"sources":[]}}
+VALID = {"schemaVersion":"cage.dev/v0","name":"sample","version":"1.0.0","runtime":{"provider":"wine","version":"9.0"},"dependencies":[{"kind":"winetricks","verbs":["corefonts"]}],"install":[{"kind":"portable","source":"file://app.zip","target":"C:/Program Files/App"}],"filesystem":[{"source":"config.ini","target":"C:/Program Files/App/config.ini"}],"launch":{"entrypoint":"C:/Program Files/App/App.exe"},"provenance":{"sources":[]}}
 class ManifestAndBundleTests(unittest.TestCase):
     def test_valid_manifest_parses(self):
         manifest = Manifest.from_dict(VALID); self.assertEqual(manifest.name, "sample"); self.assertEqual(manifest.runtime.provider, "wine")
@@ -20,6 +20,6 @@ class ManifestAndBundleTests(unittest.TestCase):
     def test_dry_run_bundle_writes_contract_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = create_bundle(Manifest.from_dict(VALID), Path(tmp), dry_run=True)
-            for rel in ["manifest.winforge.json","runtime/runtime.json","launch/entrypoint.json","metadata/provenance.json","metadata/graph.json","build/build-plan.json"]:
+            for rel in ["manifest.cage.json","runtime/runtime.json","launch/entrypoint.json","metadata/provenance.json","metadata/graph.json","build/build-plan.json"]:
                 self.assertTrue((path/rel).exists(), rel)
 if __name__ == "__main__": unittest.main()

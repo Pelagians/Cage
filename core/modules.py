@@ -1,4 +1,4 @@
-"""BlueBuild-style module expansion for WinForge manifests."""
+"""BlueBuild-style module expansion for Cage manifests."""
 from __future__ import annotations
 
 from copy import deepcopy
@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 import re
 from typing import Any
 
-MODULE_EXPANSION_SCHEMA_VERSION = "winforge.module-expansion/v0"
+MODULE_EXPANSION_SCHEMA_VERSION = "cage.module-expansion/v0"
 
 MODULE_FIELDS = {"type", "install"}
 CHOCOLATEY_INSTALL_FIELDS = {"packages"}
@@ -26,7 +26,7 @@ CHOCOLATEY_SETUP_COMMAND = (
     '  . "$HOME/.cargo/env"; '
     'fi; '
     'if command -v rustup >/dev/null; then rustup target add x86_64-pc-windows-gnu; fi; '
-    'repo="$WINEPREFIX/drive_c/winforge/powershell-wrapper-for-wine"; '
+    'repo="$WINEPREFIX/drive_c/cage/powershell-wrapper-for-wine"; '
     'rm -rf "$repo"; '
     'mkdir -p "$(dirname "$repo")"; '
     'git clone --depth=1 https://codeberg.org/Synchro/powershell-wrapper-for-wine.git "$repo"; '

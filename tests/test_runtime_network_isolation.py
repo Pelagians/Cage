@@ -1,4 +1,4 @@
-"""Tests for WinForge runtime network isolation and escape hatches."""
+"""Tests for Cage runtime network isolation and escape hatches."""
 from __future__ import annotations
 
 import copy
@@ -18,7 +18,7 @@ from runtime.launcher import RunError, build_run_plan
 
 
 APP = {
-    "schemaVersion": "winforge.app/v0",
+    "schemaVersion": "cage.app/v0",
     "name": "network-demo",
     "version": "1.0.0",
     "runtime": {"provider": "wine", "version": "latest"},
@@ -171,7 +171,7 @@ class RuntimeNetworkRunPlanTests(unittest.TestCase):
     def test_bundle_verification_rejects_empty_manifest_network_when_present(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = _bundle(tmp, network="none")
-            manifest_path = bundle / "manifest.winforge.json"
+            manifest_path = bundle / "manifest.cage.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             manifest["runtime"]["network"] = ""
             manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -210,7 +210,7 @@ class RuntimeNetworkRunPlanTests(unittest.TestCase):
             proc = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "run",
                     "--dry-run",
                     "--graphics",

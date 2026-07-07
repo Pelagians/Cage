@@ -1,18 +1,18 @@
-# WinForge
+# Cage
 
 **Application-first packager and runner for Wine/Proton-family software.**
 
-WinForge takes an application recipe and builds a reproducible application
+Cage takes an application recipe and builds a reproducible application
 artifact for Wine/Proton-family runtimes. Users should think “I am packaging
 Notepad++,” not “I am building a Wine prefix.” Wine prefixes, runtime images,
 launch scripts, bundle directories, and OCI layers are implementation details
 behind a simple recipe → build → run workflow.
 
-## Why WinForge?
+## Why Cage?
 
 Running Windows applications in containers today is ad-hoc: hand-written
 Dockerfiles, copy-pasted winetricks commands, unversioned prefixes, no
-provenance tracking. WinForge replaces that with:
+provenance tracking. Cage replaces that with:
 
 - **Deterministic builds** — Same manifest + same runtime = same bundle
 - **Immutable artifacts** — Sealed after construction, no drift
@@ -21,9 +21,9 @@ provenance tracking. WinForge replaces that with:
   without changing the manifest
 - **OCI-native direction** — Application artifacts can be distributed and deployed as OCI images
 
-## What WinForge is Not
+## What Cage is Not
 
-WinForge is **not** a Wine fork, Proton fork, container runtime, Kubernetes operator, GUI bottle manager, package manager for arbitrary Linux software, or tenant/policy/orchestration product layer.
+Cage is **not** a Wine fork, Proton fork, container runtime, Kubernetes operator, GUI bottle manager, package manager for arbitrary Linux software, or tenant/policy/orchestration product layer.
 
 ## Architecture
 
@@ -33,7 +33,7 @@ application recipe (YAML, CLI-generated, or normalized JSON)
   ▼
 ┌─────────────────┐       ┌──────────────────────────┐
 │ Runtime Provider│──────▶│ Catalog Runtime Image     │
-│ wine/staging/UMU│       │ ghcr.io/.../winforge-wine │
+│ wine/staging/UMU│       │ ghcr.io/.../cage-wine │
 └──────┬──────────┘       └──────────────────────────┘
        │
        ▼
@@ -58,104 +58,104 @@ application recipe (YAML, CLI-generated, or normalized JSON)
 
 ## Installation
 
-WinForge is installable as a Python command-line tool. The recommended myOS
+Cage is installable as a Python command-line tool. The recommended myOS
 installation path is `uv tool install`; `pipx install` should work anywhere
 `pipx` is available.
 
 ```bash
 # Preferred on myOS
-uv tool install "git+ssh://git@github.com/myos-dev/WinForge.git"
+uv tool install "git+ssh://git@github.com/myos-dev/Cage.git"
 
 # Alternative when pipx is installed
-pipx install "git+ssh://git@github.com/myos-dev/WinForge.git"
+pipx install "git+ssh://git@github.com/myos-dev/Cage.git"
 ```
 
 If your machine uses a Git SSH host alias, substitute the host in the URL:
 
 ```bash
-uv tool install "git+ssh://git@github-noahgiroux/myos-dev/WinForge.git"
-pipx install "git+ssh://git@github-noahgiroux/myos-dev/WinForge.git"
+uv tool install "git+ssh://git@github-noahgiroux/myos-dev/Cage.git"
+pipx install "git+ssh://git@github-noahgiroux/myos-dev/Cage.git"
 ```
 
 Verify the installed console script:
 
 ```bash
-winforge --help
+cage --help
 ```
 
 If you are testing from a cloned repo, you can also inspect the included
 example recipe:
 
 ```bash
-winforge inspect examples/notepad-plus-plus.winforge.yaml
+cage inspect examples/notepad-plus-plus.cage.yaml
 ```
 
 For repo-local development, the legacy script path remains available:
 
 ```bash
-python3 cmd/winforge.py --help
-python3 -m winforge --help
+python3 cmd/cage.py --help
+python3 -m cage --help
 ```
 
 ## Quick Start
 
 ```bash
 # Build from the user/business-facing YAML recipe format
-winforge build examples/notepad-plus-plus.winforge.yaml --dry-run
+cage build examples/notepad-plus-plus.cage.yaml --dry-run
 
 # JSON remains supported for generated or CLI-normalized inputs
-winforge build examples/minimal.winforge.json --dry-run
+cage build examples/minimal.cage.json --dry-run
 
 # Inspect or verify the lower-level bundle when debugging/automating
-winforge bundle inspect dist/notepad-plus-plus-8.6.0
-winforge bundle verify dist/notepad-plus-plus-8.6.0
+cage bundle inspect dist/notepad-plus-plus-8.6.0
+cage bundle verify dist/notepad-plus-plus-8.6.0
 
 # Locate/reuse prepared-prefix checkpoints for slow legacy installer debugging
-winforge debug checkpoint inspect dist/office-prep-output
-winforge debug checkpoint resume dist/office-prep-output \
+cage debug checkpoint inspect dist/office-prep-output
+cage debug checkpoint resume dist/office-prep-output \
   --output dist/attempts \
   --name office-install-attempt-001
-winforge compat test examples/notepad-plus-plus.winforge.yaml \
+cage compat test examples/notepad-plus-plus.cage.yaml \
   --mode build \
   --stop-before install-apps
-winforge compat test examples/notepad-plus-plus.winforge.yaml \
+cage compat test examples/notepad-plus-plus.cage.yaml \
   --mode build \
   --resume-from-bundle dist/attempts/office-install-attempt-001
 
 # Resolve built application artifacts by name from the local index
-winforge artifacts list
-winforge artifacts resolve notepad-plus-plus
+cage artifacts list
+cage artifacts resolve notepad-plus-plus
 
 # Preview and run the built application artifact by app name or bundle path
-winforge run --dry-run --graphics headless notepad-plus-plus
-winforge run --graphics headless notepad-plus-plus
-winforge run --graphics vnc --network bridge --vnc-port 5900 --novnc-port 6080 dist/notepad-plus-plus-8.6.0
+cage run --dry-run --graphics headless notepad-plus-plus
+cage run --graphics headless notepad-plus-plus
+cage run --graphics vnc --network bridge --vnc-port 5900 --novnc-port 6080 dist/notepad-plus-plus-8.6.0
 
 # Export a runnable application OCI image by app name or bundle path
-winforge export oci notepad-plus-plus \
-  --tag ghcr.io/myos-dev/winforge-app-notepad-plus-plus:8.6.0 \
+cage export oci notepad-plus-plus \
+  --tag ghcr.io/myos-dev/cage-app-notepad-plus-plus:8.6.0 \
   --dry-run
-winforge export oci dist/notepad-plus-plus-8.6.0 \
-  --tag ghcr.io/myos-dev/winforge-app-notepad-plus-plus:8.6.0
+cage export oci dist/notepad-plus-plus-8.6.0 \
+  --tag ghcr.io/myos-dev/cage-app-notepad-plus-plus:8.6.0
 
 # Emit Kubernetes YAML for a digest-pinned application image
-winforge export kube notepad-plus-plus \
-  --image ghcr.io/myos-dev/winforge-app-notepad-plus-plus@sha256:... \
-  --namespace winforge-apps \
+cage export kube notepad-plus-plus \
+  --image ghcr.io/myos-dev/cage-app-notepad-plus-plus@sha256:... \
+  --namespace cage-apps \
   --output k8s/notepad-plus-plus.yaml
 
 # List available runtime providers
-winforge providers
+cage providers
 
 # List/download/diagnose downloadable Wine runner archives
-winforge runners list
-winforge runners ensure pol-8.2 --cache-dir "$HOME/winforge-runners"
-winforge runners diagnose pol-8.2 --cache-dir "$HOME/winforge-runners"
+cage runners list
+cage runners ensure pol-8.2 --cache-dir "$HOME/cage-runners"
+cage runners diagnose pol-8.2 --cache-dir "$HOME/cage-runners"
 ```
 
 ## Application Recipes
 
-WinForge accepts strict YAML application recipes as the primary shareable
+Cage accepts strict YAML application recipes as the primary shareable
 authoring format for users and businesses. JSON remains valid for generated,
 normalized, or CLI-driven workflows. YAML is intentionally strict: unknown
 fields, duplicate keys, anchors, aliases, and merge keys are rejected so
@@ -170,7 +170,7 @@ does not ask users to manage Wine prefixes directly.
 ## Runtime Providers and Runner Versions
 
 `runtime.version` may be a pinned runner version or a mutable catalog alias.
-Aliases are convenience inputs only; WinForge resolves them before writing bundle
+Aliases are convenience inputs only; Cage resolves them before writing bundle
 metadata. For example:
 
 ```yaml
@@ -208,11 +208,11 @@ The initial `pol-*` aliases are Bottles-compatible labels for PlayOnLinux/Phoeni
 | `pol-4.3` | Wine 4.3 x86 | legacy 32-bit apps such as Office 2013/2016 evidence |
 | `pol-3.0.3` | Wine 3.0.3 x86 | fallback evidence path for Office 2007/2010 |
 
-Use `winforge runners ensure <alias>` to populate the local cache and `winforge runners diagnose <alias-or-path>` to detect missing host/runtime libraries such as the 32-bit ELF loader before attempting a real build/run. Real `winforge build`, `winforge run`, and `winforge compat test --mode build|run` can mount a cached runner into the runtime container with `--runner-cache-dir`; the host may report `missing-elf-interpreter` while the container execution path still works because Wine runtime images install i386 support.
+Use `cage runners ensure <alias>` to populate the local cache and `cage runners diagnose <alias-or-path>` to detect missing host/runtime libraries such as the 32-bit ELF loader before attempting a real build/run. Real `cage build`, `cage run`, and `cage compat test --mode build|run` can mount a cached runner into the runtime container with `--runner-cache-dir`; the host may report `missing-elf-interpreter` while the container execution path still works because Wine runtime images install i386 support.
 
 ## Compatibility Policy
 
-Harder Windows applications often need deliberate compatibility policy, not just a generic Wine image. WinForge supports a first-class `compatibility` block:
+Harder Windows applications often need deliberate compatibility policy, not just a generic Wine image. Cage supports a first-class `compatibility` block:
 
 ```yaml
 compatibility:
@@ -230,14 +230,14 @@ compatibility:
     WINEDEBUG: "-all"
 ```
 
-WinForge normalizes this to `winforge.compatibility-policy/v0`, records it in bundle graph/provenance/OCI metadata, applies `WINEARCH`, `winecfg -v <windowsVersion>`, compatibility env, and deterministic `WINEDLLOVERRIDES`, and installs requested `dxvk`/`vkd3d` prefix backends through winetricks. Legacy `config.wine.dllOverrides` is still normalized, but new recipes should prefer `compatibility`.
+Cage normalizes this to `cage.compatibility-policy/v0`, records it in bundle graph/provenance/OCI metadata, applies `WINEARCH`, `winecfg -v <windowsVersion>`, compatibility env, and deterministic `WINEDLLOVERRIDES`, and installs requested `dxvk`/`vkd3d` prefix backends through winetricks. Legacy `config.wine.dllOverrides` is still normalized, but new recipes should prefer `compatibility`.
 
 This is intentionally a high-level policy layer. Explicit loader ordering, COM timing controls, and trace/debug knobs are not primary schema.
 
 
 ## BYO Installers, BYO Files, and Suite Apps
 
-Harder business apps often come from licensed customer-provided media, not public downloads. WinForge recipes can make that source policy explicit and can layer pre-installed file trees deterministically:
+Harder business apps often come from licensed customer-provided media, not public downloads. Cage recipes can make that source policy explicit and can layer pre-installed file trees deterministically:
 
 ```yaml
 sources:
@@ -257,7 +257,7 @@ filesystem:
 Use `media stage` to copy or extract local BYO media into a normalized workspace tree before writing/running recipes:
 
 ```bash
-winforge media stage ~/Downloads/vendor-suite.zip --name vendor-suite --workspace .
+cage media stage ~/Downloads/vendor-suite.zip --name vendor-suite --workspace .
 # writes ./sources/vendor-suite/media and ./sources/vendor-suite/metadata/media-stage.json
 ```
 
@@ -282,31 +282,31 @@ fileAssociations:
       - application/vnd.openxmlformats-officedocument.wordprocessingml.document
 ```
 
-Application-specific or proprietary recipes, including Office-shaped recipes, belong in `vic-legacy` or customer/private repositories rather than public WinForge.
+Application-specific or proprietary recipes, including Office-shaped recipes, belong in `vic-legacy` or customer/private repositories rather than public Cage.
 
 ## Source Integrity and Compatibility Evidence
 
 Before spending time in Wine, verify that recipe sources are actually present and hash-correct:
 
 ```bash
-winforge sources verify examples/notepad-plus-plus.winforge.yaml --workspace .
+cage sources verify examples/notepad-plus-plus.cage.yaml --workspace .
 ```
 
-The output is `schemaVersion: winforge.source-integrity/v0` and reports every declared source, install source, filesystem overlay, resolved local path, sha256 result, warning, and error. v0 builds consume local workspace files; remote URLs are recorded as provenance but must be materialized locally for install/filesystem steps.
+The output is `schemaVersion: cage.source-integrity/v0` and reports every declared source, install source, filesystem overlay, resolved local path, sha256 result, warning, and error. v0 builds consume local workspace files; remote URLs are recorded as provenance but must be materialized locally for install/filesystem steps.
 
 For BYO media, run a separate policy audit before spending time in Wine:
 
 ```bash
-winforge sources audit examples/notepad-plus-plus.winforge.yaml --workspace .
+cage sources audit examples/notepad-plus-plus.cage.yaml --workspace .
 ```
 
-The audit emits `schemaVersion: winforge.source-policy/v0`, scans local source paths/names only, and blocks suspicious activation/KMS/crack/bypass/product-key artifact names without reading file contents into the report.
+The audit emits `schemaVersion: cage.source-policy/v0`, scans local source paths/names only, and blocks suspicious activation/KMS/crack/bypass/product-key artifact names without reading file contents into the report.
 
 For a compatibility evidence pass:
 
 ```bash
 # Dependency-light planning evidence
-winforge compat test examples/notepad-plus-plus.winforge.yaml \
+cage compat test examples/notepad-plus-plus.cage.yaml \
   --workspace . \
   --output dist \
   --graphics headless \
@@ -314,34 +314,34 @@ winforge compat test examples/notepad-plus-plus.winforge.yaml \
   --mode dry-run
 
 # Real container build evidence after local sources are present
-winforge compat test examples/notepad-plus-plus.winforge.yaml \
+cage compat test examples/notepad-plus-plus.cage.yaml \
   --workspace . \
   --output dist-real \
   --graphics headless \
   --engine docker \
   --mode build \
-  --runner-cache-dir "$HOME/winforge-runners" \
+  --runner-cache-dir "$HOME/cage-runners" \
   --build-timeout 2400
 
 # Real build plus bounded app launch evidence
-winforge compat test examples/notepad-plus-plus.winforge.yaml \
+cage compat test examples/notepad-plus-plus.cage.yaml \
   --workspace . \
   --output dist-run \
   --graphics headless \
   --engine docker \
   --mode run \
-  --runner-cache-dir "$HOME/winforge-runners" \
+  --runner-cache-dir "$HOME/cage-runners" \
   --build-timeout 2400 \
   --run-timeout 60
 ```
 
-The output is `schemaVersion: winforge.compat-test/v0`. `--mode dry-run` includes source integrity, dry-run bundle creation, bundle verification, and a `winforge.run-plan/v0` launch plan carrying runtime and compatibility policy. `--mode build` performs the real container build and records build execution evidence. `--mode run` records real build evidence plus `winforge.run-result/v0` app launch evidence. Failed real builds attach `schemaVersion: winforge.failure-analysis/v0` and write `metadata/failure-analysis.json` plus `metadata/failure-summary.md` inside the bundle when Windows/Wine installer logs are available.
+The output is `schemaVersion: cage.compat-test/v0`. `--mode dry-run` includes source integrity, dry-run bundle creation, bundle verification, and a `cage.run-plan/v0` launch plan carrying runtime and compatibility policy. `--mode build` performs the real container build and records build execution evidence. `--mode run` records real build evidence plus `cage.run-result/v0` app launch evidence. Failed real builds attach `schemaVersion: cage.failure-analysis/v0` and write `metadata/failure-analysis.json` plus `metadata/failure-summary.md` inside the bundle when Windows/Wine installer logs are available.
 
 Analyze an existing failed bundle or log tree directly with:
 
 ```bash
-winforge failure analyze dist/my-app-1.0.0
-# emits winforge.failure-analysis/v0 and writes metadata/failure-analysis.json + failure-summary.md
+cage failure analyze dist/my-app-1.0.0
+# emits cage.failure-analysis/v0 and writes metadata/failure-analysis.json + failure-summary.md
 ```
 
 The failure analyzer scans `logs/`, `prefix/drive_c/users/*/Temp`, and `prefix/drive_c/windows/temp` for `.log`/`.txt` files, prioritizes first MSI/Catalyst failure windows such as `Return value 3`, `MSI(ERROR)`, `Failed to install product`, and `ErrorCode`, and redacts product-key-like tokens and common secret assignments from report excerpts.
@@ -349,32 +349,32 @@ The failure analyzer scans `logs/`, `prefix/drive_c/users/*/Temp`, and `prefix/d
 The packaged seed corpus is available with:
 
 ```bash
-winforge compat corpus
+cage compat corpus
 ```
 
-It emits `schemaVersion: winforge.compat-corpus/v0` with starter apps/tier labels such as Notepad++, 7-Zip, PuTTY, WinSCP, DB Browser for SQLite, .NET sample, COM sample, Office BYO installer/files candidates, and blocked driver-required app classes.
+It emits `schemaVersion: cage.compat-corpus/v0` with starter apps/tier labels such as Notepad++, 7-Zip, PuTTY, WinSCP, DB Browser for SQLite, .NET sample, COM sample, Office BYO installer/files candidates, and blocked driver-required app classes.
 
 The bundled Notepad++ recipe remains a contract fixture until `sources/notepad-plus-plus.exe` and `overlays/notepad-plus-plus/config.xml` are provided. `sources verify` / `compat test` should report that clearly instead of failing later inside Wine.
 
 ## Local Artifact Index
 
-`winforge build` registers materialized bundles in a local artifact index at:
+`cage build` registers materialized bundles in a local artifact index at:
 
 ```text
-dist/.winforge/artifacts.json
+dist/.cage/artifacts.json
 ```
 
-The index uses `schemaVersion: winforge.artifact-index/v0` and maps app names
+The index uses `schemaVersion: cage.artifact-index/v0` and maps app names
 and versions to verified bundle directories. This lets normal run/export flows
 use app references instead of requiring users to remember bundle paths:
 
 ```bash
-winforge artifacts list
-winforge artifacts resolve my-app
-winforge artifacts resolve my-app@1.0.0
+cage artifacts list
+cage artifacts resolve my-app
+cage artifacts resolve my-app@1.0.0
 
-winforge run --dry-run --graphics headless my-app
-winforge export oci my-app --tag ghcr.io/myos-dev/winforge-app-my-app:1.0.0 --dry-run
+cage run --dry-run --graphics headless my-app
+cage export oci my-app --tag ghcr.io/myos-dev/cage-app-my-app:1.0.0 --dry-run
 ```
 
 A bare app name resolves to the latest registered version for that application.
@@ -383,106 +383,106 @@ as `dist/my-app-1.0.0` remain supported for debugging and automation.
 
 ## Running Built Artifacts
 
-`winforge run` currently consumes a verified bundle, not the original manifest. The
+`cage run` currently consumes a verified bundle, not the original manifest. The
 command reads `metadata/graph.json`, verifies the bundle contract, selects the
 graph-resolved `runnerRuntime.image`, and launches the graph-resolved entrypoint
 inside the catalog runtime container.
 
 ```bash
 # Machine-readable run plan only
-winforge run --dry-run --graphics headless dist/my-app-1.0.0
+cage run --dry-run --graphics headless dist/my-app-1.0.0
 
 # Headless execution through the runtime image's Xvfb entrypoint
-winforge run --graphics headless dist/my-app-1.0.0 \
-  --runner-cache-dir "$HOME/winforge-runners"
+cage run --graphics headless dist/my-app-1.0.0 \
+  --runner-cache-dir "$HOME/cage-runners"
 
 # Visible execution with bridge networking and host-loopback-published VNC/noVNC ports
-winforge run --graphics vnc --network bridge --vnc-port 5900 --novnc-port 6080 dist/my-app-1.0.0
+cage run --graphics vnc --network bridge --vnc-port 5900 --novnc-port 6080 dist/my-app-1.0.0
 ```
 
-For v0, the bundle is mounted read-only at `/opt/winforge/bundle`; the prefix
-is copied to `/tmp/winforge-prefix` before launch so normal Wine runtime
+For v0, the bundle is mounted read-only at `/opt/cage/bundle`; the prefix
+is copied to `/tmp/cage-prefix` before launch so normal Wine runtime
 mutation does not alter the sealed bundle artifact. When bundle metadata includes
 `runtime.runner`, a populated runner cache is mounted read-only at
-`/opt/winforge-runner`, `WINFORGE_RUNNER_BIN=/opt/winforge-runner/bin` is exported,
+`/opt/cage-runner`, `CAGE_RUNNER_BIN=/opt/cage-runner/bin` is exported,
 and that directory is prepended to `PATH` so the selected cached Wine runner is
 used inside the container.
 
 ## OCI Application Image Export
 
-`winforge export oci` consumes a verified bundle and turns it into a runnable
-application OCI image. Dry-run mode prints the `winforge.oci-export-plan/v0`
+`cage export oci` consumes a verified bundle and turns it into a runnable
+application OCI image. Dry-run mode prints the `cage.oci-export-plan/v0`
 contract without requiring Docker or Podman:
 
 ```bash
-winforge export oci dist/my-app-1.0.0 \
-  --tag ghcr.io/myos-dev/winforge-app-my-app:1.0.0 \
+cage export oci dist/my-app-1.0.0 \
+  --tag ghcr.io/myos-dev/cage-app-my-app:1.0.0 \
   --dry-run
 ```
 
 Real export stages a build context, writes `metadata/artifact.json` into the
 staged bundle copy, generates a `Containerfile`, adds
-`/usr/local/bin/winforge-app-launch`, then runs the selected build engine:
+`/usr/local/bin/cage-app-launch`, then runs the selected build engine:
 
 ```bash
-winforge export oci dist/my-app-1.0.0 \
-  --tag ghcr.io/myos-dev/winforge-app-my-app:1.0.0 \
+cage export oci dist/my-app-1.0.0 \
+  --tag ghcr.io/myos-dev/cage-app-my-app:1.0.0 \
   --engine docker
 
 # Build, push, and record repo digest identity when available
-winforge export oci my-app \
-  --tag ghcr.io/myos-dev/winforge-app-my-app:1.0.0 \
+cage export oci my-app \
+  --tag ghcr.io/myos-dev/cage-app-my-app:1.0.0 \
   --engine docker \
   --push
 
-# Verify OCI labels match embedded WinForge artifact metadata
-winforge image verify ghcr.io/myos-dev/winforge-app-my-app:1.0.0 --engine docker
+# Verify OCI labels match embedded Cage artifact metadata
+cage image verify ghcr.io/myos-dev/cage-app-my-app:1.0.0 --engine docker
 ```
 
 The source bundle is not mutated. The image layout is:
 
 ```text
-/opt/winforge/bundle      immutable embedded bundle
-/var/lib/winforge/state   mutable runtime state
+/opt/cage/bundle      immutable embedded bundle
+/var/lib/cage/state   mutable runtime state
 /exports                  explicit app/user outputs
-/usr/local/bin/winforge-app-launch
+/usr/local/bin/cage-app-launch
 ```
 
-The embedded artifact metadata uses `schemaVersion: winforge.artifact-image/v0`
+The embedded artifact metadata uses `schemaVersion: cage.artifact-image/v0`
 and records requested/resolved runtime versions, runner, launcher, base image,
 launch contract, graphics contract, state path, and exports path.
 
 ## Kubernetes Manifest Export
 
-`winforge export kube` consumes a verified bundle or app-name reference and emits
-Kubernetes YAML for a previously built/pushed WinForge application image. It does
+`cage export kube` consumes a verified bundle or app-name reference and emits
+Kubernetes YAML for a previously built/pushed Cage application image. It does
 not call `kubectl`, create namespaces, or apply resources.
 
 Digest-pinned image refs are required by default:
 
 ```bash
-winforge export kube my-app \
-  --image ghcr.io/myos-dev/winforge-app-my-app@sha256:... \
-  --namespace winforge-apps \
+cage export kube my-app \
+  --image ghcr.io/myos-dev/cage-app-my-app@sha256:... \
+  --namespace cage-apps \
   --output k8s/my-app.yaml
 ```
 
-Dry-run mode prints the `winforge.kube-export/v0` plan, including generated YAML:
+Dry-run mode prints the `cage.kube-export/v0` plan, including generated YAML:
 
 ```bash
-winforge export kube my-app \
-  --image ghcr.io/myos-dev/winforge-app-my-app@sha256:... \
+cage export kube my-app \
+  --image ghcr.io/myos-dev/cage-app-my-app@sha256:... \
   --dry-run
 ```
 
 By default the emitter creates a Deployment plus PVCs for runtime state and
 exports. Use `--no-pvc` for smoke/demo manifests that use `emptyDir` volumes.
 Mutable tags are rejected unless `--allow-mutable-tag` is supplied explicitly.
-Kubernetes labels are normalized for selector/tooling safety; exact WinForge
+Kubernetes labels are normalized for selector/tooling safety; exact Cage
 metadata such as schema, raw app name, version, and image ref is preserved in
 annotations.
 
-## WinForge WINE Container
+## Cage WINE Container
 
 The runtime provider containers are the OCI execution substrate.
 See [docs/container-architecture.md](docs/container-architecture.md).
@@ -494,23 +494,23 @@ and Forge resolves manifests through the same catalog.
 
 ```bash
 # List available catalog-backed container build definitions
-winforge container list
+cage container list
 
 # Build the current Wine Stable runtime alias
-winforge container build wine latest
+cage container build wine latest
 
 # Build a pinned previous Wine Stable runtime
-winforge container build wine 10.0
+cage container build wine 10.0
 
 # Build current Wine Staging
-winforge container build staging latest
+cage container build staging latest
 
 # Build current UMU + GE-Proton runtime
-winforge container build umu-proton-ge latest
+cage container build umu-proton-ge latest
 
 # Get the resolved published OCI image reference for a provider+version alias
-winforge container ref wine latest
-# → ghcr.io/myos-dev/winforge-wine:11.0
+cage container ref wine latest
+# → ghcr.io/myos-dev/cage-wine:11.0
 
 # Build from Docker compose for local development
 # (Compose is a dev convenience; runtime/catalog.json is authoritative.)
@@ -534,9 +534,9 @@ container/
 
 ## Reference Repos
 
-WinForge's design draws from the broader Wine/Proton ecosystem:
+Cage's design draws from the broader Wine/Proton ecosystem:
 
-| Repo | What WinForge Takes |
+| Repo | What Cage Takes |
 |---|---|
 | [Bottles](https://github.com/bottlesdevs/Bottles) | Wine command wrappers, dependency manager pattern, template-based prefix creation, registry rule management |
 | [wine-utils](https://github.com/rmi1974/wine-utils) | Reproducible Wine builds from source, build provenance tracking, patch management |
@@ -544,8 +544,8 @@ WinForge's design draws from the broader Wine/Proton ecosystem:
 | [umu-protonfixes](https://github.com/Open-Wine-Components/umu-protonfixes) | Verb/component catalog (`*.verb`), game engine detection, store-agnostic fix layering |
 | [Steam Runtime](https://github.com/valvesoftware/steam-runtime) | Layer composition model, build-runtime.py pattern, template-based manifest generation |
 | [MTGOBot](https://github.com/videre-project/MTGOBot) | Headless Wine OCI container pattern (Xvfb entrypoint, DISPLAY=:99, wine --headless) |
-| [docker-wine](https://github.com/scottyhardy/docker-wine) | Container ergonomics: UID/GID mapping, display modes, Xvfb/RDP/audio concerns; WinForge does not adopt its mutable desktop-container goal |
-| [LSW](https://github.com/barrersoftware/lsw) | Foundation-first compatibility architecture and path/registry translation awareness; WinForge does not adopt its no-Wine/kernel/PE-loader goal |
+| [docker-wine](https://github.com/scottyhardy/docker-wine) | Container ergonomics: UID/GID mapping, display modes, Xvfb/RDP/audio concerns; Cage does not adopt its mutable desktop-container goal |
+| [LSW](https://github.com/barrersoftware/lsw) | Foundation-first compatibility architecture and path/registry translation awareness; Cage does not adopt its no-Wine/kernel/PE-loader goal |
 
 Detailed analysis in [docs/reference-study.md](docs/reference-study.md).
 
@@ -554,10 +554,10 @@ Proposed follow-up work from hard BYO installer probes is tracked in [docs/legac
 ## Project Structure
 
 ```
-WinForge/
+Cage/
 ├── pyproject.toml               # Python packaging metadata and console script
-├── winforge/                     # Installable CLI package (`winforge`)
-├── cmd/winforge.py              # Repo-local development shim
+├── cage/                     # Installable CLI package (`cage`)
+├── cmd/cage.py              # Repo-local development shim
 ├── core/
 │   ├── manifest.py              # Manifest model, validation, loading
 │   ├── modules.py               # BlueBuild-style build-time module expansion
@@ -599,11 +599,11 @@ python3 -m unittest discover
 TMP_UV_HOME="$(mktemp -d)"
 UV_LINK_MODE=copy UV_TOOL_DIR="$TMP_UV_HOME/tools" UV_TOOL_BIN_DIR="$TMP_UV_HOME/bin" \
   uv tool install --force --reinstall --refresh .
-"$TMP_UV_HOME/bin/winforge" --help
+"$TMP_UV_HOME/bin/cage" --help
 
 # Verify installed/package CLI works
-python3 -m winforge --help
-python3 cmd/winforge.py --help
+python3 -m cage --help
+python3 cmd/cage.py --help
 
 # Validate syntax of all Python files
 python3 -m compileall .

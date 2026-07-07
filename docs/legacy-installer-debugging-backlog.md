@@ -2,15 +2,15 @@
 
 Status: proposed
 Date: 2026-07-01
-Source evidence: private BYO legacy-installer probes recorded outside public WinForge
+Source evidence: private BYO legacy-installer probes recorded outside public Cage
 
 ## Context
 
-Hard business installers need more than a generic `wine setup.exe` path. A private BYO Office 2010 probe in `vic-legacy` exposed generic WinForge platform gaps around media staging, prepared-prefix reuse, visible installer debugging, and failure summarization. This document turns those lessons into public WinForge development slices without adding proprietary recipes, payloads, activation flows, or customer-specific logic to WinForge.
+Hard business installers need more than a generic `wine setup.exe` path. A private BYO Office 2010 probe in `vic-legacy` exposed generic Cage platform gaps around media staging, prepared-prefix reuse, visible installer debugging, and failure summarization. This document turns those lessons into public Cage development slices without adding proprietary recipes, payloads, activation flows, or customer-specific logic to Cage.
 
 ## Boundaries
 
-WinForge should implement reusable primitives only:
+Cage should implement reusable primitives only:
 
 - source/media staging and policy preflight
 - installer command construction and linting
@@ -19,7 +19,7 @@ WinForge should implement reusable primitives only:
 - redacted failure evidence collection
 - runtime/profile matrix execution
 
-WinForge must not ship Office recipes, Office containers, Office payloads, product keys, activated prefixes, KMS emulators, cracked/pre-activated media handling, or activation-bypass automation. Proprietary/customer recipes and evidence notes belong in `vic-legacy` or customer/private repositories.
+Cage must not ship Office recipes, Office containers, Office payloads, product keys, activated prefixes, KMS emulators, cracked/pre-activated media handling, or activation-bypass automation. Proprietary/customer recipes and evidence notes belong in `vic-legacy` or customer/private repositories.
 
 ## Proposed implementation slices
 
@@ -32,15 +32,15 @@ Goal: make BYO ISO/archive/file media setup reproducible and safe before Wine ex
 Implemented CLI:
 
 ```bash
-winforge media stage <source> --name <id> --workspace <dir>
-winforge sources audit <recipe> --workspace <dir>
+cage media stage <source> --name <id> --workspace <dir>
+cage sources audit <recipe> --workspace <dir>
 ```
 
 Touched files:
 
 - `core/media.py`
 - `core/sources.py`
-- `winforge/cli.py`
+- `cage/cli.py`
 - `tests/test_media_staging_and_policy.py`
 
 Acceptance criteria:
@@ -60,7 +60,7 @@ Likely files:
 - `core/manifest.py`
 - `builder/pipeline.py`
 - possibly new `core/install_lint.py`
-- `winforge/cli.py`
+- `cage/cli.py`
 
 Acceptance criteria:
 
@@ -79,10 +79,10 @@ Goal: make slow dependency/prefix prep reusable without manual path hunting.
 Implemented CLI:
 
 ```bash
-winforge debug checkpoint inspect <path>
-winforge debug checkpoint resume <path> --output <dir> [--name <id>]
-winforge compat test <recipe> --mode build --stop-before install-apps
-winforge compat test <recipe> --mode build --resume-from-bundle <bundle-or-output-parent>
+cage debug checkpoint inspect <path>
+cage debug checkpoint resume <path> --output <dir> [--name <id>]
+cage compat test <recipe> --mode build --stop-before install-apps
+cage compat test <recipe> --mode build --resume-from-bundle <bundle-or-output-parent>
 ```
 
 Touched files:
@@ -91,7 +91,7 @@ Touched files:
 - `compat/evidence.py`
 - `builder/executor.py`
 - `builder/pipeline.py`
-- `winforge/cli.py`
+- `cage/cli.py`
 - `tests/test_checkpoint_resume.py`
 
 Acceptance criteria:
@@ -109,7 +109,7 @@ Goal: replace hand-written Podman/noVNC debug scripts with a supported path.
 Candidate CLI:
 
 ```bash
-winforge debug installer <bundle> \
+cage debug installer <bundle> \
   --media <path> \
   --command "setup.exe /config ProPlus.WW/config.xml" \
   --graphics vnc \
@@ -121,7 +121,7 @@ Likely files:
 - new `debug/installer.py` or `runtime/debug_installer.py`
 - `runtime/launcher.py`
 - `builder/executor.py`
-- `winforge/cli.py`
+- `cage/cli.py`
 
 Acceptance criteria:
 
@@ -141,14 +141,14 @@ Goal: turn large Wine/Windows installer logs into a concise, redacted failure re
 Implemented CLI:
 
 ```bash
-winforge failure analyze <bundle-or-log-path>
+cage failure analyze <bundle-or-log-path>
 ```
 
 Touched files:
 
 - `compat/failure_analysis.py`
 - `compat/evidence.py`
-- `winforge/cli.py`
+- `cage/cli.py`
 - `tests/test_failure_analysis.py`
 
 Acceptance criteria:
@@ -166,7 +166,7 @@ Goal: make hard compatibility research systematic instead of one-off shell retri
 Candidate CLI:
 
 ```bash
-winforge compat matrix <recipe> \
+cage compat matrix <recipe> \
   --runner pol-8.2,pol-4.3,pol-3.0.3 \
   --windows-version win7,win10 \
   --graphics headless \
@@ -179,7 +179,7 @@ Likely files:
 - `compat/evidence.py`
 - `runtime/runner_cache.py`
 - `builder/executor.py`
-- `winforge/cli.py`
+- `cage/cli.py`
 
 Acceptance criteria:
 

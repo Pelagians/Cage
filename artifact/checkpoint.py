@@ -8,12 +8,12 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-CHECKPOINT_SCHEMA_VERSION = "winforge.checkpoint/v0"
-CHECKPOINT_RESUME_SCHEMA_VERSION = "winforge.checkpoint-resume/v0"
+CHECKPOINT_SCHEMA_VERSION = "cage.checkpoint/v0"
+CHECKPOINT_RESUME_SCHEMA_VERSION = "cage.checkpoint-resume/v0"
 
 REQUIRED_CHECKPOINT_FILES = [
     "prefix/drive_c",
-    "manifest.winforge.json",
+    "manifest.cage.json",
     "runtime/runtime.json",
     "metadata/provenance.json",
     "logs/build.log",
@@ -27,7 +27,7 @@ class CheckpointError(RuntimeError):
 def inspect_checkpoint(path: Path | str) -> dict[str, Any]:
     """Inspect *path* as either a checkpoint bundle or an output parent.
 
-    A prepared-prefix checkpoint is a normal WinForge bundle with enough state
+    A prepared-prefix checkpoint is a normal Cage bundle with enough state
     to seed a later attempt: prefix/drive_c plus manifest, runtime,
     provenance, and build log metadata. When the caller points at a compat-test
     output directory, this function locates the nested bundle root instead of
@@ -55,7 +55,7 @@ def inspect_checkpoint(path: Path | str) -> dict[str, Any]:
         return direct
 
     candidates = []
-    for manifest_path in sorted(resolved.rglob("manifest.winforge.json")):
+    for manifest_path in sorted(resolved.rglob("manifest.cage.json")):
         candidate = manifest_path.parent
         if candidate == resolved or _has_symlink_ancestor(candidate, stop_at=resolved):
             continue
@@ -163,7 +163,7 @@ def _summarize_candidate(bundle: Path, *, input_path: Path, input_kind: str) -> 
         errors.append("checkpoint prefix/drive_c must not be a symlink")
     elif files["prefix/drive_c"]["exists"] and files["prefix/drive_c"]["type"] != "directory":
         errors.append("checkpoint prefix/drive_c must be a directory")
-    for rel in ["manifest.winforge.json", "runtime/runtime.json", "metadata/provenance.json", "logs/build.log"]:
+    for rel in ["manifest.cage.json", "runtime/runtime.json", "metadata/provenance.json", "logs/build.log"]:
         if files[rel]["type"] == "symlink":
             errors.append(f"checkpoint {rel} must not be a symlink")
         elif files[rel]["exists"] and files[rel]["type"] != "file":
@@ -173,8 +173,8 @@ def _summarize_candidate(bundle: Path, *, input_path: Path, input_kind: str) -> 
     runtime: dict[str, Any] = {}
     provenance: dict[str, Any] = {}
     json_errors: list[str] = []
-    if files["manifest.winforge.json"]["type"] == "file":
-        manifest, manifest_error = _load_json(bundle / "manifest.winforge.json")
+    if files["manifest.cage.json"]["type"] == "file":
+        manifest, manifest_error = _load_json(bundle / "manifest.cage.json")
         if manifest_error:
             json_errors.append(manifest_error)
     if files["runtime/runtime.json"]["type"] == "file" and "runtime" not in structural_symlink_dirs:

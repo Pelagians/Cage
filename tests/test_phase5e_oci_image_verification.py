@@ -19,7 +19,7 @@ from artifact.oci import (
 from core.manifest import Manifest
 
 APP = {
-    "schemaVersion": "winforge.app/v0",
+    "schemaVersion": "cage.app/v0",
     "name": "verify-demo",
     "version": "2.0.0",
     "runtime": {"provider": "wine", "version": "latest"},
@@ -36,15 +36,15 @@ APP = {
 }
 
 LABELS = {
-    "io.winforge.schema": ARTIFACT_IMAGE_SCHEMA_VERSION,
-    "io.winforge.app.name": "verify-demo",
-    "io.winforge.app.version": "2.0.0",
-    "io.winforge.runtime.provider": "wine",
-    "io.winforge.runtime.requestedVersion": "latest",
-    "io.winforge.runtime.resolvedVersion": "11.0",
-    "io.winforge.runtime.baseImage": "ghcr.io/myos-dev/winforge-wine:11.0",
-    "io.winforge.runner": "winehq-stable",
-    "io.winforge.launcher": "wine",
+    "io.cage.schema": ARTIFACT_IMAGE_SCHEMA_VERSION,
+    "io.cage.app.name": "verify-demo",
+    "io.cage.app.version": "2.0.0",
+    "io.cage.runtime.provider": "wine",
+    "io.cage.runtime.requestedVersion": "latest",
+    "io.cage.runtime.resolvedVersion": "11.0",
+    "io.cage.runtime.baseImage": "ghcr.io/myos-dev/cage-wine:11.0",
+    "io.cage.runner": "winehq-stable",
+    "io.cage.launcher": "wine",
 }
 
 ARTIFACT = {
@@ -55,7 +55,7 @@ ARTIFACT = {
         "provider": "wine",
         "requestedVersion": "latest",
         "resolvedVersion": "11.0",
-        "baseImage": "ghcr.io/myos-dev/winforge-wine:11.0",
+        "baseImage": "ghcr.io/myos-dev/cage-wine:11.0",
         "runner": "winehq-stable",
         "launcher": "wine",
     },
@@ -101,7 +101,7 @@ class OCIImagePushDigestTests(unittest.TestCase):
         self.assertEqual(result["push"]["success"], True)
         self.assertEqual(result["image"]["digest"], "sha256:abc123")
         self.assertEqual(result["image"]["repoDigests"], ["ghcr.io/acme/verify-demo@sha256:abc123"])
-        self.assertEqual(result["image"]["labels"]["io.winforge.schema"], ARTIFACT_IMAGE_SCHEMA_VERSION)
+        self.assertEqual(result["image"]["labels"]["io.cage.schema"], ARTIFACT_IMAGE_SCHEMA_VERSION)
 
 
 class OCIImageVerificationTests(unittest.TestCase):
@@ -133,7 +133,7 @@ class OCIImageVerificationTests(unittest.TestCase):
 
     def test_verify_oci_image_metadata_reports_label_mismatch(self):
         bad_labels = dict(LABELS)
-        bad_labels["io.winforge.runtime.resolvedVersion"] = "10.0"
+        bad_labels["io.cage.runtime.resolvedVersion"] = "10.0"
         inspect_payload = json.dumps([
             {
                 "Id": "sha256:local-image-id",
@@ -154,14 +154,14 @@ class OCIImageVerificationTests(unittest.TestCase):
             )
 
         self.assertFalse(result["valid"])
-        self.assertIn("label io.winforge.runtime.resolvedVersion", "\n".join(result["errors"]))
+        self.assertIn("label io.cage.runtime.resolvedVersion", "\n".join(result["errors"]))
 
     def test_cli_image_verify_missing_engine_returns_structured_json(self):
         root = Path(__file__).resolve().parents[1]
         proc = subprocess.run(
             [
                 sys.executable,
-                "cmd/winforge.py",
+                "cmd/cage.py",
                 "image",
                 "verify",
                 "local/verify-demo:2.0.0",

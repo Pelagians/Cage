@@ -1,4 +1,4 @@
-schemaVersion: winforge.app/v0
+schemaVersion: cage.app/v0
 name: powershell-wrapper-pwsh-vnc
 version: "0.1.0"
 
@@ -24,7 +24,7 @@ dependencies:
 
 install:
   - kind: script
-    command: set -eu; wrapper="$WINEPREFIX/drive_c/windows/system32/WindowsPowerShell/v1.0/powershell.exe"; profile="$WINEPREFIX/drive_c/Program Files/PowerShell/7/profile.ps1"; if [ -f "$wrapper" ] && [ -f "$profile" ]; then exit 0; fi; command -v git >/dev/null; command -v cargo >/dev/null; if command -v rustup >/dev/null; then rustup target add x86_64-pc-windows-gnu; fi; repo="$WINEPREFIX/drive_c/winforge/powershell-wrapper-for-wine"; rm -rf "$repo"; mkdir -p "$(dirname "$repo")"; git clone --depth=1 https://codeberg.org/Synchro/powershell-wrapper-for-wine.git "$repo"; cd "$repo"; cargo run --package xtask -- build --arch 64; mkdir -p "$WINEPREFIX/drive_c/windows/system32/WindowsPowerShell/v1.0" "$WINEPREFIX/drive_c/Program Files/PowerShell/7"; cp powershell64.exe "$wrapper"; cp wrapper/src/profile.ps1 "$profile"
+    command: set -eu; wrapper="$WINEPREFIX/drive_c/windows/system32/WindowsPowerShell/v1.0/powershell.exe"; profile="$WINEPREFIX/drive_c/Program Files/PowerShell/7/profile.ps1"; if [ -f "$wrapper" ] && [ -f "$profile" ]; then exit 0; fi; command -v git >/dev/null; command -v cargo >/dev/null; if command -v rustup >/dev/null; then rustup target add x86_64-pc-windows-gnu; fi; repo="$WINEPREFIX/drive_c/cage/powershell-wrapper-for-wine"; rm -rf "$repo"; mkdir -p "$(dirname "$repo")"; git clone --depth=1 https://codeberg.org/Synchro/powershell-wrapper-for-wine.git "$repo"; cd "$repo"; cargo run --package xtask -- build --arch 64; mkdir -p "$WINEPREFIX/drive_c/windows/system32/WindowsPowerShell/v1.0" "$WINEPREFIX/drive_c/Program Files/PowerShell/7"; cp powershell64.exe "$wrapper"; cp wrapper/src/profile.ps1 "$profile"
 
 compatibility:
   arch: win64
@@ -48,7 +48,7 @@ launch:
     NO_COLOR: "1"
     POWERSHELL_UPDATECHECK: Off
     chocolateyVersion: "1.4.0"
-  workingDirectory: C:/users/winforge
+  workingDirectory: C:/users/cage
 
 entrypoints:
   - id: console
@@ -62,7 +62,7 @@ entrypoints:
       NO_COLOR: "1"
       POWERSHELL_UPDATECHECK: Off
       chocolateyVersion: "1.4.0"
-    workingDirectory: C:/users/winforge
+    workingDirectory: C:/users/cage
   - id: powershell-wrapper
     name: Headless powershell.exe wrapper forwarding to pwsh
     executable: C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe
@@ -73,7 +73,7 @@ entrypoints:
       NO_COLOR: "1"
       POWERSHELL_UPDATECHECK: Off
       chocolateyVersion: "1.4.0"
-    workingDirectory: C:/users/winforge
+    workingDirectory: C:/users/cage
   - id: pwsh
     name: Headless PowerShell Core direct launch
     executable: C:/Program Files/PowerShell/7/pwsh.exe
@@ -84,7 +84,7 @@ entrypoints:
       NO_COLOR: "1"
       POWERSHELL_UPDATECHECK: Off
       chocolateyVersion: "1.4.0"
-    workingDirectory: C:/users/winforge
+    workingDirectory: C:/users/cage
 
 state:
   persistence: persistent
@@ -93,7 +93,7 @@ exports:
   - name: powershell-profile
     path: C:/Program Files/PowerShell/7/profile.ps1
   - name: wrapper-source
-    path: C:/winforge/powershell-wrapper-for-wine
+    path: C:/cage/powershell-wrapper-for-wine
 
 provenance:
   sources:

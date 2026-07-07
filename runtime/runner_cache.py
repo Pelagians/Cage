@@ -1,4 +1,4 @@
-"""Download/cache/diagnose Wine runner archives for WinForge."""
+"""Download/cache/diagnose Wine runner archives for Cage."""
 from __future__ import annotations
 
 import hashlib
@@ -16,9 +16,9 @@ from urllib.request import urlopen
 
 from runtime.runner_catalog import RunnerSpec, resolve_runner_spec
 
-RUNNER_CACHE_SCHEMA_VERSION = "winforge.runner-cache/v0"
-RUNNER_DIAGNOSTIC_SCHEMA_VERSION = "winforge.runner-diagnostic/v0"
-DEFAULT_CACHE_DIR = Path.home() / ".cache" / "winforge" / "runners"
+RUNNER_CACHE_SCHEMA_VERSION = "cage.runner-cache/v0"
+RUNNER_DIAGNOSTIC_SCHEMA_VERSION = "cage.runner-diagnostic/v0"
+DEFAULT_CACHE_DIR = Path.home() / ".cache" / "cage" / "runners"
 
 
 class RunnerCacheError(RuntimeError):

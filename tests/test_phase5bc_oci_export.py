@@ -23,7 +23,7 @@ from artifact.oci import (
 from core.manifest import Manifest
 
 APP = {
-    "schemaVersion": "winforge.app/v0",
+    "schemaVersion": "cage.app/v0",
     "name": "oci-demo-app",
     "version": "1.2.3",
     "runtime": {"provider": "wine", "version": "latest"},
@@ -52,32 +52,32 @@ class OCIExportPlanTests(unittest.TestCase):
             bundle = _bundle(tmp)
             plan = create_oci_export_plan(
                 bundle,
-                tag="ghcr.io/myos-dev/winforge-app-oci-demo-app:1.2.3",
+                tag="ghcr.io/myos-dev/cage-app-oci-demo-app:1.2.3",
             )
 
         self.assertEqual(plan["schemaVersion"], OCI_EXPORT_PLAN_SCHEMA_VERSION)
         self.assertEqual(plan["imageType"], "runnable-application-image")
-        self.assertEqual(plan["tag"], "ghcr.io/myos-dev/winforge-app-oci-demo-app:1.2.3")
-        self.assertEqual(plan["baseImage"], "ghcr.io/myos-dev/winforge-wine:11.0")
+        self.assertEqual(plan["tag"], "ghcr.io/myos-dev/cage-app-oci-demo-app:1.2.3")
+        self.assertEqual(plan["baseImage"], "ghcr.io/myos-dev/cage-wine:11.0")
         self.assertEqual(plan["application"], {"name": "oci-demo-app", "version": "1.2.3"})
         self.assertEqual(plan["runtime"]["provider"], "wine")
         self.assertEqual(plan["runtime"]["requestedVersion"], "latest")
         self.assertEqual(plan["runtime"]["resolvedVersion"], "11.0")
         self.assertEqual(plan["runtime"]["runner"], "winehq-stable")
         self.assertEqual(plan["runtime"]["launcher"], "wine")
-        self.assertEqual(plan["layout"]["bundle"], "/opt/winforge/bundle")
-        self.assertEqual(plan["layout"]["state"], "/var/lib/winforge/state")
+        self.assertEqual(plan["layout"]["bundle"], "/opt/cage/bundle")
+        self.assertEqual(plan["layout"]["state"], "/var/lib/cage/state")
         self.assertEqual(plan["layout"]["exports"], "/exports")
-        self.assertEqual(plan["layout"]["entrypoint"], "/usr/local/bin/winforge-app-launch")
+        self.assertEqual(plan["layout"]["entrypoint"], "/usr/local/bin/cage-app-launch")
         self.assertEqual(plan["artifactMetadata"]["schemaVersion"], ARTIFACT_IMAGE_SCHEMA_VERSION)
         self.assertEqual(plan["artifactMetadata"]["runtime"]["resolvedVersion"], "11.0")
-        self.assertEqual(plan["artifactMetadata"]["runtime"]["baseImage"], "ghcr.io/myos-dev/winforge-wine:11.0")
-        self.assertEqual(plan["labels"]["io.winforge.schema"], ARTIFACT_IMAGE_SCHEMA_VERSION)
-        self.assertEqual(plan["labels"]["io.winforge.runtime.resolvedVersion"], "11.0")
+        self.assertEqual(plan["artifactMetadata"]["runtime"]["baseImage"], "ghcr.io/myos-dev/cage-wine:11.0")
+        self.assertEqual(plan["labels"]["io.cage.schema"], ARTIFACT_IMAGE_SCHEMA_VERSION)
+        self.assertEqual(plan["labels"]["io.cage.runtime.resolvedVersion"], "11.0")
         self.assertEqual(plan["containerfile"]["path"], "Containerfile")
-        self.assertIn("FROM ghcr.io/myos-dev/winforge-wine:11.0", plan["containerfile"]["content"])
-        self.assertIn("COPY bundle /opt/winforge/bundle", plan["containerfile"]["content"])
-        self.assertIn('ENTRYPOINT ["/usr/local/bin/winforge-app-launch"]', plan["containerfile"]["content"])
+        self.assertIn("FROM ghcr.io/myos-dev/cage-wine:11.0", plan["containerfile"]["content"])
+        self.assertIn("COPY bundle /opt/cage/bundle", plan["containerfile"]["content"])
+        self.assertIn('ENTRYPOINT ["/usr/local/bin/cage-app-launch"]', plan["containerfile"]["content"])
 
     def test_prepare_oci_build_context_writes_metadata_containerfile_and_launcher(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -88,7 +88,7 @@ class OCIExportPlanTests(unittest.TestCase):
             artifact = json.loads(
                 (context / "bundle/metadata/artifact.json").read_text(encoding="utf-8")
             )
-            launcher = context / "winforge-app-launch"
+            launcher = context / "cage-app-launch"
             containerfile = context / "Containerfile"
 
             self.assertEqual(artifact["schemaVersion"], ARTIFACT_IMAGE_SCHEMA_VERSION)
@@ -96,11 +96,11 @@ class OCIExportPlanTests(unittest.TestCase):
             self.assertEqual(artifact["runtime"]["requestedVersion"], "latest")
             self.assertEqual(artifact["runtime"]["resolvedVersion"], "11.0")
             self.assertTrue(containerfile.exists())
-            self.assertIn('LABEL io.winforge.schema="winforge.artifact-image/v0"', containerfile.read_text(encoding="utf-8"))
+            self.assertIn('LABEL io.cage.schema="cage.artifact-image/v0"', containerfile.read_text(encoding="utf-8"))
             self.assertTrue(launcher.exists())
             self.assertTrue(launcher.stat().st_mode & stat.S_IXUSR)
             launcher_text = launcher.read_text(encoding="utf-8")
-            self.assertIn("/var/lib/winforge/state", launcher_text)
+            self.assertIn("/var/lib/cage/state", launcher_text)
             self.assertIn("/exports", launcher_text)
             self.assertIn("wine", launcher_text)
             self.assertIn("umu-run", launcher_text)
@@ -125,7 +125,7 @@ class OCIExportPlanTests(unittest.TestCase):
             proc = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "export",
                     "oci",
                     str(bundle),
@@ -143,7 +143,7 @@ class OCIExportPlanTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertEqual(payload["schemaVersion"], OCI_EXPORT_PLAN_SCHEMA_VERSION)
         self.assertEqual(payload["tag"], "oci-demo-app:1.2.3")
-        self.assertEqual(payload["baseImage"], "ghcr.io/myos-dev/winforge-wine:11.0")
+        self.assertEqual(payload["baseImage"], "ghcr.io/myos-dev/cage-wine:11.0")
         self.assertEqual(payload["runtime"]["resolvedVersion"], "11.0")
 
 
@@ -202,7 +202,7 @@ class OCIExportBuildTests(unittest.TestCase):
             proc = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "export",
                     "oci",
                     str(bundle),

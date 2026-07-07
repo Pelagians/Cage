@@ -1,4 +1,4 @@
-schemaVersion: winforge.app/v0
+schemaVersion: cage.app/v0
 name: choco-sandbox
 version: "0.1.0"
 
@@ -32,7 +32,7 @@ install:
       {
         echo '@echo off'
         echo 'echo ======================================================'
-        echo 'echo  WinForge Chocolatey Sandbox'
+        echo 'echo  Cage Chocolatey Sandbox'
         echo 'echo ======================================================'
         echo 'echo.'
         echo 'echo  Chocolatey is installed at C:\ProgramData\chocolatey'
@@ -49,7 +49,7 @@ install:
         echo 'set PATH=C:\ProgramData\chocolatey\bin;%%PATH%%'
         echo 'echo.'
         echo 'C:\Windows\System32\cmd.exe /k'
-      } > "$WINEPREFIX/drive_c/winforge/run-choco.cmd"
+      } > "$WINEPREFIX/drive_c/cage/run-choco.cmd"
 
       echo "=== Done ==="
 
@@ -65,7 +65,7 @@ launch:
   entrypoint: C:/windows/system32/cmd.exe
   args:
     - /k
-    - C:/winforge/run-choco.cmd
+    - C:/cage/run-choco.cmd
 
 entrypoints:
   - id: cmd
@@ -73,7 +73,7 @@ entrypoints:
     executable: C:/windows/system32/cmd.exe
     args:
       - /k
-      - C:/winforge/run-choco.cmd
+      - C:/cage/run-choco.cmd
 
 state:
   persistence: persistent

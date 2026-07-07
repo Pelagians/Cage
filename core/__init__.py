@@ -1,1 +1,1 @@
-"""Core manifest and model types for WinForge."""
+"""Core manifest and model types for Cage."""

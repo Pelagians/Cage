@@ -1,1 +1,1 @@
-"""Packaged WinForge runtime provider Dockerfile assets."""
+"""Packaged Cage runtime provider Dockerfile assets."""

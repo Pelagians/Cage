@@ -1,4 +1,4 @@
-"""WinForge execution bundle writer."""
+"""Cage execution bundle writer."""
 from __future__ import annotations
 from datetime import datetime, timezone
 import json, re
@@ -23,7 +23,7 @@ def create_bundle(manifest: Manifest, output_dir: Path, *,
         (bundle_path / rel).mkdir(parents=True, exist_ok=False)
 
     runtime = resolve_runtime(manifest.runtime)
-    _write_json(bundle_path / "manifest.winforge.json",
+    _write_json(bundle_path / "manifest.cage.json",
                 manifest.to_dict())
     _write_json(bundle_path / "runtime/runtime.json",
                 runtime.to_dict())
@@ -52,16 +52,16 @@ def create_bundle(manifest: Manifest, output_dir: Path, *,
             "prefix directory and logs.",
         ]
         (bundle_path / "logs/build.log").write_text(
-            "[winforge] Build starting — container execution in progress.\n",
+            "[cage] Build starting — container execution in progress.\n",
             encoding="utf-8")
 
     _write_json(
         bundle_path / "metadata/provenance.json",
         {
-            "schemaVersion": "winforge.bundle/v0",
+            "schemaVersion": "cage.bundle/v0",
             "createdAt": datetime.now(timezone.utc).isoformat(),
             "dryRun": dry_run,
-            "builder": "winforge-scaffold",
+            "builder": "cage-scaffold",
             "manifest": {
                 "name": manifest.name,
                 "version": manifest.version,

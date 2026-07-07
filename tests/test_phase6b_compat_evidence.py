@@ -34,7 +34,7 @@ def _write_fixture_workspace(root: Path) -> dict[str, str]:
 
 def _manifest_data(hashes: dict[str, str]) -> dict[str, object]:
     return {
-        "schemaVersion": "winforge.app/v0",
+        "schemaVersion": "cage.app/v0",
         "name": "compat-demo",
         "version": "1.0.0",
         "runtime": {"provider": "wine", "version": "latest"},
@@ -140,7 +140,7 @@ class CompatibilityEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             hashes = _write_fixture_workspace(root)
-            manifest_path = root / "compat-demo.winforge.json"
+            manifest_path = root / "compat-demo.cage.json"
             manifest_path.write_text(json.dumps(_manifest_data(hashes), indent=2), encoding="utf-8")
 
             result = run_compat_test(
@@ -158,7 +158,7 @@ class CompatibilityEvidenceTests(unittest.TestCase):
         self.assertEqual(result["build"]["mode"], "dry-run")
         self.assertTrue(result["build"]["bundle"].endswith("compat-demo-1.0.0"))
         self.assertEqual(result["bundleVerification"]["valid"], True)
-        self.assertEqual(result["runPlan"]["schemaVersion"], "winforge.run-plan/v0")
+        self.assertEqual(result["runPlan"]["schemaVersion"], "cage.run-plan/v0")
         self.assertEqual(result["runPlan"]["container"]["environment"]["WINEDLLOVERRIDES"], "mscoree=")
 
     def test_cli_sources_verify_and_compat_test_emit_machine_readable_results(self):
@@ -166,12 +166,12 @@ class CompatibilityEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             hashes = _write_fixture_workspace(root)
-            manifest_path = root / "compat-demo.winforge.json"
+            manifest_path = root / "compat-demo.cage.json"
             manifest_path.write_text(json.dumps(_manifest_data(hashes), indent=2), encoding="utf-8")
             verify = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "sources",
                     "verify",
                     str(manifest_path),
@@ -186,7 +186,7 @@ class CompatibilityEvidenceTests(unittest.TestCase):
             compat = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "compat",
                     "test",
                     str(manifest_path),

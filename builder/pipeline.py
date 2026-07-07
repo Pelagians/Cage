@@ -1,7 +1,7 @@
-"""Build phase planning and Wine build script generation for WinForge.
+"""Build phase planning and Wine build script generation for Cage.
 
 Converts a Manifest into executable build phases that run inside a
-WinForge Wine/Proton OCI container.
+Cage Wine/Proton OCI container.
 """
 from __future__ import annotations
 import json, posixpath, shlex
@@ -76,10 +76,10 @@ def _runner_environment_lines(manifest: Manifest) -> list[str]:
         return []
     return [
         "### Downloadable Wine runner ##################################",
-        'if [ -n "${WINFORGE_RUNNER_BIN:-}" ]; then',
-        '  echo "[winforge] Using cached Wine runner: ${WINFORGE_RUNNER_ID:-unknown} at $WINFORGE_RUNNER_BIN"',
-        '  export PATH="$WINFORGE_RUNNER_BIN:$PATH"',
-        '  export WINE="$WINFORGE_RUNNER_BIN/wine"',
+        'if [ -n "${CAGE_RUNNER_BIN:-}" ]; then',
+        '  echo "[cage] Using cached Wine runner: ${CAGE_RUNNER_ID:-unknown} at $CAGE_RUNNER_BIN"',
+        '  export PATH="$CAGE_RUNNER_BIN:$PATH"',
+        '  export WINE="$CAGE_RUNNER_BIN/wine"',
         'fi',
         "echo ''",
         "",
@@ -94,7 +94,7 @@ def _compatibility_policy_lines(manifest: Manifest) -> list[str]:
 
     lines = [
         "### Compatibility policy #######################################",
-        'echo "[winforge] Compatibility policy"',
+        'echo "[cage] Compatibility policy"',
     ]
     for key, value in compatibility_environment(policy).items():
         if key == "WINEDLLOVERRIDES":
@@ -103,7 +103,7 @@ def _compatibility_policy_lines(manifest: Manifest) -> list[str]:
             # setupapi/appwiz/mono initialization path.
             continue
         lines.append(f"export {key}={_shell_quote(str(value))}")
-        if key.startswith("WINFORGE_GRAPHICS_"):
+        if key.startswith("CAGE_GRAPHICS_"):
             lines.append(f'echo "  {key}={value}"')
         elif key in {"WINEDEBUG", "DXVK_LOG_LEVEL"}:
             lines.append(f'echo "  env {key}=<set>"')
@@ -123,7 +123,7 @@ def _compatibility_dll_override_lines(manifest: Manifest) -> list[str]:
     if not overrides:
         return []
     return [
-        'echo "[winforge]   Applying DLL override policy after prefix initialization"',
+        'echo "[cage]   Applying DLL override policy after prefix initialization"',
         f"export WINEDLLOVERRIDES={_shell_quote(str(overrides))}",
         'echo "  WINEDLLOVERRIDES=<compiled compatibility policy>"',
     ]
@@ -138,7 +138,7 @@ def _compatibility_post_wineboot_lines(manifest: Manifest) -> list[str]:
     windows_version = policy.get("windowsVersion")
     if windows_version:
         lines.extend([
-            f'echo "[winforge]   Setting Windows version: {windows_version}"',
+            f'echo "[cage]   Setting Windows version: {windows_version}"',
             f"winecfg -v {shlex.quote(str(windows_version))} 2>&1 | while IFS= read -r line; do echo \"  $line\"; done",
         ])
 
@@ -148,13 +148,13 @@ def _compatibility_post_wineboot_lines(manifest: Manifest) -> list[str]:
     elif backend in {"vkd3d", "vkd3d-proton"}:
         lines.extend(_winetricks_backend_lines("vkd3d", "vkd3d"))
     elif backend in {"wined3d", "none", "auto"}:
-        lines.append(f'echo "[winforge]   Graphics backend {backend}: no prefix install step"')
+        lines.append(f'echo "[cage]   Graphics backend {backend}: no prefix install step"')
     return lines
 
 
 def _winetricks_backend_lines(verb: str, label: str) -> list[str]:
     return [
-        f'echo "[winforge]   Installing graphics backend via winetricks: {label}"',
+        f'echo "[cage]   Installing graphics backend via winetricks: {label}"',
         f'winetricks -q {verb} 2>&1 | while IFS= read -r line; do echo "  $line"; done',
     ]
 
@@ -212,12 +212,12 @@ def _plan_inst(s):
 def generate_build_script(
     manifest: Manifest,
     *,
-    bundle_mount: str = "/opt/winforge",
+    bundle_mount: str = "/opt/cage",
     workspace_mount: str = "/workspace",
     timeout_per_phase: int = 300,
     stop_before: str | None = None,
 ) -> str:
-    """Produce a bash script that runs the build inside a WinForge Wine container.
+    """Produce a bash script that runs the build inside a Cage Wine container.
 
     The script is designed to execute after *xvfb-entrypoint.sh* has started
     the virtual X display.  It writes its output into *bundle_mount* (which
@@ -234,20 +234,20 @@ def generate_build_script(
         "",
         # Suppress Wine debugger so crash popups don't hang the build
         'export WINEDBG="-all"',
-        r"printf '[winforge] Starting real build for %s v%s\n' " + _shell_quote(manifest.name) + " " + _shell_quote(manifest.version),
-        f'echo "[winforge] Prefix: {prefix}"',
-        f'echo "[winforge] Bundle mount: {bundle_mount}"',
-        f'echo "[winforge] Workspace mount: {workspace_mount}"',
+        r"printf '[cage] Starting real build for %s v%s\n' " + _shell_quote(manifest.name) + " " + _shell_quote(manifest.version),
+        f'echo "[cage] Prefix: {prefix}"',
+        f'echo "[cage] Bundle mount: {bundle_mount}"',
+        f'echo "[cage] Workspace mount: {workspace_mount}"',
         "echo ''",
         "",
         *_runner_environment_lines(manifest),
         *_compatibility_policy_lines(manifest),
         # ------------------------------------------------------------------
         "### Phase 1: init-prefix ##########################################",
-        'echo "[winforge] Phase 1/6: Initializing Wine prefix"',
-        f'echo "[winforge]   wineboot timeout: {timeout_per_phase}s"',
+        'echo "[cage] Phase 1/6: Initializing Wine prefix"',
+        f'echo "[cage]   wineboot timeout: {timeout_per_phase}s"',
         f"timeout {timeout_per_phase}s wine wineboot --init 2>&1 | while IFS= read -r line; do echo \"{indent}$line\"; done",
-        'echo "[winforge]   Prefix initialized successfully"',
+        'echo "[cage]   Prefix initialized successfully"',
         *_compatibility_dll_override_lines(manifest),
         *_compatibility_post_wineboot_lines(manifest),
         "echo ''",
@@ -261,7 +261,7 @@ def generate_build_script(
         'export WINEDLLOVERRIDES=""',
         "",
         "### Phase 2: install-dependencies #################################",
-        'echo "[winforge] Phase 2/6: Installing dependencies"',
+        'echo "[cage] Phase 2/6: Installing dependencies"',
     ]
 
     # --- winetricks verbs ---
@@ -274,7 +274,7 @@ def generate_build_script(
             lines.append(
                 f'winetricks -q {verbs_str} 2>&1 | while IFS= read -r line; do echo "{indent}$line"; done'
             )
-            lines.append(f'echo "[winforge]   winetricks verbs installed"')
+            lines.append(f'echo "[cage]   winetricks verbs installed"')
         elif dep.kind in ("font", "directx", "package", "runtime-component"):
             # Generic fallback: try winetricks with the dependency name
             name = dep.name or dep.kind
@@ -283,7 +283,7 @@ def generate_build_script(
                     f'echo "  winetricks: {name}"'
                 )
                 lines.append(
-                    f'winetricks -q {name} 2>&1 | while IFS= read -r line; do echo "{indent}$line"; done || echo "  [winforge] winetricks verb {name} not found — skipping"'
+                    f'winetricks -q {name} 2>&1 | while IFS= read -r line; do echo "{indent}$line"; done || echo "  [cage] winetricks verb {name} not found — skipping"'
                 )
 
     if not manifest.dependencies:
@@ -312,13 +312,13 @@ def generate_build_script(
             "  printf '  " + '"stoppedBefore": "install-apps",' + "\n'",
             "  printf '  " + '"prefixSize": %s,' + "\\n' " + '"$prefix_size"',
             "  printf '  " + '"prefixFileCount": %s,' + "\\n' " + '"$prefix_file_count"',
-            "  printf '  " + '"buildTool": "winforge",' + "\n'",
+            "  printf '  " + '"buildTool": "cage",' + "\n'",
             "  printf '  " + '"buildTimestamp": %s' + "\\n' " + '"\\"$build_timestamp\\""',
             "  printf '}\n'",
         ]
         lines.extend([
-            'echo "[winforge] Stop requested before phase: install-apps"',
-            'echo "[winforge]   Prepared prefix checkpoint will be sealed without running application installers"',
+            'echo "[cage] Stop requested before phase: install-apps"',
+            'echo "[cage]   Prepared prefix checkpoint will be sealed without running application installers"',
             prefix_filelist,
             f'du -sh "{prefix}" > "{bundle_mount}/logs/prefix-size.txt"',
             f'prefix_size=$(du -sb "{prefix}" 2>/dev/null | cut -f1 || echo 0)',
@@ -328,8 +328,8 @@ def generate_build_script(
             '{',
             *printf_lines,
             '} > "$build_result_path"',
-            'echo "[winforge] === CHECKPOINT COMPLETE ==="',
-            f'echo "[winforge] Bundle at {bundle_mount}"',
+            'echo "[cage] === CHECKPOINT COMPLETE ==="',
+            f'echo "[cage] Bundle at {bundle_mount}"',
             "exit 0",
         ])
         return "\n".join(lines)
@@ -337,7 +337,7 @@ def generate_build_script(
     # ------------------------------------------------------------------
     # Phase 3: apply-layout-and-registry (filesystem mappings)
     lines.append("### Phase 3: apply-layout-and-registry #######################")
-    lines.append('echo "[winforge] Phase 3/6: Applying filesystem layout and registry changes"')
+    lines.append('echo "[cage] Phase 3/6: Applying filesystem layout and registry changes"')
 
     for fm in manifest.filesystem:
         source = fm.source
@@ -372,7 +372,7 @@ def generate_build_script(
     # ------------------------------------------------------------------
     # Phase 4: install-apps
     lines.append("### Phase 4: install-apps ###################################")
-    lines.append('echo "[winforge] Phase 4/6: Installing applications"')
+    lines.append('echo "[cage] Phase 4/6: Installing applications"')
 
     for step in manifest.install:
         source = step.source or ""
@@ -433,7 +433,7 @@ def generate_build_script(
     # ------------------------------------------------------------------
     # Phase 5: validate
     lines.append("### Phase 5: validate #######################################")
-    lines.append('echo "[winforge] Phase 5/6: Validating prefix"')
+    lines.append('echo "[cage] Phase 5/6: Validating prefix"')
     lines.append(f'echo "  Entrypoint: {manifest.launch.entrypoint}"')
 
     # Resolve entrypoint path
@@ -452,7 +452,7 @@ def generate_build_script(
     lines.append("fi")
 
     lines.append("")
-    lines.append('echo "[winforge]   Recording prefix contents"')
+    lines.append('echo "[cage]   Recording prefix contents"')
     lines.append(
         f"find \"{prefix}/drive_c\" -maxdepth 4 -type f 2>/dev/null | awk 'NR <= 100 {{ print }}' > \"{bundle_mount}/logs/prefix-filelist.txt\""
     )
@@ -466,7 +466,7 @@ def generate_build_script(
     # ------------------------------------------------------------------
     # Phase 6: seal-artifact
     lines.append("### Phase 6: seal-artifact ##################################")
-    lines.append('echo "[winforge] Phase 6/6: Sealing bundle artifact"')
+    lines.append('echo "[cage] Phase 6/6: Sealing bundle artifact"')
 
     # Write build completion marker
     lines.append("")
@@ -489,16 +489,16 @@ def generate_build_script(
     lines.append('  ],')
     lines.append(f'  "prefixSize": $(du -sb "{prefix}" 2>/dev/null | cut -f1 || echo 0),')
     lines.append(f'  "prefixFileCount": $(find "{prefix}/drive_c" -type f 2>/dev/null | wc -l),')
-    lines.append(f'  "buildTool": "winforge",')
+    lines.append(f'  "buildTool": "cage",')
     lines.append(f'  "buildTimestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"')
     lines.append("}")
     lines.append("ENDMARKER")
 
     lines.append("")
     lines.append('echo ""')
-    lines.append('echo "[winforge] === BUILD COMPLETE ==="')
-    lines.append(f'echo "[winforge] Bundle at {bundle_mount}"')
-    lines.append(f'echo "[winforge] Prefix size: $(du -sh "{prefix}" 2>/dev/null | cut -f1)"')
+    lines.append('echo "[cage] === BUILD COMPLETE ==="')
+    lines.append(f'echo "[cage] Bundle at {bundle_mount}"')
+    lines.append(f'echo "[cage] Prefix size: $(du -sh "{prefix}" 2>/dev/null | cut -f1)"')
     lines.append("exit 0")
 
     return "\n".join(lines)

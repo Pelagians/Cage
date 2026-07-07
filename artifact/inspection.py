@@ -1,7 +1,7 @@
-"""Inspect and verify WinForge execution bundles.
+"""Inspect and verify Cage execution bundles.
 
 Phase 2 makes bundle inspection/verification a formal layer before
-`winforge run`. It validates the Phase 1 graph contract without requiring
+`cage run`. It validates the Phase 1 graph contract without requiring
 Wine, Docker, Podman, or OCI access.
 """
 from __future__ import annotations
@@ -10,14 +10,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-GRAPH_SCHEMA_VERSION = "winforge.execution-graph/v0"
-MANIFEST_SCHEMA_VERSIONS = {"winforge.app/v0", "winforge.dev/v0"}
-INSPECTION_SCHEMA_VERSION = "winforge.bundle-inspection/v0"
-VERIFICATION_SCHEMA_VERSION = "winforge.bundle-verification/v0"
+GRAPH_SCHEMA_VERSION = "cage.execution-graph/v0"
+MANIFEST_SCHEMA_VERSIONS = {"cage.app/v0", "cage.dev/v0"}
+INSPECTION_SCHEMA_VERSION = "cage.bundle-inspection/v0"
+VERIFICATION_SCHEMA_VERSION = "cage.bundle-verification/v0"
 SUPPORTED_NETWORK_MODES = {"none", "bridge", "host"}
 
 REQUIRED_FILES = [
-    "manifest.winforge.json",
+    "manifest.cage.json",
     "prefix/drive_c",
     "runtime/runtime.json",
     "launch/entrypoint.json",
@@ -28,7 +28,7 @@ REQUIRED_FILES = [
 ]
 
 JSON_FILES = [
-    "manifest.winforge.json",
+    "manifest.cage.json",
     "runtime/runtime.json",
     "launch/entrypoint.json",
     "metadata/provenance.json",
@@ -38,9 +38,9 @@ JSON_FILES = [
 
 
 def inspect_bundle(bundle_path: Path | str) -> dict[str, Any]:
-    """Return a structured summary for a valid-enough WinForge bundle."""
+    """Return a structured summary for a valid-enough Cage bundle."""
     bundle = Path(bundle_path)
-    manifest = _load_json(bundle, "manifest.winforge.json")
+    manifest = _load_json(bundle, "manifest.cage.json")
     runtime = _load_json(bundle, "runtime/runtime.json")
     launch = _load_json(bundle, "launch/entrypoint.json")
     provenance = _load_json(bundle, "metadata/provenance.json")
@@ -56,7 +56,7 @@ def inspect_bundle(bundle_path: Path | str) -> dict[str, Any]:
         "schemaVersion": INSPECTION_SCHEMA_VERSION,
         "bundle": str(bundle),
         "application": application,
-        "artifact": graph.get("artifact", {"kind": "winforge.bundle", "path": "."}),
+        "artifact": graph.get("artifact", {"kind": "cage.bundle", "path": "."}),
         "runtime": {
             "manifest": runtime,
             "builder": graph.get("builderRuntime", {}),
@@ -86,7 +86,7 @@ def inspect_bundle(bundle_path: Path | str) -> dict[str, Any]:
 
 
 def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
-    """Validate a WinForge bundle and return machine-readable results."""
+    """Validate a Cage bundle and return machine-readable results."""
     bundle = Path(bundle_path)
     checks: list[dict[str, Any]] = []
     errors: list[str] = []
@@ -144,7 +144,7 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
     )
     errors.extend(json_errors)
 
-    manifest = parsed.get("manifest.winforge.json", {})
+    manifest = parsed.get("manifest.cage.json", {})
     runtime = parsed.get("runtime/runtime.json", {})
     launch = parsed.get("launch/entrypoint.json", {})
     graph = parsed.get("metadata/graph.json", {})
@@ -154,14 +154,14 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
     add_check(
         "manifest-schema",
         manifest.get("schemaVersion") in MANIFEST_SCHEMA_VERSIONS,
-        "manifest schema is supported WinForge v0",
+        "manifest schema is supported Cage v0",
         error="manifest schemaVersion must be one of: " + ", ".join(sorted(MANIFEST_SCHEMA_VERSIONS)),
     )
     add_check(
         "provenance-schema",
-        provenance.get("schemaVersion") == "winforge.bundle/v0",
-        "provenance schema is winforge.bundle/v0",
-        error="metadata/provenance.json schemaVersion must be winforge.bundle/v0",
+        provenance.get("schemaVersion") == "cage.bundle/v0",
+        "provenance schema is cage.bundle/v0",
+        error="metadata/provenance.json schemaVersion must be cage.bundle/v0",
     )
     add_check(
         "graph-schema",

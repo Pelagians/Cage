@@ -33,7 +33,7 @@ def _office_failure_log() -> str:
 
 def _manifest_data() -> dict[str, object]:
     return {
-        "schemaVersion": "winforge.app/v0",
+        "schemaVersion": "cage.app/v0",
         "name": "failure-demo",
         "version": "1.0.0",
         "runtime": {"provider": "wine", "version": "9.0"},
@@ -271,7 +271,7 @@ class FailureAnalysisTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = _write_bundle_with_logs(Path(tmp))
             proc = subprocess.run(
-                [sys.executable, "cmd/winforge.py", "failure", "analyze", str(bundle)],
+                [sys.executable, "cmd/cage.py", "failure", "analyze", str(bundle)],
                 cwd=repo,
                 text=True,
                 capture_output=True,
@@ -290,7 +290,7 @@ class FailureAnalysisTests(unittest.TestCase):
             root = Path(tmp)
             (root / "sources").mkdir()
             (root / "sources" / "setup.exe").write_bytes(b"fake setup")
-            manifest = root / "failure-demo.winforge.json"
+            manifest = root / "failure-demo.cage.json"
             manifest.write_text(json.dumps(_manifest_data(), indent=2), encoding="utf-8")
 
             def fake_execute(manifest_obj, bundle, **kwargs):

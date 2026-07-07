@@ -1,4 +1,4 @@
-"""Compatibility policy normalization for WinForge recipes.
+"""Compatibility policy normalization for Cage recipes.
 
 The compatibility policy is the stable layer above Wine internals. It records
 application/runtime intent such as Windows version, WINEARCH, graphics backend,
@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-SCHEMA_VERSION = "winforge.compatibility-policy/v0"
+SCHEMA_VERSION = "cage.compatibility-policy/v0"
 ALLOWED_FIELDS = {"arch", "windowsVersion", "graphics", "dllPolicy", "env"}
 ALLOWED_ARCHES = {"win32", "win64"}
 ALLOWED_WINDOWS_VERSIONS = {
@@ -106,9 +106,9 @@ def compatibility_environment(policy: dict[str, Any] | None) -> dict[str, str]:
         env["WINEARCH"] = str(arch)
     graphics = policy.get("graphics") or {}
     if backend := graphics.get("backend"):
-        env["WINFORGE_GRAPHICS_BACKEND"] = str(backend)
+        env["CAGE_GRAPHICS_BACKEND"] = str(backend)
     if fallback := graphics.get("fallback"):
-        env["WINFORGE_GRAPHICS_FALLBACK"] = str(fallback)
+        env["CAGE_GRAPHICS_FALLBACK"] = str(fallback)
     for key, value in (policy.get("env") or {}).items():
         env[str(key)] = str(value)
     overrides = compile_wine_dll_overrides(policy.get("dllPolicy") or {})

@@ -37,7 +37,7 @@ def _write_byo_files_workspace(root: Path) -> dict[str, str]:
 
 def _office_files_manifest(hashes: dict[str, str]) -> dict[str, object]:
     return {
-        "schemaVersion": "winforge.app/v0",
+        "schemaVersion": "cage.app/v0",
         "name": "office-suite-byo-files",
         "version": "2016-byo",
         "runtime": {"provider": "wine", "version": "latest"},

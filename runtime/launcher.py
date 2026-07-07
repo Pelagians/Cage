@@ -1,6 +1,6 @@
-"""Plan and execute WinForge bundles with catalog runtime images.
+"""Plan and execute Cage bundles with catalog runtime images.
 
-`winforge run` consumes a verified execution bundle rather than the original
+`cage run` consumes a verified execution bundle rather than the original
 manifest. The bundle's metadata/graph.json is the source of truth for the
 runtime image, launch command, graphics mode contract, and exact-runtime
 policy.
@@ -19,12 +19,12 @@ from artifact.inspection import verify_bundle
 from core.compatibility import compatibility_environment
 from runtime.runner_cache import DEFAULT_CACHE_DIR, diagnose_runner
 
-RUN_PLAN_SCHEMA_VERSION = "winforge.run-plan/v0"
-RUN_RESULT_SCHEMA_VERSION = "winforge.run-result/v0"
-BUNDLE_MOUNT = "/opt/winforge/bundle"
-PREFIX_COPY = "/tmp/winforge-prefix"
-FILE_INPUT_MOUNT_ROOT = "/mnt/winforge-inputs"
-RUNNER_CONTAINER_DIR = "/opt/winforge-runner"
+RUN_PLAN_SCHEMA_VERSION = "cage.run-plan/v0"
+RUN_RESULT_SCHEMA_VERSION = "cage.run-result/v0"
+BUNDLE_MOUNT = "/opt/cage/bundle"
+PREFIX_COPY = "/tmp/cage-prefix"
+FILE_INPUT_MOUNT_ROOT = "/mnt/cage-inputs"
+RUNNER_CONTAINER_DIR = "/opt/cage-runner"
 SUPPORTED_GRAPHICS = {"headless", "vnc"}
 SUPPORTED_NETWORK_MODES = {"none", "bridge", "host"}
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
@@ -52,7 +52,7 @@ def build_run_plan(
     bundle = Path(bundle_path)
     verification = verify_bundle(bundle)
     if not verification.get("valid"):
-        raise RunError("invalid WinForge bundle: " + _verification_error_text(verification))
+        raise RunError("invalid Cage bundle: " + _verification_error_text(verification))
 
     graph = _load_json(bundle / "metadata" / "graph.json")
     runtime = dict(graph.get("runnerRuntime") or {})
@@ -205,7 +205,7 @@ def execute_run_plan(plan: dict[str, Any], *, timeout: int | None = None) -> dic
             "graphics": plan.get("graphics", {}).get("mode"),
             "runtimeImage": plan.get("runtime", {}).get("image"),
             "stdout": exc.stdout or "",
-            "stderr": exc.stderr or f"winforge run timed out after {timeout}s",
+            "stderr": exc.stderr or f"cage run timed out after {timeout}s",
             "error": f"timed out after {timeout}s",
         }
 
@@ -233,7 +233,7 @@ def _runner_cache_plan(
     runner_dir = root / runner_id
     wine_path = runner_dir / "bin" / "wine"
     base = {
-        "schemaVersion": "winforge.runner-mount/v0",
+        "schemaVersion": "cage.runner-mount/v0",
         "runnerId": runner_id,
         "cacheDir": str(root),
         "runnerDir": str(runner_dir),
@@ -245,7 +245,7 @@ def _runner_cache_plan(
         payload = {**base, "status": "missing"}
         if require_runner:
             raise RunError(
-                f"cached runner is missing: {runner_id}. Run `winforge runners ensure {runner_id}` "
+                f"cached runner is missing: {runner_id}. Run `cage runners ensure {runner_id}` "
                 "or pass --runner-cache-dir pointing at a populated cache."
             )
         return payload
@@ -255,8 +255,8 @@ def _runner_cache_plan(
         "status": "present",
         "mount": _volume_mount(runner_dir, RUNNER_CONTAINER_DIR, engine=engine, read_only=True),
         "environment": {
-            "WINFORGE_RUNNER_ID": runner_id,
-            "WINFORGE_RUNNER_BIN": f"{RUNNER_CONTAINER_DIR}/bin",
+            "CAGE_RUNNER_ID": runner_id,
+            "CAGE_RUNNER_BIN": f"{RUNNER_CONTAINER_DIR}/bin",
         },
         "diagnostic": diagnose_runner(runner_dir),
     }
@@ -266,16 +266,16 @@ def _runner_launch_script_lines(enabled: bool) -> list[str]:
     if not enabled:
         return []
     return [
-        'if [ -n "${WINFORGE_RUNNER_BIN:-}" ]; then',
-        '  echo "[winforge] Using cached Wine runner: ${WINFORGE_RUNNER_ID:-unknown} at $WINFORGE_RUNNER_BIN"',
-        '  export PATH="$WINFORGE_RUNNER_BIN:$PATH"',
-        '  export WINE="$WINFORGE_RUNNER_BIN/wine"',
+        'if [ -n "${CAGE_RUNNER_BIN:-}" ]; then',
+        '  echo "[cage] Using cached Wine runner: ${CAGE_RUNNER_ID:-unknown} at $CAGE_RUNNER_BIN"',
+        '  export PATH="$CAGE_RUNNER_BIN:$PATH"',
+        '  export WINE="$CAGE_RUNNER_BIN/wine"',
         'fi',
     ]
 
 
 def _find_engine() -> str:
-    """Prefer Podman for WinForge run, then fall back to Docker."""
+    """Prefer Podman for Cage run, then fall back to Docker."""
     for candidate in ("podman", "docker"):
         if shutil.which(candidate):
             return candidate
@@ -342,12 +342,12 @@ def _validate_graphics_network(graphics: str, network: str) -> None:
 
 def _container_environment(graphics: str) -> dict[str, str]:
     return {
-        "WINFORGE_BUNDLE": BUNDLE_MOUNT,
-        "WINFORGE_GRAPH": f"{BUNDLE_MOUNT}/metadata/graph.json",
-        "WINFORGE_PREFIX_SOURCE": f"{BUNDLE_MOUNT}/prefix",
+        "CAGE_BUNDLE": BUNDLE_MOUNT,
+        "CAGE_GRAPH": f"{BUNDLE_MOUNT}/metadata/graph.json",
+        "CAGE_PREFIX_SOURCE": f"{BUNDLE_MOUNT}/prefix",
         "WINEPREFIX": PREFIX_COPY,
         "WINEFS": "launcher",
-        "WINFORGE_GRAPHICS": graphics,
+        "CAGE_GRAPHICS": graphics,
         "DISPLAY": ":99",
         # The runtime image disables mscoree/mshtml by default to keep Wine
         # prefix initialization fast. Runtime launches consume an already-built
@@ -369,20 +369,20 @@ def _launch_script(
 ) -> str:
     lines = [
         "set -euo pipefail",
-        f"export WINFORGE_BUNDLE={shlex.quote(BUNDLE_MOUNT)}",
-        f"export WINFORGE_GRAPH={shlex.quote(BUNDLE_MOUNT + '/metadata/graph.json')}",
-        f"export WINFORGE_PREFIX_SOURCE={shlex.quote(BUNDLE_MOUNT + '/prefix')}",
+        f"export CAGE_BUNDLE={shlex.quote(BUNDLE_MOUNT)}",
+        f"export CAGE_GRAPH={shlex.quote(BUNDLE_MOUNT + '/metadata/graph.json')}",
+        f"export CAGE_PREFIX_SOURCE={shlex.quote(BUNDLE_MOUNT + '/prefix')}",
         f"export WINEPREFIX={shlex.quote(PREFIX_COPY)}",
         "export WINEFS=launcher",
-        f"export WINFORGE_GRAPHICS={shlex.quote(mode)}",
+        f"export CAGE_GRAPHICS={shlex.quote(mode)}",
         *_runner_launch_script_lines(runner_enabled),
         "rm -rf \"$WINEPREFIX\"",
-        "cp -a \"$WINFORGE_PREFIX_SOURCE\" \"$WINEPREFIX\"",
+        "cp -a \"$CAGE_PREFIX_SOURCE\" \"$WINEPREFIX\"",
     ]
 
     working_dir = launch.get("workingDirectory")
     if working_dir:
-        lines.append(f"export WINFORGE_WORKING_DIRECTORY={shlex.quote(str(working_dir))}")
+        lines.append(f"export CAGE_WORKING_DIRECTORY={shlex.quote(str(working_dir))}")
 
     for key, value in sorted((compatibility_env or {}).items()):
         if not _ENV_NAME.fullmatch(key):
@@ -396,13 +396,13 @@ def _launch_script(
 
     if mode == "vnc":
         lines.extend([
-            "if ! command -v x11vnc >/dev/null 2>&1; then echo 'x11vnc is required for WinForge vnc graphics' >&2; exit 70; fi",
-            "if ! command -v websockify >/dev/null 2>&1; then echo 'websockify is required for WinForge vnc graphics' >&2; exit 70; fi",
-            "x11vnc -display \"$DISPLAY\" -rfbport 5900 -forever -shared -nopw -listen 0.0.0.0 >/tmp/winforge-x11vnc.log 2>&1 &",
+            "if ! command -v x11vnc >/dev/null 2>&1; then echo 'x11vnc is required for Cage vnc graphics' >&2; exit 70; fi",
+            "if ! command -v websockify >/dev/null 2>&1; then echo 'websockify is required for Cage vnc graphics' >&2; exit 70; fi",
+            "x11vnc -display \"$DISPLAY\" -rfbport 5900 -forever -shared -nopw -listen 0.0.0.0 >/tmp/cage-x11vnc.log 2>&1 &",
             "if [ -d /usr/share/novnc ]; then",
-            "  websockify --web=/usr/share/novnc 0.0.0.0:6080 localhost:5900 >/tmp/winforge-websockify.log 2>&1 &",
+            "  websockify --web=/usr/share/novnc 0.0.0.0:6080 localhost:5900 >/tmp/cage-websockify.log 2>&1 &",
             "else",
-            "  websockify 0.0.0.0:6080 localhost:5900 >/tmp/winforge-websockify.log 2>&1 &",
+            "  websockify 0.0.0.0:6080 localhost:5900 >/tmp/cage-websockify.log 2>&1 &",
             "fi",
         ])
 

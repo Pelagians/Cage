@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# WinForge Container Build Script
+# Cage Container Build Script
 #
-# Builds one or all WinForge Wine/Proton runtime OCI images from
+# Builds one or all Cage Wine/Proton runtime OCI images from
 # runtime/catalog.json.
 #
 # Usage:

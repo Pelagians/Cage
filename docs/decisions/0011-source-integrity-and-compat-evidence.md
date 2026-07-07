@@ -6,17 +6,17 @@ Status: accepted
 
 ## Decision
 
-WinForge supports a dependency-light compatibility evidence loop before real Wine execution. The first implementation includes:
+Cage supports a dependency-light compatibility evidence loop before real Wine execution. The first implementation includes:
 
-- `winforge sources verify <manifest>` emitting `winforge.source-integrity/v0`;
-- `winforge compat test <manifest>` emitting `winforge.compat-test/v0`;
+- `cage sources verify <manifest>` emitting `cage.source-integrity/v0`;
+- `cage compat test <manifest>` emitting `cage.compat-test/v0`;
 - generated build scripts resolving relative install/filesystem sources against the mounted workspace (`/workspace/...`) instead of the container process cwd.
 
 ## Implemented behavior
 
-`winforge.source-integrity/v0` reports each declared source, install source, and filesystem source with resolved path, expected/actual sha256, status, warnings, and errors. Local `file://` and relative paths are verified. Remote URLs are recorded but not fetched by this verifier; v0 install/filesystem steps must be materialized locally before real build.
+`cage.source-integrity/v0` reports each declared source, install source, and filesystem source with resolved path, expected/actual sha256, status, warnings, and errors. Local `file://` and relative paths are verified. Remote URLs are recorded but not fetched by this verifier; v0 install/filesystem steps must be materialized locally before real build.
 
-`winforge.compat-test/v0` records:
+`cage.compat-test/v0` records:
 
 - manifest/application/runtime/compatibility metadata;
 - source integrity result;

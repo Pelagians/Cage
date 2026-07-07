@@ -1,4 +1,4 @@
-"""Compatibility evidence harness for WinForge recipes."""
+"""Compatibility evidence harness for Cage recipes."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -15,7 +15,7 @@ from compat.failure_analysis import analyze_failure_path
 from runtime.launcher import build_run_plan, execute_run_plan
 from runtime.providers import resolve_runtime
 
-COMPAT_TEST_SCHEMA_VERSION = "winforge.compat-test/v0"
+COMPAT_TEST_SCHEMA_VERSION = "cage.compat-test/v0"
 
 
 def json_dumps(payload: object) -> str:

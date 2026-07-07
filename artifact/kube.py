@@ -1,4 +1,4 @@
-"""Kubernetes manifest export for WinForge application images.
+"""Kubernetes manifest export for Cage application images.
 
 This module only emits manifests. It does not call kubectl or mutate a cluster.
 """
@@ -12,12 +12,12 @@ from typing import Any
 from artifact.inspection import verify_bundle
 from artifact.oci import ARTIFACT_IMAGE_SCHEMA_VERSION, EXPORTS_ROOT, STATE_ROOT
 
-KUBE_EXPORT_SCHEMA_VERSION = 'winforge.kube-export/v0'
+KUBE_EXPORT_SCHEMA_VERSION = 'cage.kube-export/v0'
 SUPPORTED_NETWORK_MODES = {'none', 'bridge', 'host'}
 
 
 class KubeExportError(RuntimeError):
-    """Raised when a WinForge bundle cannot be exported as Kubernetes YAML."""
+    """Raised when a Cage bundle cannot be exported as Kubernetes YAML."""
 
 
 def create_kube_export_plan(
@@ -33,15 +33,15 @@ def create_kube_export_plan(
     graphics: str = 'headless',
     allow_mutable_tag: bool = False,
 ) -> dict[str, Any]:
-    """Return a Kubernetes export plan for a verified WinForge bundle."""
+    """Return a Kubernetes export plan for a verified Cage bundle."""
     bundle = Path(bundle_path)
     verification = verify_bundle(bundle)
     if not verification.get('valid'):
-        raise KubeExportError('invalid WinForge bundle: ' + _verification_error_text(verification))
+        raise KubeExportError('invalid Cage bundle: ' + _verification_error_text(verification))
 
     _validate_image_ref(image, allow_mutable_tag=allow_mutable_tag)
 
-    manifest = _load_json(bundle / 'manifest.winforge.json')
+    manifest = _load_json(bundle / 'manifest.cage.json')
     graph = _load_json(bundle / 'metadata/graph.json')
     application = dict(graph.get('application') or {
         'name': manifest.get('name'),
@@ -131,7 +131,7 @@ def export_kube_manifest(
     graphics: str = 'headless',
     allow_mutable_tag: bool = False,
 ) -> dict[str, Any]:
-    """Write Kubernetes YAML for a WinForge application image and return a summary."""
+    """Write Kubernetes YAML for a Cage application image and return a summary."""
     plan = create_kube_export_plan(
         bundle_path,
         image=image,
@@ -196,8 +196,8 @@ def _deployment(
     graphics: str,
     network: str,
 ) -> dict[str, Any]:
-    state_volume = {'name': 'winforge-state'}
-    exports_volume = {'name': 'winforge-exports'}
+    state_volume = {'name': 'cage-state'}
+    exports_volume = {'name': 'cage-exports'}
     if no_pvc:
         state_volume['emptyDir'] = {}
         exports_volume['emptyDir'] = {}
@@ -230,17 +230,17 @@ def _deployment(
                     'hostNetwork': network == 'host',
                     'containers': [
                         {
-                            'name': 'winforge-app',
+                            'name': 'cage-app',
                             'image': image,
                             'imagePullPolicy': 'IfNotPresent',
                             'env': [
-                                {'name': 'WINFORGE_STATE', 'value': STATE_ROOT},
-                                {'name': 'WINFORGE_EXPORTS', 'value': EXPORTS_ROOT},
-                                {'name': 'WINFORGE_GRAPHICS', 'value': graphics},
+                                {'name': 'CAGE_STATE', 'value': STATE_ROOT},
+                                {'name': 'CAGE_EXPORTS', 'value': EXPORTS_ROOT},
+                                {'name': 'CAGE_GRAPHICS', 'value': graphics},
                             ],
                             'volumeMounts': [
-                                {'name': 'winforge-state', 'mountPath': STATE_ROOT},
-                                {'name': 'winforge-exports', 'mountPath': EXPORTS_ROOT},
+                                {'name': 'cage-state', 'mountPath': STATE_ROOT},
+                                {'name': 'cage-exports', 'mountPath': EXPORTS_ROOT},
                             ],
                         },
                     ],
@@ -282,19 +282,19 @@ def _labels(instance: str, app_name: str, app_version: str) -> dict[str, str]:
     return {
         'app.kubernetes.io/name': _label_value(app_name),
         'app.kubernetes.io/instance': instance,
-        'app.kubernetes.io/component': 'winforge-app',
-        'app.kubernetes.io/part-of': 'winforge',
-        'io.winforge.app.name': _label_value(app_name),
-        'io.winforge.app.version': _label_value(app_version),
+        'app.kubernetes.io/component': 'cage-app',
+        'app.kubernetes.io/part-of': 'cage',
+        'io.cage.app.name': _label_value(app_name),
+        'io.cage.app.version': _label_value(app_version),
     }
 
 
 def _annotations(app_name: str, app_version: str, image: str) -> dict[str, str]:
     return {
-        'io.winforge.schema': ARTIFACT_IMAGE_SCHEMA_VERSION,
-        'io.winforge.app.raw-name': app_name,
-        'io.winforge.app.version': app_version,
-        'io.winforge.image': image,
+        'io.cage.schema': ARTIFACT_IMAGE_SCHEMA_VERSION,
+        'io.cage.app.raw-name': app_name,
+        'io.cage.app.version': app_version,
+        'io.cage.image': image,
     }
 
 
@@ -324,14 +324,14 @@ def _network_mode(graph: dict[str, Any]) -> str:
 def _k8s_name(value: str) -> str:
     name = re.sub(r'[^a-z0-9-]+', '-', value.lower()).strip('-')
     name = re.sub(r'-+', '-', name)[:63].strip('-')
-    return name or 'winforge-app'
+    return name or 'cage-app'
 
 
 def _label_value(value: str) -> str:
     # Keep labels lowercase/DNS-ish for broad Kubernetes tooling compatibility.
-    # Exact WinForge metadata is preserved separately in annotations.
+    # Exact Cage metadata is preserved separately in annotations.
     text = re.sub(r'[^a-z0-9.-]+', '-', str(value).lower()).strip('-.')[:63].strip('-.')
-    return text or 'winforge-app'
+    return text or 'cage-app'
 
 
 def _load_json(path: Path) -> dict[str, Any]:

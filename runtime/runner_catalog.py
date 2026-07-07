@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-RUNNER_CATALOG_SCHEMA_VERSION = "winforge.runner-catalog/v0"
+RUNNER_CATALOG_SCHEMA_VERSION = "cage.runner-catalog/v0"
 PLAYONLINUX_PHOENICIS_X86_BASE = "https://www.playonlinux.com/wine/binaries/phoenicis/upstream-linux-x86"
 
 

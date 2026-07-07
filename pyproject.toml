@@ -3,7 +3,7 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "winforge"
+name = "cage"
 version = "0.1.0"
 description = "Application-first packager and runner for Wine/Proton-family software"
 readme = "README.md"
@@ -12,7 +12,7 @@ license = "MIT"
 authors = [
   { name = "myOS-dev" }
 ]
-keywords = ["wine", "proton", "oci", "packaging", "winforge"]
+keywords = ["wine", "proton", "oci", "packaging", "cage"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
@@ -26,14 +26,14 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/myos-dev/WinForge"
+Repository = "https://github.com/myos-dev/Cage"
 
 [project.scripts]
-winforge = "winforge.cli:main"
+cage = "cage.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["winforge*", "artifact*", "builder*", "compat*", "container*", "core*", "runtime*"]
+include = ["cage*", "artifact*", "builder*", "compat*", "container*", "core*", "runtime*"]
 exclude = ["tests*", "docs*", "examples*", "cmd*"]
 namespaces = false
 
@@ -47,5 +47,5 @@ container = [
   "providers/*/Dockerfile",
 ]
 
-[tool.winforge]
-schema_version = "winforge.app/v0"
+[tool.cage]
+schema_version = "cage.app/v0"

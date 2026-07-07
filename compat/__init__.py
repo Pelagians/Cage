@@ -1,1 +1,1 @@
-"""Compatibility evidence helpers for WinForge."""
+"""Compatibility evidence helpers for Cage."""

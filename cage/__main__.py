@@ -1,4 +1,4 @@
-"""`python -m winforge` entrypoint."""
+"""`python -m cage` entrypoint."""
 from __future__ import annotations
 
 from .cli import main

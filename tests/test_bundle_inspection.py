@@ -1,4 +1,4 @@
-"""Tests for WinForge bundle inspect/verify commands."""
+"""Tests for Cage bundle inspect/verify commands."""
 from __future__ import annotations
 import json
 import subprocess
@@ -13,7 +13,7 @@ from core.manifest import Manifest
 
 
 VALID = {
-    "schemaVersion": "winforge.dev/v0",
+    "schemaVersion": "cage.dev/v0",
     "name": "sample",
     "version": "1.0.0",
     "runtime": {"provider": "wine", "version": "9.0"},
@@ -47,10 +47,10 @@ class BundleInspectionTests(unittest.TestCase):
             bundle = self._bundle(tmp)
             summary = inspect_bundle(bundle)
 
-        self.assertEqual(summary["schemaVersion"], "winforge.bundle-inspection/v0")
+        self.assertEqual(summary["schemaVersion"], "cage.bundle-inspection/v0")
         self.assertEqual(summary["application"], {"name": "sample", "version": "1.0.0"})
-        self.assertEqual(summary["runtime"]["runner"]["image"], "ghcr.io/myos-dev/winforge-wine:9.0")
-        self.assertEqual(summary["graph"]["schemaVersion"], "winforge.execution-graph/v0")
+        self.assertEqual(summary["runtime"]["runner"]["image"], "ghcr.io/myos-dev/cage-wine:9.0")
+        self.assertEqual(summary["graph"]["schemaVersion"], "cage.execution-graph/v0")
         self.assertEqual(summary["graph"]["nodes"], 11)
         self.assertEqual(summary["graph"]["edges"], 13)
         self.assertTrue(summary["files"]["metadata/graph.json"]["exists"])
@@ -61,7 +61,7 @@ class BundleInspectionTests(unittest.TestCase):
             bundle = self._bundle(tmp)
             result = verify_bundle(bundle)
 
-        self.assertEqual(result["schemaVersion"], "winforge.bundle-verification/v0")
+        self.assertEqual(result["schemaVersion"], "cage.bundle-verification/v0")
         self.assertTrue(result["valid"])
         self.assertEqual(result["errors"], [])
         self.assertTrue(any(check["id"] == "required-files" and check["ok"] for check in result["checks"]))
@@ -80,7 +80,7 @@ class BundleInspectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = self._bundle(tmp)
             inspect_proc = subprocess.run(
-                [sys.executable, "cmd/winforge.py", "bundle", "inspect", str(bundle)],
+                [sys.executable, "cmd/cage.py", "bundle", "inspect", str(bundle)],
                 cwd=Path(__file__).resolve().parents[1],
                 text=True,
                 capture_output=True,
@@ -91,7 +91,7 @@ class BundleInspectionTests(unittest.TestCase):
             self.assertEqual(summary["application"]["name"], "sample")
 
             verify_proc = subprocess.run(
-                [sys.executable, "cmd/winforge.py", "bundle", "verify", str(bundle)],
+                [sys.executable, "cmd/cage.py", "bundle", "verify", str(bundle)],
                 cwd=Path(__file__).resolve().parents[1],
                 text=True,
                 capture_output=True,
@@ -105,7 +105,7 @@ class BundleInspectionTests(unittest.TestCase):
             bundle = self._bundle(tmp)
             (bundle / "metadata" / "graph.json").unlink()
             proc = subprocess.run(
-                [sys.executable, "cmd/winforge.py", "bundle", "verify", str(bundle)],
+                [sys.executable, "cmd/cage.py", "bundle", "verify", str(bundle)],
                 cwd=Path(__file__).resolve().parents[1],
                 text=True,
                 capture_output=True,

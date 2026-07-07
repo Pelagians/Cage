@@ -35,7 +35,7 @@ class MediaStagingTests(unittest.TestCase):
 
             staged = root / "sources" / "office2010-byo" / "media"
             metadata_path = root / "sources" / "office2010-byo" / "metadata" / "media-stage.json"
-            self.assertEqual(result["schemaVersion"], "winforge.media-stage/v0")
+            self.assertEqual(result["schemaVersion"], "cage.media-stage/v0")
             self.assertTrue(result["success"])
             self.assertEqual(Path(result["stagedPath"]), staged)
             self.assertEqual(result["summary"]["fileCount"], 2)
@@ -179,7 +179,7 @@ class SourcePolicyAuditTests(unittest.TestCase):
             (media / "setup.exe").write_bytes(b"fake setup")
             suspicious.write_text("SECRET_SHOULD_NOT_APPEAR_IN_AUDIT\n", encoding="utf-8")
             manifest = Manifest.from_dict({
-                "schemaVersion": "winforge.app/v0",
+                "schemaVersion": "cage.app/v0",
                 "name": "office2010-policy-audit",
                 "version": "test",
                 "runtime": {"provider": "wine", "version": "9.0"},
@@ -197,7 +197,7 @@ class SourcePolicyAuditTests(unittest.TestCase):
             result = audit_manifest_sources(manifest, workspace=root)
 
             serialized = json.dumps(result, sort_keys=True)
-            self.assertEqual(result["schemaVersion"], "winforge.source-policy/v0")
+            self.assertEqual(result["schemaVersion"], "cage.source-policy/v0")
             self.assertFalse(result["valid"])
             self.assertEqual(result["summary"]["blocked"], 1)
             self.assertIn("Online_KMS_Activation/Activate.cmd", serialized)
@@ -211,7 +211,7 @@ class SourcePolicyAuditTests(unittest.TestCase):
             media.mkdir(parents=True)
             (media / "setup.exe").write_bytes(b"fake setup")
             manifest = Manifest.from_dict({
-                "schemaVersion": "winforge.app/v0",
+                "schemaVersion": "cage.app/v0",
                 "name": "root-policy-audit",
                 "version": "test",
                 "runtime": {"provider": "wine", "version": "9.0"},
@@ -238,7 +238,7 @@ class SourcePolicyAuditTests(unittest.TestCase):
             media.mkdir(parents=True)
             (media / "setup.exe").write_bytes(b"fake setup")
             data = {
-                "schemaVersion": "winforge.app/v0",
+                "schemaVersion": "cage.app/v0",
                 "name": "clean-policy-audit",
                 "version": "test",
                 "runtime": {"provider": "wine", "version": "9.0"},
@@ -271,7 +271,7 @@ class SourcePolicyAuditTests(unittest.TestCase):
             (media / "Online_KMS_Activation" / "Activate.cmd").write_text("do not read", encoding="utf-8")
             manifest = root / "recipe.json"
             manifest.write_text(json.dumps({
-                "schemaVersion": "winforge.app/v0",
+                "schemaVersion": "cage.app/v0",
                 "name": "office2010-policy-audit-cli",
                 "version": "test",
                 "runtime": {"provider": "wine", "version": "9.0"},
@@ -287,7 +287,7 @@ class SourcePolicyAuditTests(unittest.TestCase):
             }), encoding="utf-8")
 
             proc = subprocess.run(
-                [sys.executable, "cmd/winforge.py", "sources", "audit", str(manifest), "--workspace", str(root)],
+                [sys.executable, "cmd/cage.py", "sources", "audit", str(manifest), "--workspace", str(root)],
                 cwd=Path(__file__).resolve().parents[1],
                 text=True,
                 capture_output=True,
@@ -309,7 +309,7 @@ class SourcePolicyAuditTests(unittest.TestCase):
             proc = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "media",
                     "stage",
                     str(source),

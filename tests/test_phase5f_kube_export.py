@@ -19,7 +19,7 @@ from artifact.kube import (
 from core.manifest import Manifest
 
 APP = {
-    "schemaVersion": "winforge.app/v0",
+    "schemaVersion": "cage.app/v0",
     "name": "Kube Demo_App",
     "version": "2.1.0",
     "runtime": {"provider": "wine", "version": "latest"},
@@ -35,8 +35,8 @@ APP = {
     "provenance": {"sources": []},
 }
 
-DIGEST_IMAGE = "ghcr.io/acme/winforge-app-kube-demo@sha256:abcdef1234567890"
-TAG_IMAGE = "ghcr.io/acme/winforge-app-kube-demo:2.1.0"
+DIGEST_IMAGE = "ghcr.io/acme/cage-app-kube-demo@sha256:abcdef1234567890"
+TAG_IMAGE = "ghcr.io/acme/cage-app-kube-demo:2.1.0"
 
 
 def _bundle(tmp: str | Path, *, network: str | None = None) -> Path:
@@ -53,7 +53,7 @@ class KubeExportPlanTests(unittest.TestCase):
             plan = create_kube_export_plan(
                 bundle,
                 image=DIGEST_IMAGE,
-                namespace="winforge-apps",
+                namespace="cage-apps",
                 name="custom-demo",
                 state_size="5Gi",
                 exports_size="1Gi",
@@ -63,7 +63,7 @@ class KubeExportPlanTests(unittest.TestCase):
         self.assertEqual(plan["bundle"].split("/")[-1], "Kube-Demo_App-2.1.0")
         self.assertEqual(plan["image"]["ref"], DIGEST_IMAGE)
         self.assertTrue(plan["image"]["digestPinned"])
-        self.assertEqual(plan["namespace"], "winforge-apps")
+        self.assertEqual(plan["namespace"], "cage-apps")
         self.assertEqual(plan["name"], "custom-demo")
         self.assertEqual(plan["application"], {"name": "Kube Demo_App", "version": "2.1.0"})
         kinds = [(resource["kind"], resource["metadata"]["name"]) for resource in plan["resources"]]
@@ -85,12 +85,12 @@ class KubeExportPlanTests(unittest.TestCase):
         yaml_text = plan["manifestYaml"]
         self.assertIn("kind: Deployment", yaml_text)
         self.assertIn(f"image: {DIGEST_IMAGE}", yaml_text)
-        self.assertIn("mountPath: /var/lib/winforge/state", yaml_text)
+        self.assertIn("mountPath: /var/lib/cage/state", yaml_text)
         self.assertIn("mountPath: /exports", yaml_text)
-        self.assertIn("io.winforge.app.name: kube-demo-app", yaml_text)
+        self.assertIn("io.cage.app.name: kube-demo-app", yaml_text)
         self.assertIn("annotations:", yaml_text)
-        self.assertIn("io.winforge.app.raw-name: Kube Demo_App", yaml_text)
-        self.assertIn("io.winforge.schema: winforge.artifact-image/v0", yaml_text)
+        self.assertIn("io.cage.app.raw-name: Kube Demo_App", yaml_text)
+        self.assertIn("io.cage.schema: cage.artifact-image/v0", yaml_text)
         self.assertIn("storage: 5Gi", yaml_text)
         self.assertIn("storage: 1Gi", yaml_text)
         self.assertIn("hostNetwork: false", yaml_text)
@@ -181,9 +181,9 @@ class KubeExportCLITests(unittest.TestCase):
             build = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "build",
-                    "examples/notepad-plus-plus.winforge.yaml",
+                    "examples/notepad-plus-plus.cage.yaml",
                     "--dry-run",
                     "--output",
                     str(output_dir),
@@ -197,16 +197,16 @@ class KubeExportCLITests(unittest.TestCase):
             export = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "export",
                     "kube",
                     "notepad-plus-plus",
                     "--artifact-index",
-                    str(output_dir / ".winforge" / "artifacts.json"),
+                    str(output_dir / ".cage" / "artifacts.json"),
                     "--image",
                     "ghcr.io/acme/notepad@sha256:abc123",
                     "--namespace",
-                    "winforge-apps",
+                    "cage-apps",
                     "--dry-run",
                 ],
                 cwd=root,
@@ -229,7 +229,7 @@ class KubeExportCLITests(unittest.TestCase):
             bad = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "export",
                     "kube",
                     str(bundle),
@@ -249,7 +249,7 @@ class KubeExportCLITests(unittest.TestCase):
             good = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "export",
                     "kube",
                     str(bundle),

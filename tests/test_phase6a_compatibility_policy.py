@@ -16,7 +16,7 @@ from core.manifest import Manifest, ManifestError
 
 
 BASE_MANIFEST = {
-    "schemaVersion": "winforge.app/v0",
+    "schemaVersion": "cage.app/v0",
     "name": "hard-app",
     "version": "2.0.0",
     "runtime": {"provider": "staging", "version": "latest"},
@@ -28,7 +28,7 @@ BASE_MANIFEST = {
         "workingDirectory": "C:/Program Files/HardApp",
     },
     "state": {"persistence": "persistent"},
-    "exports": [{"name": "reports", "path": "C:/users/winforge/Documents"}],
+    "exports": [{"name": "reports", "path": "C:/users/cage/Documents"}],
     "provenance": {"sources": []},
 }
 
@@ -60,7 +60,7 @@ class CompatibilityPolicyManifestTests(unittest.TestCase):
 
         manifest = Manifest.from_dict(data)
 
-        self.assertEqual(manifest.compatibility["schemaVersion"], "winforge.compatibility-policy/v0")
+        self.assertEqual(manifest.compatibility["schemaVersion"], "cage.compatibility-policy/v0")
         self.assertEqual(manifest.compatibility["arch"], "win64")
         self.assertEqual(manifest.compatibility["windowsVersion"], "win10")
         self.assertEqual(manifest.compatibility["graphics"], {"backend": "dxvk", "fallback": "wined3d"})
@@ -173,7 +173,7 @@ class CompatibilityPolicyApplicationTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             bundle = create_bundle(manifest, Path(tmp), dry_run=True)
-            manifest_payload = json.loads((bundle / "manifest.winforge.json").read_text(encoding="utf-8"))
+            manifest_payload = json.loads((bundle / "manifest.cage.json").read_text(encoding="utf-8"))
             graph = json.loads((bundle / "metadata/graph.json").read_text(encoding="utf-8"))
             provenance = json.loads((bundle / "metadata/provenance.json").read_text(encoding="utf-8"))
 
@@ -188,10 +188,10 @@ class CompatibilityPolicyApplicationTests(unittest.TestCase):
 
         script = generate_build_script(manifest)
 
-        self.assertIn("[winforge] Compatibility policy", script)
+        self.assertIn("[cage] Compatibility policy", script)
         self.assertIn("export WINEARCH='win64'", script)
-        self.assertIn("export WINFORGE_GRAPHICS_BACKEND='dxvk'", script)
-        self.assertIn("export WINFORGE_GRAPHICS_FALLBACK='wined3d'", script)
+        self.assertIn("export CAGE_GRAPHICS_BACKEND='dxvk'", script)
+        self.assertIn("export CAGE_GRAPHICS_FALLBACK='wined3d'", script)
         self.assertIn("export DXVK_LOG_LEVEL='none'", script)
         self.assertIn("export WINEDEBUG='-all'", script)
         self.assertIn("export WINEDLLOVERRIDES='d3d11=n,b;d3dcompiler_47=n;mscoree=;mshtml='", script)
@@ -234,13 +234,13 @@ class CompatibilityPolicyApplicationTests(unittest.TestCase):
         env = plan["container"]["environment"]
         script = plan["container"]["script"]
         self.assertEqual(env["WINEARCH"], "win64")
-        self.assertEqual(env["WINFORGE_GRAPHICS_BACKEND"], "dxvk")
-        self.assertEqual(env["WINFORGE_GRAPHICS_FALLBACK"], "wined3d")
+        self.assertEqual(env["CAGE_GRAPHICS_BACKEND"], "dxvk")
+        self.assertEqual(env["CAGE_GRAPHICS_FALLBACK"], "wined3d")
         self.assertEqual(env["DXVK_LOG_LEVEL"], "none")
         self.assertEqual(env["WINEDEBUG"], "-all")
         self.assertEqual(env["WINEDLLOVERRIDES"], "d3d11=n,b;d3dcompiler_47=n;mscoree=;mshtml=")
         self.assertIn("export WINEDLLOVERRIDES=", script)
-        self.assertIn("export WINFORGE_GRAPHICS_BACKEND=dxvk", script)
+        self.assertIn("export CAGE_GRAPHICS_BACKEND=dxvk", script)
 
     def test_oci_app_launcher_exports_compatibility_policy_from_embedded_graph(self):
         data = json.loads(json.dumps(BASE_MANIFEST))
@@ -251,11 +251,11 @@ class CompatibilityPolicyApplicationTests(unittest.TestCase):
             bundle = create_bundle(manifest, Path(tmp) / "dist", dry_run=True)
             plan = create_oci_export_plan(bundle, tag="local/hard-app:2.0.0")
             context = prepare_oci_build_context(bundle, plan, Path(tmp) / "context")
-            launcher = (context / "winforge-app-launch").read_text(encoding="utf-8")
+            launcher = (context / "cage-app-launch").read_text(encoding="utf-8")
 
         self.assertIn("requestedPolicy", launcher)
         self.assertIn("WINEDLLOVERRIDES", launcher)
-        self.assertIn("WINFORGE_GRAPHICS_BACKEND", launcher)
+        self.assertIn("CAGE_GRAPHICS_BACKEND", launcher)
         self.assertIn("native,builtin", launcher)
         self.assertIn("n,b", launcher)
 

@@ -6,16 +6,16 @@ Status: accepted
 
 ## Decision
 
-WinForge maintains a local artifact index at `dist/.winforge/artifacts.json` by default. `winforge build` registers each successfully materialized bundle in that index, keyed by application name and version.
+Cage maintains a local artifact index at `dist/.cage/artifacts.json` by default. `cage build` registers each successfully materialized bundle in that index, keyed by application name and version.
 
-The index schema is `winforge.artifact-index/v0`. It records the bundle path, graph path, application identity, resolved runner runtime, launch contract, provenance summary, verification status, and a `latest` pointer per application.
+The index schema is `cage.artifact-index/v0`. It records the bundle path, graph path, application identity, resolved runner runtime, launch contract, provenance summary, verification status, and a `latest` pointer per application.
 
 The CLI accepts either direct bundle paths or app references for downstream commands:
 
 ```text
-winforge run notepad-plus-plus
-winforge run notepad-plus-plus@8.6.0
-winforge export oci notepad-plus-plus --tag local/notepad:8.6.0
+cage run notepad-plus-plus
+cage run notepad-plus-plus@8.6.0
+cage export oci notepad-plus-plus --tag local/notepad:8.6.0
 ```
 
 Direct bundle paths remain supported for debugging and automation. App references resolve through the local artifact index. `name` resolves to the latest registered version for that app; `name@version` resolves to the pinned version.
@@ -28,14 +28,14 @@ The index is local and filesystem-backed for v0. It is not a registry, trust dat
 
 ## Contract
 
-- Default index path: `dist/.winforge/artifacts.json`.
-- Schema: `winforge.artifact-index/v0`.
-- Build registration requires a valid bundle according to `winforge bundle verify`.
+- Default index path: `dist/.cage/artifacts.json`.
+- Schema: `cage.artifact-index/v0`.
+- Build registration requires a valid bundle according to `cage bundle verify`.
 - `name` resolves through the index `latest` pointer.
 - `name@version` resolves to a specific registered version.
-- `winforge run` and `winforge export oci` accept either a bundle path or an indexed app reference.
-- `winforge artifacts list` prints the local index.
-- `winforge artifacts resolve <ref>` prints the resolved entry.
+- `cage run` and `cage export oci` accept either a bundle path or an indexed app reference.
+- `cage artifacts list` prints the local index.
+- `cage artifacts resolve <ref>` prints the resolved entry.
 
 ## Rejected alternatives
 
@@ -46,4 +46,4 @@ The index is local and filesystem-backed for v0. It is not a registry, trust dat
 
 ## Review triggers
 
-Review this decision when WinForge records pushed OCI digests, adds an artifact registry, verifies label/metadata consistency after pull, or supports multiple output/index roots in a single workspace.
+Review this decision when Cage records pushed OCI digests, adds an artifact registry, verifies label/metadata consistency after pull, or supports multiple output/index roots in a single workspace.

@@ -15,7 +15,7 @@ from runtime.launcher import RunError, build_run_plan
 
 
 RUNNER_MANIFEST = {
-    "schemaVersion": "winforge.app/v0",
+    "schemaVersion": "cage.app/v0",
     "name": "runner-mounted-app",
     "version": "1.0.0",
     "runtime": {"provider": "wine", "version": "9.0", "runner": "pol-4.3"},
@@ -28,9 +28,9 @@ class RunnerExecutionBuildTests(unittest.TestCase):
     def test_build_script_uses_cached_runner_when_runner_bin_env_is_present(self):
         script = generate_build_script(Manifest.from_dict(RUNNER_MANIFEST))
 
-        self.assertIn("WINFORGE_RUNNER_BIN", script)
-        self.assertIn('export PATH="$WINFORGE_RUNNER_BIN:$PATH"', script)
-        self.assertIn('export WINE="$WINFORGE_RUNNER_BIN/wine"', script)
+        self.assertIn("CAGE_RUNNER_BIN", script)
+        self.assertIn('export PATH="$CAGE_RUNNER_BIN:$PATH"', script)
+        self.assertIn('export WINE="$CAGE_RUNNER_BIN/wine"', script)
         self.assertIn('Using cached Wine runner', script)
 
     def test_execute_inside_container_mounts_cached_runner_for_real_build(self):
@@ -48,7 +48,7 @@ class RunnerExecutionBuildTests(unittest.TestCase):
                 stderr = ""
 
             ensure_result = {
-                "schemaVersion": "winforge.runner-cache/v0",
+                "schemaVersion": "cage.runner-cache/v0",
                 "status": "present",
                 "cacheDir": str(tmp / "cache"),
                 "runnerDir": str(runner_dir),
@@ -72,12 +72,12 @@ class RunnerExecutionBuildTests(unittest.TestCase):
         self.assertTrue(result.success)
         ensure_runner.assert_called_once_with("pol-4.3", cache_dir=tmp / "cache")
         argv = run.call_args.args[0]
-        self.assertIn(f"{runner_dir.resolve()}:/opt/winforge-runner:ro,z", argv)
-        self.assertIn("WINFORGE_RUNNER_BIN=/opt/winforge-runner/bin", argv)
-        self.assertIn("WINFORGE_RUNNER_ID=pol-4.3", argv)
-        self.assertIn('export PATH="$WINFORGE_RUNNER_BIN:$PATH"', script)
+        self.assertIn(f"{runner_dir.resolve()}:/opt/cage-runner:ro,z", argv)
+        self.assertIn("CAGE_RUNNER_BIN=/opt/cage-runner/bin", argv)
+        self.assertIn("CAGE_RUNNER_ID=pol-4.3", argv)
+        self.assertIn('export PATH="$CAGE_RUNNER_BIN:$PATH"', script)
         self.assertEqual(result.runner_cache["status"], "present")
-        self.assertEqual(result.runner_cache["containerDir"], "/opt/winforge-runner")
+        self.assertEqual(result.runner_cache["containerDir"], "/opt/cage-runner")
 
 
 class RunnerExecutionRunPlanTests(unittest.TestCase):
@@ -98,11 +98,11 @@ class RunnerExecutionRunPlanTests(unittest.TestCase):
 
         self.assertEqual(plan["runnerCache"]["status"], "present")
         self.assertEqual(plan["runnerCache"]["runnerId"], "pol-4.3")
-        self.assertEqual(plan["runnerCache"]["containerDir"], "/opt/winforge-runner")
-        self.assertIn(f"{runner_dir.resolve()}:/opt/winforge-runner:ro,z", plan["container"]["argv"])
-        self.assertEqual(plan["container"]["environment"]["WINFORGE_RUNNER_BIN"], "/opt/winforge-runner/bin")
-        self.assertEqual(plan["container"]["environment"]["WINFORGE_RUNNER_ID"], "pol-4.3")
-        self.assertIn('export PATH="$WINFORGE_RUNNER_BIN:$PATH"', plan["container"]["script"])
+        self.assertEqual(plan["runnerCache"]["containerDir"], "/opt/cage-runner")
+        self.assertIn(f"{runner_dir.resolve()}:/opt/cage-runner:ro,z", plan["container"]["argv"])
+        self.assertEqual(plan["container"]["environment"]["CAGE_RUNNER_BIN"], "/opt/cage-runner/bin")
+        self.assertEqual(plan["container"]["environment"]["CAGE_RUNNER_ID"], "pol-4.3")
+        self.assertIn('export PATH="$CAGE_RUNNER_BIN:$PATH"', plan["container"]["script"])
 
     def test_podman_run_plan_mounts_include_selinux_shared_relabel_option(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -119,9 +119,9 @@ class RunnerExecutionRunPlanTests(unittest.TestCase):
                 runner_cache_dir=tmp / "cache",
             )
 
-        self.assertEqual(plan["container"]["bundleMount"], f"{bundle.resolve()}:/opt/winforge/bundle:ro,z")
-        self.assertIn(f"{bundle.resolve()}:/opt/winforge/bundle:ro,z", plan["container"]["argv"])
-        self.assertIn(f"{runner_dir.resolve()}:/opt/winforge-runner:ro,z", plan["container"]["argv"])
+        self.assertEqual(plan["container"]["bundleMount"], f"{bundle.resolve()}:/opt/cage/bundle:ro,z")
+        self.assertIn(f"{bundle.resolve()}:/opt/cage/bundle:ro,z", plan["container"]["argv"])
+        self.assertIn(f"{runner_dir.resolve()}:/opt/cage-runner:ro,z", plan["container"]["argv"])
 
     def test_docker_run_plan_mounts_do_not_include_podman_selinux_option(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -138,9 +138,9 @@ class RunnerExecutionRunPlanTests(unittest.TestCase):
                 runner_cache_dir=tmp / "cache",
             )
 
-        self.assertEqual(plan["container"]["bundleMount"], f"{bundle.resolve()}:/opt/winforge/bundle:ro")
-        self.assertIn(f"{runner_dir.resolve()}:/opt/winforge-runner:ro", plan["container"]["argv"])
-        self.assertNotIn(f"{runner_dir.resolve()}:/opt/winforge-runner:ro,z", plan["container"]["argv"])
+        self.assertEqual(plan["container"]["bundleMount"], f"{bundle.resolve()}:/opt/cage/bundle:ro")
+        self.assertIn(f"{runner_dir.resolve()}:/opt/cage-runner:ro", plan["container"]["argv"])
+        self.assertNotIn(f"{runner_dir.resolve()}:/opt/cage-runner:ro,z", plan["container"]["argv"])
 
 
     def test_catalog_runner_label_is_not_treated_as_downloadable_cache(self):
@@ -158,7 +158,7 @@ class RunnerExecutionRunPlanTests(unittest.TestCase):
             )
 
         self.assertIsNone(plan["runnerCache"])
-        self.assertNotIn("WINFORGE_RUNNER_BIN", plan["container"]["environment"])
+        self.assertNotIn("CAGE_RUNNER_BIN", plan["container"]["environment"])
 
     def test_run_plan_reports_missing_cached_runner_and_can_require_it(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -181,7 +181,7 @@ class RunnerExecutionRunPlanTests(unittest.TestCase):
                 )
 
         self.assertEqual(plan["runnerCache"]["status"], "missing")
-        self.assertNotIn("WINFORGE_RUNNER_BIN", plan["container"]["environment"])
+        self.assertNotIn("CAGE_RUNNER_BIN", plan["container"]["environment"])
 
 
 if __name__ == "__main__":

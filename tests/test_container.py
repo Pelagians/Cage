@@ -1,4 +1,4 @@
-"""Tests for the WinForge Container Manager and runtime catalog."""
+"""Tests for the Cage Container Manager and runtime catalog."""
 from __future__ import annotations
 import unittest
 from container.manager import (
@@ -22,25 +22,25 @@ class ContainerManagerTests(unittest.TestCase):
 
     def test_get_image_ref_known_provider_returns_published_ref(self):
         self.assertEqual(get_image_ref("wine", "latest"),
-                         "ghcr.io/myos-dev/winforge-wine:11.0")
+                         "ghcr.io/myos-dev/cage-wine:11.0")
         self.assertEqual(get_image_ref("wine", "10.0"),
-                         "ghcr.io/myos-dev/winforge-wine:10.0")
+                         "ghcr.io/myos-dev/cage-wine:10.0")
         self.assertEqual(get_image_ref("staging", "latest"),
-                         "ghcr.io/myos-dev/winforge-wine-staging:11.10")
+                         "ghcr.io/myos-dev/cage-wine-staging:11.10")
         self.assertEqual(get_image_ref("umu-proton-ge", "latest"),
-                         "ghcr.io/myos-dev/winforge-umu-proton-ge:GE-Proton11-1")
+                         "ghcr.io/myos-dev/cage-umu-proton-ge:GE-Proton11-1")
 
     def test_get_local_image_ref_known_provider(self):
         self.assertEqual(get_local_image_ref("wine", "latest"),
-                         "winforge/wine:11.0")
+                         "cage/wine:11.0")
         self.assertEqual(get_local_image_ref("staging", "previous"),
-                         "winforge/wine-staging:11.9")
+                         "cage/wine-staging:11.9")
 
     def test_get_image_ref_unknown_falls_back_to_published_name(self):
         self.assertEqual(get_image_ref("unknown", "1.0"),
-                         "ghcr.io/myos-dev/winforge-unknown:1.0")
+                         "ghcr.io/myos-dev/cage-unknown:1.0")
         self.assertEqual(get_local_image_ref("unknown", "1.0"),
-                         "winforge/unknown:1.0")
+                         "cage/unknown:1.0")
 
     def test_build_container_unknown_provider(self):
         result = build_container("nonexistent", "1.0")
@@ -79,7 +79,7 @@ class RuntimeCatalogTests(unittest.TestCase):
         self.assertEqual(entry.aliases, ("latest", "stable"))
         self.assertEqual(entry.package_version, "11.0.0.0~bookworm-1")
         self.assertEqual(entry.published_ref,
-                         "ghcr.io/myos-dev/winforge-wine:11.0")
+                         "ghcr.io/myos-dev/cage-wine:11.0")
 
 
     def test_latest_and_channel_aliases_resolve_to_pinned_versions(self):
@@ -161,9 +161,9 @@ class RuntimeProviderOCITests(unittest.TestCase):
         self.assertEqual(binding.runner, "winehq-stable")
         self.assertEqual(binding.package_version, "11.0.0.0~bookworm-1")
         self.assertEqual(binding.oci_image,
-                         "ghcr.io/myos-dev/winforge-wine:11.0")
+                         "ghcr.io/myos-dev/cage-wine:11.0")
         self.assertEqual(binding.local_oci_image,
-                         "winforge/wine:11.0")
+                         "cage/wine:11.0")
         self.assertTrue(binding.runtime_usable)
 
     def test_runtime_binding_oci_image_staging(self):
@@ -175,9 +175,9 @@ class RuntimeProviderOCITests(unittest.TestCase):
         self.assertEqual(binding.version, "11.9")
         self.assertEqual(binding.requested_version, "previous")
         self.assertEqual(binding.oci_image,
-                         "ghcr.io/myos-dev/winforge-wine-staging:11.9")
+                         "ghcr.io/myos-dev/cage-wine-staging:11.9")
         self.assertEqual(binding.local_oci_image,
-                         "winforge/wine-staging:11.9")
+                         "cage/wine-staging:11.9")
 
     def test_runtime_binding_oci_image_umu_proton_ge(self):
         from core.manifest import RuntimeSpec
@@ -191,9 +191,9 @@ class RuntimeProviderOCITests(unittest.TestCase):
         self.assertEqual(binding.runner, "ge-proton")
         self.assertEqual(binding.launcher_version, "1.4.0")
         self.assertEqual(binding.oci_image,
-                         "ghcr.io/myos-dev/winforge-umu-proton-ge:GE-Proton11-1")
+                         "ghcr.io/myos-dev/cage-umu-proton-ge:GE-Proton11-1")
         self.assertEqual(binding.local_oci_image,
-                         "winforge/umu-proton-ge:GE-Proton11-1")
+                         "cage/umu-proton-ge:GE-Proton11-1")
         self.assertEqual(binding.launcher, "umu")
 
     def test_oci_image_in_to_dict(self):
@@ -206,7 +206,7 @@ class RuntimeProviderOCITests(unittest.TestCase):
         self.assertIn("ociImage", d)
         self.assertIn("localOciImage", d)
         self.assertEqual(d["ociImage"],
-                         "ghcr.io/myos-dev/winforge-umu-proton-ge:GE-Proton11-1")
+                         "ghcr.io/myos-dev/cage-umu-proton-ge:GE-Proton11-1")
         self.assertEqual(d["requestedVersion"], "latest")
         self.assertEqual(d["resolvedVersion"], "GE-Proton11-1")
         self.assertEqual(d["runner"], "ge-proton")

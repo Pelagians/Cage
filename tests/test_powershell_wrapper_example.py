@@ -13,7 +13,7 @@ from core.manifest import load_manifest
 class PowershellWrapperExampleTests(unittest.TestCase):
     def test_powershell_wrapper_example_loads_builds_and_plans_vnc_launch(self):
         repo = Path(__file__).resolve().parents[1]
-        recipe = repo / "examples" / "powershell-wrapper-pwsh-vnc.winforge.yaml"
+        recipe = repo / "examples" / "powershell-wrapper-pwsh-vnc.cage.yaml"
         manifest = load_manifest(recipe)
 
         self.assertEqual(manifest.name, "powershell-wrapper-pwsh-vnc")
@@ -31,7 +31,7 @@ class PowershellWrapperExampleTests(unittest.TestCase):
             build_proc = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "build",
                     str(recipe),
                     "--dry-run",
@@ -47,7 +47,7 @@ class PowershellWrapperExampleTests(unittest.TestCase):
             bundle = Path(build_payload["bundle"])
 
             verify_proc = subprocess.run(
-                [sys.executable, "cmd/winforge.py", "bundle", "verify", str(bundle)],
+                [sys.executable, "cmd/cage.py", "bundle", "verify", str(bundle)],
                 cwd=repo,
                 text=True,
                 capture_output=True,
@@ -59,7 +59,7 @@ class PowershellWrapperExampleTests(unittest.TestCase):
             run_proc = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "run",
                     str(bundle),
                     "--dry-run",
@@ -81,7 +81,7 @@ class PowershellWrapperExampleTests(unittest.TestCase):
             )
             run_plan = json.loads(run_proc.stdout)
 
-        self.assertEqual(run_plan["schemaVersion"], "winforge.run-plan/v0")
+        self.assertEqual(run_plan["schemaVersion"], "cage.run-plan/v0")
         self.assertEqual(run_plan["graphics"]["mode"], "vnc")
         self.assertEqual(run_plan["runtime"]["network"], "bridge")
         self.assertEqual(run_plan["selectedEntrypoint"]["id"], "default")

@@ -1,4 +1,4 @@
-schemaVersion: winforge.app/v0
+schemaVersion: cage.app/v0
 name: chocolatey-for-wine-sandbox
 version: "0.1.0"
 

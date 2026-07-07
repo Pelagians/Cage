@@ -1,4 +1,4 @@
-"""WinForge Container Manager.
+"""Cage Container Manager.
 
 Uses runtime/catalog.json as the source of truth for available runtime
 container builds and image references.
@@ -160,10 +160,10 @@ def get_image_ref(provider: str, version: str,
     entry = resolve_catalog_version(provider, version)
     if entry:
         return entry.published_ref if published else entry.local_ref
-    image_name = provider if provider.startswith("winforge-") else f"winforge-{provider}"
+    image_name = provider if provider.startswith("cage-") else f"cage-{provider}"
     if published:
         return f"ghcr.io/myos-dev/{image_name}:{version}"
-    return f"winforge/{provider}:{version}"
+    return f"cage/{provider}:{version}"
 
 
 def get_local_image_ref(provider: str, version: str) -> str:

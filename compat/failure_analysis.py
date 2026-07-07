@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-FAILURE_ANALYSIS_SCHEMA_VERSION = "winforge.failure-analysis/v0"
+FAILURE_ANALYSIS_SCHEMA_VERSION = "cage.failure-analysis/v0"
 
 _LOG_SUFFIXES = {".log", ".txt"}
 _RETURN_VALUE_3_RE = re.compile(r"Return value 3", re.IGNORECASE)
@@ -317,7 +317,7 @@ def _redact_text(text: str) -> str:
 def _render_summary(analysis: dict[str, Any]) -> str:
     failed = analysis.get("firstFailedPackage") or {}
     lines = [
-        "# WinForge failure summary",
+        "# Cage failure summary",
         "",
         f"Classification: `{analysis.get('classification')}`",
         f"Failure detected: `{analysis.get('failureDetected')}`",

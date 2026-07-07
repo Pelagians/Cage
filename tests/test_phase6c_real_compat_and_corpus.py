@@ -28,7 +28,7 @@ def _write_fixture_workspace(root: Path) -> Path:
     installer.write_bytes(b"fake windows installer\n")
     config.write_text("[demo]\nmode=test\n", encoding="utf-8")
     payload = {
-        "schemaVersion": "winforge.app/v0",
+        "schemaVersion": "cage.app/v0",
         "name": "real-compat-demo",
         "version": "1.0.0",
         "runtime": {"provider": "wine", "version": "latest"},
@@ -69,7 +69,7 @@ def _write_fixture_workspace(root: Path) -> Path:
         "exports": [],
         "provenance": {"sources": []},
     }
-    manifest_path = root / "real-compat-demo.winforge.json"
+    manifest_path = root / "real-compat-demo.cage.json"
     manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return manifest_path
 
@@ -165,7 +165,7 @@ class RealCompatibilityEvidenceTests(unittest.TestCase):
             proc = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "compat",
                     "test",
                     str(manifest_path),
@@ -199,7 +199,7 @@ class RealCompatibilityEvidenceTests(unittest.TestCase):
             proc = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "build",
                     str(manifest_path),
                     "--dry-run",
@@ -227,7 +227,7 @@ class RealCompatibilityEvidenceTests(unittest.TestCase):
             proc = subprocess.run(
                 [
                     sys.executable,
-                    "cmd/winforge.py",
+                    "cmd/cage.py",
                     "compat",
                     "test",
                     str(manifest_path),
@@ -273,7 +273,7 @@ class CompatibilityCorpusTests(unittest.TestCase):
     def test_cli_compat_corpus_outputs_default_corpus(self):
         repo = Path(__file__).resolve().parents[1]
         proc = subprocess.run(
-            [sys.executable, "cmd/winforge.py", "compat", "corpus"],
+            [sys.executable, "cmd/cage.py", "compat", "corpus"],
             cwd=repo,
             text=True,
             capture_output=True,

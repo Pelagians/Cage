@@ -2,11 +2,11 @@
 
 Status: accepted / implemented
 Date: 2026-07-02
-Owner: WinForge technical direction
+Owner: Cage technical direction
 
 ## Decision
 
-WinForge will model reusable build-time package-manager/tooling chains as top-level BlueBuild-style `modules[]` entries rather than primarily as raw `install[]` steps or profiles.
+Cage will model reusable build-time package-manager/tooling chains as top-level BlueBuild-style `modules[]` entries rather than primarily as raw `install[]` steps or profiles.
 
 The first implemented module is Chocolatey:
 
@@ -38,7 +38,7 @@ Chocolatey is not a single installer step. It needs a prerequisite chain inside 
 3. Chocolatey bootstrap through PowerShell.
 4. Package install commands.
 
-Putting that chain behind `modules[].type: chocolatey` keeps recipes declarative and lets WinForge own the setup/install logic. Raw `install.kind: choco` remains only the lowered internal build-step representation.
+Putting that chain behind `modules[].type: chocolatey` keeps recipes declarative and lets Cage own the setup/install logic. Raw `install.kind: choco` remains only the lowered internal build-step representation.
 
 ## Consequences
 
@@ -52,8 +52,8 @@ Putting that chain behind `modules[].type: chocolatey` keeps recipes declarative
 
 - **Profile-based Chocolatey**: profiles are static compatibility/dependency defaults and do not model parameterized package installation well.
 - **User-authored `install.kind: choco` as the primary API**: this repeats setup concerns and is less like the myOS/BlueBuild module model.
-- **Containerfile-only Chocolatey**: this hides Wine-prefix setup inside image layers and does not fit WinForge's application artifact build model.
+- **Containerfile-only Chocolatey**: this hides Wine-prefix setup inside image layers and does not fit Cage's application artifact build model.
 
 ## Review triggers
 
-Revisit this decision if WinForge adds external module registries, module version pinning, offline package sources, or a pre-baked Chocolatey runtime/build image.
+Revisit this decision if Cage adds external module registries, module version pinning, offline package sources, or a pre-baked Chocolatey runtime/build image.

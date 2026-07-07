@@ -1,4 +1,4 @@
-"""Media staging and source-policy audit helpers for WinForge."""
+"""Media staging and source-policy audit helpers for Cage."""
 from __future__ import annotations
 
 import hashlib
@@ -16,8 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-MEDIA_STAGE_SCHEMA_VERSION = "winforge.media-stage/v0"
-SOURCE_POLICY_SCHEMA_VERSION = "winforge.source-policy/v0"
+MEDIA_STAGE_SCHEMA_VERSION = "cage.media-stage/v0"
+SOURCE_POLICY_SCHEMA_VERSION = "cage.source-policy/v0"
 
 _SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
@@ -296,7 +296,7 @@ def _extract_tar(source: Path, destination: Path) -> None:
 
 
 def _extract_iso(source: Path, destination: Path) -> None:
-    with tempfile.TemporaryDirectory(prefix="winforge-iso-extract-") as tmpdir:
+    with tempfile.TemporaryDirectory(prefix="cage-iso-extract-") as tmpdir:
         quarantine = Path(tmpdir)
         bsdtar = shutil.which("bsdtar")
         try:

@@ -1,13 +1,13 @@
 # syntax=docker/dockerfile:1
-# WinForge Wine Staging OCI Base
+# Cage Wine Staging OCI Base
 #
-# Produces the winforge/wine-staging:<version> image — Wine Staging
+# Produces the cage/wine-staging:<version> image — Wine Staging
 # variant with the staging patchset applied on top of the stable release.
 #
 # Build:
 #   docker build \
 #     --build-arg WINE_PACKAGE_VERSION=11.10~bookworm-1 \
-#     -t winforge/wine-staging:11.10 \
+#     -t cage/wine-staging:11.10 \
 #     -f container/providers/wine-staging/Dockerfile .
 
 ARG WINE_PACKAGE_VERSION=11.10~bookworm-1
@@ -51,11 +51,11 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 FROM wine-install
-ENV WINFORGE_ROOT=/opt/winforge WINEPREFIX=/opt/winforge/prefix WINEARCH=win64 \
+ENV CAGE_ROOT=/opt/cage WINEPREFIX=/opt/cage/prefix WINEARCH=win64 \
     WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" DISPLAY=:99
 COPY container/common/xvfb-entrypoint.sh /usr/local/bin/xvfb-entrypoint.sh
-COPY container/common/wine-env.sh /opt/winforge/common/wine-env.sh
+COPY container/common/wine-env.sh /opt/cage/common/wine-env.sh
 RUN chmod +x /usr/local/bin/xvfb-entrypoint.sh && fc-cache -fv 2>/dev/null || true
-WORKDIR /opt/winforge
+WORKDIR /opt/cage
 ENTRYPOINT ["/usr/local/bin/xvfb-entrypoint.sh"]
 CMD ["/bin/bash"]

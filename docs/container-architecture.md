@@ -1,23 +1,23 @@
-# WinForge Container Architecture
+# Cage Container Architecture
 
 ## Overview
 
-WinForge runtime provider containers are the **OCI execution substrate** for Wine/Proton-family prefix construction. Each provider type maps to a Dockerfile that produces an OCI image containing:
+Cage runtime provider containers are the **OCI execution substrate** for Wine/Proton-family prefix construction. Each provider type maps to a Dockerfile that produces an OCI image containing:
 
 - The Wine/Proton-family runtime binaries
 - Xvfb for headless display emulation (required by many Windows installers)
-- x11vnc, websockify, and noVNC assets for `winforge run --graphics vnc`
+- x11vnc, websockify, and noVNC assets for `cage run --graphics vnc`
 - Helper tools (winetricks, cabextract, 7zip, etc.)
-- The WinForge entrypoint chain
+- The Cage entrypoint chain
 
-These images are the **base layer** on which WinForge builds prefixes, installs dependencies, and seals the final execution bundle.
+These images are the **base layer** on which Cage builds prefixes, installs dependencies, and seals the final execution bundle.
 
 ## Layered Model
 
 ```
 ┌──────────────────────────────────────────────┐
 │              Application Layer                │  ← OCI layer added by
-│  installed app + configured prefix            │    `winforge build`
+│  installed app + configured prefix            │    `cage build`
 ├──────────────────────────────────────────────┤
 │              Dependency Layer                 │  ← OCI layer added by
 │  winetricks verbs, components, registry       │    builder pipeline
@@ -25,7 +25,7 @@ These images are the **base layer** on which WinForge builds prefixes, installs 
 │              Prefix Foundation                │  ← OCI layer added by
 │  wineboot init, drive_c, registry hive        │    builder pipeline
 ├──────────────────────────────────────────────┤
-│          WinForge Runtime Base                │  ← This repo's container
+│          Cage Runtime Base                │  ← This repo's container
 │ Wine/UMU+GE-Proton + Xvfb/VNC + tools/entrypoints  │    (Dockerfiles)
 ├──────────────────────────────────────────────┤
 │          Base OS Layer                        │  ← Debian Bookworm Slim
@@ -36,7 +36,7 @@ These images are the **base layer** on which WinForge builds prefixes, installs 
 ## Runtime Catalog and Provider Images
 
 `runtime/catalog.json` is the authoritative runtime catalog. It declares
-which provider/version pairs WinForge supports, which Dockerfile/build arg
+which provider/version pairs Cage supports, which Dockerfile/build arg
 builds each base image, which local tag is used for development, and which
 published GHCR image Forge should pull during normal builds.
 
@@ -46,9 +46,9 @@ where `ciBuild` is true.
 
 | Provider | Local Image | Published Image | Source | Build Arg |
 |---|---|---|---|---|
-| Wine Stable | `winforge/wine:<version>` | `ghcr.io/myos-dev/winforge-wine:<version>` | Pinned WineHQ apt (`.deb`) | `WINE_PACKAGE_VERSION` |
-| Wine Staging | `winforge/wine-staging:<version>` | `ghcr.io/myos-dev/winforge-wine-staging:<version>` | Pinned WineHQ apt (`.deb`) | `WINE_PACKAGE_VERSION` |
-| UMU + GE-Proton | `winforge/umu-proton-ge:<tag>` | `ghcr.io/myos-dev/winforge-umu-proton-ge:<tag>` | GE-Proton GitHub release + UMU launcher | `GE_PROTON_TAG` |
+| Wine Stable | `cage/wine:<version>` | `ghcr.io/myos-dev/cage-wine:<version>` | Pinned WineHQ apt (`.deb`) | `WINE_PACKAGE_VERSION` |
+| Wine Staging | `cage/wine-staging:<version>` | `ghcr.io/myos-dev/cage-wine-staging:<version>` | Pinned WineHQ apt (`.deb`) | `WINE_PACKAGE_VERSION` |
+| UMU + GE-Proton | `cage/umu-proton-ge:<tag>` | `ghcr.io/myos-dev/cage-umu-proton-ge:<tag>` | GE-Proton GitHub release + UMU launcher | `GE_PROTON_TAG` |
 
 
 ### Runner aliases and pinning
@@ -81,7 +81,7 @@ Dockerfile structure:
 
 ### UMU + GE-Proton
 
-`winforge/umu-proton-ge` is the active Proton-family runtime today. It installs
+`cage/umu-proton-ge` is the active Proton-family runtime today. It installs
 UMU as the launcher (`umu-run`) and downloads the selected GE-Proton runner
 release from GitHub into `/opt/proton-ge`. Valve Proton is intentionally not an
 active v0 provider because upstream GitHub releases are source-only; add it
@@ -108,92 +108,92 @@ Debian/Ubuntu images do not invoke it under `dash` and fail before Wine starts.
 2. Wait for X server readiness (up to 3 seconds)
 3. Set `WINEPREFIX`, `WINEDLLOVERRIDES`, `WINEARCH`
 4. Create prefix directory if `WINEFS=builder`
-5. Execute the provided command (builder or `winforge run` launcher script)
+5. Execute the provided command (builder or `cage run` launcher script)
 
-For `winforge run --graphics vnc --network bridge`, the launcher script starts `x11vnc` against
+For `cage run --graphics vnc --network bridge`, the launcher script starts `x11vnc` against
 the Xvfb display and starts `websockify` for browser/noVNC access. Docker/Podman host port publishing binds access to host loopback; the helpers still listen inside the container, so do not attach bridge-mode VNC runs to untrusted/shared container networks.
 
 ## Bind Mounts and SELinux
 
 On SELinux-enforcing hosts such as Fedora/myOS, rootless Podman bind mounts need
-a shared SELinux label option. WinForge emits Podman mounts with `z` while
+a shared SELinux label option. Cage emits Podman mounts with `z` while
 keeping Docker syntax unchanged:
 
-- writable build bundle: `HOST:/opt/winforge:z`
+- writable build bundle: `HOST:/opt/cage:z`
 - read-only workspace: `HOST:/workspace:ro,z`
-- read-only run bundle: `HOST:/opt/winforge/bundle:ro,z`
-- read-only cached runner: `HOST:/opt/winforge-runner:ro,z`
+- read-only run bundle: `HOST:/opt/cage/bundle:ro,z`
+- read-only cached runner: `HOST:/opt/cage-runner:ro,z`
 
 Without this label, the container can see a bind-mounted path such as
-`/opt/winforge/build/run.sh` but fail to read it with `Permission denied`.
+`/opt/cage/build/run.sh` but fail to read it with `Permission denied`.
 
 ## CLI Integration
 
 ```bash
 # List available build definitions
-winforge container list
+cage container list
 
 # Build current Wine Stable through the mutable alias
-winforge container build wine latest
+cage container build wine latest
 
 # Build and push a pinned Wine Stable runtime
-winforge container build wine 11.0 --engine docker --registry ghcr.io/myorg --push
+cage container build wine 11.0 --engine docker --registry ghcr.io/myorg --push
 
 # Get the resolved published OCI image reference for a provider+alias
-winforge container ref wine latest
-# → ghcr.io/myos-dev/winforge-wine:11.0
+cage container ref wine latest
+# → ghcr.io/myos-dev/cage-wine:11.0
 
 # Plan a build — includes resolved OCI image
-winforge plan examples/minimal.winforge.json
+cage plan examples/minimal.cage.json
 
 # Build an execution bundle (dry-run)
-winforge build examples/minimal.winforge.json --dry-run
+cage build examples/minimal.cage.json --dry-run
 
 # Inspect and verify bundle contract before run/export/kube generation
-winforge bundle inspect dist/notepad-plus-plus-portable-0.1.0
-winforge bundle verify dist/notepad-plus-plus-portable-0.1.0
+cage bundle inspect dist/notepad-plus-plus-portable-0.1.0
+cage bundle verify dist/notepad-plus-plus-portable-0.1.0
 
 # Preview and execute a verified bundle
-winforge run --dry-run --graphics headless dist/notepad-plus-plus-portable-0.1.0
-winforge run --graphics headless dist/notepad-plus-plus-portable-0.1.0
-winforge run --graphics vnc --network bridge --vnc-port 5900 --novnc-port 6080 dist/notepad-plus-plus-portable-0.1.0
+cage run --dry-run --graphics headless dist/notepad-plus-plus-portable-0.1.0
+cage run --graphics headless dist/notepad-plus-plus-portable-0.1.0
+cage run --graphics vnc --network bridge --vnc-port 5900 --novnc-port 6080 dist/notepad-plus-plus-portable-0.1.0
 
 # Export the verified bundle as a runnable application OCI image
-winforge export oci dist/notepad-plus-plus-portable-0.1.0 \
-  --tag ghcr.io/myos-dev/winforge-app-notepad-plus-plus:0.1.0 \
+cage export oci dist/notepad-plus-plus-portable-0.1.0 \
+  --tag ghcr.io/myos-dev/cage-app-notepad-plus-plus:0.1.0 \
   --dry-run
-winforge export oci dist/notepad-plus-plus-portable-0.1.0 \
-  --tag ghcr.io/myos-dev/winforge-app-notepad-plus-plus:0.1.0
+cage export oci dist/notepad-plus-plus-portable-0.1.0 \
+  --tag ghcr.io/myos-dev/cage-app-notepad-plus-plus:0.1.0
 ```
 
 ## Runtime Binding
 
 When a manifest is resolved, `RuntimeBinding.oci_image` contains the published GHCR image reference and `RuntimeBinding.local_oci_image` contains the local developer tag. Both are produced from `runtime/catalog.json` through `runtime/providers.py`.
 
-The `plan` and `build` CLI commands automatically resolve the catalog-backed OCI image reference and include it in their output. `build` also writes `metadata/graph.json` so later `run`/OCI/kube commands can consume the resolved runtime and launch contract without reinterpreting the manifest. `winforge run` consumes that graph, verifies exact runtime consistency, mounts the bundle read-only, copies the prefix to an ephemeral runtime prefix, and launches through the catalog-resolved runtime image.
+The `plan` and `build` CLI commands automatically resolve the catalog-backed OCI image reference and include it in their output. `build` also writes `metadata/graph.json` so later `run`/OCI/kube commands can consume the resolved runtime and launch contract without reinterpreting the manifest. `cage run` consumes that graph, verifies exact runtime consistency, mounts the bundle read-only, copies the prefix to an ephemeral runtime prefix, and launches through the catalog-resolved runtime image.
 
-For real builds, WinForge streams container output to stderr as it arrives and
+For real builds, Cage streams container output to stderr as it arrives and
 persists the same output to `logs/build.log`. Stdout remains reserved for
-machine-readable command results such as `winforge compat test` JSON, so shell
+machine-readable command results such as `cage compat test` JSON, so shell
 pipelines like `| tee result.json` stay valid while the operator still sees
 long-running Wine/winetricks/installer progress.
 
-`winforge export oci` also consumes the graph. It uses `runnerRuntime.image` as the application image base, writes `metadata/artifact.json` into a staged bundle copy, adds `winforge-app-launch`, and builds a runnable image whose mutable paths are `/var/lib/winforge/state` and `/exports`.
+`cage export oci` also consumes the graph. It uses `runnerRuntime.image` as the application image base, writes `metadata/artifact.json` into a staged bundle copy, adds `cage-app-launch`, and builds a runnable image whose mutable paths are `/var/lib/cage/state` and `/exports`.
 
 ## Consumption by VIC (future)
 
-When VIC consumes WinForge artifacts:
+When VIC consumes Cage artifacts:
 
-1. VIC pulls the catalog-resolved published base image, e.g. `ghcr.io/myos-dev/winforge-wine:<resolved-version>`
-2. VIC pulls the WinForge-produced bundle OCI image (with prefix + app layer)
+1. VIC pulls the catalog-resolved published base image, e.g. `ghcr.io/myos-dev/cage-wine:<resolved-version>`
+2. VIC pulls the Cage-produced bundle OCI image (with prefix + app layer)
 3. VIC launches the combined image with the VIC runtime contract
 4. The container starts with Xvfb, enters the entrypoint, and VIC interacts via STDIO
 
-WinForge produces sealed, immutable OCI artifacts. VIC handles orchestration and lifecycle.
+Cage produces sealed, immutable OCI artifacts. VIC handles orchestration and lifecycle.
 
 ## Building Without Docker
 
-The container images are optional during development. The `winforge build --dry-run` mode creates the bundle contract without requiring any container runtime. Real prefix construction requires the container images to be built or pulled.
+The container images are optional during development. The `cage build --dry-run` mode creates the bundle contract without requiring any container runtime. Real prefix construction requires the container images to be built or pulled.
 
 For CI environments without Docker, use `podman` (Docker-compatible CLI) or `buildah` for rootless builds.
 

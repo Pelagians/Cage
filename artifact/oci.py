@@ -1,8 +1,8 @@
-'''OCI application image export for WinForge bundles.
+'''OCI application image export for Cage bundles.
 
-Phase 5B/5C turns a verified WinForge execution bundle into a runnable
+Phase 5B/5C turns a verified Cage execution bundle into a runnable
 application OCI image. The image remains application-first: it embeds the
-sealed bundle under /opt/winforge/bundle and separates mutable runtime
+sealed bundle under /opt/cage/bundle and separates mutable runtime
 state and exports under dedicated paths.
 '''
 from __future__ import annotations
@@ -16,16 +16,16 @@ from typing import Any
 
 from artifact.inspection import verify_bundle
 
-ARTIFACT_IMAGE_SCHEMA_VERSION = 'winforge.artifact-image/v0'
-OCI_EXPORT_PLAN_SCHEMA_VERSION = 'winforge.oci-export-plan/v0'
-OCI_EXPORT_RESULT_SCHEMA_VERSION = 'winforge.oci-export-result/v0'
-OCI_IMAGE_INSPECTION_SCHEMA_VERSION = 'winforge.oci-image-inspection/v0'
-OCI_IMAGE_VERIFICATION_SCHEMA_VERSION = 'winforge.oci-image-verification/v0'
+ARTIFACT_IMAGE_SCHEMA_VERSION = 'cage.artifact-image/v0'
+OCI_EXPORT_PLAN_SCHEMA_VERSION = 'cage.oci-export-plan/v0'
+OCI_EXPORT_RESULT_SCHEMA_VERSION = 'cage.oci-export-result/v0'
+OCI_IMAGE_INSPECTION_SCHEMA_VERSION = 'cage.oci-image-inspection/v0'
+OCI_IMAGE_VERIFICATION_SCHEMA_VERSION = 'cage.oci-image-verification/v0'
 
-BUNDLE_ROOT = '/opt/winforge/bundle'
-STATE_ROOT = '/var/lib/winforge/state'
+BUNDLE_ROOT = '/opt/cage/bundle'
+STATE_ROOT = '/var/lib/cage/state'
 EXPORTS_ROOT = '/exports'
-APP_LAUNCHER = '/usr/local/bin/winforge-app-launch'
+APP_LAUNCHER = '/usr/local/bin/cage-app-launch'
 
 
 class OCIExportError(RuntimeError):
@@ -37,9 +37,9 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str) -> dict[str, An
     bundle = Path(bundle_path)
     verification = verify_bundle(bundle)
     if not verification.get('valid'):
-        raise OCIExportError('invalid WinForge bundle: ' + _verification_error_text(verification))
+        raise OCIExportError('invalid Cage bundle: ' + _verification_error_text(verification))
 
-    manifest = _load_json(bundle, 'manifest.winforge.json')
+    manifest = _load_json(bundle, 'manifest.cage.json')
     graph = _load_json(bundle, 'metadata/graph.json')
     runtime = dict(graph.get('runnerRuntime') or {})
     launch = dict(graph.get('launch') or {})
@@ -83,7 +83,7 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str) -> dict[str, An
             'content': containerfile,
         },
         'launcher': {
-            'path': 'winforge-app-launch',
+            'path': 'cage-app-launch',
             'containerPath': APP_LAUNCHER,
         },
         'verification': {
@@ -132,7 +132,7 @@ def export_oci_image(
     timeout: int = 600,
     push: bool = False,
 ) -> dict[str, Any]:
-    '''Build a runnable application OCI image from a verified WinForge bundle.'''
+    '''Build a runnable application OCI image from a verified Cage bundle.'''
     bundle = Path(bundle_path)
     plan = create_oci_export_plan(bundle, tag=tag)
     selected_engine = _select_engine(engine)
@@ -153,7 +153,7 @@ def export_oci_image(
     context = prepare_oci_build_context(
         bundle,
         plan,
-        Path(context_dir) if context_dir is not None else Path(tempfile.mkdtemp(prefix='winforge-oci-')),
+        Path(context_dir) if context_dir is not None else Path(tempfile.mkdtemp(prefix='cage-oci-')),
     )
     containerfile_path = context / plan['containerfile']['path']
     command = [selected_engine, 'build', '-f', str(containerfile_path), '-t', tag, str(context)]
@@ -327,7 +327,7 @@ def verify_oci_image_metadata(
     engine: str | None = None,
     timeout: int = 60,
 ) -> dict[str, Any]:
-    '''Verify OCI labels match embedded WinForge artifact metadata.'''
+    '''Verify OCI labels match embedded Cage artifact metadata.'''
     selected_engine = _select_engine(engine)
     requested = engine or 'podman/docker'
     if selected_engine is None:
@@ -371,7 +371,7 @@ def verify_oci_image_metadata(
             image=image,
             artifact=None,
             checks=[],
-            errors=['unable to read embedded WinForge artifact metadata from image'],
+            errors=['unable to read embedded Cage artifact metadata from image'],
             warnings=list(image.get('warnings') or []),
             extra={'metadataCommand': cat_command, 'stderr': proc.stderr, 'stdout': proc.stdout},
         )
@@ -385,7 +385,7 @@ def verify_oci_image_metadata(
             image=image,
             artifact=None,
             checks=[],
-            errors=[f'embedded WinForge artifact metadata is invalid JSON: {exc}'],
+            errors=[f'embedded Cage artifact metadata is invalid JSON: {exc}'],
             warnings=list(image.get('warnings') or []),
             extra={'metadataCommand': cat_command, 'stdout': proc.stdout},
         )
@@ -411,15 +411,15 @@ def verify_oci_image_metadata(
 
     runtime = artifact.get('runtime') or {}
     application = artifact.get('application') or {}
-    add_check('schema', 'io.winforge.schema', artifact.get('schemaVersion'))
-    add_check('app-name', 'io.winforge.app.name', application.get('name'))
-    add_check('app-version', 'io.winforge.app.version', application.get('version'))
-    add_check('runtime-provider', 'io.winforge.runtime.provider', runtime.get('provider'))
-    add_check('runtime-requested-version', 'io.winforge.runtime.requestedVersion', runtime.get('requestedVersion'))
-    add_check('runtime-resolved-version', 'io.winforge.runtime.resolvedVersion', runtime.get('resolvedVersion'))
-    add_check('runtime-base-image', 'io.winforge.runtime.baseImage', runtime.get('baseImage'))
-    add_check('runner', 'io.winforge.runner', runtime.get('runner'))
-    add_check('launcher', 'io.winforge.launcher', runtime.get('launcher'))
+    add_check('schema', 'io.cage.schema', artifact.get('schemaVersion'))
+    add_check('app-name', 'io.cage.app.name', application.get('name'))
+    add_check('app-version', 'io.cage.app.version', application.get('version'))
+    add_check('runtime-provider', 'io.cage.runtime.provider', runtime.get('provider'))
+    add_check('runtime-requested-version', 'io.cage.runtime.requestedVersion', runtime.get('requestedVersion'))
+    add_check('runtime-resolved-version', 'io.cage.runtime.resolvedVersion', runtime.get('resolvedVersion'))
+    add_check('runtime-base-image', 'io.cage.runtime.baseImage', runtime.get('baseImage'))
+    add_check('runner', 'io.cage.runner', runtime.get('runner'))
+    add_check('launcher', 'io.cage.launcher', runtime.get('launcher'))
 
     return _image_verification_result(
         image_ref=image_ref,
@@ -433,7 +433,7 @@ def verify_oci_image_metadata(
     )
 
 
-# Backward-compatible mapping helper used by the existing `winforge build` path.
+# Backward-compatible mapping helper used by the existing `cage build` path.
 def build_oci_image(
     bundle_path: Path,
     base_image: str,
@@ -444,8 +444,8 @@ def build_oci_image(
     dockerfile_content = (
         f'FROM {base_image}\n'
         '\n'
-        'LABEL dev.winforge.artifact.kind=execution-bundle\n'
-        'LABEL dev.winforge.artifact.version=v0\n'
+        'LABEL dev.cage.artifact.kind=execution-bundle\n'
+        'LABEL dev.cage.artifact.version=v0\n'
         '\n'
         f'COPY {bundle_path.name} {BUNDLE_ROOT}\n'
     )
@@ -479,7 +479,7 @@ def _artifact_metadata(
         },
         'recipe': {
             'schemaVersion': manifest.get('schemaVersion'),
-            'path': 'manifest.winforge.json',
+            'path': 'manifest.cage.json',
         },
         'launch': launch,
         'graphics': graph.get('graphics', {}),
@@ -520,18 +520,18 @@ def _runtime_summary(runtime: dict[str, Any]) -> dict[str, Any]:
 
 def _oci_labels(application: dict[str, Any], runtime: dict[str, Any], base_image: str) -> dict[str, str]:
     return {
-        'org.opencontainers.image.title': str(application.get('name', 'winforge-application')),
+        'org.opencontainers.image.title': str(application.get('name', 'cage-application')),
         'org.opencontainers.image.version': str(application.get('version', '')),
-        'org.opencontainers.image.description': 'WinForge runnable application image',
-        'io.winforge.schema': ARTIFACT_IMAGE_SCHEMA_VERSION,
-        'io.winforge.app.name': str(application.get('name', '')),
-        'io.winforge.app.version': str(application.get('version', '')),
-        'io.winforge.runtime.provider': str(runtime.get('provider', '')),
-        'io.winforge.runtime.requestedVersion': str(runtime.get('requestedVersion', runtime.get('version', ''))),
-        'io.winforge.runtime.resolvedVersion': str(runtime.get('resolvedVersion', runtime.get('version', ''))),
-        'io.winforge.runtime.baseImage': base_image,
-        'io.winforge.runner': str(runtime.get('runner', '')),
-        'io.winforge.launcher': str(runtime.get('launcher', '')),
+        'org.opencontainers.image.description': 'Cage runnable application image',
+        'io.cage.schema': ARTIFACT_IMAGE_SCHEMA_VERSION,
+        'io.cage.app.name': str(application.get('name', '')),
+        'io.cage.app.version': str(application.get('version', '')),
+        'io.cage.runtime.provider': str(runtime.get('provider', '')),
+        'io.cage.runtime.requestedVersion': str(runtime.get('requestedVersion', runtime.get('version', ''))),
+        'io.cage.runtime.resolvedVersion': str(runtime.get('resolvedVersion', runtime.get('version', ''))),
+        'io.cage.runtime.baseImage': base_image,
+        'io.cage.runner': str(runtime.get('runner', '')),
+        'io.cage.launcher': str(runtime.get('launcher', '')),
     }
 
 
@@ -544,14 +544,14 @@ def _containerfile(base_image: str, labels: dict[str, str]) -> str:
         '\n'
         f'{label_lines}\n'
         '\n'
-        f'ENV WINFORGE_BUNDLE={BUNDLE_ROOT} \\\n'
-        f'    WINFORGE_STATE={STATE_ROOT} \\\n'
-        f'    WINFORGE_EXPORTS={EXPORTS_ROOT} \\\n'
+        f'ENV CAGE_BUNDLE={BUNDLE_ROOT} \\\n'
+        f'    CAGE_STATE={STATE_ROOT} \\\n'
+        f'    CAGE_EXPORTS={EXPORTS_ROOT} \\\n'
         f'    WINEPREFIX={STATE_ROOT}/prefix \\\n'
-        '    WINFORGE_GRAPHICS=headless\n'
+        '    CAGE_GRAPHICS=headless\n'
         '\n'
         f'COPY bundle {BUNDLE_ROOT}\n'
-        f'COPY winforge-app-launch {APP_LAUNCHER}\n'
+        f'COPY cage-app-launch {APP_LAUNCHER}\n'
         f'RUN chmod +x {APP_LAUNCHER} && mkdir -p {STATE_ROOT} {EXPORTS_ROOT}\n'
         f'VOLUME ["{STATE_ROOT}", "{EXPORTS_ROOT}"]\n'
         f'ENTRYPOINT ["{APP_LAUNCHER}"]\n'
@@ -562,17 +562,17 @@ def _launcher_script() -> str:
     return f'''#!/usr/bin/env bash
 set -euo pipefail
 
-export WINFORGE_BUNDLE="${{WINFORGE_BUNDLE:-{BUNDLE_ROOT}}}"
-export WINFORGE_STATE="${{WINFORGE_STATE:-{STATE_ROOT}}}"
-export WINFORGE_EXPORTS="${{WINFORGE_EXPORTS:-{EXPORTS_ROOT}}}"
-export WINEPREFIX="${{WINEPREFIX:-${{WINFORGE_STATE}}/prefix}}"
-export WINFORGE_GRAPH="${{WINFORGE_GRAPH:-${{WINFORGE_BUNDLE}}/metadata/graph.json}}"
-mkdir -p "$WINFORGE_STATE" "$WINFORGE_EXPORTS"
+export CAGE_BUNDLE="${{CAGE_BUNDLE:-{BUNDLE_ROOT}}}"
+export CAGE_STATE="${{CAGE_STATE:-{STATE_ROOT}}}"
+export CAGE_EXPORTS="${{CAGE_EXPORTS:-{EXPORTS_ROOT}}}"
+export WINEPREFIX="${{WINEPREFIX:-${{CAGE_STATE}}/prefix}}"
+export CAGE_GRAPH="${{CAGE_GRAPH:-${{CAGE_BUNDLE}}/metadata/graph.json}}"
+mkdir -p "$CAGE_STATE" "$CAGE_EXPORTS"
 
 if [ ! -d "$WINEPREFIX/drive_c" ]; then
   rm -rf "$WINEPREFIX"
   mkdir -p "$(dirname "$WINEPREFIX")"
-  cp -a "$WINFORGE_BUNDLE/prefix" "$WINEPREFIX"
+  cp -a "$CAGE_BUNDLE/prefix" "$WINEPREFIX"
 fi
 
 exec python3 - "$@" <<'PY'
@@ -580,8 +580,8 @@ import json
 import os
 import sys
 
-bundle = os.environ.get("WINFORGE_BUNDLE", "{BUNDLE_ROOT}")
-graph_path = os.environ.get("WINFORGE_GRAPH", os.path.join(bundle, "metadata", "graph.json"))
+bundle = os.environ.get("CAGE_BUNDLE", "{BUNDLE_ROOT}")
+graph_path = os.environ.get("CAGE_GRAPH", os.path.join(bundle, "metadata", "graph.json"))
 with open(graph_path, "r", encoding="utf-8") as handle:
     graph = json.load(handle)
 runtime = graph.get("runnerRuntime", {{}})
@@ -613,9 +613,9 @@ def _compatibility_env(policy):
         env["WINEARCH"] = str(policy["arch"])
     graphics = policy.get("graphics") or {{}}
     if graphics.get("backend"):
-        env["WINFORGE_GRAPHICS_BACKEND"] = str(graphics["backend"])
+        env["CAGE_GRAPHICS_BACKEND"] = str(graphics["backend"])
     if graphics.get("fallback"):
-        env["WINFORGE_GRAPHICS_FALLBACK"] = str(graphics["fallback"])
+        env["CAGE_GRAPHICS_FALLBACK"] = str(graphics["fallback"])
     for key, value in (policy.get("env") or {{}}).items():
         env[str(key)] = str(value)
     overrides = _compile_dll_policy(policy.get("dllPolicy") or {{}})
@@ -633,12 +633,12 @@ if launcher == "umu":
 elif launcher == "wine":
     executable = "wine"
 else:
-    raise SystemExit(f"unsupported WinForge launcher: {{launcher}}")
+    raise SystemExit(f"unsupported Cage launcher: {{launcher}}")
 for key, value in (launch.get("env") or {{}}).items():
     os.environ[str(key)] = str(value)
 command = [executable, launch.get("entrypoint", "")] + list(launch.get("args") or []) + sys.argv[1:]
 if not command[1]:
-    raise SystemExit("WinForge launch entrypoint is missing")
+    raise SystemExit("Cage launch entrypoint is missing")
 os.execvp(command[0], command)
 PY
 '''

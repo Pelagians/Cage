@@ -1,4 +1,4 @@
-"""Recipe profile expansion for WinForge.
+"""Recipe profile expansion for Cage.
 
 Profiles are declarative shortcuts that expand into ordinary recipe fields. They
 must not hide the final concrete compatibility/dependency policy: Manifest stores
@@ -9,7 +9,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-PROFILE_EXPANSION_SCHEMA_VERSION = "winforge.profile-expansion/v0"
+PROFILE_EXPANSION_SCHEMA_VERSION = "cage.profile-expansion/v0"
 
 OFFICE_LEGACY_32BIT_VERBS = [
     "allfonts",

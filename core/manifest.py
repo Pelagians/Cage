@@ -1,4 +1,4 @@
-"""Recipe/manifest schema and validation for WinForge v0."""
+"""Recipe/manifest schema and validation for Cage v0."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -11,8 +11,8 @@ from core.compatibility import CompatibilityPolicyError, normalize_compatibility
 from core.profiles import ProfileError, apply_profiles
 from core.modules import ModuleError, ModuleSpec, apply_modules
 
-SCHEMA_VERSION = "winforge.app/v0"
-LEGACY_SCHEMA_VERSION = "winforge.dev/v0"
+SCHEMA_VERSION = "cage.app/v0"
+LEGACY_SCHEMA_VERSION = "cage.dev/v0"
 SUPPORTED_SCHEMA_VERSIONS = {SCHEMA_VERSION, LEGACY_SCHEMA_VERSION}
 
 ALLOWED_RUNTIME_PROVIDERS = {"wine", "staging", "umu-proton-ge"}

@@ -1,5 +1,5 @@
-# workflow to build and push WinForge runtime container images to ghcr.io
-name: Build WinForge Runtime Containers
+# workflow to build and push Cage runtime container images to ghcr.io
+name: Build Cage Runtime Containers
 
 on:
   push:
