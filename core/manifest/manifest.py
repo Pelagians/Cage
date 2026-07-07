@@ -54,6 +54,10 @@ class Manifest:
             modules = [parse_module(x, i) for i, x in enumerate(_list(data.get("modules", []), "modules"))]
             data = apply_profiles(data)
             data = apply_modules(data)
+            # Re-parse modules after apply_modules to include auto-injected modules
+            # apply_modules stores the expanded modules list in provenance
+            if "provenance" in data and "expandedModules" in data["provenance"]:
+                modules = [parse_module(x, i) for i, x in enumerate(data["provenance"]["expandedModules"])]
         except (ProfileError, ModuleError) as exc:
             raise ManifestError(str(exc)) from exc
         schema = _required_str(data, "schemaVersion")

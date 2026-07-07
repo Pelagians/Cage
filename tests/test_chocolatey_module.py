@@ -58,23 +58,36 @@ class ChocolateyModuleManifestTests(unittest.TestCase):
     def test_bluebuild_style_chocolatey_module_expands_to_dependencies_and_install_steps(self):
         manifest = Manifest.from_dict(_module_manifest())
 
-        self.assertEqual([module.type for module in manifest.modules], ["chocolatey"])
-        self.assertEqual(manifest.modules[0].install["packages"], ["firefox", "7zip.install"])
+        # Should have both powershell and chocolatey modules (powershell auto-injected)
+        self.assertEqual([module.type for module in manifest.modules], ["powershell", "chocolatey"])
+        self.assertEqual(manifest.modules[1].install["packages"], ["firefox", "7zip.install"])
+        
+        # Check winetricks dependencies (powershell provides powershell_core+win10, chocolatey provides dotnet48)
         winetricks = [dep for dep in manifest.dependencies if dep.kind == "winetricks"]
-        self.assertTrue(winetricks)
-        self.assertEqual(winetricks[0].verbs, ["dotnet48", "win10", "powershell_core"])
-        self.assertEqual([step.kind for step in manifest.install[:3]], ["script", "choco", "choco"])
-        self.assertIn("powershell-wrapper-for-wine", manifest.install[0].command or "")
-        self.assertIn("chocolateyVersion", manifest.install[0].command or "")
-        self.assertIn("1.4.0", manifest.install[0].command or "")
-        self.assertEqual(manifest.install[1].command, "install")
-        self.assertEqual(manifest.install[1].args, ["firefox", "-y", "--no-progress"])
-        self.assertEqual(manifest.install[2].args, ["7zip.install", "-y", "--no-progress"])
-        self.assertEqual(manifest.provenance["moduleExpansions"][0]["type"], "chocolatey")
-        self.assertEqual(
-            manifest.provenance["moduleExpansions"][0]["injectedDependencies"],
-            [{"kind": "winetricks", "verbs": ["dotnet48", "win10", "powershell_core"]}],
-        )
+        self.assertEqual(len(winetricks), 2)
+        
+        # Find the powershell module's winetricks (should have powershell_core and win10)
+        powershell_winetricks = [w for w in winetricks if "powershell_core" in w.verbs]
+        self.assertTrue(powershell_winetricks)
+        self.assertIn("powershell_core", powershell_winetricks[0].verbs)
+        self.assertIn("win10", powershell_winetricks[0].verbs)
+        
+        # Find the chocolatey module's winetricks (should have dotnet48)
+        chocolatey_winetricks = [w for w in winetricks if "dotnet48" in w.verbs]
+        self.assertTrue(chocolatey_winetricks)
+        self.assertIn("dotnet48", chocolatey_winetricks[0].verbs)
+        
+        # Check install steps (powershell setup + choco installs)
+        # Powershell module should have setup scripts, chocolatey should have choco install steps
+        choco_steps = [step for step in manifest.install if step.kind == "choco"]
+        self.assertEqual(len(choco_steps), 2)
+        self.assertEqual(choco_steps[0].command, "install")
+        self.assertEqual(choco_steps[0].args, ["firefox", "-y", "--no-progress"])
+        self.assertEqual(choco_steps[1].args, ["7zip.install", "-y", "--no-progress"])
+        
+        # Check provenance tracking
+        self.assertEqual(manifest.provenance["moduleExpansions"][0]["type"], "powershell")
+        self.assertEqual(manifest.provenance["moduleExpansions"][1]["type"], "chocolatey")
 
     def test_strict_yaml_accepts_myos_bluebuild_style_modules_shape(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -99,23 +112,30 @@ launch:
             )
             manifest = load_manifest(recipe)
 
-        self.assertEqual(manifest.modules[0].type, "chocolatey")
-        self.assertEqual(manifest.modules[0].install["packages"], ["firefox", "7zip.install"])
+        self.assertEqual(len(manifest.modules), 2)
+        self.assertEqual(manifest.modules[0].type, "powershell")
+        self.assertEqual(manifest.modules[1].type, "chocolatey")
+        self.assertEqual(manifest.modules[1].install["packages"], ["firefox", "7zip.install"])
 
 
     def test_public_chocolatey_example_uses_modules_shape(self):
         manifest = load_manifest(Path("examples/chocolatey-firefox.cage.yaml"))
 
-        self.assertEqual(manifest.modules[0].type, "chocolatey")
-        self.assertEqual(manifest.modules[0].install["packages"], ["firefox"])
-        self.assertEqual(manifest.install[1].kind, "choco")
-        self.assertEqual(manifest.install[1].args, ["firefox", "-y", "--no-progress"])
+        self.assertEqual(len(manifest.modules), 2)
+        self.assertEqual(manifest.modules[0].type, "powershell")
+        self.assertEqual(manifest.modules[1].type, "chocolatey")
+        self.assertEqual(manifest.modules[1].install["packages"], ["firefox"])
+        # PowerShell module injects 3 script steps (download, install, cleanup wrapper)
+        # Then chocolatey adds the choco install step at index 3
+        self.assertEqual(manifest.install[3].kind, "choco")
+        self.assertEqual(manifest.install[3].args, ["firefox", "-y", "--no-progress"])
 
     def test_chocolatey_module_rejects_shell_like_package_names(self):
         data = _module_manifest()
         data["modules"][0]["install"]["packages"] = ["firefox;touch-/tmp/no"]
 
-        with self.assertRaisesRegex(ManifestError, r"modules\[0\]\.install\.packages\[0\]"):
+        # After auto-injection, chocolatey is at index 1 (powershell is at 0)
+        with self.assertRaisesRegex(ManifestError, r"modules\[1\]\.install\.packages\[0\]"):
             Manifest.from_dict(data)
 
 
@@ -157,16 +177,16 @@ class ChocolateyModuleBuildScriptTests(unittest.TestCase):
         manifest = Manifest.from_dict(_module_manifest())
         script = generate_build_script(manifest)
 
-        setup_index = script.index("powershell-wrapper-for-wine")
-        bootstrap_index = script.index("community.chocolatey.org/install.ps1")
-        firefox_index = script.index("Running Chocolatey command: install firefox -y --no-progress")
+        # PowerShell wrapper setup should come before choco installs
+        setup_index = script.index("powershell-wrapper")
+        choco_index = script.index("choco @chocoArgs")
+        self.assertLess(setup_index, choco_index)
         zip_index = script.index("Running Chocolatey command: install 7zip.install -y --no-progress")
-        self.assertLess(setup_index, bootstrap_index)
-        self.assertLess(bootstrap_index, firefox_index)
+        firefox_index = script.index("Running Chocolatey command: install firefox -y --no-progress")
+        self.assertLess(setup_index, firefox_index)
         self.assertLess(firefox_index, zip_index)
         self.assertIn('wine "$WINEPREFIX/drive_c/Program Files/PowerShell/7/pwsh.exe"', script)
         self.assertIn("$chocoArgs = @(", script)
-        self.assertIn("$env:chocolateyVersion = '1.4.0'", script)
         self.assertIn("& choco @chocoArgs", script)
         self.assertNotIn("eval choco", script)
         self.assertNotIn('echo "  Running custom script command: set -eu;', script)

@@ -6,7 +6,7 @@ from typing import Any
 from .base import (
     ModuleSpec, ModuleBase, ModuleError, parse_module,
     ChocolateyModule, ExeModule, MsiModule, IsoModule,
-    WinetricksModule, PortableModule, ScriptModule, ContainerfileModule,
+    WinetricksModule, PortableModule, ScriptModule, PowerShellModule, ContainerfileModule,
 )
 from .chocolatey import expand_chocolatey
 from .exe import expand_exe
@@ -15,6 +15,7 @@ from .iso import expand_iso
 from .winetricks import expand_winetricks
 from .portable import expand_portable
 from .script import expand_script
+from .powershell import expand_powershell
 from .containerfile import expand_containerfile
 
 
@@ -39,6 +40,8 @@ def _expand_single_module(module: ModuleSpec, index: int) -> dict[str, Any]:
         return expand_portable(module, index)
     elif isinstance(module, ScriptModule):
         return expand_script(module, index)
+    elif isinstance(module, PowerShellModule):
+        return expand_powershell(module, index)
     elif isinstance(module, ContainerfileModule):
         return expand_containerfile(module, index)
     else:
@@ -50,16 +53,25 @@ def apply_modules(recipe: dict[str, Any]) -> dict[str, Any]:
     
     This function:
     1. Parses each module definition into a typed ModuleSpec
-    2. Expands each module into its component parts (dependencies, install steps, etc.)
-    3. Merges all expanded parts into the recipe's top-level fields
-    4. Tracks module expansions in provenance.moduleExpansions
-    5. Returns the modified recipe (modules field is removed after expansion)
+    2. Auto-injects implicit dependencies (e.g., powershell for chocolatey)
+    3. Expands each module into its component parts (dependencies, install steps, etc.)
+    4. Merges all expanded parts into the recipe's top-level fields
+    5. Tracks module expansions in provenance.moduleExpansions
+    6. Returns the modified recipe (modules field is removed after expansion)
     
     The recipe is modified in-place and also returned for convenience.
     """
     modules_data = recipe.get("modules", [])
     if not modules_data:
         return recipe
+    
+    # Auto-inject implicit dependencies
+    has_chocolatey = any(m.get("type") == "chocolatey" for m in modules_data if isinstance(m, dict))
+    has_powershell = any(m.get("type") == "powershell" for m in modules_data if isinstance(m, dict))
+    
+    # If chocolatey is used but powershell is not explicitly declared, inject it
+    if has_chocolatey and not has_powershell:
+        modules_data = [{"type": "powershell"}] + list(modules_data)
     
     # Parse all modules
     modules = [parse_module(data, i) for i, data in enumerate(modules_data)]
@@ -110,6 +122,8 @@ def apply_modules(recipe: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(recipe["provenance"], dict):
         recipe["provenance"] = {}
     recipe["provenance"]["moduleExpansions"] = module_expansions
+    # Store the expanded modules list (including auto-injected) for re-parsing
+    recipe["provenance"]["expandedModules"] = modules_data
     
     # Remove the modules field after expansion
     recipe.pop("modules", None)
@@ -130,5 +144,6 @@ __all__ = [
     "WinetricksModule",
     "PortableModule",
     "ScriptModule",
+    "PowerShellModule",
     "ContainerfileModule",
 ]

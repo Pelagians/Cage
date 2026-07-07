@@ -107,6 +107,28 @@ class ScriptModule(ModuleBase):
 
 
 @dataclass
+class PowerShellModule(ModuleBase):
+    """PowerShell wrapper module for running Windows PowerShell scripts under Wine."""
+    type: str = "powershell"
+    mode: str | None = None  # "prebuilt" (default), "build", or "core"
+
+
+@dataclass
+class PowerShellModule(ModuleBase):
+    """PowerShell wrapper module for Wine.
+    
+    Sets up PowerShell execution environment in Wine prefix using the
+    Rust-based PowerShell wrapper from Codeberg.
+    
+    Fields:
+        mode: "prebuilt" (download binary), "build" (build from source), or "core" (PowerShell Core only)
+        version: Version of prebuilt binary to download (default: "1.0.0")
+    """
+    mode: str | None = None
+    version: str | None = None
+
+
+@dataclass
 class ContainerfileModule(ModuleBase):
     """Raw fields passthrough module for complex recipes."""
     type: str = "containerfile"
@@ -124,7 +146,7 @@ class ContainerfileModule(ModuleBase):
 # Union type for all modules
 ModuleSpec = (
     ChocolateyModule | ExeModule | MsiModule | IsoModule |
-    WinetricksModule | PortableModule | ScriptModule | ContainerfileModule
+    WinetricksModule | PortableModule | ScriptModule | PowerShellModule | ContainerfileModule
 )
 
 
@@ -186,6 +208,13 @@ def parse_module(data: dict[str, Any], index: int) -> ModuleSpec:
             defaults=defaults,
             command=data.get("command"),
         )
+    elif module_type == "powershell":
+        return PowerShellModule(
+            type=module_type,
+            defaults=defaults,
+            mode=data.get("mode"),
+            version=data.get("version"),
+        )
     elif module_type == "containerfile":
         return ContainerfileModule(
             defaults=defaults,
@@ -199,7 +228,7 @@ def parse_module(data: dict[str, Any], index: int) -> ModuleSpec:
             modules=data.get("modules"),
         )
     else:
-        allowed_types = {"chocolatey", "exe", "msi", "iso", "winetricks", "portable", "script", "containerfile"}
+        allowed_types = {"chocolatey", "exe", "msi", "iso", "winetricks", "portable", "script", "powershell", "containerfile"}
         raise ModuleError(
             f"modules[{index}].type must be one of: {', '.join(sorted(allowed_types))}"
         )
