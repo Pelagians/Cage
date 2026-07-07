@@ -84,7 +84,18 @@ class ChocolateyModule(ModuleBase):
         
         packages_str = " ".join(packages)
         
-        # Install Chocolatey first via PowerShell
+        # Install PowerShell wrapper first (required for Chocolatey installation)
+        install_powershell = (
+            'echo "Installing PowerShell wrapper for Wine..."; '
+            'cd /tmp && '
+            'wget -q https://codeberg.org/Rustring/powershell-wrapper-for-wine/releases/download/v0.1.0/powershell-wrapper.tar.xz && '
+            'tar -xf powershell-wrapper.tar.xz && '
+            'cd powershell-wrapper && '
+            './install.sh && '
+            'cd / && rm -rf /tmp/powershell-wrapper*'
+        )
+        
+        # Install Chocolatey via PowerShell
         install_choco_ps = (
             "Set-ExecutionPolicy Bypass -Scope Process -Force; "
             "[System.Net.ServicePointManager]::SecurityProtocol = "
@@ -93,6 +104,7 @@ class ChocolateyModule(ModuleBase):
         )
         
         commands = [
+            install_powershell,
             'echo "Installing Chocolatey package manager..."',
             f'powershell -Command "{install_choco_ps}"',
             'echo "Refreshing environment..."',
