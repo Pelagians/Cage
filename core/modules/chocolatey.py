@@ -221,9 +221,10 @@ dotnet_cache="$module_cache/dotnet48"
 ndp48_exe="$dotnet_cache/NDP48-x86-x64-AllOS-ENU.exe"
 ndp48_url="https://go.microsoft.com/fwlink/?linkid=2088631"
 ndp48_sha256="{DEFAULT_DOTNET48_SHA256}"
-dotnet_extract="$dotnet_cache/extracted"
+setupcache="$wine_prefix/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319/SetupCache"
+dotnet_extract="$setupcache/v4.8.03761"
 netfx_msi="$dotnet_extract/netfx_Full_x64.msi"
-mkdir -p "$dotnet_cache"
+mkdir -p "$dotnet_cache" "$setupcache"
 if [ ! -f "$ndp48_exe" ]; then
   echo "[cage] Downloading .NET Framework 4.8 offline installer..."
   curl -fL --retry 3 -o "$ndp48_exe" "$ndp48_url"
@@ -238,15 +239,15 @@ fi
 if [ ! -f "$netfx_msi" ]; then
   rm -rf "$dotnet_extract"
   mkdir -p "$dotnet_extract"
-  echo "[cage] Extracting netfx_Full_x64.msi from .NET Framework 4.8 installer..."
+  echo "[cage] Extracting .NET Framework 4.8 payload to Wine SetupCache..."
   if command -v 7z >/dev/null 2>&1; then
-    7z x -y "$ndp48_exe" netfx_Full_x64.msi "-o$dotnet_extract"
+    7z x -y -x!"*.cab" -x!"netfx_c*" -x!"netfx_e*" -x!"NetFx4*" -ms190M "$ndp48_exe" "-o$dotnet_extract"
   elif command -v 7zz >/dev/null 2>&1; then
-    7zz x -y "$ndp48_exe" netfx_Full_x64.msi "-o$dotnet_extract"
+    7zz x -y -x!"*.cab" -x!"netfx_c*" -x!"netfx_e*" -x!"NetFx4*" -ms190M "$ndp48_exe" "-o$dotnet_extract"
   elif command -v 7za >/dev/null 2>&1; then
-    7za x -y "$ndp48_exe" netfx_Full_x64.msi "-o$dotnet_extract"
+    7za x -y -x!"*.cab" -x!"netfx_c*" -x!"netfx_e*" -x!"NetFx4*" -ms190M "$ndp48_exe" "-o$dotnet_extract"
   else
-    echo "[cage] ERROR: 7z/7zz/7za is required to extract netfx_Full_x64.msi"
+    echo "[cage] ERROR: 7z/7zz/7za is required to extract the .NET Framework 4.8 payload"
     exit 1
   fi
 fi
