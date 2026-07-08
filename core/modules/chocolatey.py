@@ -324,9 +324,14 @@ work_dir_win='C:/ProgramData/CageFinalize'
 finalize_driver="$work_dir/finalize-chocolatey-for-wine.ps1"
 patched_choc_install_ps1="$work_dir/choc_install.patched.ps1"
 finalize_log="$work_dir/chocolatey-finalize.log"
-pwsh_probe_log="$work_dir/pwsh-probe.log"
-pwsh_probe_script="$work_dir/pwsh-probe.ps1"
-pwsh_probe_sentinel="$work_dir/pwsh-probe-ok.txt"
+unix_probe_dir="$(mktemp -d /tmp/cage-pwsh-probe.XXXXXX)"
+pwsh_probe_script="$unix_probe_dir/pwsh-probe.ps1"
+pwsh_probe_stdout="$unix_probe_dir/pwsh-probe.stdout"
+pwsh_probe_stderr="$unix_probe_dir/pwsh-probe.stderr"
+pwsh_probe_sentinel="$unix_probe_dir/unix-sentinel.txt"
+cmd_diag_stdout="$unix_probe_dir/cmd.out"
+cmd_diag_stderr="$unix_probe_dir/cmd.err"
+winepath_diag="$unix_probe_dir/winepath.out"
 mkdir -p "$work_dir"
 
 test -f "$pwsh_exe"
@@ -337,30 +342,73 @@ export PS7="$pwsh_dir_win\\pwsh.exe"
 export WINEPATH="$pwsh_dir_win${{WINEPATH:+;$WINEPATH}}"
 export PATH="$pwsh_dir:$PATH"
 
-pwsh_probe_sentinel_win="$work_dir_win/pwsh-probe-ok.txt"
-pwsh_probe_script_win="$work_dir_win/pwsh-probe.ps1"
+pwsh_probe_script_win="$(winepath -w "$pwsh_probe_script")"
+pwsh_probe_sentinel_win="$(winepath -w "$pwsh_probe_sentinel")"
 rm -f "$pwsh_probe_sentinel"
 cat > "$pwsh_probe_script" <<'PS1'
 param([string]$SentinelPath)
 $ErrorActionPreference = 'Stop'
+[Console]::Out.WriteLine('PWSH-ALIVE')
 [System.IO.File]::WriteAllText($SentinelPath, 'ok')
 [Console]::Out.WriteLine('[cage] native pwsh probe OK')
 [Console]::Out.WriteLine($PSVersionTable.PSVersion.ToString())
 PS1
-: > "$pwsh_probe_log"
+
+echo "[cage] Native PowerShell diagnostic: WINEPREFIX=${{WINEPREFIX:-}}"
+if [ -n "${{WINEPREFIX:-}}" ] && [ -d "$WINEPREFIX/dosdevices" ]; then
+  ls -la "$WINEPREFIX/dosdevices/"
+else
+  echo "[cage] Native PowerShell diagnostic: WINEPREFIX dosdevices missing"
+fi
+set +e
+wine cmd /c "echo CMD-ALIVE" > "$cmd_diag_stdout" 2> "$cmd_diag_stderr"
+cmd_diag_rc="$?"
+winepath -w "$unix_probe_dir" > "$winepath_diag" 2>&1
+winepath_unix_rc="$?"
+winepath -u 'C:\\ProgramData' >> "$winepath_diag" 2>&1
+winepath_programdata_rc="$?"
+set -e
+echo "[cage] Native PowerShell diagnostic: wine cmd /c echo exit code $cmd_diag_rc"
+if [ -s "$cmd_diag_stdout" ]; then
+  sed 's/^/[cfw-cmd-out] /' "$cmd_diag_stdout"
+else
+  echo "[cage] Native PowerShell diagnostic: cmd stdout was empty"
+fi
+if [ -s "$cmd_diag_stderr" ]; then
+  sed 's/^/[cfw-cmd-err] /' "$cmd_diag_stderr"
+else
+  echo "[cage] Native PowerShell diagnostic: cmd stderr was empty"
+fi
+echo "[cage] Native PowerShell diagnostic: winepath -w unix_probe_dir exit code $winepath_unix_rc"
+echo "[cage] Native PowerShell diagnostic: winepath -u ProgramData exit code $winepath_programdata_rc"
+if [ -s "$winepath_diag" ]; then
+  sed 's/^/[cfw-winepath] /' "$winepath_diag"
+else
+  echo "[cage] Native PowerShell diagnostic: winepath output was empty"
+fi
+
 echo "[cage] Probing native PowerShell engine for Chocolatey finalization..."
 set +e
-timeout 120s wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$pwsh_probe_script_win" "$pwsh_probe_sentinel_win" > "$pwsh_probe_log" 2>&1
+timeout 120s wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$pwsh_probe_script_win" "$pwsh_probe_sentinel_win" > "$pwsh_probe_stdout" 2> "$pwsh_probe_stderr"
 pwsh_probe_rc="$?"
 set -e
 echo "[cage] Native PowerShell probe exit code: $pwsh_probe_rc"
-echo "[cage] pwsh-probe.log contents begin"
-if [ -s "$pwsh_probe_log" ]; then
-  sed 's/^/[cfw-pwsh] /' "$pwsh_probe_log"
+echo "[cage] pwsh-probe.stdout contents begin"
+if [ -s "$pwsh_probe_stdout" ]; then
+  sed 's/^/[cfw-pwsh-out] /' "$pwsh_probe_stdout"
 else
-  echo "[cage] Native PowerShell probe log was empty"
+  echo "[cage] Native PowerShell probe stdout was empty"
 fi
-echo "[cage] pwsh-probe.log contents end"
+echo "[cage] pwsh-probe.stdout contents end"
+echo "[cage] pwsh-probe.stderr contents begin"
+if [ -s "$pwsh_probe_stderr" ]; then
+  sed 's/^/[cfw-pwsh-err] /' "$pwsh_probe_stderr"
+else
+  echo "[cage] Native PowerShell probe stderr was empty"
+fi
+echo "[cage] pwsh-probe.stderr contents end"
+echo "[cage] Native PowerShell diagnostic: unix probe directory"
+ls -la "$unix_probe_dir"
 if [ "$pwsh_probe_rc" -ne 0 ]; then
   echo "[cage] ERROR: native PowerShell probe failed with exit code $pwsh_probe_rc"
   exit "$pwsh_probe_rc"
@@ -370,7 +418,7 @@ if [ ! -f "$pwsh_probe_sentinel" ]; then
   find "$work_dir" -maxdepth 1 -type f -printf '[cage] CageFinalize file: %f\n' 2>/dev/null || true
   exit 99
 fi
-if [ ! -s "$pwsh_probe_log" ]; then
+if [ ! -s "$pwsh_probe_stdout" ]; then
   echo "[cage] ERROR: native PowerShell probe produced no stdout"
   exit 99
 fi
