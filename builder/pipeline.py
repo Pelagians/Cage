@@ -99,6 +99,17 @@ def _export_lines(manifest: Manifest) -> list[str]:
     """Generate export/bundle packaging commands."""
     lines = [
         'echo "[cage] Exporting bundle"',
+        # Create rootfs directory in bundle mount
+        'mkdir -p /opt/cage/rootfs',
+        # Copy Wine prefix to rootfs
+        'WINEPREFIX="${WINEPREFIX:-$HOME/.wine}"',
+        'if [ -d "$WINEPREFIX" ]; then',
+        '  echo "  Copying Wine prefix to rootfs..."',
+        '  cp -a "$WINEPREFIX/." /opt/cage/rootfs/',
+        '  echo "  Wine prefix copied successfully"',
+        'else',
+        '  echo "  WARNING: Wine prefix not found at $WINEPREFIX"',
+        'fi',
         'echo "  Bundle export complete"',
     ]
     return lines
