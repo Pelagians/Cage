@@ -1,21 +1,24 @@
-"""Chocolatey package manager module for Wine environments.
+"""Deterministic Chocolatey package manager module for Wine environments.
 
-Chocolatey on Wine uses Piet Jankbal's Chocolatey-for-wine installer as the
-source of truth. That project installs the PowerShell/CoreCLR pieces and Wine
-compatibility shims Chocolatey needs. It intentionally does not depend on
-Cage's separate powershell-wrapper module.
+Chocolatey-for-wine is consumed as pinned release data. Cage never executes the
+upstream ChoCinstaller bootstrapper; instead it performs each prerequisite as a
+separate, named, verifiable build step.
 """
-
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+import re
 
 from .base import ModuleBase, ModuleError
-
+from .powershell_engine import powershell_engine_steps
+from ..build_step import BuildStep
 
 DEFAULT_CHOCOLATEY_FOR_WINE_VERSION = "v0.5c.755"
 DEFAULT_CHOCOLATEY_FOR_WINE_SHA256 = "87f4ecc08a9b22f16aa5633ca107c151ddf3fed0b256fed9fb99680af7095d14"
+DEFAULT_CHOCOLATEY_VERSION = "2.6.0"
+DEFAULT_CHOCOLATEY_NUPKG_SHA256 = "f13a2af9cd4ec2c9b58d81861bc95ad7151e3a871d8f758dffa72a996a3792d8"
+DEFAULT_DOTNET48_SHA256 = "0a3a390c47e639d0f7fc65b21195fee6b7f65b066f80f70c60fab191d14b7e40"
 
 
 def _sh_single_quote(value: str) -> str:
@@ -25,14 +28,7 @@ def _sh_single_quote(value: str) -> str:
 
 @dataclass
 class ChocolateyModule(ModuleBase):
-    """Install Chocolatey packages through Chocolatey-for-wine.
-
-    This module is self-contained for now: it downloads Chocolatey-for-wine,
-    clears inherited build-time DLL overrides that break CLR setup, runs the
-    Chocolatey-for-wine installer, verifies choco.exe, then installs packages.
-    It is intentionally incompatible with the separate powershell-wrapper
-    module until the wrapper compatibility layer is reconciled.
-    """
+    """Install Chocolatey packages through deterministic Wine build steps."""
 
     type: str = "chocolatey"
     install: dict[str, Any] | None = None
@@ -40,18 +36,14 @@ class ChocolateyModule(ModuleBase):
     version: str = DEFAULT_CHOCOLATEY_FOR_WINE_VERSION
     sha256: str | None = None
 
-    def build(self) -> list:
-        """Generate build steps for Chocolatey-for-wine and package installs."""
-        from ..build_step import BuildStep
-
+    def build(self) -> list[BuildStep]:
+        """Generate deterministic Chocolatey setup and package install steps."""
         if not self.install:
             raise ModuleError("chocolatey module requires 'install' field")
 
         packages = self.install.get("packages", [])
         if not packages:
             raise ModuleError("chocolatey module 'install.packages' cannot be empty")
-
-        import re
 
         package_pattern = re.compile(r"^[a-zA-Z0-9._+\-]+$")
         for pkg in packages:
@@ -66,55 +58,62 @@ class ChocolateyModule(ModuleBase):
 
         wine_prefix = "${WINEPREFIX:-$HOME/.wine}"
         choco_exe = f"{wine_prefix}/drive_c/ProgramData/chocolatey/bin/choco.exe"
+        raw_choco_exe = f"{wine_prefix}/drive_c/ProgramData/tools/ChocolateyInstall/choco.exe"
+        package_args = " ".join(packages)
+        source_arg = f" -s {_sh_single_quote(self.source)}" if self.source else ""
+
+        return [
+            *powershell_engine_steps(wine_prefix=wine_prefix, version_slot="7"),
+            self._prepare_chocolatey_data_step(wine_prefix, raw_choco_exe),
+            self._dotnet48_step(wine_prefix),
+            self._registry_prep_step(),
+            self._finalize_step(wine_prefix, choco_exe, raw_choco_exe),
+            self._package_install_step(choco_exe, package_args, source_arg),
+        ]
+
+    def _prepare_chocolatey_data_step(self, wine_prefix: str, raw_choco_exe: str) -> BuildStep:
         release_url = (
             "https://github.com/PietJankbal/Chocolatey-for-wine/releases/download/"
             f"{self.version}/Chocolatey-for-wine.7z"
         )
-        expected_sha = self.sha256
-        if expected_sha is None and self.version == DEFAULT_CHOCOLATEY_FOR_WINE_VERSION:
-            expected_sha = DEFAULT_CHOCOLATEY_FOR_WINE_SHA256
+        expected_cfw_sha = self.sha256
+        if expected_cfw_sha is None and self.version == DEFAULT_CHOCOLATEY_FOR_WINE_VERSION:
+            expected_cfw_sha = DEFAULT_CHOCOLATEY_FOR_WINE_SHA256
+        expected_cfw_sha = expected_cfw_sha or ""
+        choco_nupkg_url = f"https://community.chocolatey.org/api/v2/package/chocolatey/{DEFAULT_CHOCOLATEY_VERSION}"
 
-        expected_sha_script = expected_sha or ""
-        package_args = " ".join(packages)
-        source_arg = f" -s {_sh_single_quote(self.source)}" if self.source else ""
+        script = f'''set -eu
+unset WINEDLLOVERRIDES
+echo "[cage] Prepare Chocolatey-for-wine data"
+wine_prefix="{wine_prefix}"
+module_cache="${{CAGE_MODULE_CACHE_DIR:-/tmp/cage-module-cache}}"
+cfw_cache="$module_cache/chocolatey-for-wine/{self.version}"
+cfw_archive="$cfw_cache/Chocolatey-for-wine.7z"
+cfw_extract="$cfw_cache/extracted/Chocolatey-for-wine"
+cfw_archive_url="{release_url}"
+cfw_archive_sha256="{expected_cfw_sha}"
+choco_cache="$module_cache/chocolatey/{DEFAULT_CHOCOLATEY_VERSION}"
+choco_nupkg="$choco_cache/chocolatey.{DEFAULT_CHOCOLATEY_VERSION}.nupkg"
+choco_nupkg_url="{choco_nupkg_url}"
+choco_nupkg_sha256="{DEFAULT_CHOCOLATEY_NUPKG_SHA256}"
+program_data="$wine_prefix/drive_c/ProgramData"
+cfw_prefix_dir="$program_data/Chocolatey-for-wine"
+tools_root="$program_data/tools"
+raw_choco_dir="$tools_root/ChocolateyInstall"
+raw_choco_exe="{raw_choco_exe}"
 
-        install_commands = [
-            f'''if [ ! -f "{choco_exe}" ]; then
-  set -eu
-  unset WINEDLLOVERRIDES
-  wine_prefix="{wine_prefix}"
-  choco_exe="{choco_exe}"
-  work_dir="/tmp/chocolatey-for-wine"
-  extract_dir="$work_dir/extracted"
-  archive="$work_dir/Chocolatey-for-wine.7z"
-  expected_sha="{expected_sha_script}"
-
-  echo "[cage] Chocolatey not found, installing Chocolatey-for-wine {self.version}..."
-  rm -rf "$work_dir"
-  mkdir -p "$extract_dir"
-
-  echo "[cage] Downloading Chocolatey-for-wine {self.version}..."
-  curl -fL --retry 3 -o "$archive" "{release_url}"
-
-  if [ -n "$expected_sha" ]; then
-    actual_sha="$(sha256sum "$archive" | cut -d ' ' -f 1)"
-    if [ "$actual_sha" != "$expected_sha" ]; then
-      echo "[cage] ERROR: Chocolatey-for-wine checksum mismatch"
-      echo "[cage]   expected: $expected_sha"
-      echo "[cage]   actual:   $actual_sha"
-      exit 1
-    fi
-  fi
-
-  echo "[cage] Extracting Chocolatey-for-wine..."
+extract_7z_archive() {{
+  archive="$1"
+  dest="$2"
+  mkdir -p "$dest"
   if command -v 7z >/dev/null 2>&1; then
-    7z x -y "$archive" "-o$extract_dir"
+    7z x -y "$archive" "-o$dest"
   elif command -v 7zz >/dev/null 2>&1; then
-    7zz x -y "$archive" "-o$extract_dir"
+    7zz x -y "$archive" "-o$dest"
   elif command -v 7za >/dev/null 2>&1; then
-    7za x -y "$archive" "-o$extract_dir"
+    7za x -y "$archive" "-o$dest"
   else
-    python3 - "$archive" "$extract_dir" <<'PY'
+    python3 - "$archive" "$dest" <<'PY'
 import sys
 import py7zr
 archive, dest = sys.argv[1], sys.argv[2]
@@ -122,135 +121,186 @@ with py7zr.SevenZipFile(archive, mode="r") as zf:
     zf.extractall(dest)
 PY
   fi
+}}
 
-  installer="$(find "$extract_dir" -name "ChoCinstaller_*.exe" -type f | head -n 1)"
-  if [ -z "$installer" ]; then
-    echo "[cage] ERROR: Could not find Chocolatey-for-wine ChoCinstaller_*.exe"
-    find "$extract_dir" -maxdepth 3 -type f | sort
+mkdir -p "$cfw_cache" "$choco_cache" "$program_data" "$tools_root" "$cfw_prefix_dir"
+if [ ! -f "$cfw_archive" ]; then
+  echo "[cage] Downloading Chocolatey-for-wine data {self.version}..."
+  curl -fL --retry 3 -o "$cfw_archive" "$cfw_archive_url"
+fi
+if [ -n "$cfw_archive_sha256" ]; then
+  actual_cfw_archive_sha="$(sha256sum "$cfw_archive" | cut -d ' ' -f 1)"
+  if [ "$actual_cfw_archive_sha" != "$cfw_archive_sha256" ]; then
+    echo "[cage] ERROR: Chocolatey-for-wine archive checksum mismatch"
+    echo "[cage]   expected: $cfw_archive_sha256"
+    echo "[cage]   actual:   $actual_cfw_archive_sha"
     exit 1
   fi
+fi
+if [ ! -f "$cfw_extract/choc_install.ps1" ] || [ ! -f "$cfw_extract/7z.exe" ] || [ ! -f "$cfw_extract/c_drive.7z" ]; then
+  rm -rf "$cfw_cache/extracted"
+  mkdir -p "$cfw_cache/extracted"
+  echo "[cage] Extracting Chocolatey-for-wine release data..."
+  extract_7z_archive "$cfw_archive" "$cfw_cache/extracted"
+fi
 
-  cfw_dir="$(dirname "$installer")"
-  choc_install_ps1="$cfw_dir/choc_install.ps1"
-  pwsh_exe="$wine_prefix/drive_c/Program Files/PowerShell/7/pwsh.exe"
-  raw_choco_exe="$wine_prefix/drive_c/ProgramData/tools/chocolateyInstall/choco.exe"
+test -f "$cfw_extract/choc_install.ps1"
+test -f "$cfw_extract/winetricks.ps1"
+test -f "$cfw_extract/7z.exe"
+test -f "$cfw_extract/7z.dll"
+test -f "$cfw_extract/c_drive.7z"
 
-  echo "[cage] Setting Wine Windows version to win10 for Chocolatey-for-wine..."
-  timeout "${{CAGE_WINECFG_TIMEOUT:-120s}}" winecfg /v win10
+if [ ! -f "$choco_nupkg" ]; then
+  echo "[cage] Downloading Chocolatey {DEFAULT_CHOCOLATEY_VERSION} nupkg..."
+  curl -fL --retry 3 -o "$choco_nupkg" "$choco_nupkg_url"
+fi
+actual_choco_nupkg_sha="$(sha256sum "$choco_nupkg" | cut -d ' ' -f 1)"
+if [ "$actual_choco_nupkg_sha" != "$choco_nupkg_sha256" ]; then
+  echo "[cage] ERROR: Chocolatey nupkg checksum mismatch"
+  echo "[cage]   expected: $choco_nupkg_sha256"
+  echo "[cage]   actual:   $actual_choco_nupkg_sha"
+  exit 1
+fi
 
-  echo "[cage] Pre-seeding Chocolatey-for-wine PowerShell DLL overrides..."
-  timeout "${{CAGE_WINE_REG_TIMEOUT:-120s}}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v amsi /d "" /f
-  timeout "${{CAGE_WINE_REG_TIMEOUT:-120s}}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v dwmapi /d "" /f
-  timeout "${{CAGE_WINE_REG_TIMEOUT:-120s}}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v rpcrt4 /d native,builtin /f
+echo "[cage] Extracting Chocolatey-for-wine c_drive.7z data..."
+extract_7z_archive "$cfw_extract/c_drive.7z" "$wine_prefix/drive_c"
 
-  echo "[cage] Running Chocolatey-for-wine installer: $installer"
-  timeout "${{CAGE_CHOCOLATEY_INSTALL_TIMEOUT:-1200s}}" wine "$installer" /q
-
-  if [ ! -f "$choco_exe" ] && [ -f "$raw_choco_exe" ]; then
-    echo "[cage] Finalizing partial Chocolatey-for-wine install..."
-    if [ ! -f "$pwsh_exe" ]; then
-      echo "[cage] ERROR: partial Chocolatey extraction found, but pwsh.exe is missing: $pwsh_exe"
-      find "$wine_prefix/drive_c" -maxdepth 5 -iname 'pwsh.exe' 2>/dev/null | sort || true
-      exit 1
-    fi
-    if [ ! -f "$choc_install_ps1" ]; then
-      echo "[cage] ERROR: partial Chocolatey extraction found, but choc_install.ps1 is missing: $choc_install_ps1"
-      find "$cfw_dir" -maxdepth 2 -type f | sort || true
-      exit 1
-    fi
-
-    cfw_dir_win="$(winepath -w "$cfw_dir")"
-    choc_install_ps1_win="$(winepath -w "$choc_install_ps1")"
-    choco_exe_win="$(winepath -w "$choco_exe")"
-    finalize_driver="$work_dir/finalize-chocolatey-for-wine.ps1"
-    finalize_driver_win="$(winepath -w "$finalize_driver")"
-    finalize_log="$work_dir/chocolatey-finalize.log"
-    pwsh_probe_log="$work_dir/pwsh-probe.log"
-    pwsh_probe_sentinel="$work_dir/pwsh-probe-ok.txt"
-    pwsh_probe_sentinel_win="$(winepath -w "$pwsh_probe_sentinel")"
-    pwsh_zip_repair_log="$work_dir/pwsh-zip-repair.log"
-    pwsh_zip="$work_dir/PowerShell-7.4.11-win-x64.zip"
-    pwsh_zip_url="https://github.com/PowerShell/PowerShell/releases/download/v7.4.11/PowerShell-7.4.11-win-x64.zip"
-    pwsh_zip_sha256="558c4115cc6b96cc6a67d74bee40012cf8d38767537f8d2857dc3fa30a63cc63"
-    pwsh_dir="$wine_prefix/drive_c/Program Files/PowerShell/7"
-
-    probe_cfw_pwsh() {{
-      probe_context="$1"
-      rm -f "$pwsh_probe_sentinel"
-      : > "$pwsh_probe_log"
-      echo "[cage] Probing Chocolatey-for-wine PowerShell ($probe_context)..."
-      set +e
-      timeout 120s wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "[System.IO.File]::WriteAllText('$pwsh_probe_sentinel_win','ok'); [Console]::Out.WriteLine('[cage] pwsh probe OK'); \\$PSVersionTable.PSVersion.ToString()" > "$pwsh_probe_log" 2>&1
-      pwsh_probe_rc="$?"
-      set -e
-      if [ -s "$pwsh_probe_log" ]; then
-        sed 's/^/[cfw-pwsh] /' "$pwsh_probe_log"
-      fi
-      if [ "$pwsh_probe_rc" -ne 0 ]; then
-        echo "[cage] Chocolatey-for-wine PowerShell probe failed with exit code $pwsh_probe_rc ($probe_context)"
-        return "$pwsh_probe_rc"
-      fi
-      if [ ! -f "$pwsh_probe_sentinel" ]; then
-        echo "[cage] PowerShell probe did not create sentinel ($probe_context): $pwsh_probe_sentinel"
-        return 98
-      fi
-      if [ ! -s "$pwsh_probe_log" ]; then
-        echo "[cage] PowerShell probe produced no captured stdout ($probe_context); continuing because sentinel exists"
-      fi
-      return 0
-    }}
-
-    if ! probe_cfw_pwsh "after Chocolatey-for-wine"; then
-      echo "[cage] Repairing Chocolatey-for-wine PowerShell from ZIP payload..."
-      set +e
-      (
-        set -eu
-        echo "[cage] Downloading PowerShell 7.4.11 ZIP repair payload..."
-        timeout "${{CAGE_CHOCOLATEY_PWSH_REPAIR_TIMEOUT:-1200s}}" curl -fL --retry 3 -o "$pwsh_zip" "$pwsh_zip_url"
-        actual_pwsh_zip_sha="$(sha256sum "$pwsh_zip" | cut -d ' ' -f 1)"
-        if [ "$actual_pwsh_zip_sha" != "$pwsh_zip_sha256" ]; then
-          echo "[cage] ERROR: PowerShell ZIP checksum mismatch"
-          echo "[cage]   expected: $pwsh_zip_sha256"
-          echo "[cage]   actual:   $actual_pwsh_zip_sha"
-          exit 1
-        fi
-        echo "[cage] Extracting PowerShell ZIP to $pwsh_dir..."
-        rm -rf "$pwsh_dir"
-        mkdir -p "$pwsh_dir"
-        python3 - "$pwsh_zip" "$pwsh_dir" <<'PY'
+rm -rf "$raw_choco_dir"
+mkdir -p "$raw_choco_dir" "$cfw_prefix_dir"
+python3 - "$choco_nupkg" "$tools_root" <<'PY'
 import sys
 import zipfile
-archive, dest = sys.argv[1], sys.argv[2]
+from pathlib import Path
+archive = Path(sys.argv[1])
+tools_root = Path(sys.argv[2])
+prefix = "tools/chocolateyInstall/"
 with zipfile.ZipFile(archive) as zf:
-    zf.extractall(dest)
+    for member in zf.infolist():
+        name = member.filename.replace("\\", "/")
+        if not name.startswith(prefix) or name.endswith("/"):
+            continue
+        target = tools_root / "ChocolateyInstall" / name[len(prefix):]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with zf.open(member) as src, target.open("wb") as dst:
+            dst.write(src.read())
 PY
-        test -f "$pwsh_exe"
-      ) > "$pwsh_zip_repair_log" 2>&1
-      pwsh_zip_repair_rc="$?"
-      set -e
-      if [ -s "$pwsh_zip_repair_log" ]; then
-        sed 's/^/[cfw-pwsh-zip] /' "$pwsh_zip_repair_log"
-      else
-        echo "[cage] PowerShell ZIP repair log was empty"
-      fi
-      if [ "$pwsh_zip_repair_rc" -ne 0 ]; then
-        echo "[cage] ERROR: PowerShell ZIP repair failed with exit code $pwsh_zip_repair_rc"
-        exit "$pwsh_zip_repair_rc"
-      fi
-      echo "[cage] Re-applying Wine Windows version to win10 after PowerShell ZIP repair..."
-      timeout "${{CAGE_WINECFG_TIMEOUT:-120s}}" winecfg /v win10
-      if ! probe_cfw_pwsh "after PowerShell ZIP repair"; then
-        echo "[cage] ERROR: PowerShell ZIP repair failed; pwsh probe still did not produce usable output"
-        exit 1
-      fi
-    fi
 
-    cat > "$finalize_driver" <<'PS1'
+test -f "$raw_choco_exe"
+cp -f "$cfw_extract/choc_install.ps1" "$cfw_prefix_dir/choc_install.ps1"
+cp -f "$cfw_extract/winetricks.ps1" "$cfw_prefix_dir/winetricks.ps1"
+cp -f "$cfw_extract/7z.exe" "$cfw_prefix_dir/7z.exe"
+cp -f "$cfw_extract/7z.dll" "$cfw_prefix_dir/7z.dll"
+echo "[cage] Prepared Chocolatey-for-wine data and Chocolatey nupkg"'''
+        return BuildStep(commands=[script], description="Prepare Chocolatey-for-wine data")
+
+    def _dotnet48_step(self, wine_prefix: str) -> BuildStep:
+        script = f'''set -eu
+unset WINEDLLOVERRIDES
+wine_prefix="{wine_prefix}"
+module_cache="${{CAGE_MODULE_CACHE_DIR:-/tmp/cage-module-cache}}"
+dotnet_cache="$module_cache/dotnet48"
+ndp48_exe="$dotnet_cache/NDP48-x86-x64-AllOS-ENU.exe"
+ndp48_url="https://go.microsoft.com/fwlink/?linkid=2088631"
+ndp48_sha256="{DEFAULT_DOTNET48_SHA256}"
+dotnet_extract="$dotnet_cache/extracted"
+netfx_msi="$dotnet_extract/netfx_Full_x64.msi"
+mkdir -p "$dotnet_cache"
+if [ ! -f "$ndp48_exe" ]; then
+  echo "[cage] Downloading .NET Framework 4.8 offline installer..."
+  curl -fL --retry 3 -o "$ndp48_exe" "$ndp48_url"
+fi
+actual_ndp48_sha="$(sha256sum "$ndp48_exe" | cut -d ' ' -f 1)"
+if [ "$actual_ndp48_sha" != "$ndp48_sha256" ]; then
+  echo "[cage] ERROR: .NET Framework 4.8 installer checksum mismatch"
+  echo "[cage]   expected: $ndp48_sha256"
+  echo "[cage]   actual:   $actual_ndp48_sha"
+  exit 1
+fi
+if [ ! -f "$netfx_msi" ]; then
+  rm -rf "$dotnet_extract"
+  mkdir -p "$dotnet_extract"
+  echo "[cage] Extracting netfx_Full_x64.msi from .NET Framework 4.8 installer..."
+  if command -v 7z >/dev/null 2>&1; then
+    7z x -y "$ndp48_exe" netfx_Full_x64.msi "-o$dotnet_extract"
+  elif command -v 7zz >/dev/null 2>&1; then
+    7zz x -y "$ndp48_exe" netfx_Full_x64.msi "-o$dotnet_extract"
+  elif command -v 7za >/dev/null 2>&1; then
+    7za x -y "$ndp48_exe" netfx_Full_x64.msi "-o$dotnet_extract"
+  else
+    echo "[cage] ERROR: 7z/7zz/7za is required to extract netfx_Full_x64.msi"
+    exit 1
+  fi
+fi
+test -f "$netfx_msi"
+echo "[cage] Installing .NET Framework 4.8 from dedicated MSI step..."
+timeout "${{CAGE_DOTNET48_TIMEOUT:-1800s}}" wine msiexec /i "$netfx_msi" /QN /NORESTART
+echo "[cage] .NET Framework 4.8 MSI step complete"'''
+        return BuildStep(commands=[script], description="Install .NET Framework 4.8 for Chocolatey")
+
+    def _registry_prep_step(self) -> BuildStep:
+        script = '''set -eu
+unset WINEDLLOVERRIDES
+echo "[cage] Preparing Wine registry for Chocolatey..."
+timeout "${CAGE_WINECFG_TIMEOUT:-120s}" winecfg /v win10
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v amsi /d "" /f
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v dwmapi /d "" /f
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v rpcrt4 /d native,builtin /f
+echo "[cage] Wine registry prepared for Chocolatey"'''
+        return BuildStep(commands=[script], description="Prepare Wine registry for Chocolatey")
+
+    def _finalize_step(self, wine_prefix: str, choco_exe: str, raw_choco_exe: str) -> BuildStep:
+        script = f'''set -eu
+unset WINEDLLOVERRIDES
+echo "[cage] Finalize Chocolatey-for-wine"
+wine_prefix="{wine_prefix}"
+choco_exe="{choco_exe}"
+raw_choco_exe="{raw_choco_exe}"
+pwsh_exe="$wine_prefix/drive_c/Program Files/PowerShell/7/pwsh.exe"
+cfw_dir="$wine_prefix/drive_c/ProgramData/Chocolatey-for-wine"
+choc_install_ps1="$cfw_dir/choc_install.ps1"
+work_dir="/tmp/cage-chocolatey-finalize"
+finalize_driver="$work_dir/finalize-chocolatey-for-wine.ps1"
+finalize_log="$work_dir/chocolatey-finalize.log"
+pwsh_probe_log="$work_dir/pwsh-probe.log"
+pwsh_probe_sentinel="$work_dir/pwsh-probe-ok.txt"
+mkdir -p "$work_dir"
+
+test -f "$pwsh_exe"
+test -f "$raw_choco_exe"
+test -f "$choc_install_ps1"
+
+pwsh_probe_sentinel_win="$(winepath -w "$pwsh_probe_sentinel")"
+rm -f "$pwsh_probe_sentinel"
+: > "$pwsh_probe_log"
+echo "[cage] Probing Chocolatey PowerShell engine..."
+set +e
+timeout 120s wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "[System.IO.File]::WriteAllText('$pwsh_probe_sentinel_win','ok'); [Console]::Out.WriteLine('[cage] pwsh probe OK'); \\$PSVersionTable.PSVersion.ToString()" > "$pwsh_probe_log" 2>&1
+pwsh_probe_rc="$?"
+set -e
+if [ -s "$pwsh_probe_log" ]; then
+  sed 's/^/[cfw-pwsh] /' "$pwsh_probe_log"
+fi
+if [ "$pwsh_probe_rc" -ne 0 ]; then
+  echo "[cage] ERROR: PowerShell probe failed with exit code $pwsh_probe_rc"
+  exit "$pwsh_probe_rc"
+fi
+if [ ! -f "$pwsh_probe_sentinel" ]; then
+  echo "[cage] ERROR: PowerShell probe did not create sentinel: $pwsh_probe_sentinel"
+  exit 98
+fi
+if [ ! -s "$pwsh_probe_log" ]; then
+  echo "[cage] PowerShell probe produced no captured stdout; continuing because sentinel exists"
+fi
+
+cfw_dir_win="$(winepath -w "$cfw_dir")"
+choc_install_ps1_win="$(winepath -w "$choc_install_ps1")"
+choco_exe_win="$(winepath -w "$choco_exe")"
+finalize_driver_win="$(winepath -w "$finalize_driver")"
+cat > "$finalize_driver" <<'PS1'
 $ErrorActionPreference = 'Stop'
 $scriptPath = $args[0]
 $cfwDir = $args[1]
 $chocoExe = $args[2]
-
 Write-Host "[cage] Running upstream choc_install.ps1: $scriptPath"
 & $scriptPath $cfwDir '/q'
 if (!(Test-Path $chocoExe)) {{
@@ -259,45 +309,33 @@ if (!(Test-Path $chocoExe)) {{
 Write-Host "[cage] Upstream Chocolatey-for-wine finalizer completed"
 PS1
 
-    set +e
-    timeout "${{CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}}" wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$finalize_driver_win" "$choc_install_ps1_win" "$cfw_dir_win" "$choco_exe_win" > "$finalize_log" 2>&1
-    finalize_rc="$?"
-    set -e
-    if [ -s "$finalize_log" ]; then
-      sed 's/^/[cfw-finalize] /' "$finalize_log"
-    fi
-    if [ "$finalize_rc" -ne 0 ]; then
-      echo "[cage] ERROR: Chocolatey-for-wine finalizer failed with exit code $finalize_rc"
-      exit "$finalize_rc"
-    fi
-    if [ ! -f "$choco_exe" ]; then
-      echo "[cage] ERROR: Chocolatey-for-wine finalizer returned success but left choco.exe missing: $choco_exe"
-      if [ ! -s "$finalize_log" ]; then
-        echo "[cage] Finalizer log was empty"
-      fi
-      find "$wine_prefix/drive_c/ProgramData" -maxdepth 4 -iname '*choco*' 2>/dev/null | sort || true
-      exit 1
-    fi
+set +e
+timeout "${{CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}}" wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$finalize_driver_win" "$choc_install_ps1_win" "$cfw_dir_win" "$choco_exe_win" > "$finalize_log" 2>&1
+finalize_rc="$?"
+set -e
+if [ -s "$finalize_log" ]; then
+  sed 's/^/[cfw-finalize] /' "$finalize_log"
+fi
+if [ "$finalize_rc" -ne 0 ]; then
+  echo "[cage] ERROR: Chocolatey-for-wine finalizer failed with exit code $finalize_rc"
+  exit "$finalize_rc"
+fi
+if [ ! -f "$choco_exe" ]; then
+  echo "[cage] ERROR: Chocolatey-for-wine finalizer returned success but left choco.exe missing: $choco_exe"
+  if [ ! -s "$finalize_log" ]; then
+    echo "[cage] Finalizer log was empty"
   fi
+  find "$wine_prefix/drive_c/ProgramData" -maxdepth 4 -iname '*choco*' 2>/dev/null | sort || true
+  exit 1
+fi
 
-  if [ ! -f "$choco_exe" ]; then
-    echo "[cage] ERROR: Chocolatey-for-wine finished but choco.exe is missing: $choco_exe"
-    echo "[cage] Raw Chocolatey extraction marker: $raw_choco_exe"
-    find "$wine_prefix/drive_c/ProgramData" -maxdepth 4 -iname '*choco*' 2>/dev/null | sort || true
-    exit 1
-  fi
+echo "[cage] Verifying Chocolatey..."
+timeout 120s wine "$choco_exe" --version
+echo "[cage] Chocolatey finalization complete"'''
+        return BuildStep(commands=[script], description="Finalize Chocolatey-for-wine")
 
-  echo "[cage] Verifying Chocolatey..."
-  timeout 120s wine "$choco_exe" --version
-  rm -rf "$work_dir"
-  echo "[cage] Chocolatey-for-wine installation complete"
-else
-  echo "[cage] Chocolatey already installed: {choco_exe}"
-fi'''
-        ]
-
-        package_commands = [
-            f'''set -eu
+    def _package_install_step(self, choco_exe: str, package_args: str, source_arg: str) -> BuildStep:
+        script = f'''set -eu
 unset WINEDLLOVERRIDES
 choco_exe="{choco_exe}"
 if [ ! -f "$choco_exe" ]; then
@@ -306,18 +344,7 @@ if [ ! -f "$choco_exe" ]; then
 fi
 echo "[cage] Installing Chocolatey packages: {package_args}"
 wine "$choco_exe" install {package_args} -y{source_arg}'''
-        ]
-
-        return [
-            BuildStep(
-                commands=install_commands,
-                description="Install Chocolatey-for-wine",
-            ),
-            BuildStep(
-                commands=package_commands,
-                description=f"Install Chocolatey packages: {package_args}",
-            ),
-        ]
+        return BuildStep(commands=[script], description=f"Install Chocolatey packages: {package_args}")
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {"type": self.type}

@@ -154,6 +154,7 @@ def cmd_compat_test(args):
         all_entrypoints=args.all_entrypoints,
         run_files=args.file,
         runner_cache_dir=Path(args.runner_cache_dir) if args.runner_cache_dir else None,
+        module_cache_dir=Path(args.module_cache_dir) if args.module_cache_dir else None,
         resume_from_bundle=Path(args.resume_from_bundle) if args.resume_from_bundle else None,
         stop_before=args.stop_before,
     )
@@ -210,6 +211,7 @@ def cmd_build(args):
         image_ref=base_image,
         timeout=args.build_timeout,
         runner_cache_dir=Path(args.runner_cache_dir) if args.runner_cache_dir else None,
+        module_cache_dir=Path(args.module_cache_dir) if args.module_cache_dir else None,
     )
 
     # Write build result to bundle metadata
@@ -525,6 +527,8 @@ def build_parser():
                    help="Optional OCI output tag (e.g. myapp:latest)")
     p.add_argument("--runner-cache-dir",
                    help="Runner cache directory for runtime.runner archives")
+    p.add_argument("--module-cache-dir",
+                   help="Module payload cache directory for downloads used during builds")
     p.set_defaults(func=cmd_build)
 
     # run
@@ -713,6 +717,7 @@ def build_parser():
     cp.add_argument("--all-entrypoints", action="store_true", help="Collect run-plan/run evidence for every manifest entrypoint")
     cp.add_argument("--file", action="append", default=[], help="Host file to pass to selected entrypoint(s); repeatable")
     cp.add_argument("--runner-cache-dir", help="Runner cache directory for runtime.runner archives")
+    cp.add_argument("--module-cache-dir", help="Module payload cache directory for downloads used during builds")
     cp.add_argument("--resume-from-bundle", help="Prepared checkpoint bundle or output parent to seed into the new attempt")
     cp.add_argument("--stop-before", choices=["install-apps"], help="Stop real build before the selected phase and seal a checkpoint")
     cp.set_defaults(func=cmd_compat_test)

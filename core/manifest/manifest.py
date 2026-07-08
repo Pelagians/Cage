@@ -179,7 +179,7 @@ def _validate_module_combinations(modules: list[ModuleBase]) -> None:
     if "chocolatey" in module_types and "powershell-wrapper" in module_types:
         raise ManifestError(
             "modules 'chocolatey' and 'powershell-wrapper' cannot be used together yet; "
-            "Chocolatey-for-wine owns its own PowerShell compatibility layer for now"
+            "both claim PowerShell capability slots before the Phase 2 provider resolver exists"
         )
 
 

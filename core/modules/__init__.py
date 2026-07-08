@@ -14,6 +14,7 @@ from .base import (
 )
 from .chocolatey import ChocolateyModule
 from .powershell_wrapper import PowerShellWrapperModule
+from .powershell_engine import powershell_engine_steps
 from ..build_step import BuildStep
 
 
@@ -97,5 +98,6 @@ __all__ = [
     "FilesModule",
     "ScriptModule",
     "PowerShellWrapperModule",
+    "powershell_engine_steps",
     "ContainerfileModule",
 ]

@@ -38,6 +38,7 @@ def run_compat_test(
     all_entrypoints: bool = False,
     run_files: list[Path | str] | None = None,
     runner_cache_dir: Path | str | None = None,
+    module_cache_dir: Path | str | None = None,
     resume_from_bundle: Path | str | None = None,
     stop_before: str | None = None,
 ) -> dict[str, Any]:
@@ -168,6 +169,8 @@ def run_compat_test(
         }
         if manifest.runtime.runner or runner_cache_dir is not None:
             build_kwargs["runner_cache_dir"] = runner_cache_dir
+        if module_cache_dir is not None:
+            build_kwargs["module_cache_dir"] = module_cache_dir
         if stop_before:
             build_kwargs["stop_before"] = stop_before
         build_result = execute_inside_container(manifest, bundle, **build_kwargs)

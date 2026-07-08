@@ -1,16 +1,29 @@
-"""Chocolatey module tests for module-first architecture."""
+"""Chocolatey module tests for deterministic module-first architecture."""
 from __future__ import annotations
 
 import unittest
 
-from core.manifest import Manifest, ManifestError
+from core.manifest import Manifest
+
+
+def _manifest(packages: list[str] | None = None, **module_overrides):
+    module = {"type": "chocolatey", "install": {"packages": packages or ["7zip"]}}
+    module.update(module_overrides)
+    return Manifest.from_dict({
+        "schemaVersion": "cage.app/v0",
+        "name": "test",
+        "version": "1.0.0",
+        "runtime": {"provider": "wine", "version": "latest"},
+        "modules": [module],
+    })
+
+
+def _all_commands(steps) -> str:
+    return "\n".join("\n".join(step.commands) for step in steps)
 
 
 class ChocolateyModuleUnitTests(unittest.TestCase):
-    """Test chocolatey module build() method."""
-
-    def test_build_empty_modules(self):
-        """No modules means no build steps."""
+    def test_empty_modules_parse(self):
         manifest = Manifest.from_dict({
             "schemaVersion": "cage.app/v0",
             "name": "test",
@@ -18,373 +31,132 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             "runtime": {"provider": "wine", "version": "latest"},
             "modules": [],
         })
-        self.assertEqual(len(manifest.modules), 0)
+        self.assertEqual(manifest.modules, [])
 
-    def test_build_with_chocolatey_module(self):
-        """Chocolatey module generates build steps."""
+    def test_chocolatey_module_parses_and_preserves_provenance(self):
         manifest = Manifest.from_dict({
             "schemaVersion": "cage.app/v0",
             "name": "test",
             "version": "1.0.0",
             "runtime": {"provider": "wine", "version": "latest"},
-            "modules": [
-                {"type": "chocolatey", "install": {"packages": ["7zip"]}},
-            ],
-        })
-        self.assertEqual(len(manifest.modules), 1)
-        self.assertEqual(manifest.modules[0].type, "chocolatey")
-        
-        # Test build() method
-        steps = manifest.modules[0].build()
-        self.assertGreater(len(steps), 0)
-        # Should have commands for installing 7zip
-        all_commands = " ".join(" ".join(step.commands) for step in steps)
-        self.assertIn("7zip", all_commands)
-
-    def test_chocolatey_installs_self_contained_without_codeberg_wrapper(self):
-        """Chocolatey-for-wine owns its PowerShell/CLR setup for now."""
-        manifest = Manifest.from_dict({
-            "schemaVersion": "cage.app/v0",
-            "name": "test",
-            "version": "1.0.0",
-            "runtime": {"provider": "wine", "version": "latest"},
-            "modules": [
-                {"type": "chocolatey", "install": {"packages": ["7zip"]}},
-            ],
-        })
-
-        steps = manifest.modules[0].build()
-        all_commands = "\n".join("\n".join(step.commands) for step in steps)
-
-        self.assertIn("Chocolatey-for-wine", all_commands)
-        self.assertIn("ChoCinstaller_*.exe", all_commands)
-        self.assertIn("WINEDLLOVERRIDES", all_commands)
-        self.assertIn("Verifying Chocolatey", all_commands)
-        self.assertIn("--version", all_commands)
-        self.assertNotIn("codeberg.org/Synchro/powershell-wrapper-for-wine", all_commands)
-        self.assertNotIn("powershell64.exe", all_commands)
-
-    def test_chocolatey_unsets_inherited_winedlloverrides(self):
-        """Clearing inherited overrides must not mask Wine registry AppDefaults."""
-        manifest = Manifest.from_dict({
-            "schemaVersion": "cage.app/v0",
-            "name": "test",
-            "version": "1.0.0",
-            "runtime": {"provider": "wine", "version": "latest"},
-            "modules": [
-                {"type": "chocolatey", "install": {"packages": ["7zip"]}},
-            ],
-        })
-
-        steps = manifest.modules[0].build()
-        install_script = "\n".join(steps[0].commands)
-        package_script = "\n".join(steps[1].commands)
-
-        self.assertIn("unset WINEDLLOVERRIDES", install_script)
-        self.assertIn("unset WINEDLLOVERRIDES", package_script)
-        self.assertNotIn('export WINEDLLOVERRIDES=""', install_script)
-        self.assertNotIn('export WINEDLLOVERRIDES=""', package_script)
-        self.assertLess(
-            install_script.index("unset WINEDLLOVERRIDES"),
-            install_script.index("Pre-seeding Chocolatey-for-wine PowerShell DLL overrides"),
-        )
-
-    def test_chocolatey_sets_win10_before_cfw_powershell_runs(self):
-        """PowerShell Core 7.x must see a win10 prefix before CFW invokes pwsh."""
-        manifest = Manifest.from_dict({
-            "schemaVersion": "cage.app/v0",
-            "name": "test",
-            "version": "1.0.0",
-            "runtime": {"provider": "wine", "version": "latest"},
-            "modules": [
-                {"type": "chocolatey", "install": {"packages": ["7zip"]}},
-            ],
-        })
-
-        steps = manifest.modules[0].build()
-        all_commands = "\n".join("\n".join(step.commands) for step in steps)
-
-        self.assertIn("Setting Wine Windows version to win10 for Chocolatey-for-wine", all_commands)
-        self.assertIn("winecfg /v win10", all_commands)
-        self.assertLess(
-            all_commands.index("winecfg /v win10"),
-            all_commands.index("Running Chocolatey-for-wine installer"),
-        )
-
-    def test_chocolatey_preseeds_cfw_pwsh_dll_overrides(self):
-        """CFW pwsh AppDefaults overrides must exist before choc_install.ps1 can run."""
-        manifest = Manifest.from_dict({
-            "schemaVersion": "cage.app/v0",
-            "name": "test",
-            "version": "1.0.0",
-            "runtime": {"provider": "wine", "version": "latest"},
-            "modules": [
-                {"type": "chocolatey", "install": {"packages": ["7zip"]}},
-            ],
-        })
-
-        steps = manifest.modules[0].build()
-        all_commands = "\n".join("\n".join(step.commands) for step in steps)
-
-        self.assertIn("Pre-seeding Chocolatey-for-wine PowerShell DLL overrides", all_commands)
-        self.assertIn("CAGE_WINE_REG_TIMEOUT", all_commands)
-        self.assertIn("AppDefaults\\pwsh.exe\\DllOverrides", all_commands)
-        self.assertIn('/v amsi /d "" /f', all_commands)
-        self.assertIn('/v dwmapi /d "" /f', all_commands)
-        self.assertIn("/v rpcrt4 /d native,builtin /f", all_commands)
-        self.assertLess(
-            all_commands.index("Pre-seeding Chocolatey-for-wine PowerShell DLL overrides"),
-            all_commands.index("Running Chocolatey-for-wine installer"),
-        )
-
-    def test_chocolatey_pwsh_probe_uses_file_sentinel(self):
-        """PowerShell under Wine can execute even when stdout capture is empty."""
-        manifest = Manifest.from_dict({
-            "schemaVersion": "cage.app/v0",
-            "name": "test",
-            "version": "1.0.0",
-            "runtime": {"provider": "wine", "version": "latest"},
-            "modules": [
-                {"type": "chocolatey", "install": {"packages": ["7zip"]}},
-            ],
-        })
-
-        steps = manifest.modules[0].build()
-        all_commands = "\n".join("\n".join(step.commands) for step in steps)
-
-        self.assertIn("pwsh_probe_sentinel=", all_commands)
-        self.assertIn("pwsh_probe_sentinel_win=", all_commands)
-        self.assertIn("WriteAllText", all_commands)
-        self.assertIn("PowerShell probe did not create sentinel", all_commands)
-        self.assertIn("PowerShell probe produced no captured stdout", all_commands)
-        self.assertLess(
-            all_commands.index("pwsh_probe_sentinel_win="),
-            all_commands.index("probe_cfw_pwsh()"),
-        )
-
-    def test_chocolatey_repairs_dead_cfw_pwsh_with_zip_payload(self):
-        """Dead CFW-installed pwsh is repaired without rerunning MSI installers."""
-        manifest = Manifest.from_dict({
-            "schemaVersion": "cage.app/v0",
-            "name": "test",
-            "version": "1.0.0",
-            "runtime": {"provider": "wine", "version": "latest"},
-            "modules": [
-                {"type": "chocolatey", "install": {"packages": ["7zip"]}},
-            ],
-        })
-
-        steps = manifest.modules[0].build()
-        all_commands = "\n".join("\n".join(step.commands) for step in steps)
-
-        self.assertIn("Repairing Chocolatey-for-wine PowerShell from ZIP payload", all_commands)
-        self.assertIn("PowerShell-7.4.11-win-x64.zip", all_commands)
-        self.assertIn("CAGE_CHOCOLATEY_PWSH_REPAIR_TIMEOUT", all_commands)
-        self.assertIn("pwsh_zip=", all_commands)
-        self.assertIn("pwsh_dir=", all_commands)
-        self.assertIn("zipfile.ZipFile", all_commands)
-        self.assertIn("[cfw-pwsh-zip]", all_commands)
-        self.assertIn("after PowerShell ZIP repair", all_commands)
-        self.assertIn("PowerShell ZIP repair failed", all_commands)
-        self.assertLess(
-            all_commands.index("Probing Chocolatey-for-wine PowerShell"),
-            all_commands.index("Repairing Chocolatey-for-wine PowerShell from ZIP payload"),
-        )
-        self.assertLess(
-            all_commands.index("after PowerShell ZIP repair"),
-            all_commands.index("timeout \"${CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}\""),
-        )
-        self.assertNotIn("winetricks --force --unattended powershell_core", all_commands)
-        self.assertNotIn("codeberg.org/Synchro/powershell-wrapper-for-wine", all_commands)
-        self.assertNotIn("powershell64.exe", all_commands)
-
-    def test_chocolatey_recovers_partial_cfw_finalization(self):
-        """Partial CFW installs rerun choc_install.ps1 instead of accepting raw nupkg extraction."""
-        manifest = Manifest.from_dict({
-            "schemaVersion": "cage.app/v0",
-            "name": "test",
-            "version": "1.0.0",
-            "runtime": {"provider": "wine", "version": "latest"},
-            "modules": [
-                {"type": "chocolatey", "install": {"packages": ["7zip"]}},
-            ],
-        })
-
-        steps = manifest.modules[0].build()
-        all_commands = "\n".join("\n".join(step.commands) for step in steps)
-
-        self.assertIn("raw_choco_exe=", all_commands)
-        self.assertIn("ProgramData/tools/chocolateyInstall/choco.exe", all_commands)
-        self.assertIn("pwsh_exe=", all_commands)
-        self.assertIn("Program Files/PowerShell/7/pwsh.exe", all_commands)
-        self.assertIn("choc_install.ps1", all_commands)
-        self.assertIn("Finalizing partial Chocolatey-for-wine install", all_commands)
-        self.assertIn("finalize_driver=", all_commands)
-        self.assertIn("$ErrorActionPreference = 'Stop'", all_commands)
-        self.assertIn("-NoProfile", all_commands)
-        self.assertIn("-ExecutionPolicy Bypass", all_commands)
-        self.assertIn("[cfw-finalize]", all_commands)
-        self.assertIn("pwsh_probe_log=", all_commands)
-        self.assertIn("Probing Chocolatey-for-wine PowerShell", all_commands)
-        self.assertIn("[cfw-pwsh]", all_commands)
-        self.assertIn("PowerShell probe did not create sentinel", all_commands)
-        self.assertIn("PowerShell probe produced no captured stdout", all_commands)
-        self.assertIn("Chocolatey-for-wine finalizer did not create canonical choco.exe", all_commands)
-        self.assertIn("Chocolatey-for-wine finalizer returned success but left choco.exe missing", all_commands)
-        self.assertIn("Finalizer log was empty", all_commands)
-        self.assertIn("timeout \"${CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}\"", all_commands)
-
-    def test_chocolatey_never_treats_raw_extracted_choco_as_success(self):
-        """Package installation still uses canonical Chocolatey bin path only."""
-        manifest = Manifest.from_dict({
-            "schemaVersion": "cage.app/v0",
-            "name": "test",
-            "version": "1.0.0",
-            "runtime": {"provider": "wine", "version": "latest"},
-            "modules": [
-                {"type": "chocolatey", "install": {"packages": ["7zip"]}},
-            ],
-        })
-
-        steps = manifest.modules[0].build()
-        install_script = "\n".join(steps[0].commands)
-        package_script = "\n".join(steps[1].commands)
-
-        self.assertIn("ProgramData/chocolatey/bin/choco.exe", install_script)
-        self.assertIn("ProgramData/chocolatey/bin/choco.exe", package_script)
-        self.assertIn("ProgramData/tools/chocolateyInstall/choco.exe", install_script)
-        self.assertNotIn("ProgramData/tools/chocolateyInstall/choco.exe", package_script)
-
-    def test_build_preserves_provenance(self):
-        """Provenance field is preserved through parsing."""
-        manifest = Manifest.from_dict({
-            "schemaVersion": "cage.app/v0",
-            "name": "test",
-            "version": "1.0.0",
-            "runtime": {"provider": "wine", "version": "latest"},
-            "modules": [
-                {"type": "chocolatey", "packages": ["7zip"]},
-            ],
+            "modules": [{"type": "chocolatey", "install": {"packages": ["7zip", "notepadplusplus"]}}],
             "provenance": {"test": "value"},
         })
+
+        self.assertEqual(manifest.modules[0].type, "chocolatey")
+        self.assertEqual(manifest.modules[0].install["packages"], ["7zip", "notepadplusplus"])
         self.assertEqual(manifest.provenance, {"test": "value"})
 
-
-class ChocolateyModuleManifestTests(unittest.TestCase):
-    """Test chocolatey module manifest parsing."""
-
-    def test_bluebuild_style_chocolatey_module(self):
-        """Chocolatey module with packages list parses correctly."""
-        manifest = Manifest.from_dict({
-            "schemaVersion": "cage.app/v0",
-            "name": "test",
-            "version": "1.0.0",
-            "runtime": {"provider": "wine", "version": "latest"},
-            "modules": [
-                {"type": "chocolatey", "install": {"packages": ["7zip", "notepadplusplus"]}},
-            ],
-        })
-        self.assertEqual(len(manifest.modules), 1)
-        module = manifest.modules[0]
-        self.assertEqual(module.type, "chocolatey")
-        self.assertEqual(module.install["packages"], ["7zip", "notepadplusplus"])
-
     def test_chocolatey_module_rejects_shell_like_package_names(self):
-        """Package names must be alphanumeric with dots/underscores/plus/dashes."""
-        manifest = Manifest.from_dict({
-            "schemaVersion": "cage.app/v0",
-            "name": "test",
-            "version": "1.0.0",
-            "runtime": {"provider": "wine", "version": "latest"},
-            "modules": [
-                {"type": "chocolatey", "install": {"packages": ["7zip; rm -rf /"]}},
-            ],
-        })
-        # Validation happens in build(), not in from_dict()
+        manifest = _manifest(["7zip; rm -rf /"])
+
         with self.assertRaises(Exception) as ctx:
             manifest.modules[0].build()
+
         self.assertIn("must use letters, numbers", str(ctx.exception))
 
-    def test_direct_choco_install_step_rejects_shell_like_args(self):
-        """Direct choco install steps validate args."""
-        # In the new architecture, script modules accept any command
-        # Validation happens at runtime, not parse time
+    def test_chocolatey_module_accepts_custom_source_url(self):
+        manifest = _manifest(source="https://custom.choco.source/")
+
+        self.assertEqual(manifest.modules[0].source, "https://custom.choco.source/")
+        script = _all_commands(manifest.modules[0].build())
+        self.assertIn(" -s 'https://custom.choco.source/'", script)
+
+    def test_chocolatey_builds_sequential_verifiable_steps_without_chocinstaller(self):
+        steps = _manifest(["7zip", "notepadplusplus"]).modules[0].build()
+        descriptions = [step.description for step in steps]
+        script = _all_commands(steps)
+
+        self.assertEqual(descriptions, [
+            "Install PowerShell 7 engine",
+            "Prepare Chocolatey-for-wine data",
+            "Install .NET Framework 4.8 for Chocolatey",
+            "Prepare Wine registry for Chocolatey",
+            "Finalize Chocolatey-for-wine",
+            "Install Chocolatey packages: 7zip notepadplusplus",
+        ])
+        self.assertNotIn("ChoCinstaller", script)
+        self.assertNotIn("Running Chocolatey-for-wine installer", script)
+        self.assertNotIn("Repairing Chocolatey-for-wine PowerShell", script)
+        self.assertNotIn("winetricks --force --unattended powershell_core", script)
+        self.assertNotIn("winetricks --unattended powershell_core", script)
+        self.assertNotIn("codeberg.org/Synchro/powershell-wrapper-for-wine", script)
+
+    def test_chocolatey_extracts_nupkg_to_raw_tools_before_finalizer(self):
+        steps = _manifest().modules[0].build()
+        prepare = "\n".join(steps[1].commands)
+        finalize = "\n".join(steps[4].commands)
+
+        self.assertIn("https://community.chocolatey.org/api/v2/package/chocolatey/2.6.0", prepare)
+        self.assertIn("f13a2af9cd4ec2c9b58d81861bc95ad7151e3a871d8f758dffa72a996a3792d8", prepare)
+        self.assertIn("actual_choco_nupkg_sha", prepare)
+        self.assertIn("zipfile.ZipFile", prepare)
+        self.assertIn("ProgramData/tools/ChocolateyInstall", prepare)
+        self.assertIn("tools/chocolateyInstall/", prepare)
+        self.assertIn("choc_install.ps1", prepare)
+        self.assertLess(_all_commands(steps).index("Prepare Chocolatey-for-wine data"), _all_commands(steps).index("Finalize Chocolatey-for-wine"))
+        self.assertIn("ProgramData/tools/ChocolateyInstall/choco.exe", finalize)
+
+    def test_chocolatey_dotnet48_is_dedicated_single_msi_step(self):
+        dotnet = "\n".join(_manifest().modules[0].build()[2].commands)
+
+        self.assertIn("https://go.microsoft.com/fwlink/?linkid=2088631", dotnet)
+        self.assertIn("0a3a390c47e639d0f7fc65b21195fee6b7f65b066f80f70c60fab191d14b7e40", dotnet)
+        self.assertIn("actual_ndp48_sha", dotnet)
+        self.assertIn("netfx_Full_x64.msi", dotnet)
+        self.assertIn("msiexec", dotnet)
+        self.assertIn("/QN", dotnet)
+        self.assertIn("CAGE_DOTNET48_TIMEOUT", dotnet)
+        self.assertEqual(dotnet.count("msiexec"), 1)
+        self.assertNotIn("PowerShell", dotnet)
+        self.assertNotIn("choco.exe install", dotnet)
+
+    def test_chocolatey_registry_prep_sets_win10_and_pwsh_appdefaults(self):
+        registry = "\n".join(_manifest().modules[0].build()[3].commands)
+
+        self.assertIn("winecfg /v win10", registry)
+        self.assertIn("CAGE_WINECFG_TIMEOUT", registry)
+        self.assertIn("CAGE_WINE_REG_TIMEOUT", registry)
+        self.assertIn("AppDefaults\\pwsh.exe\\DllOverrides", registry)
+        self.assertIn('/v amsi /d "" /f', registry)
+        self.assertIn('/v dwmapi /d "" /f', registry)
+        self.assertIn("/v rpcrt4 /d native,builtin /f", registry)
+
+    def test_chocolatey_finalizer_uses_verified_pwsh_and_canonical_choco(self):
+        finalize = "\n".join(_manifest().modules[0].build()[4].commands)
+
+        self.assertIn("pwsh_exe=", finalize)
+        self.assertIn("Program Files/PowerShell/7/pwsh.exe", finalize)
+        self.assertIn("pwsh_probe_sentinel=", finalize)
+        self.assertIn("WriteAllText", finalize)
+        self.assertIn("PowerShell probe did not create sentinel", finalize)
+        self.assertIn("choc_install.ps1", finalize)
+        self.assertIn("finalize_driver=", finalize)
+        self.assertIn("$ErrorActionPreference = 'Stop'", finalize)
+        self.assertIn("finalize_rc=", finalize)
+        self.assertIn("[cfw-finalize]", finalize)
+        self.assertIn("ProgramData/chocolatey/bin/choco.exe", finalize)
+        self.assertIn("Chocolatey-for-wine finalizer did not create canonical choco.exe", finalize)
+        self.assertIn("CAGE_CHOCOLATEY_FINALIZE_TIMEOUT", finalize)
+
+    def test_chocolatey_package_install_uses_canonical_choco_only(self):
+        package = "\n".join(_manifest(["7zip", "notepadplusplus"]).modules[0].build()[5].commands)
+
+        self.assertIn("ProgramData/chocolatey/bin/choco.exe", package)
+        self.assertNotIn("ProgramData/tools/chocolateyInstall/choco.exe", package)
+        self.assertIn("wine \"$choco_exe\" install 7zip notepadplusplus -y", package)
+        self.assertIn("unset WINEDLLOVERRIDES", package)
+
+    def test_direct_script_module_still_accepts_arbitrary_commands(self):
         manifest = Manifest.from_dict({
             "schemaVersion": "cage.app/v0",
             "name": "test",
             "version": "1.0.0",
             "runtime": {"provider": "wine", "version": "latest"},
-            "modules": [
-                {
-                    "type": "script",
-                    "command": "choco install 7zip; rm -rf /",
-                },
-            ],
+            "modules": [{"type": "script", "command": "choco install 7zip; rm -rf /"}],
         })
-        # Script modules accept any command - no validation at parse time
+
         self.assertEqual(len(manifest.modules), 1)
-
-    def test_direct_choco_install_step_rejects_unknown_command(self):
-        """Direct choco install steps must use 'install' command."""
-        # In the new architecture, script modules accept any command
-        # Choco validation is now in the chocolatey module type
-        manifest = Manifest.from_dict({
-            "schemaVersion": "cage.app/v0",
-            "name": "test",
-            "version": "1.0.0",
-            "runtime": {"provider": "wine", "version": "latest"},
-            "modules": [
-                {
-                    "type": "script",
-                    "command": "echo test",
-                },
-            ],
-        })
-        self.assertEqual(len(manifest.modules), 1)
-
-
-class ChocolateyModuleBuildTests(unittest.TestCase):
-    """Test chocolatey module build step generation."""
-
-    def test_chocolatey_module_generates_install_commands(self):
-        """Chocolatey module generates proper install commands."""
-        manifest = Manifest.from_dict({
-            "schemaVersion": "cage.app/v0",
-            "name": "test",
-            "version": "1.0.0",
-            "runtime": {"provider": "wine", "version": "latest"},
-            "modules": [
-                {"type": "chocolatey", "install": {"packages": ["7zip", "notepadplusplus"]}},
-            ],
-        })
-        
-        steps = manifest.modules[0].build()
-        self.assertGreater(len(steps), 0)
-        
-        # Check that build steps contain the package names
-        all_commands = " ".join(" ".join(step.commands) for step in steps)
-        self.assertIn("7zip", all_commands)
-        self.assertIn("notepadplusplus", all_commands)
-
-    def test_chocolatey_module_with_custom_source(self):
-        """Chocolatey module accepts custom source URL."""
-        manifest = Manifest.from_dict({
-            "schemaVersion": "cage.app/v0",
-            "name": "test",
-            "version": "1.0.0",
-            "runtime": {"provider": "wine", "version": "latest"},
-            "modules": [
-                {
-                    "type": "chocolatey",
-                    "install": {"packages": ["7zip"]},
-                    "source": "https://custom.choco.source/",
-                },
-            ],
-        })
-        
-        module = manifest.modules[0]
-        self.assertEqual(module.install["packages"], ["7zip"])
-        self.assertEqual(module.source, "https://custom.choco.source/")
 
 
 if __name__ == "__main__":

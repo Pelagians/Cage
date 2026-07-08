@@ -94,6 +94,7 @@ class BuildResult:
     prefix_file_count: int | None = None
     error: str | None = None
     runner_cache: dict[str, Any] | None = None
+    module_cache: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -108,6 +109,7 @@ class BuildResult:
             "prefixFileCount": self.prefix_file_count,
             "error": self.error,
             "runnerCache": self.runner_cache,
+            "moduleCache": self.module_cache,
         }
 
 
@@ -191,6 +193,7 @@ def _resolve_image_ref(manifest: Manifest, engine: str) -> str | None:
 
 
 RUNNER_CONTAINER_DIR = "/opt/cage-runner"
+MODULE_CACHE_CONTAINER_DIR = "/opt/cage-module-cache"
 
 
 def _volume_mount(source: Path | str, target: str, *, engine: str, read_only: bool = False) -> str:
@@ -231,6 +234,21 @@ def _prepare_runner_cache(manifest: Manifest, cache_dir: Path | str | None, *, e
     return payload
 
 
+def _prepare_module_cache(cache_dir: Path | str | None, *, engine: str) -> dict[str, Any] | None:
+    if cache_dir is None:
+        return None
+    module_cache_dir = Path(cache_dir).resolve()
+    module_cache_dir.mkdir(parents=True, exist_ok=True)
+    return {
+        "cacheDir": str(module_cache_dir),
+        "containerDir": MODULE_CACHE_CONTAINER_DIR,
+        "mount": _volume_mount(module_cache_dir, MODULE_CACHE_CONTAINER_DIR, engine=engine),
+        "environment": {
+            "CAGE_MODULE_CACHE_DIR": MODULE_CACHE_CONTAINER_DIR,
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Container execution
 # ---------------------------------------------------------------------------
@@ -244,6 +262,7 @@ def execute_inside_container(
     timeout: int = 600,
     workspace: Path | str | None = None,
     runner_cache_dir: Path | str | None = None,
+    module_cache_dir: Path | str | None = None,
     stop_before: str | None = None,
 ) -> BuildResult:
     """Run the Cage build inside the runtime provider's Docker/Podman container.
@@ -256,6 +275,7 @@ def execute_inside_container(
         timeout:          Max seconds for the entire build.
         workspace:        Host workspace mounted read-only at /workspace.
         runner_cache_dir: Optional runner cache root for runtime.runner archives.
+        module_cache_dir: Optional cache root for module payload archives.
         stop_before: Optional phase boundary for checkpoint prep, currently install-apps.
 
     Returns:
@@ -271,8 +291,9 @@ def execute_inside_container(
         from container.manager import get_image_ref as _img_ref
         img = _img_ref(manifest.runtime.provider, manifest.runtime.version)
 
-    # ---- Resolve optional downloadable runner cache ----
+    # ---- Resolve optional downloadable runner cache and module payload cache ----
     runner_cache = _prepare_runner_cache(manifest, runner_cache_dir, engine=engine)
+    module_cache = _prepare_module_cache(module_cache_dir, engine=engine)
 
     # ---- Write the build script into the bundle ----
     script_path = bundle_path / "build" / "run.sh"
@@ -302,6 +323,9 @@ def execute_inside_container(
     if runner_cache:
         mounts.append(runner_cache["mount"])
         environment.update(runner_cache["environment"])
+    if module_cache:
+        mounts.append(module_cache["mount"])
+        environment.update(module_cache["environment"])
 
     # ---- Build the docker/podman run command ----
     cmd = [
@@ -325,6 +349,8 @@ def execute_inside_container(
     log_lines.append(f"[cage] CWD:    {host_workspace}")
     if runner_cache:
         log_lines.append(f"[cage] Runner: {runner_cache['runnerId']} mounted at {runner_cache['containerDir']}")
+    if module_cache:
+        log_lines.append(f"[cage] Module cache: {module_cache['cacheDir']} mounted at {module_cache['containerDir']}")
     log_lines.append("")
 
     try:
@@ -373,6 +399,7 @@ def execute_inside_container(
             prefix_size=prefix_size,
             prefix_file_count=prefix_file_count,
             runner_cache=runner_cache,
+            module_cache=module_cache,
         )
 
     except FileNotFoundError:
@@ -387,6 +414,7 @@ def execute_inside_container(
             image_ref=img, engine=engine,
             error=error,
             runner_cache=runner_cache,
+            module_cache=module_cache,
         )
 
     except subprocess.TimeoutExpired as exc:
@@ -403,6 +431,7 @@ def execute_inside_container(
             image_ref=img, engine=engine,
             error=error,
             runner_cache=runner_cache,
+            module_cache=module_cache,
         )
 
     except subprocess.CalledProcessError as exc:
@@ -418,6 +447,7 @@ def execute_inside_container(
             exit_code=exc.returncode,
             error=error,
             runner_cache=runner_cache,
+            module_cache=module_cache,
         )
 
     except RuntimeError as exc:
@@ -428,6 +458,7 @@ def execute_inside_container(
             image_ref=img or "", engine=engine,
             error=str(exc),
             runner_cache=runner_cache,
+            module_cache=module_cache,
         )
 
 
@@ -438,5 +469,6 @@ __all__ = [
     "_pull_image",
     "_find_engine",
     "_prepare_runner_cache",
+    "_prepare_module_cache",
     "_run_container_command",
 ]
