@@ -316,6 +316,7 @@ raw_choco_exe="{raw_choco_exe}"
 pwsh_dir="$wine_prefix/drive_c/Program Files/PowerShell/7"
 pwsh_dir_win='C:\\Program Files\\PowerShell\\7'
 pwsh_exe="$pwsh_dir/pwsh.exe"
+pwsh_exe_win="$(winepath -w "$pwsh_exe")"
 winps_exe="$wine_prefix/drive_c/windows/system32/WindowsPowerShell/v1.0/powershell.exe"
 cfw_dir="$wine_prefix/drive_c/ProgramData/Chocolatey-for-wine"
 choc_install_ps1="$cfw_dir/choc_install.ps1"
@@ -355,6 +356,7 @@ $ErrorActionPreference = 'Stop'
 PS1
 
 echo "[cage] Native PowerShell diagnostic: WINEPREFIX=${{WINEPREFIX:-}}"
+echo "[cage] Native PowerShell diagnostic: pwsh_exe_win=$pwsh_exe_win"
 if [ -n "${{WINEPREFIX:-}}" ] && [ -d "$WINEPREFIX/dosdevices" ]; then
   ls -la "$WINEPREFIX/dosdevices/"
 else
@@ -389,7 +391,7 @@ fi
 
 echo "[cage] Probing native PowerShell engine for Chocolatey finalization..."
 set +e
-timeout 120s wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$pwsh_probe_script_win" "$pwsh_probe_sentinel_win" > "$pwsh_probe_stdout" 2> "$pwsh_probe_stderr"
+timeout 120s wine "$pwsh_exe_win" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$pwsh_probe_script_win" "$pwsh_probe_sentinel_win" > "$pwsh_probe_stdout" 2> "$pwsh_probe_stderr"
 pwsh_probe_rc="$?"
 set -e
 echo "[cage] Native PowerShell probe exit code: $pwsh_probe_rc"
@@ -451,7 +453,7 @@ Write-Host "[cage] Upstream Chocolatey-for-wine finalizer completed"
 PS1
 
 set +e
-timeout "${{CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}}" wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$finalize_driver_win" "$choc_install_ps1_win" "$cfw_dir_win" "$choco_exe_win" "$patched_choc_install_ps1_win" > "$finalize_log" 2>&1
+timeout "${{CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}}" wine "$pwsh_exe_win" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$finalize_driver_win" "$choc_install_ps1_win" "$cfw_dir_win" "$choco_exe_win" "$patched_choc_install_ps1_win" > "$finalize_log" 2>&1
 finalize_rc="$?"
 set -e
 if [ -s "$finalize_log" ]; then
