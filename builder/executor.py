@@ -288,9 +288,6 @@ def execute_inside_container(
 
     # ---- Ensure logs dir exists ----
     (bundle_path / "logs").mkdir(parents=True, exist_ok=True)
-    
-    # ---- Ensure prefix dir exists on host (so container user can write to it) ----
-    (bundle_path / "prefix").mkdir(parents=True, exist_ok=True)
 
     # ---- Determine mount points ----
     # Bundle:       /host/bundle-name → /opt/cage (inside container)
@@ -335,15 +332,8 @@ def execute_inside_container(
             print(line, file=sys.stderr, flush=True)
         result = _run_container_command(cmd, timeout=timeout)
         log_lines.append(result.stdout or "")
-        
-        # Fix ownership of output files (container runs as root, so files are owned by root)
-        subprocess.run(
-            ["sudo", "chown", "-R", f"{os.getuid()}:{os.getgid()}", str(bundle_path)],
-            check=False,
-        )
         if result.stderr:
             log_lines.append("--- stderr ---")
-            log_lines.append(result.stderr)
 
         log_text = "\n".join(log_lines)
         (bundle_path / "logs" / "build.log").write_text(log_text, encoding="utf-8")

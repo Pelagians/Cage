@@ -206,7 +206,6 @@ def generate_build_script(
         "",
         # Phase 1: Initialize Wine prefix
         'echo "[cage] Phase 1: Initializing Wine prefix"',
-        'mkdir -p "$WINEPREFIX"',
         'timeout 300s wine wineboot --init 2>&1 | while IFS= read -r line; do echo "  $line"; done',
         'echo "[cage]   Prefix initialized"',
         'echo ""',
