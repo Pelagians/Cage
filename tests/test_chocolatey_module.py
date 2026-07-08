@@ -85,6 +85,12 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("Program Files/PowerShell/7/pwsh.exe", all_commands)
         self.assertIn("choc_install.ps1", all_commands)
         self.assertIn("Finalizing partial Chocolatey-for-wine install", all_commands)
+        self.assertIn("finalize_driver=", all_commands)
+        self.assertIn("$ErrorActionPreference = 'Stop'", all_commands)
+        self.assertIn("-NoProfile", all_commands)
+        self.assertIn("-ExecutionPolicy Bypass", all_commands)
+        self.assertIn("[cfw-finalize]", all_commands)
+        self.assertIn("Chocolatey-for-wine finalizer did not create canonical choco.exe", all_commands)
         self.assertIn("timeout \"${CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}\"", all_commands)
 
     def test_chocolatey_never_treats_raw_extracted_choco_as_success(self):

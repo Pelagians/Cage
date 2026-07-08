@@ -153,7 +153,35 @@ PY
 
     cfw_dir_win="$(winepath -w "$cfw_dir")"
     choc_install_ps1_win="$(winepath -w "$choc_install_ps1")"
-    timeout "${{CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}}" wine "$pwsh_exe" -File "$choc_install_ps1_win" "$cfw_dir_win" /q
+    choco_exe_win="$(winepath -w "$choco_exe")"
+    finalize_driver="$work_dir/finalize-chocolatey-for-wine.ps1"
+    finalize_driver_win="$(winepath -w "$finalize_driver")"
+    finalize_log="$work_dir/chocolatey-finalize.log"
+    cat > "$finalize_driver" <<'PS1'
+$ErrorActionPreference = 'Stop'
+$scriptPath = $args[0]
+$cfwDir = $args[1]
+$chocoExe = $args[2]
+
+Write-Host "[cage] Running upstream choc_install.ps1: $scriptPath"
+& $scriptPath $cfwDir '/q'
+if (!(Test-Path $chocoExe)) {{
+    throw "Chocolatey-for-wine finalizer did not create canonical choco.exe: $chocoExe"
+}}
+Write-Host "[cage] Upstream Chocolatey-for-wine finalizer completed"
+PS1
+
+    set +e
+    timeout "${{CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}}" wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$finalize_driver_win" "$choc_install_ps1_win" "$cfw_dir_win" "$choco_exe_win" > "$finalize_log" 2>&1
+    finalize_rc="$?"
+    set -e
+    if [ -s "$finalize_log" ]; then
+      sed 's/^/[cfw-finalize] /' "$finalize_log"
+    fi
+    if [ "$finalize_rc" -ne 0 ]; then
+      echo "[cage] ERROR: Chocolatey-for-wine finalizer failed with exit code $finalize_rc"
+      exit "$finalize_rc"
+    fi
   fi
 
   if [ ! -f "$choco_exe" ]; then
