@@ -86,6 +86,32 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             all_commands.index("Running Chocolatey-for-wine installer"),
         )
 
+    def test_chocolatey_preseeds_cfw_pwsh_dll_overrides(self):
+        """CFW pwsh AppDefaults overrides must exist before choc_install.ps1 can run."""
+        manifest = Manifest.from_dict({
+            "schemaVersion": "cage.app/v0",
+            "name": "test",
+            "version": "1.0.0",
+            "runtime": {"provider": "wine", "version": "latest"},
+            "modules": [
+                {"type": "chocolatey", "install": {"packages": ["7zip"]}},
+            ],
+        })
+
+        steps = manifest.modules[0].build()
+        all_commands = "\n".join("\n".join(step.commands) for step in steps)
+
+        self.assertIn("Pre-seeding Chocolatey-for-wine PowerShell DLL overrides", all_commands)
+        self.assertIn("CAGE_WINE_REG_TIMEOUT", all_commands)
+        self.assertIn("AppDefaults\\pwsh.exe\\DllOverrides", all_commands)
+        self.assertIn('/v amsi /d "" /f', all_commands)
+        self.assertIn('/v dwmapi /d "" /f', all_commands)
+        self.assertIn("/v rpcrt4 /d native,builtin /f", all_commands)
+        self.assertLess(
+            all_commands.index("Pre-seeding Chocolatey-for-wine PowerShell DLL overrides"),
+            all_commands.index("Running Chocolatey-for-wine installer"),
+        )
+
     def test_chocolatey_pwsh_probe_uses_file_sentinel(self):
         """PowerShell under Wine can execute even when stdout capture is empty."""
         manifest = Manifest.from_dict({

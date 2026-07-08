@@ -138,6 +138,11 @@ PY
   echo "[cage] Setting Wine Windows version to win10 for Chocolatey-for-wine..."
   timeout "${{CAGE_WINECFG_TIMEOUT:-120s}}" winecfg /v win10
 
+  echo "[cage] Pre-seeding Chocolatey-for-wine PowerShell DLL overrides..."
+  timeout "${{CAGE_WINE_REG_TIMEOUT:-120s}}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v amsi /d "" /f
+  timeout "${{CAGE_WINE_REG_TIMEOUT:-120s}}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v dwmapi /d "" /f
+  timeout "${{CAGE_WINE_REG_TIMEOUT:-120s}}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v rpcrt4 /d native,builtin /f
+
   echo "[cage] Running Chocolatey-for-wine installer: $installer"
   timeout "${{CAGE_CHOCOLATEY_INSTALL_TIMEOUT:-1200s}}" wine "$installer" /q
 
