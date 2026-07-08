@@ -251,6 +251,7 @@ if [ ! -f "$netfx_msi" ]; then
   fi
 fi
 test -f "$netfx_msi"
+dotnet_success_marker="$wine_prefix/drive_c/windows/system32/ucrtbase_clr0400.dll"
 netfx_msi_win="$(winepath -w "$netfx_msi")"
 dotnet_msiexec_log="$dotnet_cache/dotnet48-msiexec.log"
 dotnet_msiexec_log_win="$(winepath -w "$dotnet_msiexec_log")"
@@ -263,13 +264,22 @@ dotnet_msi_rc="$?"
 set -e
 if [ -f "$dotnet_msiexec_log" ]; then
   echo "[cage] .NET Framework 4.8 MSI failure markers:"
-  grep -nEi 'Return value 3|error|fail|fatal' "$dotnet_msiexec_log" | head -80 | sed 's/^/[dotnet48-msi-marker] /' || true
+  grep -nEi 'Return value 3|MainEngineThread|Error [0-9]+|Fatal error' "$dotnet_msiexec_log" | head -80 | sed 's/^/[dotnet48-msi-marker] /' || true
   echo "[cage] .NET Framework 4.8 MSI log tail:"
   tail -120 "$dotnet_msiexec_log" | sed 's/^/[dotnet48-msi] /'
 fi
 if [ "$dotnet_msi_rc" -ne 0 ]; then
-  echo "[cage] ERROR: .NET Framework 4.8 MSI failed with exit code $dotnet_msi_rc"
-  exit "$dotnet_msi_rc"
+  if [ -f "$dotnet_success_marker" ] && grep -qE 'Action ended .*INSTALL[.] Return value 0' "$dotnet_msiexec_log"; then
+    echo "[cage] .NET Framework 4.8 MSI log reports INSTALL success and marker exists; ignoring Wine msiexec exit $dotnet_msi_rc"
+  else
+    echo "[cage] ERROR: .NET Framework 4.8 MSI failed with exit code $dotnet_msi_rc"
+    echo "[cage] ERROR: missing success marker or MSI success log: $dotnet_success_marker"
+    exit "$dotnet_msi_rc"
+  fi
+fi
+if [ ! -f "$dotnet_success_marker" ]; then
+  echo "[cage] ERROR: .NET Framework 4.8 marker missing after MSI step: $dotnet_success_marker"
+  exit 67
 fi
 echo "[cage] .NET Framework 4.8 MSI step complete"'''
         return BuildStep(commands=[script], description="Install .NET Framework 4.8 for Chocolatey")
