@@ -54,6 +54,40 @@ class ModuleCacheExecutionTests(unittest.TestCase):
         self.assertIn("CAGE_MODULE_CACHE_DIR=/opt/cage-module-cache", argv)
         self.assertEqual(result.module_cache["containerDir"], "/opt/cage-module-cache")
 
+    def test_execute_inside_container_normalizes_docker_emulation_to_podman(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            cache = tmp / "module-cache"
+            manifest = Manifest.from_dict(MANIFEST)
+            bundle = create_bundle(manifest, tmp / "dist", dry_run=False)
+
+            class Completed:
+                returncode = 0
+                stdout = "container ok"
+                stderr = ""
+
+            with (
+                patch("builder.executor._find_engine", return_value="podman") as find_engine,
+                patch("builder.executor._run_container_command", return_value=Completed()) as run,
+                patch("sys.stderr", io.StringIO()),
+            ):
+                result = execute_inside_container(
+                    manifest,
+                    bundle,
+                    engine="docker",
+                    image_ref="local/runtime:test",
+                    timeout=5,
+                    workspace=tmp,
+                    module_cache_dir=cache,
+                )
+
+        find_engine.assert_called_once_with("docker")
+        self.assertEqual(result.engine, "podman")
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[0], "podman")
+        self.assertIn(f"{bundle.resolve()}:/opt/cage:z", argv)
+        self.assertIn(f"{cache.resolve()}:/opt/cage-module-cache:z", argv)
+
     def test_build_and_compat_cli_accept_module_cache_dir(self):
         parser = build_parser()
 

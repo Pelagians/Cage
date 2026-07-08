@@ -281,7 +281,7 @@ def execute_inside_container(
     Returns:
         BuildResult with success/failure and metadata.
     """
-    engine = engine or _find_engine()
+    engine = _find_engine(engine) if engine == "docker" else (engine or _find_engine())
     runtime = resolve_runtime(manifest.runtime)
 
     # Resolve image reference
