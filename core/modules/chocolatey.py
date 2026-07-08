@@ -325,6 +325,7 @@ finalize_driver="$work_dir/finalize-chocolatey-for-wine.ps1"
 patched_choc_install_ps1="$work_dir/choc_install.patched.ps1"
 finalize_log="$work_dir/chocolatey-finalize.log"
 winps_probe_log="$work_dir/winps-probe.log"
+winps_cmd_diag_log="$work_dir/winps-cmd-env.log"
 winps_probe_script="$work_dir/winps-probe.ps1"
 winps_probe_sentinel="$work_dir/winps-probe-ok.txt"
 mkdir -p "$work_dir"
@@ -347,15 +348,46 @@ $ErrorActionPreference = 'Stop'
 [Console]::Out.WriteLine('[cage] Chocolatey-for-wine WindowsPowerShell wrapper probe OK')
 [Console]::Out.WriteLine($PSVersionTable.PSVersion.ToString())
 PS1
+
+echo "[cage] Chocolatey wrapper diagnostic: PS7=${{PS7:-}}"
+echo "[cage] Chocolatey wrapper diagnostic: WINEPATH=${{WINEPATH:-}}"
+case ":$PATH:" in
+  *":$pwsh_dir:"*) echo "[cage] Chocolatey wrapper diagnostic: PATH contains pwsh_dir=yes" ;;
+  *) echo "[cage] Chocolatey wrapper diagnostic: PATH contains pwsh_dir=no" ;;
+esac
+echo "[cage] Chocolatey wrapper diagnostic: command -v pwsh"
+command -v pwsh || true
+echo "[cage] Chocolatey wrapper diagnostic: winepath -w pwsh_dir"
+winepath -w "$pwsh_dir" 2>&1 || true
+echo "[cage] Chocolatey wrapper diagnostic: winepath -u pwsh_dir_win"
+winepath -u "$pwsh_dir_win" 2>&1 || true
+echo "[cage] Chocolatey wrapper diagnostic: files"
+ls -l "$pwsh_exe" "$winps_exe" "$winps_probe_script" 2>&1 || true
+: > "$winps_cmd_diag_log"
+set +e
+timeout 30s wine cmd /c "echo PS7=%PS7% && echo WINEPATH=%WINEPATH% && echo PATH=%PATH% && where pwsh" > "$winps_cmd_diag_log" 2>&1
+winps_cmd_diag_rc="$?"
+set -e
+echo "[cage] Chocolatey wrapper diagnostic: wine cmd /c where pwsh exit code $winps_cmd_diag_rc"
+if [ -s "$winps_cmd_diag_log" ]; then
+  sed 's/^/[cfw-cmd-env] /' "$winps_cmd_diag_log"
+else
+  echo "[cage] Chocolatey wrapper diagnostic: wine cmd env log was empty"
+fi
 : > "$winps_probe_log"
 echo "[cage] Probing Chocolatey-for-wine WindowsPowerShell wrapper..."
 set +e
 timeout 120s wine "$winps_exe" -NoLogo -ExecutionPolicy Bypass -File "$winps_probe_script_win" "$winps_probe_sentinel_win" > "$winps_probe_log" 2>&1
 winps_probe_rc="$?"
 set -e
+echo "[cage] Chocolatey wrapper probe exit code: $winps_probe_rc"
+echo "[cage] winps-probe.log contents begin"
 if [ -s "$winps_probe_log" ]; then
   sed 's/^/[cfw-winps] /' "$winps_probe_log"
+else
+  echo "[cage] Chocolatey wrapper probe log was empty"
 fi
+echo "[cage] winps-probe.log contents end"
 if [ "$winps_probe_rc" -ne 0 ]; then
   echo "[cage] ERROR: Chocolatey-for-wine WindowsPowerShell wrapper probe failed with exit code $winps_probe_rc"
   exit "$winps_probe_rc"
