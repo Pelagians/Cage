@@ -94,8 +94,23 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("ProgramData/tools/ChocolateyInstall", prepare)
         self.assertIn("tools/chocolateyInstall/", prepare)
         self.assertIn("choc_install.ps1", prepare)
+        self.assertIn('member.filename.replace("\\\\", "/")', prepare)
         self.assertLess(_all_commands(steps).index("Prepare Chocolatey-for-wine data"), _all_commands(steps).index("Finalize Chocolatey-for-wine"))
         self.assertIn("ProgramData/tools/ChocolateyInstall/choco.exe", finalize)
+
+    def test_chocolatey_prepare_matches_release_archive_layout(self):
+        """Pinned CFW release archive does not include winetricks.ps1."""
+        prepare = "\n".join(_manifest().modules[0].build()[1].commands)
+
+        self.assertIn('cfw_extract="$cfw_cache/extracted/Chocolatey-for-wine"', prepare)
+        self.assertIn('test -f "$cfw_extract/choc_install.ps1"', prepare)
+        self.assertIn('test -f "$cfw_extract/c_drive.7z"', prepare)
+        self.assertIn("https://raw.githubusercontent.com/PietJankbal/Chocolatey-for-wine/v0.5c.755/winetricks.ps1", prepare)
+        self.assertIn("1d74ffad96f2052d42a0fa3c7ac5dbc8d099e7ad9f9aba3213446a25b34ff48c", prepare)
+        self.assertIn("actual_cfw_winetricks_sha", prepare)
+        self.assertIn('cp -f "$cfw_winetricks_ps1" "$cfw_prefix_dir/winetricks.ps1"', prepare)
+        self.assertNotIn('test -f "$cfw_extract/winetricks.ps1"', prepare)
+        self.assertNotIn('cp -f "$cfw_extract/winetricks.ps1"', prepare)
 
     def test_chocolatey_dotnet48_is_dedicated_single_msi_step(self):
         dotnet = "\n".join(_manifest().modules[0].build()[2].commands)

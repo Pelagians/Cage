@@ -18,6 +18,7 @@ DEFAULT_CHOCOLATEY_FOR_WINE_VERSION = "v0.5c.755"
 DEFAULT_CHOCOLATEY_FOR_WINE_SHA256 = "87f4ecc08a9b22f16aa5633ca107c151ddf3fed0b256fed9fb99680af7095d14"
 DEFAULT_CHOCOLATEY_VERSION = "2.6.0"
 DEFAULT_CHOCOLATEY_NUPKG_SHA256 = "f13a2af9cd4ec2c9b58d81861bc95ad7151e3a871d8f758dffa72a996a3792d8"
+DEFAULT_CFW_WINETRICKS_SHA256 = "1d74ffad96f2052d42a0fa3c7ac5dbc8d099e7ad9f9aba3213446a25b34ff48c"
 DEFAULT_DOTNET48_SHA256 = "0a3a390c47e639d0f7fc65b21195fee6b7f65b066f80f70c60fab191d14b7e40"
 
 
@@ -92,6 +93,9 @@ cfw_archive="$cfw_cache/Chocolatey-for-wine.7z"
 cfw_extract="$cfw_cache/extracted/Chocolatey-for-wine"
 cfw_archive_url="{release_url}"
 cfw_archive_sha256="{expected_cfw_sha}"
+cfw_winetricks_ps1="$cfw_cache/winetricks.ps1"
+cfw_winetricks_url="https://raw.githubusercontent.com/PietJankbal/Chocolatey-for-wine/{self.version}/winetricks.ps1"
+cfw_winetricks_sha256="{DEFAULT_CFW_WINETRICKS_SHA256 if self.version == DEFAULT_CHOCOLATEY_FOR_WINE_VERSION else ''}"
 choco_cache="$module_cache/chocolatey/{DEFAULT_CHOCOLATEY_VERSION}"
 choco_nupkg="$choco_cache/chocolatey.{DEFAULT_CHOCOLATEY_VERSION}.nupkg"
 choco_nupkg_url="{choco_nupkg_url}"
@@ -145,10 +149,25 @@ if [ ! -f "$cfw_extract/choc_install.ps1" ] || [ ! -f "$cfw_extract/7z.exe" ] ||
 fi
 
 test -f "$cfw_extract/choc_install.ps1"
-test -f "$cfw_extract/winetricks.ps1"
 test -f "$cfw_extract/7z.exe"
 test -f "$cfw_extract/7z.dll"
 test -f "$cfw_extract/c_drive.7z"
+
+if [ ! -f "$cfw_winetricks_ps1" ]; then
+  echo "[cage] Downloading Chocolatey-for-wine winetricks.ps1 {self.version}..."
+  curl -fL --retry 3 -o "$cfw_winetricks_ps1" "$cfw_winetricks_url"
+fi
+if [ -n "$cfw_winetricks_sha256" ]; then
+  actual_cfw_winetricks_sha="$(sha256sum "$cfw_winetricks_ps1" | cut -d ' ' -f 1)"
+  if [ "$actual_cfw_winetricks_sha" != "$cfw_winetricks_sha256" ]; then
+    echo "[cage] ERROR: Chocolatey-for-wine winetricks.ps1 checksum mismatch"
+    echo "[cage]   expected: $cfw_winetricks_sha256"
+    echo "[cage]   actual:   $actual_cfw_winetricks_sha"
+    exit 1
+  fi
+fi
+
+test -f "$cfw_winetricks_ps1"
 
 if [ ! -f "$choco_nupkg" ]; then
   echo "[cage] Downloading Chocolatey {DEFAULT_CHOCOLATEY_VERSION} nupkg..."
@@ -176,7 +195,7 @@ tools_root = Path(sys.argv[2])
 prefix = "tools/chocolateyInstall/"
 with zipfile.ZipFile(archive) as zf:
     for member in zf.infolist():
-        name = member.filename.replace("\\", "/")
+        name = member.filename.replace("\\\\", "/")
         if not name.startswith(prefix) or name.endswith("/"):
             continue
         target = tools_root / "ChocolateyInstall" / name[len(prefix):]
@@ -187,7 +206,7 @@ PY
 
 test -f "$raw_choco_exe"
 cp -f "$cfw_extract/choc_install.ps1" "$cfw_prefix_dir/choc_install.ps1"
-cp -f "$cfw_extract/winetricks.ps1" "$cfw_prefix_dir/winetricks.ps1"
+cp -f "$cfw_winetricks_ps1" "$cfw_prefix_dir/winetricks.ps1"
 cp -f "$cfw_extract/7z.exe" "$cfw_prefix_dir/7z.exe"
 cp -f "$cfw_extract/7z.dll" "$cfw_prefix_dir/7z.dll"
 echo "[cage] Prepared Chocolatey-for-wine data and Chocolatey nupkg"'''
