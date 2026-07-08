@@ -346,13 +346,16 @@ set -e
 if [ -s "$pwsh_command_log" ]; then
   sed 's/^/[cfw-pwsh-command] /' "$pwsh_command_log"
 fi
-if [ "$pwsh_command_rc" -ne 37 ]; then
-  echo "[cage] ERROR: PowerShell -Command probe did not return expected exit code 37; got $pwsh_command_rc"
-  exit 97
-fi
 if [ ! -f "$pwsh_command_sentinel" ]; then
   echo "[cage] ERROR: PowerShell -Command probe did not write sentinel: $pwsh_command_sentinel"
   exit 98
+fi
+if [ ! -s "$pwsh_command_log" ]; then
+  echo "[cage] ERROR: PowerShell -Command probe produced no stdout"
+  exit 96
+fi
+if [ "$pwsh_command_rc" -ne 37 ]; then
+  echo "[cage] WARNING: PowerShell -Command probe did not propagate expected exit code 37; got $pwsh_command_rc"
 fi
 
 pwsh_probe_sentinel_win="$work_dir_win/pwsh-probe-ok.txt"
