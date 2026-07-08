@@ -314,11 +314,12 @@ raw_choco_exe="{raw_choco_exe}"
 pwsh_exe="$wine_prefix/drive_c/Program Files/PowerShell/7/pwsh.exe"
 cfw_dir="$wine_prefix/drive_c/ProgramData/Chocolatey-for-wine"
 choc_install_ps1="$cfw_dir/choc_install.ps1"
-work_dir="/tmp/cage-chocolatey-finalize"
+work_dir="$wine_prefix/drive_c/ProgramData/CageFinalize"
 finalize_driver="$work_dir/finalize-chocolatey-for-wine.ps1"
 patched_choc_install_ps1="$work_dir/choc_install.patched.ps1"
 finalize_log="$work_dir/chocolatey-finalize.log"
 pwsh_probe_log="$work_dir/pwsh-probe.log"
+pwsh_probe_script="$work_dir/pwsh-probe.ps1"
 pwsh_probe_sentinel="$work_dir/pwsh-probe-ok.txt"
 mkdir -p "$work_dir"
 
@@ -327,11 +328,19 @@ test -f "$raw_choco_exe"
 test -f "$choc_install_ps1"
 
 pwsh_probe_sentinel_win="$(winepath -w "$pwsh_probe_sentinel")"
+pwsh_probe_script_win="$(winepath -w "$pwsh_probe_script")"
 rm -f "$pwsh_probe_sentinel"
+cat > "$pwsh_probe_script" <<'PS1'
+param([string]$SentinelPath)
+$ErrorActionPreference = 'Stop'
+[System.IO.File]::WriteAllText($SentinelPath, 'ok')
+[Console]::Out.WriteLine('[cage] pwsh probe OK')
+[Console]::Out.WriteLine($PSVersionTable.PSVersion.ToString())
+PS1
 : > "$pwsh_probe_log"
 echo "[cage] Probing Chocolatey PowerShell engine..."
 set +e
-timeout 120s wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "[System.IO.File]::WriteAllText('$pwsh_probe_sentinel_win','ok'); [Console]::Out.WriteLine('[cage] pwsh probe OK'); \\$PSVersionTable.PSVersion.ToString()" > "$pwsh_probe_log" 2>&1
+timeout 120s wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$pwsh_probe_script_win" "$pwsh_probe_sentinel_win" > "$pwsh_probe_log" 2>&1
 pwsh_probe_rc="$?"
 set -e
 if [ -s "$pwsh_probe_log" ]; then
