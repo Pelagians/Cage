@@ -161,7 +161,11 @@ PY
     finalize_driver_win="$(winepath -w "$finalize_driver")"
     finalize_log="$work_dir/chocolatey-finalize.log"
     pwsh_probe_log="$work_dir/pwsh-probe.log"
-    pwsh_repair_log="$work_dir/pwsh-repair.log"
+    pwsh_zip_repair_log="$work_dir/pwsh-zip-repair.log"
+    pwsh_zip="$work_dir/PowerShell-7.4.11-win-x64.zip"
+    pwsh_zip_url="https://github.com/PowerShell/PowerShell/releases/download/v7.4.11/PowerShell-7.4.11-win-x64.zip"
+    pwsh_zip_sha256="558c4115cc6b96cc6a67d74bee40012cf8d38767537f8d2857dc3fa30a63cc63"
+    pwsh_dir="$wine_prefix/drive_c/Program Files/PowerShell/7"
 
     probe_cfw_pwsh() {{
       probe_context="$1"
@@ -186,28 +190,46 @@ PY
     }}
 
     if ! probe_cfw_pwsh "after Chocolatey-for-wine"; then
-      echo "[cage] Repairing Chocolatey-for-wine PowerShell with winetricks powershell_core..."
-      if ! command -v winetricks >/dev/null 2>&1; then
-        echo "[cage] ERROR: PowerShell repair failed because winetricks is unavailable"
-        exit 1
-      fi
+      echo "[cage] Repairing Chocolatey-for-wine PowerShell from ZIP payload..."
       set +e
-      timeout "${{CAGE_CHOCOLATEY_PWSH_REPAIR_TIMEOUT:-1200s}}" winetricks --force --unattended powershell_core > "$pwsh_repair_log" 2>&1
-      pwsh_repair_rc="$?"
+      (
+        set -eu
+        echo "[cage] Downloading PowerShell 7.4.11 ZIP repair payload..."
+        timeout "${{CAGE_CHOCOLATEY_PWSH_REPAIR_TIMEOUT:-1200s}}" curl -fL --retry 3 -o "$pwsh_zip" "$pwsh_zip_url"
+        actual_pwsh_zip_sha="$(sha256sum "$pwsh_zip" | cut -d ' ' -f 1)"
+        if [ "$actual_pwsh_zip_sha" != "$pwsh_zip_sha256" ]; then
+          echo "[cage] ERROR: PowerShell ZIP checksum mismatch"
+          echo "[cage]   expected: $pwsh_zip_sha256"
+          echo "[cage]   actual:   $actual_pwsh_zip_sha"
+          exit 1
+        fi
+        echo "[cage] Extracting PowerShell ZIP to $pwsh_dir..."
+        rm -rf "$pwsh_dir"
+        mkdir -p "$pwsh_dir"
+        python3 - "$pwsh_zip" "$pwsh_dir" <<'PY'
+import sys
+import zipfile
+archive, dest = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(archive) as zf:
+    zf.extractall(dest)
+PY
+        test -f "$pwsh_exe"
+      ) > "$pwsh_zip_repair_log" 2>&1
+      pwsh_zip_repair_rc="$?"
       set -e
-      if [ -s "$pwsh_repair_log" ]; then
-        sed 's/^/[cfw-pwsh-repair] /' "$pwsh_repair_log"
+      if [ -s "$pwsh_zip_repair_log" ]; then
+        sed 's/^/[cfw-pwsh-zip] /' "$pwsh_zip_repair_log"
       else
-        echo "[cage] PowerShell repair log was empty"
+        echo "[cage] PowerShell ZIP repair log was empty"
       fi
-      if [ "$pwsh_repair_rc" -ne 0 ]; then
-        echo "[cage] ERROR: PowerShell repair failed with exit code $pwsh_repair_rc"
-        exit "$pwsh_repair_rc"
+      if [ "$pwsh_zip_repair_rc" -ne 0 ]; then
+        echo "[cage] ERROR: PowerShell ZIP repair failed with exit code $pwsh_zip_repair_rc"
+        exit "$pwsh_zip_repair_rc"
       fi
-      echo "[cage] Re-applying Wine Windows version to win10 after PowerShell repair..."
+      echo "[cage] Re-applying Wine Windows version to win10 after PowerShell ZIP repair..."
       timeout "${{CAGE_WINECFG_TIMEOUT:-120s}}" winecfg /v win10
-      if ! probe_cfw_pwsh "after winetricks repair"; then
-        echo "[cage] ERROR: PowerShell repair failed; pwsh probe still did not produce usable output"
+      if ! probe_cfw_pwsh "after PowerShell ZIP repair"; then
+        echo "[cage] ERROR: PowerShell ZIP repair failed; pwsh probe still did not produce usable output"
         exit 1
       fi
     fi

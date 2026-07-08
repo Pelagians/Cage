@@ -86,8 +86,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             all_commands.index("Running Chocolatey-for-wine installer"),
         )
 
-    def test_chocolatey_repairs_dead_cfw_pwsh_with_winetricks(self):
-        """Dead CFW-installed pwsh is repaired internally before finalization."""
+    def test_chocolatey_repairs_dead_cfw_pwsh_with_zip_payload(self):
+        """Dead CFW-installed pwsh is repaired without rerunning MSI installers."""
         manifest = Manifest.from_dict({
             "schemaVersion": "cage.app/v0",
             "name": "test",
@@ -101,21 +101,24 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         steps = manifest.modules[0].build()
         all_commands = "\n".join("\n".join(step.commands) for step in steps)
 
-        self.assertIn("Repairing Chocolatey-for-wine PowerShell with winetricks powershell_core", all_commands)
-        self.assertIn("command -v winetricks", all_commands)
-        self.assertIn("winetricks --force --unattended powershell_core", all_commands)
+        self.assertIn("Repairing Chocolatey-for-wine PowerShell from ZIP payload", all_commands)
+        self.assertIn("PowerShell-7.4.11-win-x64.zip", all_commands)
         self.assertIn("CAGE_CHOCOLATEY_PWSH_REPAIR_TIMEOUT", all_commands)
-        self.assertIn("[cfw-pwsh-repair]", all_commands)
-        self.assertIn("after winetricks repair", all_commands)
-        self.assertIn("PowerShell repair failed", all_commands)
+        self.assertIn("pwsh_zip=", all_commands)
+        self.assertIn("pwsh_dir=", all_commands)
+        self.assertIn("zipfile.ZipFile", all_commands)
+        self.assertIn("[cfw-pwsh-zip]", all_commands)
+        self.assertIn("after PowerShell ZIP repair", all_commands)
+        self.assertIn("PowerShell ZIP repair failed", all_commands)
         self.assertLess(
             all_commands.index("Probing Chocolatey-for-wine PowerShell"),
-            all_commands.index("Repairing Chocolatey-for-wine PowerShell"),
+            all_commands.index("Repairing Chocolatey-for-wine PowerShell from ZIP payload"),
         )
         self.assertLess(
-            all_commands.index("after winetricks repair"),
+            all_commands.index("after PowerShell ZIP repair"),
             all_commands.index("timeout \"${CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}\""),
         )
+        self.assertNotIn("winetricks --force --unattended powershell_core", all_commands)
         self.assertNotIn("codeberg.org/Synchro/powershell-wrapper-for-wine", all_commands)
         self.assertNotIn("powershell64.exe", all_commands)
 
