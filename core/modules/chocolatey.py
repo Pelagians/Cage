@@ -251,8 +251,24 @@ if [ ! -f "$netfx_msi" ]; then
   fi
 fi
 test -f "$netfx_msi"
+netfx_msi_win="$(winepath -w "$netfx_msi")"
+dotnet_msiexec_log="$dotnet_cache/dotnet48-msiexec.log"
+dotnet_msiexec_log_win="$(winepath -w "$dotnet_msiexec_log")"
+rm -f "$dotnet_msiexec_log"
 echo "[cage] Installing .NET Framework 4.8 from dedicated MSI step..."
-timeout "${{CAGE_DOTNET48_TIMEOUT:-1800s}}" wine msiexec /i "$netfx_msi" /QN /NORESTART
+echo "[cage] .NET Framework 4.8 MSI: $netfx_msi_win"
+set +e
+timeout "${{CAGE_DOTNET48_TIMEOUT:-1800s}}" wine msiexec /i "$netfx_msi_win" /QN /NORESTART /L*v "$dotnet_msiexec_log_win"
+dotnet_msi_rc="$?"
+set -e
+if [ -f "$dotnet_msiexec_log" ]; then
+  echo "[cage] .NET Framework 4.8 MSI log tail:"
+  tail -120 "$dotnet_msiexec_log" | sed 's/^/[dotnet48-msi] /'
+fi
+if [ "$dotnet_msi_rc" -ne 0 ]; then
+  echo "[cage] ERROR: .NET Framework 4.8 MSI failed with exit code $dotnet_msi_rc"
+  exit "$dotnet_msi_rc"
+fi
 echo "[cage] .NET Framework 4.8 MSI step complete"'''
         return BuildStep(commands=[script], description="Install .NET Framework 4.8 for Chocolatey")
 
