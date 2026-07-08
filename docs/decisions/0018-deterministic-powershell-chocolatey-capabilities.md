@@ -12,11 +12,11 @@ Cage will continue to consume the pinned Chocolatey-for-wine release as upstream
 
 The `chocolatey` module will be rebuilt as sequential, individually verifiable build steps:
 
-1. Install a real PowerShell 7 engine from a pinned, host-downloaded, SHA-256 verified ZIP payload. No PowerShell MSI path is used.
+1. Install PowerShell through the same prerequisite class upstream expects: a pinned/checksummed PowerShell MSI (`PowerShell-7.5.5-win-x64.msi`) in its own dedicated `msiexec` step. Cage previously substituted a ZIP-extracted PowerShell engine, but real Wine probes showed the ZIP apphost returned exit `0` with no stdout/stderr and no process effects even when executable, discoverable, and launched via Windows-form path.
 2. Download the Chocolatey nupkg with host networking, verify SHA-256, and extract the nupkg as a ZIP into the Wine prefix.
 3. Install .NET 4.8 in its own build step by host-downloading the pinned installer, extracting `netfx_Full_x64.msi`, and running one dedicated `msiexec /QN` with a generous timeout. This step must never run in parallel with another MSI operation.
 4. Prepare Wine registry/runtime state: set the prefix Windows version to `win10` and apply the `pwsh.exe` DLL overrides required by Chocolatey-for-wine.
-5. Prove the finalization PowerShell boundary before finalization. A `pwsh.exe` file and Wine exit code `0` are not sufficient. Cage must mark ZIP-extracted `pwsh.exe` executable, convert the PowerShell executable itself to a Windows-form path with `winepath -w`, then verify a native `pwsh.exe -File` script writes a sentinel and produces stdout before running Chocolatey finalization. Probe evidence must be captured through Unix-side paths with stdout and stderr separated; Windows `C:`-only probe artifacts can mask Wine prefix/path divergence.
+5. Prove the finalization PowerShell boundary before finalization. A `pwsh.exe` file and Wine exit code `0` are not sufficient. Cage must verify the MSI-installed `pwsh.exe`, convert the PowerShell executable itself to a Windows-form path with `winepath -w`, then verify a native `pwsh.exe -File` script writes a sentinel and produces stdout before running Chocolatey finalization. Probe evidence must be captured through Unix-side paths with stdout and stderr separated; Windows `C:`-only probe artifacts can mask Wine prefix/path divergence.
 6. Finalize through Cage's native PowerShell 7 engine, matching upstream `ChoCinstaller`'s actual finalizer launch contract (`pwsh.exe -f choc_install.ps1 ...`) while keeping Chocolatey-for-wine release data, profile/shim assets, and side effects as pinned inputs. The pinned `WindowsPowerShell/v1.0/powershell.exe` wrapper is not a trusted Cage finalizer boundary because diagnostics showed it can return success with empty output and no sentinel.
 7. Verify only canonical `C:/ProgramData/chocolatey/bin/choco.exe`; the raw `tools/chocolateyInstall` payload is a recovery marker, never success.
 
@@ -50,7 +50,7 @@ Observed Cage failure mode: raw Chocolatey nupkg extraction can win while the Po
 ### Phase 1 — now
 
 - Rebuild `chocolatey` around deterministic D2 steps above.
-- Extract the PowerShell engine step into a shared module/component consumed by both `chocolatey` and `powershell-wrapper`.
+- Keep the shared ZIP PowerShell engine for standalone `powershell-wrapper`; Chocolatey owns a separate pinned MSI prerequisite because upstream waits for MSI-installed PowerShell state.
 - Keep and enforce temporary `chocolatey`/`powershell-wrapper` mutual exclusion in manifest validation until capabilities land.
 - Add SHA-256 verification to `powershell-wrapper` Codeberg release downloads.
 - Add `--module-cache-dir` parallel to `--runner-cache-dir` so module payloads survive across builds.

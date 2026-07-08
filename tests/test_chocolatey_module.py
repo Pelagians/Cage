@@ -68,19 +68,40 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         script = _all_commands(steps)
 
         self.assertEqual(descriptions, [
-            "Install PowerShell 7 engine",
+            "Install PowerShell 7 MSI for Chocolatey",
             "Prepare Chocolatey-for-wine data",
             "Install .NET Framework 4.8 for Chocolatey",
             "Prepare Wine registry for Chocolatey",
             "Finalize Chocolatey-for-wine",
             "Install Chocolatey packages: 7zip notepadplusplus",
         ])
+        self.assertNotIn("PowerShell-7.4.11-win-x64.zip", script)
+        self.assertNotIn("Extracting PowerShell 7.4.11 ZIP", script)
         self.assertNotIn("ChoCinstaller", script)
         self.assertNotIn("Running Chocolatey-for-wine installer", script)
         self.assertNotIn("Repairing Chocolatey-for-wine PowerShell", script)
         self.assertNotIn("winetricks --force --unattended powershell_core", script)
         self.assertNotIn("winetricks --unattended powershell_core", script)
         self.assertNotIn("codeberg.org/Synchro/powershell-wrapper-for-wine", script)
+
+    def test_chocolatey_uses_pinned_powershell_msi_like_upstream_chocinstaller(self):
+        powershell = "\n".join(_manifest().modules[0].build()[0].commands)
+
+        self.assertIn("PowerShell-7.5.5-win-x64.msi", powershell)
+        self.assertIn("https://github.com/PowerShell/PowerShell/releases/download/v7.5.5/PowerShell-7.5.5-win-x64.msi", powershell)
+        self.assertIn("b2ac56b7639e2b259bb78bab077555d76f2a5eec6c516690d63de36bc1d6ca25", powershell)
+        self.assertIn("actual_pwsh_msi_sha", powershell)
+        self.assertIn("pwsh_msi_win=\"$(winepath -w \"$pwsh_msi\")\"", powershell)
+        self.assertIn("powershell-msiexec.log", powershell)
+        self.assertIn("wine msiexec /i \"$pwsh_msi_win\"", powershell)
+        self.assertIn("/QN", powershell)
+        self.assertIn("/NORESTART", powershell)
+        self.assertIn("CAGE_POWERSHELL_MSI_TIMEOUT", powershell)
+        self.assertIn("16735AF7-1D8D-3681-94A5-C578A61EC832", powershell)
+        self.assertIn('test -f "$pwsh_exe"', powershell)
+        self.assertIn('chmod +x "$pwsh_exe"', powershell)
+        self.assertNotIn("PowerShell-7.4.11-win-x64.zip", powershell)
+        self.assertNotIn("zipfile.ZipFile", powershell)
 
     def test_chocolatey_extracts_nupkg_to_raw_tools_before_finalizer(self):
         steps = _manifest().modules[0].build()

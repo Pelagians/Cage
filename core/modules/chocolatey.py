@@ -11,7 +11,6 @@ from typing import Any
 import re
 
 from .base import ModuleBase, ModuleError
-from .powershell_engine import powershell_engine_steps
 from ..build_step import BuildStep
 
 DEFAULT_CHOCOLATEY_FOR_WINE_VERSION = "v0.5c.755"
@@ -20,6 +19,10 @@ DEFAULT_CHOCOLATEY_VERSION = "2.6.0"
 DEFAULT_CHOCOLATEY_NUPKG_SHA256 = "f13a2af9cd4ec2c9b58d81861bc95ad7151e3a871d8f758dffa72a996a3792d8"
 DEFAULT_CFW_WINETRICKS_SHA256 = "1d74ffad96f2052d42a0fa3c7ac5dbc8d099e7ad9f9aba3213446a25b34ff48c"
 DEFAULT_DOTNET48_SHA256 = "0a3a390c47e639d0f7fc65b21195fee6b7f65b066f80f70c60fab191d14b7e40"
+DEFAULT_POWERSHELL_MSI_VERSION = "7.5.5"
+DEFAULT_POWERSHELL_MSI_NAME = f"PowerShell-{DEFAULT_POWERSHELL_MSI_VERSION}-win-x64.msi"
+DEFAULT_POWERSHELL_MSI_SHA256 = "b2ac56b7639e2b259bb78bab077555d76f2a5eec6c516690d63de36bc1d6ca25"
+POWERSHELL_MSI_PRODUCT_CODE = "16735AF7-1D8D-3681-94A5-C578A61EC832"
 
 
 def _sh_single_quote(value: str) -> str:
@@ -64,13 +67,78 @@ class ChocolateyModule(ModuleBase):
         source_arg = f" -s {_sh_single_quote(self.source)}" if self.source else ""
 
         return [
-            *powershell_engine_steps(wine_prefix=wine_prefix, version_slot="7"),
+            self._powershell_msi_step(wine_prefix),
             self._prepare_chocolatey_data_step(wine_prefix, raw_choco_exe),
             self._dotnet48_step(wine_prefix),
             self._registry_prep_step(),
             self._finalize_step(wine_prefix, choco_exe, raw_choco_exe),
             self._package_install_step(choco_exe, package_args, source_arg),
         ]
+
+    def _powershell_msi_step(self, wine_prefix: str) -> BuildStep:
+        pwsh_msi_url = (
+            "https://github.com/PowerShell/PowerShell/releases/download/"
+            f"v{DEFAULT_POWERSHELL_MSI_VERSION}/{DEFAULT_POWERSHELL_MSI_NAME}"
+        )
+        script = f'''set -eu
+unset WINEDLLOVERRIDES
+echo "[cage] Install PowerShell {DEFAULT_POWERSHELL_MSI_VERSION} MSI for Chocolatey"
+wine_prefix="{wine_prefix}"
+module_cache="${{CAGE_MODULE_CACHE_DIR:-/tmp/cage-module-cache}}"
+pwsh_cache="$module_cache/powershell-msi/{DEFAULT_POWERSHELL_MSI_VERSION}"
+pwsh_msi="$pwsh_cache/{DEFAULT_POWERSHELL_MSI_NAME}"
+pwsh_msi_url="{pwsh_msi_url}"
+pwsh_msi_sha256="{DEFAULT_POWERSHELL_MSI_SHA256}"
+pwsh_exe="$wine_prefix/drive_c/Program Files/PowerShell/7/pwsh.exe"
+pwsh_product_key='HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{{{POWERSHELL_MSI_PRODUCT_CODE}}}'
+mkdir -p "$pwsh_cache"
+if [ ! -f "$pwsh_msi" ]; then
+  echo "[cage] Downloading PowerShell {DEFAULT_POWERSHELL_MSI_VERSION} MSI..."
+  curl -fL --retry 3 -o "$pwsh_msi" "$pwsh_msi_url"
+fi
+actual_pwsh_msi_sha="$(sha256sum "$pwsh_msi" | cut -d ' ' -f 1)"
+if [ "$actual_pwsh_msi_sha" != "$pwsh_msi_sha256" ]; then
+  echo "[cage] ERROR: PowerShell MSI checksum mismatch"
+  echo "[cage]   expected: $pwsh_msi_sha256"
+  echo "[cage]   actual:   $actual_pwsh_msi_sha"
+  exit 1
+fi
+pwsh_msi_win="$(winepath -w "$pwsh_msi")"
+pwsh_msiexec_log="$pwsh_cache/powershell-msiexec.log"
+pwsh_msiexec_log_win="$(winepath -w "$pwsh_msiexec_log")"
+rm -f "$pwsh_msiexec_log"
+echo "[cage] Installing PowerShell {DEFAULT_POWERSHELL_MSI_VERSION} through dedicated MSI step..."
+echo "[cage] PowerShell MSI: $pwsh_msi_win"
+set +e
+timeout "${{CAGE_POWERSHELL_MSI_TIMEOUT:-1200s}}" wine msiexec /i "$pwsh_msi_win" ADD_EXPLORER_CONTEXT_MENU_OPENPOWERSHELL=0 ENABLE_PSREMOTING=0 REGISTER_MANIFEST=1 USE_MU=0 ENABLE_MU=0 /QN /NORESTART /L*v "$pwsh_msiexec_log_win"
+pwsh_msi_rc="$?"
+set -e
+if [ -f "$pwsh_msiexec_log" ]; then
+  echo "[cage] PowerShell MSI failure markers:"
+  grep -nEi 'Return value 3|MainEngineThread|Error [0-9]+|Fatal error' "$pwsh_msiexec_log" | head -80 | sed 's/^/[powershell-msi-marker] /' || true
+  echo "[cage] PowerShell MSI log tail:"
+  tail -120 "$pwsh_msiexec_log" | sed 's/^/[powershell-msi] /'
+fi
+if [ "$pwsh_msi_rc" -ne 0 ]; then
+  echo "[cage] PowerShell MSI Wine exit code: $pwsh_msi_rc"
+fi
+if [ ! -f "$pwsh_exe" ]; then
+  echo "[cage] ERROR: PowerShell MSI did not install pwsh.exe: $pwsh_exe"
+  exit 68
+fi
+test -f "$pwsh_exe"
+chmod +x "$pwsh_exe"
+set +e
+timeout "${{CAGE_WINE_REG_TIMEOUT:-120s}}" wine reg query "$pwsh_product_key" >/dev/null 2>&1
+pwsh_product_rc="$?"
+set -e
+if [ "$pwsh_product_rc" -ne 0 ]; then
+  echo "[cage] WARNING: PowerShell MSI product registry key not found: $pwsh_product_key"
+else
+  echo "[cage] PowerShell MSI product registry key present"
+fi
+echo "[cage] PowerShell MSI installed: $pwsh_exe"'''
+        return BuildStep(commands=[script], description="Install PowerShell 7 MSI for Chocolatey")
 
     def _prepare_chocolatey_data_step(self, wine_prefix: str, raw_choco_exe: str) -> BuildStep:
         release_url = (
