@@ -288,6 +288,9 @@ def execute_inside_container(
 
     # ---- Ensure logs dir exists ----
     (bundle_path / "logs").mkdir(parents=True, exist_ok=True)
+    
+    # ---- Ensure prefix dir exists on host (so container user can write to it) ----
+    (bundle_path / "prefix").mkdir(parents=True, exist_ok=True)
 
     # ---- Determine mount points ----
     # Bundle:       /host/bundle-name → /opt/cage (inside container)
