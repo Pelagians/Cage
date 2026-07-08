@@ -64,6 +64,28 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertNotIn("codeberg.org/Synchro/powershell-wrapper-for-wine", all_commands)
         self.assertNotIn("powershell64.exe", all_commands)
 
+    def test_chocolatey_sets_win10_before_cfw_powershell_runs(self):
+        """PowerShell Core 7.x must see a win10 prefix before CFW invokes pwsh."""
+        manifest = Manifest.from_dict({
+            "schemaVersion": "cage.app/v0",
+            "name": "test",
+            "version": "1.0.0",
+            "runtime": {"provider": "wine", "version": "latest"},
+            "modules": [
+                {"type": "chocolatey", "install": {"packages": ["7zip"]}},
+            ],
+        })
+
+        steps = manifest.modules[0].build()
+        all_commands = "\n".join("\n".join(step.commands) for step in steps)
+
+        self.assertIn("Setting Wine Windows version to win10 for Chocolatey-for-wine", all_commands)
+        self.assertIn("winecfg /v win10", all_commands)
+        self.assertLess(
+            all_commands.index("winecfg /v win10"),
+            all_commands.index("Running Chocolatey-for-wine installer"),
+        )
+
     def test_chocolatey_recovers_partial_cfw_finalization(self):
         """Partial CFW installs rerun choc_install.ps1 instead of accepting raw nupkg extraction."""
         manifest = Manifest.from_dict({

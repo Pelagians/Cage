@@ -135,6 +135,9 @@ PY
   pwsh_exe="$wine_prefix/drive_c/Program Files/PowerShell/7/pwsh.exe"
   raw_choco_exe="$wine_prefix/drive_c/ProgramData/tools/chocolateyInstall/choco.exe"
 
+  echo "[cage] Setting Wine Windows version to win10 for Chocolatey-for-wine..."
+  timeout "${{CAGE_WINECFG_TIMEOUT:-120s}}" winecfg /v win10
+
   echo "[cage] Running Chocolatey-for-wine installer: $installer"
   timeout "${{CAGE_CHOCOLATEY_INSTALL_TIMEOUT:-1200s}}" wine "$installer" /q
 
