@@ -16,8 +16,9 @@ The `chocolatey` module will be rebuilt as sequential, individually verifiable b
 2. Download the Chocolatey nupkg with host networking, verify SHA-256, and extract the nupkg as a ZIP into the Wine prefix.
 3. Install .NET 4.8 in its own build step by host-downloading the pinned installer, extracting `netfx_Full_x64.msi`, and running one dedicated `msiexec /QN` with a generous timeout. This step must never run in parallel with another MSI operation.
 4. Prepare Wine registry/runtime state: set the prefix Windows version to `win10` and apply the `pwsh.exe` DLL overrides required by Chocolatey-for-wine.
-5. Finalize by running upstream `choc_install.ps1` from the verified Chocolatey-for-wine release under the verified ZIP-installed `pwsh.exe`.
-6. Verify only canonical `C:/ProgramData/chocolatey/bin/choco.exe`; the raw `tools/chocolateyInstall` payload is a recovery marker, never success.
+5. Prove PowerShell execution before finalization. A `pwsh.exe` file and Wine exit code `0` are not sufficient; Cage must verify output, sentinel creation, and expected exit-code propagation through both `-Command` and script-file invocation.
+6. Finalize through a verified Chocolatey-for-wine compatibility boundary. Prefer the pinned Chocolatey-for-wine `WindowsPowerShell/v1.0/powershell.exe` wrapper/profile path; if that boundary cannot be made deterministic, port the required finalizer contract natively instead of adding more raw `pwsh.exe -File` path patches.
+7. Verify only canonical `C:/ProgramData/chocolatey/bin/choco.exe`; the raw `tools/chocolateyInstall` payload is a recovery marker, never success.
 
 Cage will introduce a PowerShell capability contract as the composability foundation for future `chocolatey` + `powershell-wrapper` coexistence. The contract has three slots:
 
@@ -38,6 +39,8 @@ External review and failed build artifacts confirmed that `ChoCinstaller_*.exe` 
 - It parses the PowerShell version from fixed filename character offsets.
 - It downloads/caches through Wine desktop-prefix assumptions such as `MyDocuments/CFW_CACHE`.
 - It was designed for interactive desktop prefixes where caches persist and the runner is full desktop-style, not fresh deterministic container builds.
+- It still encoded useful side effects Cage must replace explicitly: PowerShell registry/environment setup, prerequisite/cache staging, the `WindowsPowerShell/v1.0/powershell.exe` wrapper boundary, profile-loading behavior, and QPR/system-command shims.
+- Current failure artifacts showed standalone ZIP `pwsh.exe -File` could return success while producing no sentinel, no stdout, and no canonical Chocolatey output. That makes PowerShell execution proof a hard prerequisite, not a diagnostic warning.
 
 Observed Cage failure mode: raw Chocolatey nupkg extraction can win while the PowerShell MSI silently fails due to parallel MSI work in a fresh Wine prefix. That leaves raw `ProgramData/tools/chocolateyInstall/choco.exe` but no reliable `pwsh.exe`, and Cage correctly refuses to treat that state as success.
 
