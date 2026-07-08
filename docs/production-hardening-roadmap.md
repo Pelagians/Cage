@@ -63,7 +63,7 @@ Implemented as a BlueBuild-style build-time module, patterned after myOS `type: 
 
 ### Problem
 
-Chocolatey has a prerequisite chain: PowerShell Core, `powershell-wrapper-for-wine`, and the Chocolatey bootstrapper must exist inside the Wine prefix before package installation can work. Modeling that as hand-authored raw `install.kind: choco` steps makes recipe authors repeat setup logic and makes the YAML unlike the module-oriented myOS/BlueBuild recipe style.
+Chocolatey has a Wine-specific prerequisite chain: CLR/PowerShell setup, Chocolatey bootstrapper, profile/QPR compatibility shims, and package install commands must exist inside the prefix before package installation can work. PietJankbal's Chocolatey-for-wine release is the current reliable implementation of that chain. Modeling it as hand-authored raw `install.kind: choco` steps makes recipe authors repeat setup logic and makes the YAML unlike the module-oriented myOS/BlueBuild recipe style.
 
 ### Implemented design: `modules[].type: chocolatey`
 
@@ -97,9 +97,12 @@ modules:
 
 The module resolver lowers the declaration into concrete build behavior:
 
-1. `winetricks powershell_core` prerequisite in the dependency phase.
-2. idempotent setup script that builds `powershell-wrapper-for-wine` and bootstraps Chocolatey through `pwsh.exe`.
-3. one internal `install.kind: choco` step per package, generated as `choco install <package> -y --no-progress`.
+1. clear inherited `WINEDLLOVERRIDES` so CLR setup is not disabled by the base image policy.
+2. download and verify the pinned PietJankbal Chocolatey-for-wine release archive.
+3. run `ChoCinstaller_*.exe` and verify `C:/ProgramData/chocolatey/bin/choco.exe`.
+4. install requested packages with `wine choco.exe install <package> -y`.
+
+Synchro's `powershell-wrapper-for-wine` remains useful as a separate `modules[].type: powershell-wrapper` capability, but it is not a Chocolatey prerequisite today. Recipes cannot combine `chocolatey` and `powershell-wrapper` until their PowerShell compatibility layers are reconciled.
 
 `install.kind: choco` is therefore supported as the internal lowered form, but the public recipe shape should prefer `modules: - type: chocolatey`.
 
@@ -107,19 +110,19 @@ The module resolver lowers the declaration into concrete build behavior:
 
 | File | Change |
 |---|---|
-| `core/modules.py` | BlueBuild-style module parsing/expansion and Chocolatey package validation |
-| `core/manifest.py` | Adds `modules[]`, preserves module declarations, records module expansions, and validates lowered `choco` steps |
-| `builder/pipeline.py` | Generates safe PowerShell/Chocolatey build-script commands from lowered `choco` steps |
+| `core/modules/` | First-class module parsing/build-step generation plus Chocolatey package validation |
+| `core/manifest/` | Adds `modules[]`, preserves module declarations, and rejects temporarily incompatible module combinations |
+| `core/modules/chocolatey.py` | Generates self-contained Chocolatey-for-wine install and package commands |
 | `examples/chocolatey-firefox.cage.yaml` | Public-safe module recipe example |
 | `tests/test_chocolatey_module.py` | Schema, YAML, validation, and build-script coverage |
 
 ### Implemented acceptance criteria
 
 - `modules: - type: chocolatey` loads from strict YAML.
-- `modules[].install.packages` expands into `powershell_core`, wrapper/bootstrap setup, and package install steps.
+- `modules[].install.packages` expands into self-contained Chocolatey-for-wine setup and package install steps.
 - Package names are validated so shell-like strings are rejected before build-script generation.
-- Lowered `choco` install steps generate PowerShell array invocation via `& choco @chocoArgs` instead of raw shell concatenation.
-- Direct malformed `install.kind: choco` steps fail closed instead of silently doing nothing.
+- Chocolatey setup clears inherited CLR-breaking DLL overrides, verifies the release archive checksum, runs `ChoCinstaller_*.exe`, and verifies `choco.exe` before installing packages.
+- `powershell-wrapper` is a separate module and is temporarily incompatible with `chocolatey`.
 - Runtime containers remain network-isolated by default; Chocolatey is build-time only.
 
 ### Remaining proposed work
@@ -127,7 +130,7 @@ The module resolver lowers the declaration into concrete build behavior:
 - First-class module registry files under `modules/<name>/module.yaml` instead of built-in Python definitions.
 - Module version pinning and shared dependency deduplication.
 - Offline/pre-cached Chocolatey package mode for environments that cannot allow networked builds.
-- Pre-baked `cage-wine-choco` runtime/build image with pwsh, wrapper, and Chocolatey already installed to avoid repeated Rust wrapper builds.
+- Pre-baked `cage-wine-choco` runtime/build image with Chocolatey-for-wine already installed to avoid repeated bootstrap downloads.
 
 ## Theme 3: End-to-End Production Architecture
 
@@ -139,8 +142,8 @@ Once Themes 1 and 2 are complete, Cage's architecture matches the Gemini-describ
 │                                                         │
 │  1. Pull base Wine image (or pre-baked choco image)     │
 │  2. Initialize Wine prefix                              │
-│  3. Install pwsh + PowerShell wrapper for Wine          │
-│  4. Bootstrap Chocolatey                                │
+│  3. Run Chocolatey-for-wine bootstrap                   │
+│  4. Verify choco.exe                                    │
 │  5. choco install <packages>                            │
 │  6. Install application (exe/msi/portable)              │
 │  7. Freeze → OCI image                                  │

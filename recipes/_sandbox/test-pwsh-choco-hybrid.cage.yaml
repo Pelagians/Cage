@@ -1,5 +1,7 @@
-# Test recipe: PowerShell wrapper + Chocolatey-for-wine hybrid approach
-# This validates that both projects work together correctly
+# Intentionally invalid sandbox recipe: powershell-wrapper and chocolatey both
+# replace the Wine PowerShell surface today. Keep this as a reminder/fixture for
+# the future compatibility work; validation should reject it until the two
+# compatibility layers are reconciled.
 schemaVersion: cage.app/v0
 name: test-pwsh-choco-hybrid
 version: 1.0.0
@@ -9,13 +11,9 @@ runtime:
   version: "9.0"
 
 modules:
-  # First: Install PowerShell wrapper for wine
-  - type: powershell
+  - type: powershell-wrapper
     version: "7"
-  
-  # Second: Install Chocolatey-for-wine (depends on PowerShell wrapper)
-  # This will check if PowerShell wrapper is installed, install if missing,
-  # then install Chocolatey-for-wine, then install packages
+
   - type: chocolatey
     install:
       packages:

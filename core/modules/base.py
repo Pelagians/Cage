@@ -265,40 +265,6 @@ class ScriptModule(ModuleBase):
 
 
 @dataclass
-class PowerShellModule(ModuleBase):
-    """PowerShell wrapper module."""
-    type: str = "powershell"
-    mode: str | None = None  # "prebuilt", "build", or "corpowershell"
-    
-    def build(self) -> list[BuildStep]:
-        """Generate build steps for PowerShell setup."""
-        mode = self.mode or "prebuilt"
-        
-        if mode == "prebuilt":
-            commands = [
-                'echo "  Setting up PowerShell (prebuilt mode)"',
-                'echo "  PowerShell wrapper ready"',
-            ]
-        elif mode == "build":
-            commands = [
-                'echo "  Building PowerShell wrapper from source"',
-                '# Build commands would go here',
-            ]
-        elif mode == "corpowershell":
-            commands = [
-                'echo "  Setting up PowerShell (corpowershell mode)"',
-                '# Corpowershell setup commands would go here',
-            ]
-        else:
-            raise ModuleError(f"powershell module invalid mode: {mode}")
-        
-        return [BuildStep(
-            commands=commands,
-            description=f"Setup PowerShell ({mode})"
-        )]
-
-
-@dataclass
 class ContainerfileModule(ModuleBase):
     """Containerfile escape hatch module."""
     type: str = "containerfile"
@@ -337,6 +303,7 @@ def parse_module(data: dict[str, Any], index: int = 0) -> ModuleBase:
         ModuleError: If module type is unknown or required fields are missing
     """
     from .chocolatey import ChocolateyModule
+    from .powershell_wrapper import PowerShellWrapperModule
     
     module_type = data.get("type")
     if not module_type:
@@ -357,6 +324,8 @@ def parse_module(data: dict[str, Any], index: int = 0) -> ModuleBase:
             defaults=defaults,
             install=merged_data.get("install"),
             source=merged_data.get("source"),
+            version=merged_data.get("version", "v0.5c.755"),
+            sha256=merged_data.get("sha256"),
         )
     elif module_type == "exe":
         return ExeModule(
@@ -409,10 +378,15 @@ def parse_module(data: dict[str, Any], index: int = 0) -> ModuleBase:
             working_directory=merged_data.get("working_directory"),
         )
     elif module_type == "powershell":
-        return PowerShellModule(
+        raise ModuleError(
+            f"modules[{index}] module type 'powershell' was renamed to 'powershell-wrapper'"
+        )
+    elif module_type == "powershell-wrapper":
+        return PowerShellWrapperModule(
             type=module_type,
             defaults=defaults,
-            mode=merged_data.get("mode"),
+            version=merged_data.get("version", "7"),
+            wrapper_version=merged_data.get("wrapperVersion", "v4.2.0"),
         )
     elif module_type == "containerfile":
         return ContainerfileModule(
@@ -436,6 +410,5 @@ __all__ = [
     "PortableModule",
     "FilesModule",
     "ScriptModule",
-    "PowerShellModule",
     "ContainerfileModule",
 ]

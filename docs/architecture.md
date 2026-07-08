@@ -67,7 +67,7 @@ Suite metadata (`entrypoints[]` and `fileAssociations[]`) records multi-entry ap
 
 `core/profiles.py` expands reviewable named profiles into concrete compatibility/dependency policy. The initial `office-legacy-32bit` profile captures the current Office/Bottles evidence while preserving the expanded concrete policy in the manifest.
 
-`core/modules.py` expands BlueBuild-style build-time modules into concrete dependency/setup/install behavior. The first module is `type: chocolatey`, matching the myOS `type: dnf` YAML style: recipes declare packages under `modules[].install.packages`, while Cage handles pwsh, powershell-wrapper-for-wine, Chocolatey bootstrap, and lowered package install steps.
+`core/modules/` implements BlueBuild-style build-time modules as first-class build directives. `type: chocolatey` matches the myOS `type: dnf` YAML style: recipes declare packages under `modules[].install.packages`, while Cage handles the self-contained Chocolatey-for-wine bootstrap and package install steps. `type: powershell-wrapper` is a separate module for Synchro's wrapper and is temporarily incompatible with `chocolatey` until their PowerShell compatibility layers are reconciled.
 
 ### 8. Downloadable runner cache
 

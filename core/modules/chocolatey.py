@@ -1,20 +1,9 @@
 """Chocolatey package manager module for Wine environments.
 
-This module installs Chocolatey-for-wine (https://github.com/PietJankbal/Chocolatey-for-wine)
-which is a custom Chocolatey installer designed for Wine.
-
-PREREQUISITE: This module requires the PowerShell wrapper for wine to be installed first.
-The PowerShell wrapper (https://codeberg.org/Synchro/powershell-wrapper-for-wine) provides
-a working PowerShell Core environment under Wine that Chocolatey-for-wine depends on.
-
-If the PowerShell wrapper is not detected, this module will automatically install it
-before proceeding with Chocolatey-for-wine installation.
-
-The module will:
-1. Check if PowerShell wrapper is installed, install if missing
-2. Check if Chocolatey is already installed in the Wine prefix
-3. If not, download and install Chocolatey-for-wine
-4. Install the requested packages
+Chocolatey on Wine uses Piet Jankbal's Chocolatey-for-wine installer as the
+source of truth. That project installs the PowerShell/CoreCLR pieces and Wine
+compatibility shims Chocolatey needs. It intentionally does not depend on
+Cage's separate powershell-wrapper module.
 """
 
 from __future__ import annotations
@@ -25,35 +14,36 @@ from typing import Any
 from .base import ModuleBase, ModuleError
 
 
+DEFAULT_CHOCOLATEY_FOR_WINE_VERSION = "v0.5c.755"
+DEFAULT_CHOCOLATEY_FOR_WINE_SHA256 = "87f4ecc08a9b22f16aa5633ca107c151ddf3fed0b256fed9fb99680af7095d14"
+
+
+def _sh_single_quote(value: str) -> str:
+    """Quote a value for POSIX shell single-quoted context."""
+    return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
 @dataclass
 class ChocolateyModule(ModuleBase):
-    """Chocolatey package manager module for Wine environments.
-    
-    This module installs Chocolatey-for-wine (https://github.com/PietJankbal/Chocolatey-for-wine)
-    which is a custom Chocolatey installer designed for Wine.
-    
-    PREREQUISITE: This module requires the PowerShell wrapper for wine to be installed first.
-    The PowerShell wrapper (https://codeberg.org/Synchro/powershell-wrapper-for-wine) provides
-    a working PowerShell Core environment under Wine that Chocolatey-for-wine depends on.
-    
-    If the PowerShell wrapper is not detected, this module will automatically install it
-    before proceeding with Chocolatey-for-wine installation.
-    
-    The module will:
-    1. Check if PowerShell wrapper is installed, install if missing
-    2. Check if Chocolatey is already installed in the Wine prefix
-    3. If not, download and install Chocolatey-for-wine
-    4. Install the requested packages
+    """Install Chocolatey packages through Chocolatey-for-wine.
+
+    This module is self-contained for now: it downloads Chocolatey-for-wine,
+    clears inherited build-time DLL overrides that break CLR setup, runs the
+    Chocolatey-for-wine installer, verifies choco.exe, then installs packages.
+    It is intentionally incompatible with the separate powershell-wrapper
+    module until the wrapper compatibility layer is reconciled.
     """
+
     type: str = "chocolatey"
     install: dict[str, Any] | None = None
-    source: str | None = None  # Optional custom Chocolatey source URL
-    version: str = "v0.5c.755"  # Chocolatey-for-wine release version
+    source: str | None = None
+    version: str = DEFAULT_CHOCOLATEY_FOR_WINE_VERSION
+    sha256: str | None = None
 
     def build(self) -> list:
-        """Generate build steps for Chocolatey installation and package installation."""
+        """Generate build steps for Chocolatey-for-wine and package installs."""
         from ..build_step import BuildStep
-        
+
         if not self.install:
             raise ModuleError("chocolatey module requires 'install' field")
 
@@ -61,111 +51,134 @@ class ChocolateyModule(ModuleBase):
         if not packages:
             raise ModuleError("chocolatey module 'install.packages' cannot be empty")
 
-        # Validate package names (alphanumeric with dots, underscores, plus, dashes)
         import re
-        package_pattern = re.compile(r'^[a-zA-Z0-9._+\-]+$')
+
+        package_pattern = re.compile(r"^[a-zA-Z0-9._+\-]+$")
         for pkg in packages:
             if not package_pattern.match(pkg):
-                raise ModuleError(f"chocolatey package names must use letters, numbers, dots, underscores, plus, or dashes only: {pkg}")
+                raise ModuleError(
+                    "chocolatey package names must use letters, numbers, dots, underscores, plus, or dashes only: "
+                    f"{pkg}"
+                )
 
-        steps = []
+        if self.source and not self.source.startswith(("http://", "https://")):
+            raise ModuleError(f"Invalid chocolatey source URL: {self.source}")
+
         wine_prefix = "${WINEPREFIX:-$HOME/.wine}"
         choco_exe = f"{wine_prefix}/drive_c/ProgramData/chocolatey/bin/choco.exe"
-        pwsh_wrapper = f"{wine_prefix}/drive_c/windows/system32/WindowsPowerShell/v1.0/powershell.exe"
-        
-        # Step 1: Check and install PowerShell wrapper if missing
-        # The PowerShell wrapper for wine is required for Chocolatey-for-wine to work
-        steps.append(BuildStep(
-            commands=[f'if [ ! -f "{pwsh_wrapper}" ]; then echo "[cage] PowerShell wrapper not found, installing..."; fi'],
-            description="Check if PowerShell wrapper is installed",
-        ))
-        
-        # Install PowerShell wrapper for wine if not present
-        wrapper_base_url = "https://codeberg.org/Synchro/powershell-wrapper-for-wine/releases/latest/download"
-        
-        steps.append(BuildStep(
-            commands=[f'''if [ ! -f "{pwsh_wrapper}" ]; then
+        release_url = (
+            "https://github.com/PietJankbal/Chocolatey-for-wine/releases/download/"
+            f"{self.version}/Chocolatey-for-wine.7z"
+        )
+        expected_sha = self.sha256
+        if expected_sha is None and self.version == DEFAULT_CHOCOLATEY_FOR_WINE_VERSION:
+            expected_sha = DEFAULT_CHOCOLATEY_FOR_WINE_SHA256
+
+        expected_sha_script = expected_sha or ""
+        package_args = " ".join(packages)
+        source_arg = f" -s {_sh_single_quote(self.source)}" if self.source else ""
+
+        install_commands = [
+            f'''if [ ! -f "{choco_exe}" ]; then
   set -eu
-  echo "[cage] Installing PowerShell wrapper for wine..."
-  
-  # Install PowerShell Core via winetricks first
-  winetricks --unattended powershell_core
-  
-  # Download wrapper executables
-  curl -L -o /tmp/powershell64.exe {wrapper_base_url}/powershell64.exe
-  curl -L -o /tmp/powershell32.exe {wrapper_base_url}/powershell32.exe
-  curl -L -o /tmp/profile.ps1 {wrapper_base_url}/profile.ps1
-  
-  # Install 64-bit wrapper to system32
-  mkdir -p "{wine_prefix}/drive_c/windows/system32/WindowsPowerShell/v1.0"
-  cp -f /tmp/powershell64.exe "{wine_prefix}/drive_c/windows/system32/WindowsPowerShell/v1.0/powershell.exe"
-  
-  # Install 32-bit wrapper to syswow64
-  mkdir -p "{wine_prefix}/drive_c/windows/syswow64/WindowsPowerShell/v1.0"
-  cp -f /tmp/powershell32.exe "{wine_prefix}/drive_c/windows/syswow64/WindowsPowerShell/v1.0/powershell.exe"
-  
-  # Install profile.ps1
-  mkdir -p "{wine_prefix}/drive_c/Program Files/PowerShell/7"
-  cp -f /tmp/profile.ps1 "{wine_prefix}/drive_c/Program Files/PowerShell/7/profile.ps1"
-  
-  # Cleanup
-  rm -f /tmp/powershell64.exe /tmp/powershell32.exe /tmp/profile.ps1
-  
-  echo "[cage] PowerShell wrapper installation complete"
-fi'''],
-            description="Install PowerShell wrapper for wine",
-        ))
-        
-        # Step 2: Check if Chocolatey is already installed, if not install it
-        steps.append(BuildStep(
-            commands=[f'if [ ! -f "{choco_exe}" ]; then echo "[cage] Chocolatey not found, installing Chocolatey-for-wine..."; fi'],
-            description="Check if Chocolatey is installed",
-        ))
-        
-        # Step 3: Install Chocolatey-for-wine if not present
-        # Download the 7z release
-        release_url = f"https://github.com/PietJankbal/Chocolatey-for-wine/releases/download/{self.version}/Chocolatey-for-wine.7z"
-        work_dir = "/tmp/chocolatey-for-wine"
-        
-        steps.append(BuildStep(
-            commands=[f'''if [ ! -f "{choco_exe}" ]; then
-  set -eu
-  rm -rf {work_dir}
-  mkdir -p {work_dir}
+  export WINEDLLOVERRIDES=""
+  wine_prefix="{wine_prefix}"
+  choco_exe="{choco_exe}"
+  work_dir="/tmp/chocolatey-for-wine"
+  extract_dir="$work_dir/extracted"
+  archive="$work_dir/Chocolatey-for-wine.7z"
+  expected_sha="{expected_sha_script}"
+
+  echo "[cage] Chocolatey not found, installing Chocolatey-for-wine {self.version}..."
+  rm -rf "$work_dir"
+  mkdir -p "$extract_dir"
+
   echo "[cage] Downloading Chocolatey-for-wine {self.version}..."
-  curl -L -o {work_dir}/Chocolatey-for-wine.7z "{release_url}"
-  echo "[cage] Extracting..."
-  cd {work_dir}
-  7z x -y Chocolatey-for-wine.7z || python3 -c "import py7zr; py7zr.SevenZipFile('Chocolatey-for-wine.7z', mode='r').extractall('.')" 2>/dev/null || (apt-get update -qq && apt-get install -y -qq p7zip-full && 7z x -y Chocolatey-for-wine.7z)
-  echo "[cage] Installing Chocolatey-for-wine..."
-  # Find the installer exe
-  installer=$(find {work_dir} -name "ChoCinstaller_*.exe" -type f | head -1)
+  curl -fL --retry 3 -o "$archive" "{release_url}"
+
+  if [ -n "$expected_sha" ]; then
+    actual_sha="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+    if [ "$actual_sha" != "$expected_sha" ]; then
+      echo "[cage] ERROR: Chocolatey-for-wine checksum mismatch"
+      echo "[cage]   expected: $expected_sha"
+      echo "[cage]   actual:   $actual_sha"
+      exit 1
+    fi
+  fi
+
+  echo "[cage] Extracting Chocolatey-for-wine..."
+  if command -v 7z >/dev/null 2>&1; then
+    7z x -y "$archive" "-o$extract_dir"
+  elif command -v 7zz >/dev/null 2>&1; then
+    7zz x -y "$archive" "-o$extract_dir"
+  elif command -v 7za >/dev/null 2>&1; then
+    7za x -y "$archive" "-o$extract_dir"
+  else
+    python3 - "$archive" "$extract_dir" <<'PY'
+import sys
+import py7zr
+archive, dest = sys.argv[1], sys.argv[2]
+with py7zr.SevenZipFile(archive, mode="r") as zf:
+    zf.extractall(dest)
+PY
+  fi
+
+  installer="$(find "$extract_dir" -name "ChoCinstaller_*.exe" -type f | head -n 1)"
   if [ -z "$installer" ]; then
-    echo "[cage] ERROR: Could not find Chocolatey installer exe"
+    echo "[cage] ERROR: Could not find Chocolatey-for-wine ChoCinstaller_*.exe"
+    find "$extract_dir" -maxdepth 3 -type f | sort
     exit 1
   fi
-  wine "$installer"
-  echo "[cage] Chocolatey-for-wine installation complete"
-  rm -rf {work_dir}
-fi'''],
-            description="Install Chocolatey-for-wine",
-        ))
-        
-        # Step 4: Install packages
-        pkg_list = " ".join(packages)
-        
-        if self.source:
-            # Validate source URL
-            if not self.source.startswith(("http://", "https://")):
-                raise ModuleError(f"Invalid chocolatey source URL: {self.source}")
-            steps.append(BuildStep(
-                commands=[f'wine "{choco_exe}" install {pkg_list} -y -s {self.source}'],
-                description=f"Install Chocolatey packages from custom source: {pkg_list}",
-            ))
-        else:
-            steps.append(BuildStep(
-                commands=[f'wine "{choco_exe}" install {pkg_list} -y'],
-                description=f"Install Chocolatey packages: {pkg_list}",
-            ))
 
-        return steps
+  echo "[cage] Running Chocolatey-for-wine installer: $installer"
+  timeout "${{CAGE_CHOCOLATEY_INSTALL_TIMEOUT:-1200s}}" wine "$installer" /q
+
+  if [ ! -f "$choco_exe" ]; then
+    echo "[cage] ERROR: Chocolatey-for-wine finished but choco.exe is missing: $choco_exe"
+    find "$wine_prefix/drive_c/ProgramData" -maxdepth 4 -iname '*choco*' 2>/dev/null | sort || true
+    exit 1
+  fi
+
+  echo "[cage] Verifying Chocolatey..."
+  timeout 120s wine "$choco_exe" --version
+  rm -rf "$work_dir"
+  echo "[cage] Chocolatey-for-wine installation complete"
+else
+  echo "[cage] Chocolatey already installed: {choco_exe}"
+fi'''
+        ]
+
+        package_commands = [
+            f'''set -eu
+export WINEDLLOVERRIDES=""
+choco_exe="{choco_exe}"
+if [ ! -f "$choco_exe" ]; then
+  echo "[cage] ERROR: choco.exe is missing before package install: $choco_exe"
+  exit 1
+fi
+echo "[cage] Installing Chocolatey packages: {package_args}"
+wine "$choco_exe" install {package_args} -y{source_arg}'''
+        ]
+
+        return [
+            BuildStep(
+                commands=install_commands,
+                description="Install Chocolatey-for-wine",
+            ),
+            BuildStep(
+                commands=package_commands,
+                description=f"Install Chocolatey packages: {package_args}",
+            ),
+        ]
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {"type": self.type}
+        if self.install is not None:
+            result["install"] = self.install
+        if self.source is not None:
+            result["source"] = self.source
+        if self.version != DEFAULT_CHOCOLATEY_FOR_WINE_VERSION:
+            result["version"] = self.version
+        if self.sha256 is not None:
+            result["sha256"] = self.sha256
+        return result

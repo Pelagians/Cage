@@ -31,20 +31,15 @@ modules:
 
 ## Rationale
 
-Chocolatey is not a single installer step. It needs a prerequisite chain inside the Wine prefix:
+Chocolatey is not a single installer step under Wine. The reliable path is PietJankbal's Chocolatey-for-wine release, which owns its own PowerShell/CoreCLR setup, Wine compatibility shims, Chocolatey bootstrap, and package install surface.
 
-1. PowerShell Core via Winetricks `powershell_core`.
-2. `powershell-wrapper-for-wine` so legacy `powershell.exe` invocations forward to `pwsh.exe`.
-3. Chocolatey bootstrap through PowerShell.
-4. Package install commands.
-
-Putting that chain behind `modules[].type: chocolatey` keeps recipes declarative and lets Cage own the setup/install logic. Raw `install.kind: choco` remains only the lowered internal build-step representation.
+Putting that chain behind `modules[].type: chocolatey` keeps recipes declarative and lets Cage own the setup/install logic. Cage also exposes Synchro's PowerShell wrapper as a separate `modules[].type: powershell-wrapper` capability, but `chocolatey` and `powershell-wrapper` are temporarily incompatible in the same recipe because both replace the same Wine PowerShell surface with different compatibility layers. Raw `install.kind: choco` remains only the lowered internal build-step representation.
 
 ## Consequences
 
 - Recipe schema now includes `modules[]`.
-- Module expansion happens at manifest load/plan time and records `provenance.moduleExpansions`.
-- The initial built-in module registry is Python-backed in `core/modules.py`.
+- Modules execute in declaration order as first-class build directives.
+- The initial built-in module registry is Python-backed under `core/modules/`.
 - A future external registry can move definitions to `modules/<name>/module.yaml` without changing the user-facing YAML shape.
 - Build containers need network access for Chocolatey; runtime containers remain air-gapped by default through `runtime.network: none`.
 

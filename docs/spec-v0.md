@@ -61,7 +61,7 @@ modules:
         - 7zip.install
 ```
 
-The Chocolatey module installs `powershell_core` through Winetricks, builds `powershell-wrapper-for-wine`, bootstraps Chocolatey through `pwsh.exe`, and then runs `choco install <package> -y --no-progress` during the online build phase. `modules[].type` currently accepts `chocolatey`; package names must be non-empty strings containing only letters, numbers, dot, underscore, plus, or dash. Module expansion is recorded in `provenance.moduleExpansions`.
+The Chocolatey module is self-contained and uses PietJankbal's Chocolatey-for-wine release as the Wine-specific bootstrap path. It clears inherited CLR-breaking DLL overrides, downloads and verifies the pinned release archive, runs `ChoCinstaller_*.exe`, verifies `choco.exe`, and then runs `choco install <package> -y` during the online build phase. `chocolatey` and `powershell-wrapper` are temporarily incompatible in the same recipe because they replace the same PowerShell surface with different compatibility layers. Package names must be non-empty strings containing only letters, numbers, dot, underscore, plus, or dash.
 
 `dependencies` supports build-time dependency installation. Allowed kinds: `winetricks`, `font`, `directx`, `package`, `runtime-component`.
 

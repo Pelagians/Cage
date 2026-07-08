@@ -10,9 +10,10 @@ from typing import Any
 from .base import (
     ModuleBase, ModuleError, parse_module,
     ExeModule, MsiModule, IsoModule,
-    WinetricksModule, PortableModule, FilesModule, ScriptModule, PowerShellModule, ContainerfileModule,
+    WinetricksModule, PortableModule, FilesModule, ScriptModule, ContainerfileModule,
 )
 from .chocolatey import ChocolateyModule
+from .powershell_wrapper import PowerShellWrapperModule
 from ..build_step import BuildStep
 
 
@@ -95,6 +96,6 @@ __all__ = [
     "PortableModule",
     "FilesModule",
     "ScriptModule",
-    "PowerShellModule",
+    "PowerShellWrapperModule",
     "ContainerfileModule",
 ]

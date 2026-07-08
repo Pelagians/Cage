@@ -41,6 +41,29 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         all_commands = " ".join(" ".join(step.commands) for step in steps)
         self.assertIn("7zip", all_commands)
 
+    def test_chocolatey_installs_self_contained_without_codeberg_wrapper(self):
+        """Chocolatey-for-wine owns its PowerShell/CLR setup for now."""
+        manifest = Manifest.from_dict({
+            "schemaVersion": "cage.app/v0",
+            "name": "test",
+            "version": "1.0.0",
+            "runtime": {"provider": "wine", "version": "latest"},
+            "modules": [
+                {"type": "chocolatey", "install": {"packages": ["7zip"]}},
+            ],
+        })
+
+        steps = manifest.modules[0].build()
+        all_commands = "\n".join("\n".join(step.commands) for step in steps)
+
+        self.assertIn("Chocolatey-for-wine", all_commands)
+        self.assertIn("ChoCinstaller_*.exe", all_commands)
+        self.assertIn("WINEDLLOVERRIDES", all_commands)
+        self.assertIn("Verifying Chocolatey", all_commands)
+        self.assertIn("--version", all_commands)
+        self.assertNotIn("codeberg.org/Synchro/powershell-wrapper-for-wine", all_commands)
+        self.assertNotIn("powershell64.exe", all_commands)
+
     def test_build_preserves_provenance(self):
         """Provenance field is preserved through parsing."""
         manifest = Manifest.from_dict({

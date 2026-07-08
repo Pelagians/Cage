@@ -12,7 +12,7 @@ from typing import Any
 from .errors import ManifestError
 from .helpers import _reject_unknown, _required_str, _optional_str, _drop_none
 from .constants import ROOT_FIELDS, RUNTIME_FIELDS, LAUNCH_FIELDS, SOURCE_FIELDS
-from ..modules import parse_module, ModuleBase
+from ..modules import parse_module, ModuleBase, ModuleError
 
 
 def _load_strict_yaml(text: str) -> dict[str, Any]:
@@ -173,6 +173,16 @@ class SourceSpec:
         })
 
 
+def _validate_module_combinations(modules: list[ModuleBase]) -> None:
+    """Validate temporary module incompatibilities."""
+    module_types = {module.type for module in modules}
+    if "chocolatey" in module_types and "powershell-wrapper" in module_types:
+        raise ManifestError(
+            "modules 'chocolatey' and 'powershell-wrapper' cannot be used together yet; "
+            "Chocolatey-for-wine owns its own PowerShell compatibility layer for now"
+        )
+
+
 @dataclass(frozen=True)
 class Manifest:
     """Simplified Manifest for module-first architecture.
@@ -217,7 +227,11 @@ class Manifest:
         modules_data = data.get("modules", []) or []
         if not isinstance(modules_data, list):
             raise ManifestError("modules must be a list")
-        modules = [parse_module(m, i) for i, m in enumerate(modules_data)]
+        try:
+            modules = [parse_module(m, i) for i, m in enumerate(modules_data)]
+        except ModuleError as exc:
+            raise ManifestError(str(exc)) from exc
+        _validate_module_combinations(modules)
         
         # Parse sources
         sources_data = data.get("sources", []) or []

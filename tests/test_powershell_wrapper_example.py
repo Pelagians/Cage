@@ -17,7 +17,7 @@ class PowershellWrapperExampleTests(unittest.TestCase):
         manifest = load_manifest(recipe)
 
         self.assertEqual(manifest.name, "powershell-wrapper-pwsh-vnc")
-        self.assertEqual([m.type for m in manifest.modules], ["script"])
+        self.assertEqual([m.type for m in manifest.modules], ["powershell-wrapper"])
         self.assertEqual(manifest.runtime.provider, "wine")
         self.assertEqual(manifest.runtime.version, "latest")
         self.assertEqual(manifest.runtime.network, "bridge")
