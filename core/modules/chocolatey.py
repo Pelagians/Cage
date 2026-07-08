@@ -161,6 +161,8 @@ PY
     finalize_driver_win="$(winepath -w "$finalize_driver")"
     finalize_log="$work_dir/chocolatey-finalize.log"
     pwsh_probe_log="$work_dir/pwsh-probe.log"
+    pwsh_probe_sentinel="$work_dir/pwsh-probe-ok.txt"
+    pwsh_probe_sentinel_win="$(winepath -w "$pwsh_probe_sentinel")"
     pwsh_zip_repair_log="$work_dir/pwsh-zip-repair.log"
     pwsh_zip="$work_dir/PowerShell-7.4.11-win-x64.zip"
     pwsh_zip_url="https://github.com/PowerShell/PowerShell/releases/download/v7.4.11/PowerShell-7.4.11-win-x64.zip"
@@ -169,10 +171,11 @@ PY
 
     probe_cfw_pwsh() {{
       probe_context="$1"
+      rm -f "$pwsh_probe_sentinel"
       : > "$pwsh_probe_log"
       echo "[cage] Probing Chocolatey-for-wine PowerShell ($probe_context)..."
       set +e
-      timeout 120s wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command 'Write-Host "[cage] pwsh probe OK"; $PSVersionTable.PSVersion.ToString()' > "$pwsh_probe_log" 2>&1
+      timeout 120s wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "[System.IO.File]::WriteAllText('$pwsh_probe_sentinel_win','ok'); [Console]::Out.WriteLine('[cage] pwsh probe OK'); \\$PSVersionTable.PSVersion.ToString()" > "$pwsh_probe_log" 2>&1
       pwsh_probe_rc="$?"
       set -e
       if [ -s "$pwsh_probe_log" ]; then
@@ -182,9 +185,12 @@ PY
         echo "[cage] Chocolatey-for-wine PowerShell probe failed with exit code $pwsh_probe_rc ($probe_context)"
         return "$pwsh_probe_rc"
       fi
-      if [ ! -s "$pwsh_probe_log" ]; then
-        echo "[cage] PowerShell probe produced no output ($probe_context): $pwsh_exe"
+      if [ ! -f "$pwsh_probe_sentinel" ]; then
+        echo "[cage] PowerShell probe did not create sentinel ($probe_context): $pwsh_probe_sentinel"
         return 98
+      fi
+      if [ ! -s "$pwsh_probe_log" ]; then
+        echo "[cage] PowerShell probe produced no captured stdout ($probe_context); continuing because sentinel exists"
       fi
       return 0
     }}

@@ -86,6 +86,31 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             all_commands.index("Running Chocolatey-for-wine installer"),
         )
 
+    def test_chocolatey_pwsh_probe_uses_file_sentinel(self):
+        """PowerShell under Wine can execute even when stdout capture is empty."""
+        manifest = Manifest.from_dict({
+            "schemaVersion": "cage.app/v0",
+            "name": "test",
+            "version": "1.0.0",
+            "runtime": {"provider": "wine", "version": "latest"},
+            "modules": [
+                {"type": "chocolatey", "install": {"packages": ["7zip"]}},
+            ],
+        })
+
+        steps = manifest.modules[0].build()
+        all_commands = "\n".join("\n".join(step.commands) for step in steps)
+
+        self.assertIn("pwsh_probe_sentinel=", all_commands)
+        self.assertIn("pwsh_probe_sentinel_win=", all_commands)
+        self.assertIn("WriteAllText", all_commands)
+        self.assertIn("PowerShell probe did not create sentinel", all_commands)
+        self.assertIn("PowerShell probe produced no captured stdout", all_commands)
+        self.assertLess(
+            all_commands.index("pwsh_probe_sentinel_win="),
+            all_commands.index("probe_cfw_pwsh()"),
+        )
+
     def test_chocolatey_repairs_dead_cfw_pwsh_with_zip_payload(self):
         """Dead CFW-installed pwsh is repaired without rerunning MSI installers."""
         manifest = Manifest.from_dict({
@@ -151,7 +176,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("pwsh_probe_log=", all_commands)
         self.assertIn("Probing Chocolatey-for-wine PowerShell", all_commands)
         self.assertIn("[cfw-pwsh]", all_commands)
-        self.assertIn("PowerShell probe produced no output", all_commands)
+        self.assertIn("PowerShell probe did not create sentinel", all_commands)
+        self.assertIn("PowerShell probe produced no captured stdout", all_commands)
         self.assertIn("Chocolatey-for-wine finalizer did not create canonical choco.exe", all_commands)
         self.assertIn("Chocolatey-for-wine finalizer returned success but left choco.exe missing", all_commands)
         self.assertIn("Finalizer log was empty", all_commands)
