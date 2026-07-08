@@ -334,7 +334,7 @@ test -f "$winps_exe"
 test -f "$raw_choco_exe"
 test -f "$choc_install_ps1"
 export PS7="$pwsh_dir_win\\pwsh.exe"
-export WINEPATH="$pwsh_dir${{WINEPATH:+;$WINEPATH}}"
+export WINEPATH="$pwsh_dir_win${{WINEPATH:+;$WINEPATH}}"
 export PATH="$pwsh_dir:$PATH"
 
 winps_probe_sentinel_win="$work_dir_win/winps-probe-ok.txt"

@@ -167,7 +167,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("export PS7=", finalize)
         self.assertIn(r"$pwsh_dir_win\pwsh.exe", finalize)
         self.assertIn("export WINEPATH=", finalize)
-        self.assertIn("$pwsh_dir${WINEPATH:+;$WINEPATH}", finalize)
+        self.assertIn("$pwsh_dir_win${WINEPATH:+;$WINEPATH}", finalize)
+        self.assertNotIn("$pwsh_dir${WINEPATH:+;$WINEPATH}", finalize)
         self.assertIn("export PATH=", finalize)
         self.assertIn("$pwsh_dir:$PATH", finalize)
 
