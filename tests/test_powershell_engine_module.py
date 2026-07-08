@@ -23,6 +23,12 @@ class PowerShellEngineModuleTests(unittest.TestCase):
         self.assertNotIn("msiexec", script)
         self.assertNotIn("winetricks --unattended powershell_core", script)
 
+    def test_powershell_engine_marks_pwsh_executable_for_process_launchers(self):
+        step = powershell_engine_steps()[0]
+        script = "\n".join(step.commands)
+
+        self.assertIn('chmod +x "$pwsh_exe"', script)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -33,6 +33,7 @@ pwsh_dir="{pwsh_dir}"
 pwsh_exe="{pwsh_exe}"
 
 if [ -f "$pwsh_exe" ]; then
+  chmod +x "$pwsh_exe"
   echo "[cage] PowerShell 7 engine already installed: $pwsh_exe"
   exit 0
 fi
@@ -61,6 +62,7 @@ with zipfile.ZipFile(archive) as zf:
     zf.extractall(dest)
 PY
 test -f "$pwsh_exe"
+chmod +x "$pwsh_exe"
 echo "[cage] PowerShell 7 engine installed: $pwsh_exe"'''
     return [BuildStep(commands=[script], description="Install PowerShell 7 engine")]
 
