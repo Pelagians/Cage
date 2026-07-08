@@ -316,8 +316,6 @@ def execute_inside_container(
         cmd.extend(["-e", f"{key}={value}"])
     # Ensure shared memory is large enough for Wine
     cmd.extend(["--shm-size", "2g"])
-    # Run as current user to avoid permission issues with mounted volumes
-    cmd.extend(["--user", f"{os.getuid()}:{os.getgid()}"])
     cmd.append(img)
     # Pass through xvfb-entrypoint.sh (which starts Xvfb, then execs CMD)
     cmd.extend(["bash", "/opt/cage/build/run.sh"])
@@ -337,6 +335,12 @@ def execute_inside_container(
             print(line, file=sys.stderr, flush=True)
         result = _run_container_command(cmd, timeout=timeout)
         log_lines.append(result.stdout or "")
+        
+        # Fix ownership of output files (container runs as root, so files are owned by root)
+        subprocess.run(
+            ["sudo", "chown", "-R", f"{os.getuid()}:{os.getgid()}", str(bundle_path)],
+            check=False,
+        )
         if result.stderr:
             log_lines.append("--- stderr ---")
             log_lines.append(result.stderr)
