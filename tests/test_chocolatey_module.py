@@ -64,6 +64,31 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertNotIn("codeberg.org/Synchro/powershell-wrapper-for-wine", all_commands)
         self.assertNotIn("powershell64.exe", all_commands)
 
+    def test_chocolatey_unsets_inherited_winedlloverrides(self):
+        """Clearing inherited overrides must not mask Wine registry AppDefaults."""
+        manifest = Manifest.from_dict({
+            "schemaVersion": "cage.app/v0",
+            "name": "test",
+            "version": "1.0.0",
+            "runtime": {"provider": "wine", "version": "latest"},
+            "modules": [
+                {"type": "chocolatey", "install": {"packages": ["7zip"]}},
+            ],
+        })
+
+        steps = manifest.modules[0].build()
+        install_script = "\n".join(steps[0].commands)
+        package_script = "\n".join(steps[1].commands)
+
+        self.assertIn("unset WINEDLLOVERRIDES", install_script)
+        self.assertIn("unset WINEDLLOVERRIDES", package_script)
+        self.assertNotIn('export WINEDLLOVERRIDES=""', install_script)
+        self.assertNotIn('export WINEDLLOVERRIDES=""', package_script)
+        self.assertLess(
+            install_script.index("unset WINEDLLOVERRIDES"),
+            install_script.index("Pre-seeding Chocolatey-for-wine PowerShell DLL overrides"),
+        )
+
     def test_chocolatey_sets_win10_before_cfw_powershell_runs(self):
         """PowerShell Core 7.x must see a win10 prefix before CFW invokes pwsh."""
         manifest = Manifest.from_dict({

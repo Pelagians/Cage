@@ -81,7 +81,7 @@ class ChocolateyModule(ModuleBase):
         install_commands = [
             f'''if [ ! -f "{choco_exe}" ]; then
   set -eu
-  export WINEDLLOVERRIDES=""
+  unset WINEDLLOVERRIDES
   wine_prefix="{wine_prefix}"
   choco_exe="{choco_exe}"
   work_dir="/tmp/chocolatey-for-wine"
@@ -298,7 +298,7 @@ fi'''
 
         package_commands = [
             f'''set -eu
-export WINEDLLOVERRIDES=""
+unset WINEDLLOVERRIDES
 choco_exe="{choco_exe}"
 if [ ! -f "$choco_exe" ]; then
   echo "[cage] ERROR: choco.exe is missing before package install: $choco_exe"
