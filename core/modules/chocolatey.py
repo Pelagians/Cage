@@ -157,6 +157,25 @@ PY
     finalize_driver="$work_dir/finalize-chocolatey-for-wine.ps1"
     finalize_driver_win="$(winepath -w "$finalize_driver")"
     finalize_log="$work_dir/chocolatey-finalize.log"
+    pwsh_probe_log="$work_dir/pwsh-probe.log"
+
+    echo "[cage] Probing Chocolatey-for-wine PowerShell..."
+    set +e
+    timeout 120s wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command 'Write-Host "[cage] pwsh probe OK"; $PSVersionTable.PSVersion.ToString()' > "$pwsh_probe_log" 2>&1
+    pwsh_probe_rc="$?"
+    set -e
+    if [ -s "$pwsh_probe_log" ]; then
+      sed 's/^/[cfw-pwsh] /' "$pwsh_probe_log"
+    fi
+    if [ "$pwsh_probe_rc" -ne 0 ]; then
+      echo "[cage] ERROR: Chocolatey-for-wine PowerShell probe failed with exit code $pwsh_probe_rc"
+      exit "$pwsh_probe_rc"
+    fi
+    if [ ! -s "$pwsh_probe_log" ]; then
+      echo "[cage] ERROR: PowerShell probe produced no output: $pwsh_exe"
+      exit 1
+    fi
+
     cat > "$finalize_driver" <<'PS1'
 $ErrorActionPreference = 'Stop'
 $scriptPath = $args[0]
@@ -181,6 +200,14 @@ PS1
     if [ "$finalize_rc" -ne 0 ]; then
       echo "[cage] ERROR: Chocolatey-for-wine finalizer failed with exit code $finalize_rc"
       exit "$finalize_rc"
+    fi
+    if [ ! -f "$choco_exe" ]; then
+      echo "[cage] ERROR: Chocolatey-for-wine finalizer returned success but left choco.exe missing: $choco_exe"
+      if [ ! -s "$finalize_log" ]; then
+        echo "[cage] Finalizer log was empty"
+      fi
+      find "$wine_prefix/drive_c/ProgramData" -maxdepth 4 -iname '*choco*' 2>/dev/null | sort || true
+      exit 1
     fi
   fi
 

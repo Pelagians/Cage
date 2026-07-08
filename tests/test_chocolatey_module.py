@@ -90,7 +90,13 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("-NoProfile", all_commands)
         self.assertIn("-ExecutionPolicy Bypass", all_commands)
         self.assertIn("[cfw-finalize]", all_commands)
+        self.assertIn("pwsh_probe_log=", all_commands)
+        self.assertIn("Probing Chocolatey-for-wine PowerShell", all_commands)
+        self.assertIn("[cfw-pwsh]", all_commands)
+        self.assertIn("PowerShell probe produced no output", all_commands)
         self.assertIn("Chocolatey-for-wine finalizer did not create canonical choco.exe", all_commands)
+        self.assertIn("Chocolatey-for-wine finalizer returned success but left choco.exe missing", all_commands)
+        self.assertIn("Finalizer log was empty", all_commands)
         self.assertIn("timeout \"${CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}\"", all_commands)
 
     def test_chocolatey_never_treats_raw_extracted_choco_as_success(self):
