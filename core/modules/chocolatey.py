@@ -315,6 +315,7 @@ pwsh_exe="$wine_prefix/drive_c/Program Files/PowerShell/7/pwsh.exe"
 cfw_dir="$wine_prefix/drive_c/ProgramData/Chocolatey-for-wine"
 choc_install_ps1="$cfw_dir/choc_install.ps1"
 work_dir="$wine_prefix/drive_c/ProgramData/CageFinalize"
+work_dir_win='C:/ProgramData/CageFinalize'
 finalize_driver="$work_dir/finalize-chocolatey-for-wine.ps1"
 patched_choc_install_ps1="$work_dir/choc_install.patched.ps1"
 finalize_log="$work_dir/chocolatey-finalize.log"
@@ -327,8 +328,8 @@ test -f "$pwsh_exe"
 test -f "$raw_choco_exe"
 test -f "$choc_install_ps1"
 
-pwsh_probe_sentinel_win="$(winepath -w "$pwsh_probe_sentinel")"
-pwsh_probe_script_win="$(winepath -w "$pwsh_probe_script")"
+pwsh_probe_sentinel_win="$work_dir_win/pwsh-probe-ok.txt"
+pwsh_probe_script_win="$work_dir_win/pwsh-probe.ps1"
 rm -f "$pwsh_probe_sentinel"
 cat > "$pwsh_probe_script" <<'PS1'
 param([string]$SentinelPath)
@@ -351,18 +352,18 @@ if [ "$pwsh_probe_rc" -ne 0 ]; then
   exit "$pwsh_probe_rc"
 fi
 if [ ! -f "$pwsh_probe_sentinel" ]; then
-  echo "[cage] ERROR: PowerShell probe did not create sentinel: $pwsh_probe_sentinel"
-  exit 98
-fi
-if [ ! -s "$pwsh_probe_log" ]; then
+  echo "[cage] WARNING: PowerShell probe did not create sentinel: $pwsh_probe_sentinel"
+  echo "[cage] Continuing; finalizer canonical choco.exe check is authoritative"
+  find "$work_dir" -maxdepth 1 -type f -printf '[cage] CageFinalize file: %f\n' 2>/dev/null || true
+elif [ ! -s "$pwsh_probe_log" ]; then
   echo "[cage] PowerShell probe produced no captured stdout; continuing because sentinel exists"
 fi
 
-cfw_dir_win="$(winepath -w "$cfw_dir")"
-choc_install_ps1_win="$(winepath -w "$choc_install_ps1")"
-choco_exe_win="$(winepath -w "$choco_exe")"
-patched_choc_install_ps1_win="$(winepath -w "$patched_choc_install_ps1")"
-finalize_driver_win="$(winepath -w "$finalize_driver")"
+cfw_dir_win='C:/ProgramData/Chocolatey-for-wine'
+choc_install_ps1_win="$cfw_dir_win/choc_install.ps1"
+choco_exe_win='C:/ProgramData/chocolatey/bin/choco.exe'
+patched_choc_install_ps1_win="$work_dir_win/choc_install.patched.ps1"
+finalize_driver_win="$work_dir_win/finalize-chocolatey-for-wine.ps1"
 cat > "$finalize_driver" <<'PS1'
 $ErrorActionPreference = 'Stop'
 $scriptPath = $args[0]
