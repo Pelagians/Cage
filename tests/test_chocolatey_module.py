@@ -158,7 +158,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("/v PS7", registry)
         self.assertIn("C:\\Program Files\\PowerShell\\7\\pwsh.exe", registry)
 
-    def test_chocolatey_finalizer_makes_zip_pwsh_discoverable_to_cfw_wrapper(self):
+    def test_chocolatey_finalizer_makes_native_pwsh_discoverable(self):
         finalize = "\n".join(_manifest().modules[0].build()[4].commands)
 
         self.assertIn("pwsh_dir=", finalize)
@@ -172,7 +172,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("export PATH=", finalize)
         self.assertIn("$pwsh_dir:$PATH", finalize)
 
-    def test_chocolatey_finalizer_does_not_gate_on_direct_pwsh_invocation(self):
+    def test_chocolatey_finalizer_uses_native_pwsh_contract_like_chocinstaller(self):
         finalize = "\n".join(_manifest().modules[0].build()[4].commands)
 
         self.assertIn("pwsh_exe=", finalize)
@@ -180,46 +180,26 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("work_dir=\"$wine_prefix/drive_c/ProgramData/CageFinalize\"", finalize)
         self.assertIn("work_dir_win='C:/ProgramData/CageFinalize'", finalize)
         self.assertIn('test -f "$pwsh_exe"', finalize)
+        self.assertIn("pwsh_probe_script=", finalize)
+        self.assertIn("pwsh-probe-ok.txt", finalize)
+        self.assertIn("[cfw-pwsh]", finalize)
+        self.assertIn('wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$pwsh_probe_script_win"', finalize)
+        self.assertIn('wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$finalize_driver_win"', finalize)
         self.assertNotIn("pwsh_command_sentinel=", finalize)
         self.assertNotIn("pwsh-command-ok.txt", finalize)
-        self.assertNotIn("pwsh_command_rc=", finalize)
         self.assertNotIn("PowerShell -Command probe", finalize)
-        self.assertNotIn('wine "$pwsh_exe" -NoLogo', finalize)
-        self.assertNotIn("pwsh_probe_script=", finalize)
-        self.assertNotIn("pwsh-probe-ok.txt", finalize)
-        self.assertNotIn("PowerShell -File probe", finalize)
-        self.assertNotIn("WARNING: PowerShell probe did not create sentinel", finalize)
-        self.assertNotIn("finalizer canonical choco.exe check is authoritative", finalize)
 
-    def test_chocolatey_finalizer_uses_cfw_windows_powershell_wrapper_boundary(self):
+    def test_chocolatey_finalizer_does_not_use_dead_cfw_wrapper_probe(self):
         finalize = "\n".join(_manifest().modules[0].build()[4].commands)
 
         self.assertIn("winps_exe=", finalize)
         self.assertIn("WindowsPowerShell/v1.0/powershell.exe", finalize)
-        self.assertIn("winps_probe_script=", finalize)
-        self.assertIn("winps-probe-ok.txt", finalize)
-        self.assertIn("[cfw-winps]", finalize)
-        self.assertIn('wine "$winps_exe" -NoLogo -ExecutionPolicy Bypass -File "$winps_probe_script_win"', finalize)
-        self.assertIn('wine "$winps_exe" -NoLogo -ExecutionPolicy Bypass -File "$finalize_driver_win"', finalize)
-        self.assertNotIn('wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$finalize_driver_win"', finalize)
-
-    def test_chocolatey_finalizer_emits_wrapper_probe_diagnostics(self):
-        finalize = "\n".join(_manifest().modules[0].build()[4].commands)
-
-        self.assertIn("winps_cmd_diag_log=", finalize)
-        self.assertIn("Chocolatey wrapper diagnostic: PS7=", finalize)
-        self.assertIn("Chocolatey wrapper diagnostic: WINEPATH=", finalize)
-        self.assertIn("Chocolatey wrapper diagnostic: PATH contains pwsh_dir=", finalize)
-        self.assertIn("Chocolatey wrapper diagnostic: command -v pwsh", finalize)
-        self.assertIn("Chocolatey wrapper diagnostic: winepath -w pwsh_dir", finalize)
-        self.assertIn("Chocolatey wrapper diagnostic: winepath -u pwsh_dir_win", finalize)
-        self.assertIn("wine cmd /c", finalize)
-        self.assertIn("where pwsh", finalize)
-        self.assertIn("[cfw-cmd-env]", finalize)
-        self.assertIn("Chocolatey wrapper probe exit code: $winps_probe_rc", finalize)
-        self.assertIn("Chocolatey wrapper probe log was empty", finalize)
-        self.assertIn("winps-probe.log contents begin", finalize)
-        self.assertIn("winps-probe.log contents end", finalize)
+        self.assertNotIn("winps_probe_script=", finalize)
+        self.assertNotIn("winps-probe-ok.txt", finalize)
+        self.assertNotIn("winps_cmd_diag_log=", finalize)
+        self.assertNotIn("[cfw-winps]", finalize)
+        self.assertNotIn('wine "$winps_exe" -NoLogo -ExecutionPolicy Bypass -File "$winps_probe_script_win"', finalize)
+        self.assertNotIn('wine "$winps_exe" -NoLogo -ExecutionPolicy Bypass -File "$finalize_driver_win"', finalize)
 
     def test_chocolatey_finalizer_keeps_canonical_choco_gate(self):
         finalize = "\n".join(_manifest().modules[0].build()[4].commands)

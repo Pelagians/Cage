@@ -324,10 +324,9 @@ work_dir_win='C:/ProgramData/CageFinalize'
 finalize_driver="$work_dir/finalize-chocolatey-for-wine.ps1"
 patched_choc_install_ps1="$work_dir/choc_install.patched.ps1"
 finalize_log="$work_dir/chocolatey-finalize.log"
-winps_probe_log="$work_dir/winps-probe.log"
-winps_cmd_diag_log="$work_dir/winps-cmd-env.log"
-winps_probe_script="$work_dir/winps-probe.ps1"
-winps_probe_sentinel="$work_dir/winps-probe-ok.txt"
+pwsh_probe_log="$work_dir/pwsh-probe.log"
+pwsh_probe_script="$work_dir/pwsh-probe.ps1"
+pwsh_probe_sentinel="$work_dir/pwsh-probe-ok.txt"
 mkdir -p "$work_dir"
 
 test -f "$pwsh_exe"
@@ -338,63 +337,41 @@ export PS7="$pwsh_dir_win\\pwsh.exe"
 export WINEPATH="$pwsh_dir_win${{WINEPATH:+;$WINEPATH}}"
 export PATH="$pwsh_dir:$PATH"
 
-winps_probe_sentinel_win="$work_dir_win/winps-probe-ok.txt"
-winps_probe_script_win="$work_dir_win/winps-probe.ps1"
-rm -f "$winps_probe_sentinel"
-cat > "$winps_probe_script" <<'PS1'
+pwsh_probe_sentinel_win="$work_dir_win/pwsh-probe-ok.txt"
+pwsh_probe_script_win="$work_dir_win/pwsh-probe.ps1"
+rm -f "$pwsh_probe_sentinel"
+cat > "$pwsh_probe_script" <<'PS1'
 param([string]$SentinelPath)
 $ErrorActionPreference = 'Stop'
 [System.IO.File]::WriteAllText($SentinelPath, 'ok')
-[Console]::Out.WriteLine('[cage] Chocolatey-for-wine WindowsPowerShell wrapper probe OK')
+[Console]::Out.WriteLine('[cage] native pwsh probe OK')
 [Console]::Out.WriteLine($PSVersionTable.PSVersion.ToString())
 PS1
-
-echo "[cage] Chocolatey wrapper diagnostic: PS7=${{PS7:-}}"
-echo "[cage] Chocolatey wrapper diagnostic: WINEPATH=${{WINEPATH:-}}"
-case ":$PATH:" in
-  *":$pwsh_dir:"*) echo "[cage] Chocolatey wrapper diagnostic: PATH contains pwsh_dir=yes" ;;
-  *) echo "[cage] Chocolatey wrapper diagnostic: PATH contains pwsh_dir=no" ;;
-esac
-echo "[cage] Chocolatey wrapper diagnostic: command -v pwsh"
-command -v pwsh || true
-echo "[cage] Chocolatey wrapper diagnostic: winepath -w pwsh_dir"
-winepath -w "$pwsh_dir" 2>&1 || true
-echo "[cage] Chocolatey wrapper diagnostic: winepath -u pwsh_dir_win"
-winepath -u "$pwsh_dir_win" 2>&1 || true
-echo "[cage] Chocolatey wrapper diagnostic: files"
-ls -l "$pwsh_exe" "$winps_exe" "$winps_probe_script" 2>&1 || true
-: > "$winps_cmd_diag_log"
+: > "$pwsh_probe_log"
+echo "[cage] Probing native PowerShell engine for Chocolatey finalization..."
 set +e
-timeout 30s wine cmd /c "echo PS7=%PS7% && echo WINEPATH=%WINEPATH% && echo PATH=%PATH% && where pwsh" > "$winps_cmd_diag_log" 2>&1
-winps_cmd_diag_rc="$?"
+timeout 120s wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$pwsh_probe_script_win" "$pwsh_probe_sentinel_win" > "$pwsh_probe_log" 2>&1
+pwsh_probe_rc="$?"
 set -e
-echo "[cage] Chocolatey wrapper diagnostic: wine cmd /c where pwsh exit code $winps_cmd_diag_rc"
-if [ -s "$winps_cmd_diag_log" ]; then
-  sed 's/^/[cfw-cmd-env] /' "$winps_cmd_diag_log"
+echo "[cage] Native PowerShell probe exit code: $pwsh_probe_rc"
+echo "[cage] pwsh-probe.log contents begin"
+if [ -s "$pwsh_probe_log" ]; then
+  sed 's/^/[cfw-pwsh] /' "$pwsh_probe_log"
 else
-  echo "[cage] Chocolatey wrapper diagnostic: wine cmd env log was empty"
+  echo "[cage] Native PowerShell probe log was empty"
 fi
-: > "$winps_probe_log"
-echo "[cage] Probing Chocolatey-for-wine WindowsPowerShell wrapper..."
-set +e
-timeout 120s wine "$winps_exe" -NoLogo -ExecutionPolicy Bypass -File "$winps_probe_script_win" "$winps_probe_sentinel_win" > "$winps_probe_log" 2>&1
-winps_probe_rc="$?"
-set -e
-echo "[cage] Chocolatey wrapper probe exit code: $winps_probe_rc"
-echo "[cage] winps-probe.log contents begin"
-if [ -s "$winps_probe_log" ]; then
-  sed 's/^/[cfw-winps] /' "$winps_probe_log"
-else
-  echo "[cage] Chocolatey wrapper probe log was empty"
+echo "[cage] pwsh-probe.log contents end"
+if [ "$pwsh_probe_rc" -ne 0 ]; then
+  echo "[cage] ERROR: native PowerShell probe failed with exit code $pwsh_probe_rc"
+  exit "$pwsh_probe_rc"
 fi
-echo "[cage] winps-probe.log contents end"
-if [ "$winps_probe_rc" -ne 0 ]; then
-  echo "[cage] ERROR: Chocolatey-for-wine WindowsPowerShell wrapper probe failed with exit code $winps_probe_rc"
-  exit "$winps_probe_rc"
-fi
-if [ ! -f "$winps_probe_sentinel" ]; then
-  echo "[cage] ERROR: Chocolatey-for-wine WindowsPowerShell wrapper probe did not create sentinel: $winps_probe_sentinel"
+if [ ! -f "$pwsh_probe_sentinel" ]; then
+  echo "[cage] ERROR: native PowerShell probe did not create sentinel: $pwsh_probe_sentinel"
   find "$work_dir" -maxdepth 1 -type f -printf '[cage] CageFinalize file: %f\n' 2>/dev/null || true
+  exit 99
+fi
+if [ ! -s "$pwsh_probe_log" ]; then
+  echo "[cage] ERROR: native PowerShell probe produced no stdout"
   exit 99
 fi
 
@@ -417,7 +394,7 @@ if ($patchedText -eq $scriptText) {{
     Write-Host "[cage] WARNING: upstream ucrtbase_clr0400.dll wait was not found; running script unchanged"
 }}
 [System.IO.File]::WriteAllText($patchedScriptPath, $patchedText)
-Write-Host "[cage] Running patched upstream choc_install.ps1 through Chocolatey-for-wine wrapper: $patchedScriptPath"
+Write-Host "[cage] Running patched upstream choc_install.ps1 through native PowerShell engine: $patchedScriptPath"
 & $patchedScriptPath $cfwDir '/q'
 if (!(Test-Path $chocoExe)) {{
     throw "Chocolatey-for-wine finalizer did not create canonical choco.exe: $chocoExe"
@@ -426,7 +403,7 @@ Write-Host "[cage] Upstream Chocolatey-for-wine finalizer completed"
 PS1
 
 set +e
-timeout "${{CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}}" wine "$winps_exe" -NoLogo -ExecutionPolicy Bypass -File "$finalize_driver_win" "$choc_install_ps1_win" "$cfw_dir_win" "$choco_exe_win" "$patched_choc_install_ps1_win" > "$finalize_log" 2>&1
+timeout "${{CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}}" wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$finalize_driver_win" "$choc_install_ps1_win" "$cfw_dir_win" "$choco_exe_win" "$patched_choc_install_ps1_win" > "$finalize_log" 2>&1
 finalize_rc="$?"
 set -e
 if [ -s "$finalize_log" ]; then
