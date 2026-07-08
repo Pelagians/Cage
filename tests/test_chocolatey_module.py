@@ -86,6 +86,39 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             all_commands.index("Running Chocolatey-for-wine installer"),
         )
 
+    def test_chocolatey_repairs_dead_cfw_pwsh_with_winetricks(self):
+        """Dead CFW-installed pwsh is repaired internally before finalization."""
+        manifest = Manifest.from_dict({
+            "schemaVersion": "cage.app/v0",
+            "name": "test",
+            "version": "1.0.0",
+            "runtime": {"provider": "wine", "version": "latest"},
+            "modules": [
+                {"type": "chocolatey", "install": {"packages": ["7zip"]}},
+            ],
+        })
+
+        steps = manifest.modules[0].build()
+        all_commands = "\n".join("\n".join(step.commands) for step in steps)
+
+        self.assertIn("Repairing Chocolatey-for-wine PowerShell with winetricks powershell_core", all_commands)
+        self.assertIn("command -v winetricks", all_commands)
+        self.assertIn("winetricks --force --unattended powershell_core", all_commands)
+        self.assertIn("CAGE_CHOCOLATEY_PWSH_REPAIR_TIMEOUT", all_commands)
+        self.assertIn("[cfw-pwsh-repair]", all_commands)
+        self.assertIn("after winetricks repair", all_commands)
+        self.assertIn("PowerShell repair failed", all_commands)
+        self.assertLess(
+            all_commands.index("Probing Chocolatey-for-wine PowerShell"),
+            all_commands.index("Repairing Chocolatey-for-wine PowerShell"),
+        )
+        self.assertLess(
+            all_commands.index("after winetricks repair"),
+            all_commands.index("timeout \"${CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}\""),
+        )
+        self.assertNotIn("codeberg.org/Synchro/powershell-wrapper-for-wine", all_commands)
+        self.assertNotIn("powershell64.exe", all_commands)
+
     def test_chocolatey_recovers_partial_cfw_finalization(self):
         """Partial CFW installs rerun choc_install.ps1 instead of accepting raw nupkg extraction."""
         manifest = Manifest.from_dict({

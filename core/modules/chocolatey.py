@@ -161,22 +161,55 @@ PY
     finalize_driver_win="$(winepath -w "$finalize_driver")"
     finalize_log="$work_dir/chocolatey-finalize.log"
     pwsh_probe_log="$work_dir/pwsh-probe.log"
+    pwsh_repair_log="$work_dir/pwsh-repair.log"
 
-    echo "[cage] Probing Chocolatey-for-wine PowerShell..."
-    set +e
-    timeout 120s wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command 'Write-Host "[cage] pwsh probe OK"; $PSVersionTable.PSVersion.ToString()' > "$pwsh_probe_log" 2>&1
-    pwsh_probe_rc="$?"
-    set -e
-    if [ -s "$pwsh_probe_log" ]; then
-      sed 's/^/[cfw-pwsh] /' "$pwsh_probe_log"
-    fi
-    if [ "$pwsh_probe_rc" -ne 0 ]; then
-      echo "[cage] ERROR: Chocolatey-for-wine PowerShell probe failed with exit code $pwsh_probe_rc"
-      exit "$pwsh_probe_rc"
-    fi
-    if [ ! -s "$pwsh_probe_log" ]; then
-      echo "[cage] ERROR: PowerShell probe produced no output: $pwsh_exe"
-      exit 1
+    probe_cfw_pwsh() {{
+      probe_context="$1"
+      : > "$pwsh_probe_log"
+      echo "[cage] Probing Chocolatey-for-wine PowerShell ($probe_context)..."
+      set +e
+      timeout 120s wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command 'Write-Host "[cage] pwsh probe OK"; $PSVersionTable.PSVersion.ToString()' > "$pwsh_probe_log" 2>&1
+      pwsh_probe_rc="$?"
+      set -e
+      if [ -s "$pwsh_probe_log" ]; then
+        sed 's/^/[cfw-pwsh] /' "$pwsh_probe_log"
+      fi
+      if [ "$pwsh_probe_rc" -ne 0 ]; then
+        echo "[cage] Chocolatey-for-wine PowerShell probe failed with exit code $pwsh_probe_rc ($probe_context)"
+        return "$pwsh_probe_rc"
+      fi
+      if [ ! -s "$pwsh_probe_log" ]; then
+        echo "[cage] PowerShell probe produced no output ($probe_context): $pwsh_exe"
+        return 98
+      fi
+      return 0
+    }}
+
+    if ! probe_cfw_pwsh "after Chocolatey-for-wine"; then
+      echo "[cage] Repairing Chocolatey-for-wine PowerShell with winetricks powershell_core..."
+      if ! command -v winetricks >/dev/null 2>&1; then
+        echo "[cage] ERROR: PowerShell repair failed because winetricks is unavailable"
+        exit 1
+      fi
+      set +e
+      timeout "${{CAGE_CHOCOLATEY_PWSH_REPAIR_TIMEOUT:-1200s}}" winetricks --force --unattended powershell_core > "$pwsh_repair_log" 2>&1
+      pwsh_repair_rc="$?"
+      set -e
+      if [ -s "$pwsh_repair_log" ]; then
+        sed 's/^/[cfw-pwsh-repair] /' "$pwsh_repair_log"
+      else
+        echo "[cage] PowerShell repair log was empty"
+      fi
+      if [ "$pwsh_repair_rc" -ne 0 ]; then
+        echo "[cage] ERROR: PowerShell repair failed with exit code $pwsh_repair_rc"
+        exit "$pwsh_repair_rc"
+      fi
+      echo "[cage] Re-applying Wine Windows version to win10 after PowerShell repair..."
+      timeout "${{CAGE_WINECFG_TIMEOUT:-120s}}" winecfg /v win10
+      if ! probe_cfw_pwsh "after winetricks repair"; then
+        echo "[cage] ERROR: PowerShell repair failed; pwsh probe still did not produce usable output"
+        exit 1
+      fi
     fi
 
     cat > "$finalize_driver" <<'PS1'
