@@ -258,10 +258,12 @@ rm -f "$dotnet_msiexec_log"
 echo "[cage] Installing .NET Framework 4.8 from dedicated MSI step..."
 echo "[cage] .NET Framework 4.8 MSI: $netfx_msi_win"
 set +e
-timeout "${{CAGE_DOTNET48_TIMEOUT:-1800s}}" wine msiexec /i "$netfx_msi_win" /QN /NORESTART /L*v "$dotnet_msiexec_log_win"
+timeout "${{CAGE_DOTNET48_TIMEOUT:-1800s}}" wine msiexec /i "$netfx_msi_win" MSIFASTINSTALL=2 DISABLEROLLBACK=1 /QN /NORESTART /L*v "$dotnet_msiexec_log_win"
 dotnet_msi_rc="$?"
 set -e
 if [ -f "$dotnet_msiexec_log" ]; then
+  echo "[cage] .NET Framework 4.8 MSI failure markers:"
+  grep -nEi 'Return value 3|error|fail|fatal' "$dotnet_msiexec_log" | head -80 | sed 's/^/[dotnet48-msi-marker] /' || true
   echo "[cage] .NET Framework 4.8 MSI log tail:"
   tail -120 "$dotnet_msiexec_log" | sed 's/^/[dotnet48-msi] /'
 fi
