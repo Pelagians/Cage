@@ -316,7 +316,6 @@ def execute_inside_container(
     # Run as current user to avoid permission issues with mounted volumes
     cmd.extend(["--user", f"{os.getuid()}:{os.getgid()}"])
     cmd.append(img)
-
     # Pass through xvfb-entrypoint.sh (which starts Xvfb, then execs CMD)
     cmd.extend(["bash", "/opt/cage/build/run.sh"])
 
