@@ -297,7 +297,9 @@ echo "[cage] .NET Framework 4.8 MSI step complete"'''
         script = '''set -eu
 unset WINEDLLOVERRIDES
 echo "[cage] Preparing Wine registry for Chocolatey..."
+pwsh_win='C:\\Program Files\\PowerShell\\7\\pwsh.exe'
 timeout "${CAGE_WINECFG_TIMEOUT:-120s}" winecfg /v win10
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Environment' /v PS7 /t REG_SZ /d "$pwsh_win" /f
 timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v amsi /d "" /f
 timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v dwmapi /d "" /f
 timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v rpcrt4 /d native,builtin /f
@@ -311,7 +313,9 @@ echo "[cage] Finalize Chocolatey-for-wine"
 wine_prefix="{wine_prefix}"
 choco_exe="{choco_exe}"
 raw_choco_exe="{raw_choco_exe}"
-pwsh_exe="$wine_prefix/drive_c/Program Files/PowerShell/7/pwsh.exe"
+pwsh_dir="$wine_prefix/drive_c/Program Files/PowerShell/7"
+pwsh_dir_win='C:\\Program Files\\PowerShell\\7'
+pwsh_exe="$pwsh_dir/pwsh.exe"
 winps_exe="$wine_prefix/drive_c/windows/system32/WindowsPowerShell/v1.0/powershell.exe"
 cfw_dir="$wine_prefix/drive_c/ProgramData/Chocolatey-for-wine"
 choc_install_ps1="$cfw_dir/choc_install.ps1"
@@ -329,6 +333,9 @@ test -f "$pwsh_exe"
 test -f "$winps_exe"
 test -f "$raw_choco_exe"
 test -f "$choc_install_ps1"
+export PS7="$pwsh_dir_win\\pwsh.exe"
+export WINEPATH="$pwsh_dir${{WINEPATH:+;$WINEPATH}}"
+export PATH="$pwsh_dir:$PATH"
 
 winps_probe_sentinel_win="$work_dir_win/winps-probe-ok.txt"
 winps_probe_script_win="$work_dir_win/winps-probe.ps1"

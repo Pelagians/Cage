@@ -154,12 +154,28 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn('/v amsi /d "" /f', registry)
         self.assertIn('/v dwmapi /d "" /f', registry)
         self.assertIn("/v rpcrt4 /d native,builtin /f", registry)
+        self.assertIn("HKCU\\Environment", registry)
+        self.assertIn("/v PS7", registry)
+        self.assertIn("C:\\Program Files\\PowerShell\\7\\pwsh.exe", registry)
+
+    def test_chocolatey_finalizer_makes_zip_pwsh_discoverable_to_cfw_wrapper(self):
+        finalize = "\n".join(_manifest().modules[0].build()[4].commands)
+
+        self.assertIn("pwsh_dir=", finalize)
+        self.assertIn("drive_c/Program Files/PowerShell/7", finalize)
+        self.assertIn("pwsh_dir_win='C:\\Program Files\\PowerShell\\7'", finalize)
+        self.assertIn("export PS7=", finalize)
+        self.assertIn(r"$pwsh_dir_win\pwsh.exe", finalize)
+        self.assertIn("export WINEPATH=", finalize)
+        self.assertIn("$pwsh_dir${WINEPATH:+;$WINEPATH}", finalize)
+        self.assertIn("export PATH=", finalize)
+        self.assertIn("$pwsh_dir:$PATH", finalize)
 
     def test_chocolatey_finalizer_does_not_gate_on_direct_pwsh_invocation(self):
         finalize = "\n".join(_manifest().modules[0].build()[4].commands)
 
         self.assertIn("pwsh_exe=", finalize)
-        self.assertIn("Program Files/PowerShell/7/pwsh.exe", finalize)
+        self.assertIn('pwsh_exe="$pwsh_dir/pwsh.exe"', finalize)
         self.assertIn("work_dir=\"$wine_prefix/drive_c/ProgramData/CageFinalize\"", finalize)
         self.assertIn("work_dir_win='C:/ProgramData/CageFinalize'", finalize)
         self.assertIn('test -f "$pwsh_exe"', finalize)
