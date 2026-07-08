@@ -320,11 +320,6 @@ work_dir_win='C:/ProgramData/CageFinalize'
 finalize_driver="$work_dir/finalize-chocolatey-for-wine.ps1"
 patched_choc_install_ps1="$work_dir/choc_install.patched.ps1"
 finalize_log="$work_dir/chocolatey-finalize.log"
-pwsh_command_log="$work_dir/pwsh-command.log"
-pwsh_command_sentinel="$work_dir/pwsh-command-ok.txt"
-pwsh_probe_log="$work_dir/pwsh-probe.log"
-pwsh_probe_script="$work_dir/pwsh-probe.ps1"
-pwsh_probe_sentinel="$work_dir/pwsh-probe-ok.txt"
 winps_probe_log="$work_dir/winps-probe.log"
 winps_probe_script="$work_dir/winps-probe.ps1"
 winps_probe_sentinel="$work_dir/winps-probe-ok.txt"
@@ -334,60 +329,6 @@ test -f "$pwsh_exe"
 test -f "$winps_exe"
 test -f "$raw_choco_exe"
 test -f "$choc_install_ps1"
-
-pwsh_command_sentinel_win="$work_dir_win/pwsh-command-ok.txt"
-rm -f "$pwsh_command_sentinel"
-: > "$pwsh_command_log"
-echo "[cage] Probing Chocolatey PowerShell engine with -Command..."
-set +e
-timeout 120s wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "[Console]::Out.WriteLine('[cage] pwsh -Command probe OK'); [System.IO.File]::WriteAllText('$pwsh_command_sentinel_win', 'ok'); exit 37" > "$pwsh_command_log" 2>&1
-pwsh_command_rc="$?"
-set -e
-if [ -s "$pwsh_command_log" ]; then
-  sed 's/^/[cfw-pwsh-command] /' "$pwsh_command_log"
-fi
-if [ ! -f "$pwsh_command_sentinel" ]; then
-  echo "[cage] ERROR: PowerShell -Command probe did not write sentinel: $pwsh_command_sentinel"
-  exit 98
-fi
-if [ ! -s "$pwsh_command_log" ]; then
-  echo "[cage] ERROR: PowerShell -Command probe produced no stdout"
-  exit 96
-fi
-if [ "$pwsh_command_rc" -ne 37 ]; then
-  echo "[cage] WARNING: PowerShell -Command probe did not propagate expected exit code 37; got $pwsh_command_rc"
-fi
-
-pwsh_probe_sentinel_win="$work_dir_win/pwsh-probe-ok.txt"
-pwsh_probe_script_win="$work_dir_win/pwsh-probe.ps1"
-rm -f "$pwsh_probe_sentinel"
-cat > "$pwsh_probe_script" <<'PS1'
-param([string]$SentinelPath)
-$ErrorActionPreference = 'Stop'
-[System.IO.File]::WriteAllText($SentinelPath, 'ok')
-[Console]::Out.WriteLine('[cage] pwsh -File probe OK')
-[Console]::Out.WriteLine($PSVersionTable.PSVersion.ToString())
-PS1
-: > "$pwsh_probe_log"
-echo "[cage] Probing Chocolatey PowerShell engine with -File..."
-set +e
-timeout 120s wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$pwsh_probe_script_win" "$pwsh_probe_sentinel_win" > "$pwsh_probe_log" 2>&1
-pwsh_probe_rc="$?"
-set -e
-if [ -s "$pwsh_probe_log" ]; then
-  sed 's/^/[cfw-pwsh] /' "$pwsh_probe_log"
-fi
-if [ "$pwsh_probe_rc" -ne 0 ]; then
-  echo "[cage] ERROR: PowerShell -File probe failed with exit code $pwsh_probe_rc"
-  exit "$pwsh_probe_rc"
-fi
-if [ ! -f "$pwsh_probe_sentinel" ]; then
-  echo "[cage] ERROR: PowerShell -File probe did not create sentinel: $pwsh_probe_sentinel"
-  find "$work_dir" -maxdepth 1 -type f -printf '[cage] CageFinalize file: %f\n' 2>/dev/null || true
-  exit 98
-elif [ ! -s "$pwsh_probe_log" ]; then
-  echo "[cage] PowerShell -File probe produced no captured stdout; continuing because sentinel exists"
-fi
 
 winps_probe_sentinel_win="$work_dir_win/winps-probe-ok.txt"
 winps_probe_script_win="$work_dir_win/winps-probe.ps1"
