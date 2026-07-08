@@ -269,18 +269,26 @@ if [ -f "$dotnet_msiexec_log" ]; then
   echo "[cage] .NET Framework 4.8 MSI log tail:"
   tail -120 "$dotnet_msiexec_log" | sed 's/^/[dotnet48-msi] /'
 fi
-if [ "$dotnet_msi_rc" -ne 0 ]; then
-  if [ -f "$dotnet_success_marker" ] && grep -qE 'Action ended .*INSTALL[.] Return value 0' "$dotnet_msiexec_log"; then
-    echo "[cage] .NET Framework 4.8 MSI log reports INSTALL success and marker exists; ignoring Wine msiexec exit $dotnet_msi_rc"
-  else
-    echo "[cage] ERROR: .NET Framework 4.8 MSI failed with exit code $dotnet_msi_rc"
-    echo "[cage] ERROR: missing success marker or MSI success log: $dotnet_success_marker"
+dotnet_msi_success=0
+if [ -f "$dotnet_msiexec_log" ] && grep -qE 'Action ended .*INSTALL[.] Return value 1' "$dotnet_msiexec_log"; then
+  dotnet_msi_success=1
+fi
+if [ "$dotnet_msi_success" -ne 1 ]; then
+  echo "[cage] ERROR: .NET Framework 4.8 MSI did not report INSTALL success"
+  if [ "$dotnet_msi_rc" -ne 0 ]; then
+    echo "[cage] ERROR: Wine msiexec exit code: $dotnet_msi_rc"
     exit "$dotnet_msi_rc"
   fi
-fi
-if [ ! -f "$dotnet_success_marker" ]; then
-  echo "[cage] ERROR: .NET Framework 4.8 marker missing after MSI step: $dotnet_success_marker"
   exit 67
+fi
+if [ "$dotnet_msi_rc" -ne 0 ]; then
+  echo "[cage] .NET Framework 4.8 MSI log reports INSTALL success; ignoring Wine msiexec exit $dotnet_msi_rc"
+fi
+if [ -f "$dotnet_success_marker" ]; then
+  echo "[cage] .NET Framework 4.8 marker exists: $dotnet_success_marker"
+else
+  echo "[cage] .NET Framework 4.8 marker not present after MSI success: $dotnet_success_marker"
+  echo "[cage] Continuing; finalizer patch skips Chocolatey-for-wine's unbounded marker wait"
 fi
 echo "[cage] .NET Framework 4.8 MSI step complete"'''
         return BuildStep(commands=[script], description="Install .NET Framework 4.8 for Chocolatey")
@@ -308,6 +316,7 @@ cfw_dir="$wine_prefix/drive_c/ProgramData/Chocolatey-for-wine"
 choc_install_ps1="$cfw_dir/choc_install.ps1"
 work_dir="/tmp/cage-chocolatey-finalize"
 finalize_driver="$work_dir/finalize-chocolatey-for-wine.ps1"
+patched_choc_install_ps1="$work_dir/choc_install.patched.ps1"
 finalize_log="$work_dir/chocolatey-finalize.log"
 pwsh_probe_log="$work_dir/pwsh-probe.log"
 pwsh_probe_sentinel="$work_dir/pwsh-probe-ok.txt"
@@ -343,14 +352,24 @@ fi
 cfw_dir_win="$(winepath -w "$cfw_dir")"
 choc_install_ps1_win="$(winepath -w "$choc_install_ps1")"
 choco_exe_win="$(winepath -w "$choco_exe")"
+patched_choc_install_ps1_win="$(winepath -w "$patched_choc_install_ps1")"
 finalize_driver_win="$(winepath -w "$finalize_driver")"
 cat > "$finalize_driver" <<'PS1'
 $ErrorActionPreference = 'Stop'
 $scriptPath = $args[0]
 $cfwDir = $args[1]
 $chocoExe = $args[2]
-Write-Host "[cage] Running upstream choc_install.ps1: $scriptPath"
-& $scriptPath $cfwDir '/q'
+$patchedScriptPath = $args[3]
+$scriptText = [System.IO.File]::ReadAllText($scriptPath)
+$waitLoop = 'while(!(Test-path "$env:systemroot\\system32\\ucrtbase_clr0400.dll") ) {{start-Sleep 0.25}}'
+$replacement = 'if (!(Test-Path "$env:systemroot\\system32\\ucrtbase_clr0400.dll")) {{ Write-Host "[cage] Skipping upstream ucrtbase_clr0400.dll wait; deterministic .NET MSI step already completed" }}'
+$patchedText = $scriptText.Replace($waitLoop, $replacement)
+if ($patchedText -eq $scriptText) {{
+    Write-Host "[cage] WARNING: upstream ucrtbase_clr0400.dll wait was not found; running script unchanged"
+}}
+[System.IO.File]::WriteAllText($patchedScriptPath, $patchedText)
+Write-Host "[cage] Running patched upstream choc_install.ps1: $patchedScriptPath"
+& $patchedScriptPath $cfwDir '/q'
 if (!(Test-Path $chocoExe)) {{
     throw "Chocolatey-for-wine finalizer did not create canonical choco.exe: $chocoExe"
 }}
@@ -358,7 +377,7 @@ Write-Host "[cage] Upstream Chocolatey-for-wine finalizer completed"
 PS1
 
 set +e
-timeout "${{CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}}" wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$finalize_driver_win" "$choc_install_ps1_win" "$cfw_dir_win" "$choco_exe_win" > "$finalize_log" 2>&1
+timeout "${{CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}}" wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$finalize_driver_win" "$choc_install_ps1_win" "$cfw_dir_win" "$choco_exe_win" "$patched_choc_install_ps1_win" > "$finalize_log" 2>&1
 finalize_rc="$?"
 set -e
 if [ -s "$finalize_log" ]; then
