@@ -130,11 +130,35 @@ PY
     exit 1
   fi
 
+  cfw_dir="$(dirname "$installer")"
+  choc_install_ps1="$cfw_dir/choc_install.ps1"
+  pwsh_exe="$wine_prefix/drive_c/Program Files/PowerShell/7/pwsh.exe"
+  raw_choco_exe="$wine_prefix/drive_c/ProgramData/tools/chocolateyInstall/choco.exe"
+
   echo "[cage] Running Chocolatey-for-wine installer: $installer"
   timeout "${{CAGE_CHOCOLATEY_INSTALL_TIMEOUT:-1200s}}" wine "$installer" /q
 
+  if [ ! -f "$choco_exe" ] && [ -f "$raw_choco_exe" ]; then
+    echo "[cage] Finalizing partial Chocolatey-for-wine install..."
+    if [ ! -f "$pwsh_exe" ]; then
+      echo "[cage] ERROR: partial Chocolatey extraction found, but pwsh.exe is missing: $pwsh_exe"
+      find "$wine_prefix/drive_c" -maxdepth 5 -iname 'pwsh.exe' 2>/dev/null | sort || true
+      exit 1
+    fi
+    if [ ! -f "$choc_install_ps1" ]; then
+      echo "[cage] ERROR: partial Chocolatey extraction found, but choc_install.ps1 is missing: $choc_install_ps1"
+      find "$cfw_dir" -maxdepth 2 -type f | sort || true
+      exit 1
+    fi
+
+    cfw_dir_win="$(winepath -w "$cfw_dir")"
+    choc_install_ps1_win="$(winepath -w "$choc_install_ps1")"
+    timeout "${{CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}}" wine "$pwsh_exe" -File "$choc_install_ps1_win" "$cfw_dir_win" /q
+  fi
+
   if [ ! -f "$choco_exe" ]; then
     echo "[cage] ERROR: Chocolatey-for-wine finished but choco.exe is missing: $choco_exe"
+    echo "[cage] Raw Chocolatey extraction marker: $raw_choco_exe"
     find "$wine_prefix/drive_c/ProgramData" -maxdepth 4 -iname '*choco*' 2>/dev/null | sort || true
     exit 1
   fi

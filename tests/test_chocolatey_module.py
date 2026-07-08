@@ -64,6 +64,50 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertNotIn("codeberg.org/Synchro/powershell-wrapper-for-wine", all_commands)
         self.assertNotIn("powershell64.exe", all_commands)
 
+    def test_chocolatey_recovers_partial_cfw_finalization(self):
+        """Partial CFW installs rerun choc_install.ps1 instead of accepting raw nupkg extraction."""
+        manifest = Manifest.from_dict({
+            "schemaVersion": "cage.app/v0",
+            "name": "test",
+            "version": "1.0.0",
+            "runtime": {"provider": "wine", "version": "latest"},
+            "modules": [
+                {"type": "chocolatey", "install": {"packages": ["7zip"]}},
+            ],
+        })
+
+        steps = manifest.modules[0].build()
+        all_commands = "\n".join("\n".join(step.commands) for step in steps)
+
+        self.assertIn("raw_choco_exe=", all_commands)
+        self.assertIn("ProgramData/tools/chocolateyInstall/choco.exe", all_commands)
+        self.assertIn("pwsh_exe=", all_commands)
+        self.assertIn("Program Files/PowerShell/7/pwsh.exe", all_commands)
+        self.assertIn("choc_install.ps1", all_commands)
+        self.assertIn("Finalizing partial Chocolatey-for-wine install", all_commands)
+        self.assertIn("timeout \"${CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}\"", all_commands)
+
+    def test_chocolatey_never_treats_raw_extracted_choco_as_success(self):
+        """Package installation still uses canonical Chocolatey bin path only."""
+        manifest = Manifest.from_dict({
+            "schemaVersion": "cage.app/v0",
+            "name": "test",
+            "version": "1.0.0",
+            "runtime": {"provider": "wine", "version": "latest"},
+            "modules": [
+                {"type": "chocolatey", "install": {"packages": ["7zip"]}},
+            ],
+        })
+
+        steps = manifest.modules[0].build()
+        install_script = "\n".join(steps[0].commands)
+        package_script = "\n".join(steps[1].commands)
+
+        self.assertIn("ProgramData/chocolatey/bin/choco.exe", install_script)
+        self.assertIn("ProgramData/chocolatey/bin/choco.exe", package_script)
+        self.assertIn("ProgramData/tools/chocolateyInstall/choco.exe", install_script)
+        self.assertNotIn("ProgramData/tools/chocolateyInstall/choco.exe", package_script)
+
     def test_build_preserves_provenance(self):
         """Provenance field is preserved through parsing."""
         manifest = Manifest.from_dict({
