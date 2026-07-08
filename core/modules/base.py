@@ -319,25 +319,26 @@ class ContainerfileModule(ModuleBase):
             description=f"Execute {len(self.instructions)} containerfile instruction(s)"
         )]
 
-    def parse_module(data: dict[str, Any], index: int = 0) -> ModuleBase:
-            """Parse a module definition from a dict.
+
+def parse_module(data: dict[str, Any], index: int = 0) -> ModuleBase:
+    """Parse a module definition from a dict.
     
-            This function takes a dictionary representing a module definition
-            and returns the appropriate ModuleBase subclass instance.
+    This function takes a dictionary representing a module definition
+    and returns the appropriate ModuleBase subclass instance.
     
-            Args:
-                data: Module definition dict with 'type' field
-                index: Module index for error messages
+    Args:
+        data: Module definition dict with 'type' field
+        index: Module index for error messages
     
-            Returns:
-                ModuleBase: Parsed module instance
+    Returns:
+        Appropriate ModuleBase subclass instance
     
-            Raises:
-                ModuleError: If module definition is invalid
-            """
-            from .chocolatey import ChocolateyModule
+    Raises:
+        ModuleError: If module type is unknown or required fields are missing
+    """
+    from .chocolatey import ChocolateyModule
     
-            module_type = data.get("type")
+    module_type = data.get("type")
     if not module_type:
         raise ModuleError(f"modules[{index}] missing 'type' field")
     
