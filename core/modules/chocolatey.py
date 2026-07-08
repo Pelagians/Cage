@@ -22,7 +22,7 @@ DEFAULT_DOTNET48_SHA256 = "0a3a390c47e639d0f7fc65b21195fee6b7f65b066f80f70c60fab
 DEFAULT_POWERSHELL_MSI_VERSION = "7.5.5"
 DEFAULT_POWERSHELL_MSI_NAME = f"PowerShell-{DEFAULT_POWERSHELL_MSI_VERSION}-win-x64.msi"
 DEFAULT_POWERSHELL_MSI_SHA256 = "b2ac56b7639e2b259bb78bab077555d76f2a5eec6c516690d63de36bc1d6ca25"
-POWERSHELL_MSI_PRODUCT_CODE = "16735AF7-1D8D-3681-94A5-C578A61EC832"
+POWERSHELL_MSI_PRODUCT_CODE = "634F4903-28DC-4BA6-A39F-4B3E394D4E36"
 
 
 def _sh_single_quote(value: str) -> str:
@@ -394,10 +394,10 @@ finalize_driver="$work_dir/finalize-chocolatey-for-wine.ps1"
 patched_choc_install_ps1="$work_dir/choc_install.patched.ps1"
 finalize_log="$work_dir/chocolatey-finalize.log"
 unix_probe_dir="$(mktemp -d /tmp/cage-pwsh-probe.XXXXXX)"
-pwsh_probe_script="$unix_probe_dir/pwsh-probe.ps1"
+pwsh_probe_script="$work_dir/pwsh-probe.ps1"
 pwsh_probe_stdout="$unix_probe_dir/pwsh-probe.stdout"
 pwsh_probe_stderr="$unix_probe_dir/pwsh-probe.stderr"
-pwsh_probe_sentinel="$unix_probe_dir/unix-sentinel.txt"
+pwsh_probe_sentinel="$work_dir/pwsh-probe-ok.txt"
 cmd_diag_stdout="$unix_probe_dir/cmd.out"
 cmd_diag_stderr="$unix_probe_dir/cmd.err"
 winepath_diag="$unix_probe_dir/winepath.out"
@@ -411,8 +411,8 @@ export PS7="$pwsh_dir_win\\pwsh.exe"
 export WINEPATH="$pwsh_dir_win${{WINEPATH:+;$WINEPATH}}"
 export PATH="$pwsh_dir:$PATH"
 
-pwsh_probe_script_win="$(winepath -w "$pwsh_probe_script")"
-pwsh_probe_sentinel_win="$(winepath -w "$pwsh_probe_sentinel")"
+pwsh_probe_script_win="$work_dir_win/pwsh-probe.ps1"
+pwsh_probe_sentinel_win="$work_dir_win/pwsh-probe-ok.txt"
 rm -f "$pwsh_probe_sentinel"
 cat > "$pwsh_probe_script" <<'PS1'
 param([string]$SentinelPath)
