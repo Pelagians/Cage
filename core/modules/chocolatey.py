@@ -416,11 +416,22 @@ unset WINEDLLOVERRIDES
 echo "[cage] Preparing Wine registry for Chocolatey..."
 pwsh_win='C:\\Program Files\\PowerShell\\7\\pwsh.exe'
 timeout "${CAGE_WINECFG_TIMEOUT:-120s}" winecfg /v win10
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\DllOverrides' /v mscoree /t REG_SZ /d native /f
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKLM\\Software\\Microsoft\\.NETFramework' /v OnlyUseLatestCLR /t REG_DWORD /d 1 /f
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKLM\\SOFTWARE\\Microsoft\\.NETFramework\\Policy\\v2.0' /v 50727 /t REG_SZ /d 50727-50727 /f
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKLM\\SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v3.0' /v Install /t REG_DWORD /d 1 /f
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKLM\\SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v3.0' /v SP /t REG_DWORD /d 2 /f
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKLM\\SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v3.0\\Setup' /v InstallSuccess /t REG_DWORD /d 1 /f
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKLM\\SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v3.5' /v Install /t REG_DWORD /d 1 /f
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKLM\\SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v3.5' /v SP /t REG_DWORD /d 1 /f
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Microsoft\\Avalon.Graphics' /v DisableHWAcceleration /t REG_DWORD /d 0 /f
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKLM\\SOFTWARE\\Classes\\CLSID\\{0A29FF9E-7F9C-4437-8B11-F424491E3931}\\InprocServer32' /ve /t REG_SZ /d 'C:\\Windows\\System32\\mscoree.dll' /f
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKLM\\SOFTWARE\\Classes\\CLSID\\{0A29FF9E-7F9C-4437-8B11-F424491E3931}\\InprocServer32' /v ThreadingModel /t REG_SZ /d Both /f
 timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Environment' /v PS7 /t REG_SZ /d "$pwsh_win" /f
 timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v amsi /d "" /f
 timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v dwmapi /d "" /f
 timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v rpcrt4 /d native,builtin /f
-timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\choco.exe\\DllOverrides' /v mscoree /d native,builtin /f
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\choco.exe\\DllOverrides' /v mscoree /t REG_SZ /d native /f
 echo "[cage] Wine registry prepared for Chocolatey"'''
         return BuildStep(commands=[script], description="Prepare Wine registry for Chocolatey", kind="wine-reg", timeout=120)
 
@@ -492,7 +503,7 @@ timeout "${{CAGE_WINE_REG_TIMEOUT:-120s}}" wine reg add 'HKCU\\Environment' /v C
 timeout "${{CAGE_WINE_REG_TIMEOUT:-120s}}" wine reg add 'HKCU\\Environment' /v ChocolateyToolsLocation /t REG_SZ /d "$choco_tools_win" /f
 export ChocolateyInstall="$choco_dir_win"
 export ChocolateyToolsLocation="$choco_tools_win"
-export WINEDLLOVERRIDES='mscoree=native,builtin'
+export WINEDLLOVERRIDES='mscoree=n'
 
 verify_log="${{CAGE_BUNDLE_MOUNT:-/opt/cage}}/logs/chocolatey-verify.log"
 mkdir -p "$(dirname "$verify_log")"
@@ -519,9 +530,12 @@ choco_exe="__CHOCO_EXE__"
 raw_choco_exe="__RAW_CHOCO_EXE__"
 canonical_choco_dir="$wine_prefix/drive_c/ProgramData/chocolatey"
 canonical_bin_dir="$canonical_choco_dir/bin"
+native_mscoree="$wine_prefix/drive_c/windows/system32/mscoree.dll"
+native_mscoreei="$wine_prefix/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319/mscoreei.dll"
+native_clr="$wine_prefix/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319/clr.dll"
 export ChocolateyInstall='C:\\ProgramData\\chocolatey'
 export ChocolateyToolsLocation='C:\\tools'
-export WINEDLLOVERRIDES='mscoree=native,builtin'
+export WINEDLLOVERRIDES='mscoree=n'
 probe_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/chocolatey-diagnostics"
 diagnostic_json="${CAGE_BUNDLE_MOUNT:-/opt/cage}/metadata/chocolatey-diagnostic.json"
 mkdir -p "$probe_dir" "$(dirname "$diagnostic_json")"
@@ -537,19 +551,31 @@ wine reg query 'HKCU\\Environment' /v ChocolateyInstall > "$probe_dir/registry-c
 registry_install_rc="$?"
 wine reg query 'HKCU\\Environment' /v ChocolateyToolsLocation > "$probe_dir/registry-chocolatey-tools.log" 2>&1
 registry_tools_rc="$?"
+wine reg query 'HKCU\\Software\\Wine\\DllOverrides' /v mscoree > "$probe_dir/registry-wine-mscoree.log" 2>&1
+wine_dll_mscoree_rc="$?"
+wine reg query 'HKLM\\Software\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full' /v Release > "$probe_dir/registry-dotnet48-release.log" 2>&1
+dotnet_release_rc="$?"
+test -f "$native_mscoree"
+native_mscoree_rc="$?"
+test -f "$native_mscoreei"
+native_mscoreei_rc="$?"
+test -f "$native_clr"
+native_clr_rc="$?"
 timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe" --version > "$probe_dir/choco-version.log" 2>&1
 choco_version_rc="$?"
 timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine cmd /c 'C:\\ProgramData\\chocolatey\\bin\\choco.exe --version' > "$probe_dir/choco-version-cmd.log" 2>&1
 choco_version_cmd_rc="$?"
 timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe" source list > "$probe_dir/choco-source-list.log" 2>&1
 choco_source_rc="$?"
+WINEDEBUG=+loaddll timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-60s}" wine "$choco_exe" --version > "$probe_dir/choco-mscoree-loader.log" 2>&1
+choco_loader_rc="$?"
 if [ "$choco_version_rc" -ne 0 ] && [ ! -s "$probe_dir/choco-version.log" ]; then
   WINEDEBUG=+seh,+loaddll timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-60s}" wine "$choco_exe" --version > "$probe_dir/choco-version-winedebug.log" 2>&1 || true
 fi
 find "$canonical_choco_dir" -maxdepth 3 -type f | sort > "$probe_dir/promoted-files.log" 2>&1 || true
 set -e
 
-python3 - "$diagnostic_json" "$choco_exe" "$raw_choco_exe" "$canonical_choco_dir" "$winepath_rc" "$cmd_dir_rc" "$cmd_echo_rc" "$registry_install_rc" "$registry_tools_rc" "$choco_version_rc" "$choco_version_cmd_rc" "$choco_source_rc" <<'PY'
+python3 - "$diagnostic_json" "$choco_exe" "$raw_choco_exe" "$canonical_choco_dir" "$native_mscoree" "$native_mscoreei" "$native_clr" "$winepath_rc" "$cmd_dir_rc" "$cmd_echo_rc" "$registry_install_rc" "$registry_tools_rc" "$wine_dll_mscoree_rc" "$dotnet_release_rc" "$native_mscoree_rc" "$native_mscoreei_rc" "$native_clr_rc" "$choco_version_rc" "$choco_version_cmd_rc" "$choco_source_rc" "$choco_loader_rc" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -559,14 +585,23 @@ from pathlib import Path
     choco_exe,
     raw_choco_exe,
     canonical_choco_dir,
+    native_mscoree,
+    native_mscoreei,
+    native_clr,
     winepath_rc,
     cmd_dir_rc,
     cmd_echo_rc,
     registry_install_rc,
     registry_tools_rc,
+    wine_dll_mscoree_rc,
+    dotnet_release_rc,
+    native_mscoree_rc,
+    native_mscoreei_rc,
+    native_clr_rc,
     choco_version_rc,
     choco_version_cmd_rc,
     choco_source_rc,
+    choco_loader_rc,
 ) = sys.argv[1:]
 canonical = Path(choco_exe)
 raw = Path(raw_choco_exe)
@@ -579,9 +614,15 @@ checks = {
     "wineCmdEcho": cmd_echo_rc == "0",
     "cmdDirCanonicalBin": cmd_dir_rc == "0",
     "registryEnvironment": registry_install_rc == "0" and registry_tools_rc == "0",
+    "wineDllOverridesMscoree": wine_dll_mscoree_rc == "0",
+    "dotnetReleaseRegistry": dotnet_release_rc == "0",
+    "nativeMscoreeExists": native_mscoree_rc == "0" and Path(native_mscoree).is_file(),
+    "nativeMscoreeiExists": native_mscoreei_rc == "0" and Path(native_mscoreei).is_file(),
+    "nativeClrExists": native_clr_rc == "0" and Path(native_clr).is_file(),
     "chocoVersion": choco_version_rc == "0",
     "chocoVersionViaCmd": choco_version_cmd_rc == "0",
     "sourceList": choco_source_rc == "0",
+    "mscoreeLoader": choco_loader_rc == "0",
 }
 payload = {
     "schemaVersion": "cage.chocolatey-diagnostic/v0",
@@ -591,12 +632,18 @@ payload = {
     "paths": {
         "canonicalChoco": choco_exe,
         "rawToolsPayload": raw_choco_exe,
+        "nativeMscoree": native_mscoree,
+        "nativeMscoreei": native_mscoreei,
+        "nativeClr": native_clr,
         "logDirectory": "logs/chocolatey-diagnostics",
     },
     "logs": {
         "chocoVersion": "logs/chocolatey-diagnostics/choco-version.log",
         "chocoVersionViaCmd": "logs/chocolatey-diagnostics/choco-version-cmd.log",
         "chocoVersionWineDebug": "logs/chocolatey-diagnostics/choco-version-winedebug.log",
+        "chocoMscoreeLoader": "logs/chocolatey-diagnostics/choco-mscoree-loader.log",
+        "wineDllOverridesMscoree": "logs/chocolatey-diagnostics/registry-wine-mscoree.log",
+        "dotnetReleaseRegistry": "logs/chocolatey-diagnostics/registry-dotnet48-release.log",
         "promotedFiles": "logs/chocolatey-diagnostics/promoted-files.log",
     },
 }
@@ -614,6 +661,8 @@ if [ "$choco_diag_status" != "passed" ]; then
   echo "[cage] ERROR: Chocolatey diagnostics failed; see $diagnostic_json"
   echo "[cage] Chocolatey version log tail:"
   tail -80 "$probe_dir/choco-version.log" || true
+  echo "[cage] Chocolatey mscoree loader tail:"
+  tail -120 "$probe_dir/choco-mscoree-loader.log" || true
   if [ -f "$probe_dir/choco-version-winedebug.log" ]; then
     echo "[cage] Chocolatey WINEDEBUG tail:"
     tail -120 "$probe_dir/choco-version-winedebug.log" || true
@@ -635,7 +684,7 @@ echo "[cage] Install Chocolatey packages"
 choco_exe="{choco_exe}"
 export ChocolateyInstall='C:\\ProgramData\\chocolatey'
 export ChocolateyToolsLocation='C:\\tools'
-export WINEDLLOVERRIDES='mscoree=native,builtin'
+export WINEDLLOVERRIDES='mscoree=n'
 diagnostic_json="${{CAGE_BUNDLE_MOUNT:-/opt/cage}}/metadata/chocolatey-diagnostic.json"
 if [ ! -f "$choco_exe" ]; then
   echo "[cage] ERROR: choco.exe is missing before package install: $choco_exe"
