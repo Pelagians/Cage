@@ -385,12 +385,12 @@ timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Environment' /v PS7
 timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v amsi /d "" /f
 timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v dwmapi /d "" /f
 timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v rpcrt4 /d native,builtin /f
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\choco.exe\\DllOverrides' /v mscoree /d native,builtin /f
 echo "[cage] Wine registry prepared for Chocolatey"'''
         return BuildStep(commands=[script], description="Prepare Wine registry for Chocolatey", kind="wine-reg", timeout=120)
 
     def _finalize_step(self, wine_prefix: str, choco_exe: str, raw_choco_exe: str) -> BuildStep:
         script = f'''set -eu
-unset WINEDLLOVERRIDES
 echo "[cage] Promote Chocolatey natively"
 wine_prefix="{wine_prefix}"
 choco_exe="{choco_exe}"
@@ -457,6 +457,7 @@ timeout "${{CAGE_WINE_REG_TIMEOUT:-120s}}" wine reg add 'HKCU\\Environment' /v C
 timeout "${{CAGE_WINE_REG_TIMEOUT:-120s}}" wine reg add 'HKCU\\Environment' /v ChocolateyToolsLocation /t REG_SZ /d "$choco_tools_win" /f
 export ChocolateyInstall="$choco_dir_win"
 export ChocolateyToolsLocation="$choco_tools_win"
+export WINEDLLOVERRIDES='mscoree=native,builtin'
 
 verify_log="${{CAGE_BUNDLE_MOUNT:-/opt/cage}}/logs/chocolatey-verify.log"
 mkdir -p "$(dirname "$verify_log")"
@@ -466,17 +467,17 @@ timeout "${{CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}}" wine "$choco_exe" --version 
 verify_rc="$?"
 set -e
 if [ "$verify_rc" -ne 0 ]; then
-  echo "[cage] ERROR: canonical Chocolatey verification failed rc=$verify_rc; see $verify_log"
+  echo "[cage] WARNING: canonical Chocolatey verification failed rc=$verify_rc; see $verify_log"
+  echo "[cage] Continuing to diagnostic step for structured evidence"
   tail -80 "$verify_log" || true
-  exit "$verify_rc"
+else
+  cat "$verify_log"
 fi
-cat "$verify_log"
 echo "[cage] Chocolatey native promotion complete"'''
         return BuildStep(commands=[script], description="Promote Chocolatey natively", kind="raw-shell")
 
     def _diagnostic_step(self, wine_prefix: str, choco_exe: str, raw_choco_exe: str) -> BuildStep:
         script = '''set -eu
-unset WINEDLLOVERRIDES
 echo "[cage] Diagnose Chocolatey readiness"
 wine_prefix="__WINE_PREFIX__"
 choco_exe="__CHOCO_EXE__"
@@ -485,6 +486,7 @@ canonical_choco_dir="$wine_prefix/drive_c/ProgramData/chocolatey"
 canonical_bin_dir="$canonical_choco_dir/bin"
 export ChocolateyInstall='C:\\ProgramData\\chocolatey'
 export ChocolateyToolsLocation='C:\\tools'
+export WINEDLLOVERRIDES='mscoree=native,builtin'
 probe_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/chocolatey-diagnostics"
 diagnostic_json="${CAGE_BUNDLE_MOUNT:-/opt/cage}/metadata/chocolatey-diagnostic.json"
 mkdir -p "$probe_dir" "$(dirname "$diagnostic_json")"
@@ -494,17 +496,25 @@ winepath -w "$choco_exe" > "$probe_dir/winepath-canonical.log" 2>&1
 winepath_rc="$?"
 wine cmd /c dir 'C:\\ProgramData\\chocolatey\\bin' > "$probe_dir/cmd-dir-chocolatey-bin.log" 2>&1
 cmd_dir_rc="$?"
+wine cmd /c echo CAGE-CMD-OK > "$probe_dir/cmd-echo.log" 2>&1
+cmd_echo_rc="$?"
 wine reg query 'HKCU\\Environment' /v ChocolateyInstall > "$probe_dir/registry-chocolatey-install.log" 2>&1
 registry_install_rc="$?"
 wine reg query 'HKCU\\Environment' /v ChocolateyToolsLocation > "$probe_dir/registry-chocolatey-tools.log" 2>&1
 registry_tools_rc="$?"
 timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe" --version > "$probe_dir/choco-version.log" 2>&1
 choco_version_rc="$?"
+timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine cmd /c 'C:\\ProgramData\\chocolatey\\bin\\choco.exe --version' > "$probe_dir/choco-version-cmd.log" 2>&1
+choco_version_cmd_rc="$?"
 timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe" source list > "$probe_dir/choco-source-list.log" 2>&1
 choco_source_rc="$?"
+if [ "$choco_version_rc" -ne 0 ] && [ ! -s "$probe_dir/choco-version.log" ]; then
+  WINEDEBUG=+seh,+loaddll timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-60s}" wine "$choco_exe" --version > "$probe_dir/choco-version-winedebug.log" 2>&1 || true
+fi
+find "$canonical_choco_dir" -maxdepth 3 -type f | sort > "$probe_dir/promoted-files.log" 2>&1 || true
 set -e
 
-python3 - "$diagnostic_json" "$choco_exe" "$raw_choco_exe" "$canonical_choco_dir" "$winepath_rc" "$cmd_dir_rc" "$registry_install_rc" "$registry_tools_rc" "$choco_version_rc" "$choco_source_rc" <<'PY'
+python3 - "$diagnostic_json" "$choco_exe" "$raw_choco_exe" "$canonical_choco_dir" "$winepath_rc" "$cmd_dir_rc" "$cmd_echo_rc" "$registry_install_rc" "$registry_tools_rc" "$choco_version_rc" "$choco_version_cmd_rc" "$choco_source_rc" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -516,9 +526,11 @@ from pathlib import Path
     canonical_choco_dir,
     winepath_rc,
     cmd_dir_rc,
+    cmd_echo_rc,
     registry_install_rc,
     registry_tools_rc,
     choco_version_rc,
+    choco_version_cmd_rc,
     choco_source_rc,
 ) = sys.argv[1:]
 canonical = Path(choco_exe)
@@ -529,9 +541,11 @@ checks = {
     "rawToolsPayloadExists": raw.is_file(),
     "redirectExists": (canonical_dir / "redirects" / "choco.exe").is_file(),
     "winepathCanonical": winepath_rc == "0",
+    "wineCmdEcho": cmd_echo_rc == "0",
     "cmdDirCanonicalBin": cmd_dir_rc == "0",
     "registryEnvironment": registry_install_rc == "0" and registry_tools_rc == "0",
     "chocoVersion": choco_version_rc == "0",
+    "chocoVersionViaCmd": choco_version_cmd_rc == "0",
     "sourceList": choco_source_rc == "0",
 }
 payload = {
@@ -543,6 +557,12 @@ payload = {
         "canonicalChoco": choco_exe,
         "rawToolsPayload": raw_choco_exe,
         "logDirectory": "logs/chocolatey-diagnostics",
+    },
+    "logs": {
+        "chocoVersion": "logs/chocolatey-diagnostics/choco-version.log",
+        "chocoVersionViaCmd": "logs/chocolatey-diagnostics/choco-version-cmd.log",
+        "chocoVersionWineDebug": "logs/chocolatey-diagnostics/choco-version-winedebug.log",
+        "promotedFiles": "logs/chocolatey-diagnostics/promoted-files.log",
     },
 }
 Path(diagnostic_json).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -557,6 +577,12 @@ PY
 )"
 if [ "$choco_diag_status" != "passed" ]; then
   echo "[cage] ERROR: Chocolatey diagnostics failed; see $diagnostic_json"
+  echo "[cage] Chocolatey version log tail:"
+  tail -80 "$probe_dir/choco-version.log" || true
+  if [ -f "$probe_dir/choco-version-winedebug.log" ]; then
+    echo "[cage] Chocolatey WINEDEBUG tail:"
+    tail -120 "$probe_dir/choco-version-winedebug.log" || true
+  fi
   exit 69
 fi
 echo "[cage] Chocolatey diagnostics passed"'''.replace("__WINE_PREFIX__", wine_prefix).replace("__CHOCO_EXE__", choco_exe).replace("__RAW_CHOCO_EXE__", raw_choco_exe)
@@ -570,11 +596,11 @@ echo "[cage] Chocolatey diagnostics passed"'''.replace("__WINE_PREFIX__", wine_p
 
     def _package_install_step(self, choco_exe: str, package_args: str, source_arg: str) -> BuildStep:
         script = f'''set -eu
-unset WINEDLLOVERRIDES
 echo "[cage] Install Chocolatey packages"
 choco_exe="{choco_exe}"
 export ChocolateyInstall='C:\\ProgramData\\chocolatey'
 export ChocolateyToolsLocation='C:\\tools'
+export WINEDLLOVERRIDES='mscoree=native,builtin'
 diagnostic_json="${{CAGE_BUNDLE_MOUNT:-/opt/cage}}/metadata/chocolatey-diagnostic.json"
 if [ ! -f "$choco_exe" ]; then
   echo "[cage] ERROR: choco.exe is missing before package install: $choco_exe"
