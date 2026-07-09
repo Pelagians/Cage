@@ -47,6 +47,7 @@ def analyze_failure_path(path: Path | str, *, write: bool = False) -> dict[str, 
     bundle_root = _bundle_root(root)
     log_files = _collect_log_files(root)
     execution_return_code = _execution_result_exit_code(bundle_root)
+    chocolatey_diagnostic = _read_chocolatey_diagnostic(bundle_root)
     return_codes: list[int] = []
     rollback_packages: list[str] = []
     failure_windows: list[dict[str, Any]] = []
@@ -85,9 +86,18 @@ def analyze_failure_path(path: Path | str, *, write: bool = False) -> dict[str, 
 
     failure_windows.sort(key=lambda item: (item.get("priority", 99), item.get("source", ""), item.get("startLine", 0)))
     top_level_return_code = execution_return_code if execution_return_code is not None else (return_codes[-1] if return_codes else None)
-    failure_detected = bool(first_failed_package or failure_windows or (top_level_return_code is not None and top_level_return_code != 0))
+    chocolatey_failed = bool(chocolatey_diagnostic and chocolatey_diagnostic.get("status") == "failed")
+    failure_detected = bool(
+        chocolatey_failed
+        or first_failed_package
+        or failure_windows
+        or (top_level_return_code is not None and top_level_return_code != 0)
+    )
     installed_executables = _find_installed_executables(bundle_root)
-    classification = "windows-installer-failed" if failure_detected else "no-failure-detected"
+    if chocolatey_failed:
+        classification = "chocolatey-diagnostic-failed"
+    else:
+        classification = "windows-installer-failed" if failure_detected else "no-failure-detected"
 
     result: dict[str, Any] = {
         "schemaVersion": FAILURE_ANALYSIS_SCHEMA_VERSION,
@@ -98,6 +108,7 @@ def analyze_failure_path(path: Path | str, *, write: bool = False) -> dict[str, 
         "classification": classification,
         "topLevelReturnCode": top_level_return_code,
         "firstFailedPackage": first_failed_package,
+        "chocolateyDiagnostic": chocolatey_diagnostic,
         "rollbackPackages": rollback_packages,
         "installedExecutables": installed_executables,
         "failureWindows": failure_windows,
@@ -231,6 +242,36 @@ def _execution_result_exit_code(bundle: Path | None) -> int | None:
     return None
 
 
+def _read_chocolatey_diagnostic(bundle: Path | None) -> dict[str, Any] | None:
+    if not bundle:
+        return None
+    safe_root = bundle.resolve()
+    metadata = bundle / "metadata"
+    path = metadata / "chocolatey-diagnostic.json"
+    if metadata.is_symlink() or not _safe_log_candidate(metadata, safe_root):
+        return None
+    if not path.exists() or path.is_symlink() or not _safe_log_candidate(path, safe_root):
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    checks = payload.get("checks")
+    if not isinstance(checks, dict):
+        checks = {}
+    failed_checks = sorted(str(name) for name, value in checks.items() if value is False)
+    logs = payload.get("logs") if isinstance(payload.get("logs"), dict) else {}
+    file_sizes = payload.get("fileSizes") if isinstance(payload.get("fileSizes"), dict) else {}
+    return {
+        "status": _redact_text(str(payload.get("status", "unknown"))),
+        "failedChecks": [_redact_text(item) for item in failed_checks],
+        "logs": _redact_json(logs),
+        "fileSizes": _redact_json(file_sizes),
+    }
+
+
 def _failure_marker_priority(line: str) -> int | None:
     if _FAILED_PRODUCT_MARKER_RE.search(line) or _RETURN_VALUE_3_RE.search(line) or _MSI_ERROR_RE.search(line):
         return 1
@@ -314,6 +355,16 @@ def _redact_text(text: str) -> str:
     return _SECRET_ASSIGNMENT_RE.sub(lambda m: f"{m.group(1)}=[REDACTED]", redacted)
 
 
+def _redact_json(value: Any) -> Any:
+    if isinstance(value, str):
+        return _redact_text(value)
+    if isinstance(value, list):
+        return [_redact_json(item) for item in value]
+    if isinstance(value, dict):
+        return {_redact_text(str(key)): _redact_json(item) for key, item in value.items()}
+    return value
+
+
 def _render_summary(analysis: dict[str, Any]) -> str:
     failed = analysis.get("firstFailedPackage") or {}
     lines = [
@@ -340,6 +391,18 @@ def _render_summary(analysis: dict[str, Any]) -> str:
         lines.extend(f"- `{_redact_text(str(item))}`" for item in rollback)
     else:
         lines.append("None detected.")
+    diagnostic = analysis.get("chocolateyDiagnostic") or {}
+    if diagnostic:
+        lines.extend(["", "## Chocolatey diagnostic", ""])
+        lines.append(f"- Status: `{_redact_text(str(diagnostic.get('status')))}`")
+        failed_checks = diagnostic.get("failedChecks") or []
+        if failed_checks:
+            lines.append("- Failed checks: " + ", ".join(f"`{_redact_text(str(item))}`" for item in failed_checks))
+        logs = diagnostic.get("logs") or {}
+        if logs:
+            lines.append("- Logs:")
+            for name, value in logs.items():
+                lines.append(f"  - `{_redact_text(str(name))}`: `{_redact_text(str(value))}`")
     lines.extend(["", "## Failure windows", ""])
     for index, window in enumerate(analysis.get("failureWindows") or [], start=1):
         lines.append(f"### Window {index}: `{_redact_text(str(window.get('source')))}` lines {window.get('startLine')}-{window.get('endLine')}")

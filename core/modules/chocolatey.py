@@ -543,6 +543,24 @@ if [ ! -f "$choco_exe" ]; then
   exit 1
 fi
 
+native_loader_mscoree="$wine_prefix/drive_c/windows/system32/mscoree.dll"
+native_loader_ucrtbase="$wine_prefix/drive_c/windows/system32/ucrtbase_clr0400.dll"
+native_loader_vcruntime="$wine_prefix/drive_c/windows/system32/vcruntime140_clr0400.dll"
+for native_loader in "$native_loader_mscoree" "$native_loader_ucrtbase" "$native_loader_vcruntime"; do
+  if [ ! -f "$native_loader" ]; then
+    echo "[cage] ERROR: native CLR loader dependency missing before Chocolatey verification: $native_loader"
+    exit 68
+  fi
+done
+# The Windows loader failed before managed Chocolatey output even when native
+# CLR marker files existed. Keep these native CLR loader dependencies app-local
+# beside canonical choco.exe so IL-only import resolution does not depend on
+# Wine's system DLL search path.
+cp -f "$native_loader_mscoree" "$canonical_bin_dir/mscoree.dll"
+cp -f "$native_loader_ucrtbase" "$canonical_bin_dir/ucrtbase_clr0400.dll"
+cp -f "$native_loader_vcruntime" "$canonical_bin_dir/vcruntime140_clr0400.dll"
+echo "[cage] App-local native CLR loader dependencies copied beside canonical choco.exe"
+
 echo "[cage] Native Chocolatey promotion copied raw payload to canonical directory"
 timeout "${{CAGE_WINE_REG_TIMEOUT:-120s}}" wine reg add 'HKCU\\Environment' /v ChocolateyInstall /t REG_SZ /d "$choco_dir_win" /f
 timeout "${{CAGE_WINE_REG_TIMEOUT:-120s}}" wine reg add 'HKCU\\Environment' /v ChocolateyToolsLocation /t REG_SZ /d "$choco_tools_win" /f
@@ -581,6 +599,11 @@ native_clr="$wine_prefix/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319/cl
 native_wow64_mscoree="$wine_prefix/drive_c/windows/syswow64/mscoree.dll"
 native_wow64_mscoreei="$wine_prefix/drive_c/windows/Microsoft.NET/Framework/v4.0.30319/mscoreei.dll"
 native_wow64_clr="$wine_prefix/drive_c/windows/Microsoft.NET/Framework/v4.0.30319/clr.dll"
+native_ucrtbase="$wine_prefix/drive_c/windows/system32/ucrtbase_clr0400.dll"
+native_vcruntime="$wine_prefix/drive_c/windows/system32/vcruntime140_clr0400.dll"
+app_local_mscoree="$canonical_bin_dir/mscoree.dll"
+app_local_ucrtbase="$canonical_bin_dir/ucrtbase_clr0400.dll"
+app_local_vcruntime="$canonical_bin_dir/vcruntime140_clr0400.dll"
 export ChocolateyInstall='C:\\ProgramData\\chocolatey'
 export ChocolateyToolsLocation='C:\\tools'
 export WINEDLLOVERRIDES='mscoree=n'
@@ -615,6 +638,16 @@ test -f "$native_wow64_mscoreei"
 native_wow64_mscoreei_rc="$?"
 test -f "$native_wow64_clr"
 native_wow64_clr_rc="$?"
+test -f "$native_ucrtbase"
+native_ucrtbase_rc="$?"
+test -f "$native_vcruntime"
+native_vcruntime_rc="$?"
+test -f "$app_local_mscoree"
+app_local_mscoree_rc="$?"
+test -f "$app_local_ucrtbase"
+app_local_ucrtbase_rc="$?"
+test -f "$app_local_vcruntime"
+app_local_vcruntime_rc="$?"
 timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe" --version > "$probe_dir/choco-version.log" 2>&1
 choco_version_rc="$?"
 timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine cmd /c 'C:\\ProgramData\\chocolatey\\bin\\choco.exe --version' > "$probe_dir/choco-version-cmd.log" 2>&1
@@ -626,10 +659,16 @@ choco_loader_rc="$?"
 if [ "$choco_version_rc" -ne 0 ] && [ ! -s "$probe_dir/choco-version.log" ]; then
   WINEDEBUG=+seh,+loaddll timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-60s}" wine "$choco_exe" --version > "$probe_dir/choco-version-winedebug.log" 2>&1 || true
 fi
-find "$canonical_choco_dir" -maxdepth 3 -type f | sort > "$probe_dir/promoted-files.log" 2>&1 || true
+python3 - "$canonical_choco_dir" > "$probe_dir/promoted-files.log" 2>&1 <<'PY'
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+for path in sorted(p for p in root.rglob("*") if p.is_file()):
+    print(f"{path.stat().st_size}\t{path}")
+PY
 set -e
 
-python3 - "$diagnostic_json" "$choco_exe" "$raw_choco_exe" "$canonical_choco_dir" "$native_mscoree" "$native_mscoreei" "$native_clr" "$native_wow64_mscoree" "$native_wow64_mscoreei" "$native_wow64_clr" "$winepath_rc" "$cmd_dir_rc" "$cmd_echo_rc" "$registry_install_rc" "$registry_tools_rc" "$wine_dll_mscoree_rc" "$dotnet_release_rc" "$native_mscoree_rc" "$native_mscoreei_rc" "$native_clr_rc" "$native_wow64_mscoree_rc" "$native_wow64_mscoreei_rc" "$native_wow64_clr_rc" "$choco_version_rc" "$choco_version_cmd_rc" "$choco_source_rc" "$choco_loader_rc" <<'PY'
+python3 - "$diagnostic_json" "$choco_exe" "$raw_choco_exe" "$canonical_choco_dir" "$native_mscoree" "$native_mscoreei" "$native_clr" "$native_wow64_mscoree" "$native_wow64_mscoreei" "$native_wow64_clr" "$native_ucrtbase" "$native_vcruntime" "$app_local_mscoree" "$app_local_ucrtbase" "$app_local_vcruntime" "$winepath_rc" "$cmd_dir_rc" "$cmd_echo_rc" "$registry_install_rc" "$registry_tools_rc" "$wine_dll_mscoree_rc" "$dotnet_release_rc" "$native_mscoree_rc" "$native_mscoreei_rc" "$native_clr_rc" "$native_wow64_mscoree_rc" "$native_wow64_mscoreei_rc" "$native_wow64_clr_rc" "$native_ucrtbase_rc" "$native_vcruntime_rc" "$app_local_mscoree_rc" "$app_local_ucrtbase_rc" "$app_local_vcruntime_rc" "$choco_version_rc" "$choco_version_cmd_rc" "$choco_source_rc" "$choco_loader_rc" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -645,6 +684,11 @@ from pathlib import Path
     native_wow64_mscoree,
     native_wow64_mscoreei,
     native_wow64_clr,
+    native_ucrtbase,
+    native_vcruntime,
+    app_local_mscoree,
+    app_local_ucrtbase,
+    app_local_vcruntime,
     winepath_rc,
     cmd_dir_rc,
     cmd_echo_rc,
@@ -658,6 +702,11 @@ from pathlib import Path
     native_wow64_mscoree_rc,
     native_wow64_mscoreei_rc,
     native_wow64_clr_rc,
+    native_ucrtbase_rc,
+    native_vcruntime_rc,
+    app_local_mscoree_rc,
+    app_local_ucrtbase_rc,
+    app_local_vcruntime_rc,
     choco_version_rc,
     choco_version_cmd_rc,
     choco_source_rc,
@@ -666,6 +715,15 @@ from pathlib import Path
 canonical = Path(choco_exe)
 raw = Path(raw_choco_exe)
 canonical_dir = Path(canonical_choco_dir)
+root_choco = canonical_dir / "choco.exe"
+redirect_choco = canonical_dir / "redirects" / "choco.exe"
+app_local_mscoree_path = Path(app_local_mscoree)
+app_local_ucrtbase_path = Path(app_local_ucrtbase)
+app_local_vcruntime_path = Path(app_local_vcruntime)
+
+def file_size(path: Path) -> int | None:
+    return path.stat().st_size if path.is_file() else None
+
 checks = {
     "canonicalChocoExists": canonical.is_file(),
     "rawToolsPayloadExists": raw.is_file(),
@@ -682,6 +740,11 @@ checks = {
     "nativeWow64MscoreeExists": native_wow64_mscoree_rc == "0" and Path(native_wow64_mscoree).is_file(),
     "nativeWow64MscoreeiExists": native_wow64_mscoreei_rc == "0" and Path(native_wow64_mscoreei).is_file(),
     "nativeWow64ClrExists": native_wow64_clr_rc == "0" and Path(native_wow64_clr).is_file(),
+    "nativeUcrtbaseClrExists": native_ucrtbase_rc == "0" and Path(native_ucrtbase).is_file(),
+    "nativeVcruntimeClrExists": native_vcruntime_rc == "0" and Path(native_vcruntime).is_file(),
+    "appLocalMscoreeExists": app_local_mscoree_rc == "0" and Path(app_local_mscoree).is_file(),
+    "appLocalUcrtbaseClrExists": app_local_ucrtbase_rc == "0" and Path(app_local_ucrtbase).is_file(),
+    "appLocalVcruntimeClrExists": app_local_vcruntime_rc == "0" and Path(app_local_vcruntime).is_file(),
     "chocoVersion": choco_version_rc == "0",
     "chocoVersionViaCmd": choco_version_cmd_rc == "0",
     "sourceList": choco_source_rc == "0",
@@ -701,7 +764,24 @@ payload = {
         "nativeWow64Mscoree": native_wow64_mscoree,
         "nativeWow64Mscoreei": native_wow64_mscoreei,
         "nativeWow64Clr": native_wow64_clr,
+        "nativeUcrtbaseClr": native_ucrtbase,
+        "nativeVcruntimeClr": native_vcruntime,
+        "appLocalMscoree": app_local_mscoree,
+        "appLocalUcrtbaseClr": app_local_ucrtbase,
+        "appLocalVcruntimeClr": app_local_vcruntime,
         "logDirectory": "logs/chocolatey-diagnostics",
+    },
+    "fileSizes": {
+        "canonicalChoco": file_size(canonical),
+        "rootChoco": file_size(root_choco),
+        "redirectChoco": file_size(redirect_choco),
+        "rawToolsPayload": file_size(raw),
+        "nativeMscoree": file_size(Path(native_mscoree)),
+        "nativeUcrtbaseClr": file_size(Path(native_ucrtbase)),
+        "nativeVcruntimeClr": file_size(Path(native_vcruntime)),
+        "appLocalMscoree": file_size(app_local_mscoree_path),
+        "appLocalUcrtbaseClr": file_size(app_local_ucrtbase_path),
+        "appLocalVcruntimeClr": file_size(app_local_vcruntime_path),
     },
     "logs": {
         "chocoVersion": "logs/chocolatey-diagnostics/choco-version.log",

@@ -151,6 +151,49 @@ class FailureAnalysisTests(unittest.TestCase):
             self.assertEqual(result["topLevelReturnCode"], 1603)
             self.assertEqual(result["classification"], "windows-installer-failed")
 
+    def test_failure_analysis_prioritizes_failed_chocolatey_diagnostic_over_msi_warning_noise(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bundle = root / "failure-demo-1.0.0"
+            metadata = bundle / "metadata"
+            logs = bundle / "logs"
+            metadata.mkdir(parents=True)
+            logs.mkdir()
+            (metadata / "execution-result.json").write_text(json.dumps({"success": False, "exitCode": 69}), encoding="utf-8")
+            (metadata / "chocolatey-diagnostic.json").write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": "cage.chocolatey-diagnostic/v0",
+                        "status": "failed",
+                        "checks": {
+                            "canonicalChocoExists": True,
+                            "nativeMscoreeExists": True,
+                            "chocoVersion": False,
+                            "mscoreeLoader": False,
+                        },
+                        "logs": {"chocoMscoreeLoader": "logs/chocolatey-diagnostics/choco-mscoree-loader.log"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (logs / "build.log").write_text(
+                "[dotnet48-x64-msi-marker] Property(S): SecureCustomProperties = NEWERVERSIONDETECTED\n"
+                "[dotnet48-x64-msi-marker] Info: Failed to set compression on setup cache, error 50\n"
+                "[cage] ERROR: Chocolatey diagnostics failed; see metadata/chocolatey-diagnostic.json\n",
+                encoding="utf-8",
+            )
+
+            result = analyze_failure_path(bundle, write=True)
+
+            self.assertTrue(result["failureDetected"])
+            self.assertEqual(result["classification"], "chocolatey-diagnostic-failed")
+            self.assertEqual(result["topLevelReturnCode"], 69)
+            self.assertEqual(result["chocolateyDiagnostic"]["status"], "failed")
+            self.assertIn("chocoVersion", result["chocolateyDiagnostic"]["failedChecks"])
+            summary = (metadata / "failure-summary.md").read_text(encoding="utf-8")
+            self.assertIn("chocolatey-diagnostic-failed", summary)
+            self.assertIn("chocoVersion", summary)
+
     def test_failure_windows_prioritize_first_real_msi_failure_over_rollback_noise(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
