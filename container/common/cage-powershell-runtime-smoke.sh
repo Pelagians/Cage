@@ -86,6 +86,15 @@ launch_failure_message() {
     "$PWSH_EXE_WIN" "$SMOKE_SCRIPT_WIN"
 }
 
+file_tail_b64_preview() {
+  local file="$1"
+  if [ -f "$file" ] && [ -s "$file" ]; then
+    tail -c "${CAGE_ANNOTATION_PREVIEW_BYTES:-768}" "$file" | base64 -w0
+  else
+    echo empty
+  fi
+}
+
 reg_add_pwsh_override() {
   local name="$1" value="$2"
   local stdout_file="$CAPTURE_DIR/reg-${name}.stdout"
@@ -166,6 +175,36 @@ try_pwsh_launch() {
 
   echo "[cage-pwsh-smoke] POWER SHELL RUNTIME SMOKE PASSED via ${mode}"
   return 0
+}
+
+run_pwsh_winedebug_probe() {
+  local stdout_file="$CAPTURE_DIR/winedebug.stdout"
+  local stderr_file="$CAPTURE_DIR/winedebug.stderr"
+  local channels="${CAGE_POWERSHELL_DEBUG_CHANNELS:-+loaddll,+seh}"
+
+  rm -f "$stdout_file" "$stderr_file"
+  echo "[cage-pwsh-smoke] Running PowerShell WINEDEBUG probe: WINEDEBUG=${channels}"
+  set +e
+  timeout "${CAGE_POWERSHELL_DEBUG_TIMEOUT:-120s}" \
+    env WINEDEBUG="$channels" \
+    wine "$PWSH_EXE_WIN" -NoLogo -NoProfile -ExecutionPolicy Bypass \
+      -Command "[Console]::Out.WriteLine('PWSH-WINEDEBUG-ALIVE')" \
+      > "$stdout_file" 2> "$stderr_file"
+  local rc="$?"
+  set -e
+
+  echo "[cage-pwsh-smoke] WINEDEBUG probe exit code: ${rc}"
+  log_file cage-pwsh-winedebug-out "$stdout_file"
+  if [ -s "$stderr_file" ]; then
+    grep -Ei 'err:|seh|exception|loaddll|mscoree|coreclr|hostfxr|hostpolicy|pwsh|ntdll|kernelbase' "$stderr_file" \
+      | tail -80 \
+      | sed 's/^/[cage-pwsh-winedebug-err] /' || true
+  else
+    echo "[cage-pwsh-smoke] ${stderr_file} was empty"
+  fi
+
+  github_error "PowerShell WINEDEBUG probe" \
+    "rc=$rc channels=$channels stdout_bytes=$(file_bytes "$stdout_file") stderr_bytes=$(file_bytes "$stderr_file") stdout_b64=$(file_b64_preview "$stdout_file") stderr_b64=$(file_b64_preview "$stderr_file") stderr_tail_b64=$(file_tail_b64_preview "$stderr_file") pwsh=$PWSH_EXE_WIN"
 }
 
 echo "[cage-pwsh-smoke] Starting PowerShell runtime smoke"
@@ -304,6 +343,7 @@ if try_pwsh_launch direct || try_pwsh_launch cmd || try_pwsh_launch cmdfile; the
 fi
 
 echo "[cage-pwsh-smoke] ERROR: no PowerShell launch mode produced stdout/sentinel evidence"
+run_pwsh_winedebug_probe
 github_error "No PowerShell launch mode produced runtime proof" "direct, cmd, and cmdfile launch modes failed; inspect PowerShell launch failed annotations; smoke_dir=$SMOKE_DIR capture_dir=$CAPTURE_DIR pwsh=$PWSH_EXE_WIN script=$SMOKE_SCRIPT_WIN launcher=$SMOKE_LAUNCHER_WIN"
 echo "[cage-pwsh-smoke] Smoke directory: $SMOKE_DIR"
 find "$SMOKE_DIR" -maxdepth 1 -type f -printf '[cage-pwsh-smoke] C-drive file: %f\n' 2>/dev/null || true
