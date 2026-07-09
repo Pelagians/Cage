@@ -455,9 +455,22 @@ fi
 echo "[cage] Native Chocolatey promotion copied raw payload to canonical directory"
 timeout "${{CAGE_WINE_REG_TIMEOUT:-120s}}" wine reg add 'HKCU\\Environment' /v ChocolateyInstall /t REG_SZ /d "$choco_dir_win" /f
 timeout "${{CAGE_WINE_REG_TIMEOUT:-120s}}" wine reg add 'HKCU\\Environment' /v ChocolateyToolsLocation /t REG_SZ /d "$choco_tools_win" /f
+export ChocolateyInstall="$choco_dir_win"
+export ChocolateyToolsLocation="$choco_tools_win"
 
+verify_log="${{CAGE_BUNDLE_MOUNT:-/opt/cage}}/logs/chocolatey-verify.log"
+mkdir -p "$(dirname "$verify_log")"
 echo "[cage] Verifying canonical Chocolatey..."
-timeout "${{CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}}" wine "$choco_exe" --version
+set +e
+timeout "${{CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}}" wine "$choco_exe" --version > "$verify_log" 2>&1
+verify_rc="$?"
+set -e
+if [ "$verify_rc" -ne 0 ]; then
+  echo "[cage] ERROR: canonical Chocolatey verification failed rc=$verify_rc; see $verify_log"
+  tail -80 "$verify_log" || true
+  exit "$verify_rc"
+fi
+cat "$verify_log"
 echo "[cage] Chocolatey native promotion complete"'''
         return BuildStep(commands=[script], description="Promote Chocolatey natively", kind="raw-shell")
 
@@ -470,6 +483,8 @@ choco_exe="__CHOCO_EXE__"
 raw_choco_exe="__RAW_CHOCO_EXE__"
 canonical_choco_dir="$wine_prefix/drive_c/ProgramData/chocolatey"
 canonical_bin_dir="$canonical_choco_dir/bin"
+export ChocolateyInstall='C:\\ProgramData\\chocolatey'
+export ChocolateyToolsLocation='C:\\tools'
 probe_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/chocolatey-diagnostics"
 diagnostic_json="${CAGE_BUNDLE_MOUNT:-/opt/cage}/metadata/chocolatey-diagnostic.json"
 mkdir -p "$probe_dir" "$(dirname "$diagnostic_json")"
@@ -558,6 +573,8 @@ echo "[cage] Chocolatey diagnostics passed"'''.replace("__WINE_PREFIX__", wine_p
 unset WINEDLLOVERRIDES
 echo "[cage] Install Chocolatey packages"
 choco_exe="{choco_exe}"
+export ChocolateyInstall='C:\\ProgramData\\chocolatey'
+export ChocolateyToolsLocation='C:\\tools'
 diagnostic_json="${{CAGE_BUNDLE_MOUNT:-/opt/cage}}/metadata/chocolatey-diagnostic.json"
 if [ ! -f "$choco_exe" ]; then
   echo "[cage] ERROR: choco.exe is missing before package install: $choco_exe"

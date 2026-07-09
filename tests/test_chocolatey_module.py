@@ -237,6 +237,10 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("ERROR: native Chocolatey promotion did not create canonical choco.exe", promote)
         self.assertIn("CAGE_CHOCOLATEY_VERIFY_TIMEOUT", promote)
         self.assertIn('timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe" --version', promote)
+        self.assertIn("export ChocolateyInstall=", promote)
+        self.assertIn("export ChocolateyToolsLocation=", promote)
+        self.assertIn("logs/chocolatey-verify.log", promote)
+        self.assertIn("canonical Chocolatey verification failed", promote)
         self.assertNotIn("Chocolatey-for-wine finalizer did not create canonical choco.exe", promote)
         self.assertNotIn("CAGE_CHOCOLATEY_FINALIZE_TIMEOUT", promote)
 
@@ -248,6 +252,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("CAGE_CHOCOLATEY_INSTALL_TIMEOUT", package)
         self.assertIn("wine \"$choco_exe\" install 7zip notepadplusplus -y", package)
         self.assertIn("choco_diag_status", package)
+        self.assertIn("export ChocolateyInstall=", package)
+        self.assertIn("export ChocolateyToolsLocation=", package)
         self.assertIn("unset WINEDLLOVERRIDES", package)
 
     def test_chocolatey_diagnostic_writes_json_before_package_install(self):
@@ -263,6 +269,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("registryEnvironment", diagnostic)
         self.assertIn("chocoVersion", diagnostic)
         self.assertIn("sourceList", diagnostic)
+        self.assertIn("export ChocolateyInstall=", diagnostic)
+        self.assertIn("export ChocolateyToolsLocation=", diagnostic)
         self.assertLess(_all_commands(steps).index("Diagnose Chocolatey readiness"), _all_commands(steps).index("Install Chocolatey packages"))
         self.assertIn("choco_diag_status", package)
 
