@@ -32,6 +32,43 @@ log_file() {
   fi
 }
 
+file_bytes() {
+  local file="$1"
+  if [ -f "$file" ]; then
+    wc -c < "$file" | tr -d ' '
+  else
+    echo 0
+  fi
+}
+
+file_state() {
+  local file="$1"
+  if [ -f "$file" ]; then
+    echo present
+  else
+    echo missing
+  fi
+}
+
+github_error() {
+  local title="$1" message="$2"
+  if [ -n "${GITHUB_ACTIONS:-}" ]; then
+    echo "::error title=${title}::${message}"
+  fi
+}
+
+launch_failure_message() {
+  local mode="$1" rc="$2" reason="$3" stdout_file="$4" stderr_file="$5"
+  printf 'mode=%s rc=%s reason=%s sentinel=%s output=%s stdout_bytes=%s stderr_bytes=%s output_bytes=%s pwsh=%s script=%s' \
+    "$mode" "$rc" "$reason" \
+    "$(file_state "$SMOKE_SENTINEL")" \
+    "$(file_state "$SMOKE_OUTPUT")" \
+    "$(file_bytes "$stdout_file")" \
+    "$(file_bytes "$stderr_file")" \
+    "$(file_bytes "$SMOKE_OUTPUT")" \
+    "$PWSH_EXE_WIN" "$SMOKE_SCRIPT_WIN"
+}
+
 try_pwsh_launch() {
   local mode="$1"
   local stdout_file="$CAPTURE_DIR/${mode}.stdout"
@@ -66,14 +103,17 @@ try_pwsh_launch() {
   log_file "cage-pwsh-${mode}-err" "$stderr_file"
 
   if [ "$rc" -ne 0 ]; then
+    github_error "PowerShell launch failed" "$(launch_failure_message "$mode" "$rc" "nonzero-exit" "$stdout_file" "$stderr_file")"
     return 1
   fi
   if [ ! -f "$SMOKE_SENTINEL" ]; then
     echo "[cage-pwsh-smoke] ${mode} did not create sentinel: $SMOKE_SENTINEL"
+    github_error "PowerShell launch failed" "$(launch_failure_message "$mode" "$rc" "missing-sentinel" "$stdout_file" "$stderr_file")"
     return 1
   fi
   if ! grep -q 'PWSH-ALIVE' "$stdout_file" && ! grep -q 'PWSH-ALIVE' "$SMOKE_OUTPUT" 2>/dev/null; then
     echo "[cage-pwsh-smoke] ${mode} created sentinel but did not produce PWSH-ALIVE evidence"
+    github_error "PowerShell launch failed" "$(launch_failure_message "$mode" "$rc" "missing-pwsh-alive" "$stdout_file" "$stderr_file")"
     return 1
   fi
 
@@ -202,6 +242,7 @@ if try_pwsh_launch direct || try_pwsh_launch cmd; then
 fi
 
 echo "[cage-pwsh-smoke] ERROR: no PowerShell launch mode produced stdout/sentinel evidence"
+github_error "No PowerShell launch mode produced runtime proof" "direct and cmd launch modes failed; inspect PowerShell launch failed annotations; smoke_dir=$SMOKE_DIR capture_dir=$CAPTURE_DIR pwsh=$PWSH_EXE_WIN script=$SMOKE_SCRIPT_WIN"
 echo "[cage-pwsh-smoke] Smoke directory: $SMOKE_DIR"
 find "$SMOKE_DIR" -maxdepth 1 -type f -printf '[cage-pwsh-smoke] C-drive file: %f\n' 2>/dev/null || true
 echo "[cage-pwsh-smoke] Capture directory: $CAPTURE_DIR"
