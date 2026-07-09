@@ -6,7 +6,7 @@ Source evidence: private BYO legacy-installer probes recorded outside public Cag
 
 ## Context
 
-Deprecated thread: the iterative `ChoCinstaller_*.exe` / `pwsh.exe` verification loop is closed by [ADR 0018](decisions/0018-deterministic-powershell-chocolatey-capabilities.md). The reasoning is preserved there: Cage will consume Chocolatey-for-wine as pinned release data, not execute its non-deterministic bootstrapper.
+Deprecated thread: the iterative manual `ChoCinstaller_*.exe` / `pwsh.exe` verification loop is preserved by superseded [ADR 0018](decisions/0018-deterministic-powershell-chocolatey-capabilities.md), then replaced by [ADR 0019](decisions/0019-upstream-chocolatey-for-wine-wrapper.md). The current direction is to run the pinned upstream `ChoCinstaller_*.exe /s /q` path and wrap it with Cage diagnostics rather than partially reconstructing it.
 
 Hard business installers need more than a generic `wine setup.exe` path. A private BYO Office 2010 probe in `vic-legacy` exposed generic Cage platform gaps around media staging, prepared-prefix reuse, visible installer debugging, and failure summarization. This document turns those lessons into public Cage development slices without adding proprietary recipes, payloads, activation flows, or customer-specific logic to Cage.
 

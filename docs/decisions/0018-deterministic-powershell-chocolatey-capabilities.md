@@ -1,8 +1,10 @@
 # 0018. Deterministic PowerShell and Chocolatey capabilities
 
-Status: accepted
+Status: superseded by [0019. Upstream Chocolatey-for-wine wrapper](0019-upstream-chocolatey-for-wine-wrapper.md)
 Date: 2026-07-08
 Owner: Noah Giroux / CTO
+
+> Supersession note (2026-07-09): the manual reconstruction below was replaced after diagnostics showed the partial port kept rediscovering upstream Chocolatey-for-wine side effects. The current accepted design is to wrap the pinned upstream `ChoCinstaller_*.exe /s /q` path with Cage checksum, timeout, logging, and diagnostics.
 
 ## Decision
 

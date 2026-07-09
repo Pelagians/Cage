@@ -32,7 +32,8 @@ Architecture Decision Records (ADRs) in chronological order:
 15. [Downloadable Wine Runner Cache](decisions/0015-downloadable-wine-runner-cache.md)
 16. [Container-Mounted Runner Execution](decisions/0016-container-mounted-runner-execution.md)
 17. [BlueBuild-Style Build Modules](decisions/0017-bluebuild-style-build-modules.md)
-18. [Deterministic PowerShell and Chocolatey Capabilities](decisions/0018-deterministic-powershell-chocolatey-capabilities.md)
+18. [Deterministic PowerShell and Chocolatey Capabilities](decisions/0018-deterministic-powershell-chocolatey-capabilities.md) — superseded
+19. [Upstream Chocolatey-for-wine Wrapper](decisions/0019-upstream-chocolatey-for-wine-wrapper.md)
 
 ## Roadmaps
 
