@@ -92,7 +92,7 @@ The module now lowers that declaration into sequential, upstream-derived build s
 3. download and verify matching `winetricks.ps1`.
 4. download, verify, and extract the pinned Chocolatey nupkg into raw `C:/ProgramData/tools/ChocolateyInstall`.
 5. extract and flatten upstream `c_drive.7z` into the Wine `drive_c`.
-6. install .NET Framework 4.8 through sequential x86 and x64 MSI steps so both WOW64 and 64-bit native CLR files exist.
+6. install .NET Framework 4.8 through sequential x86 and x64 MSI steps so both WOW64 and 64-bit native CLR files exist. Treat MSI return/status as secondary to those marker files; a second-architecture MSI may no-op/block after the first architecture has already satisfied the CLR markers.
 7. apply Wine/native CLR registry policy, including native `mscoree` for Chocolatey.
 8. natively promote raw Chocolatey into canonical `C:/ProgramData/chocolatey/bin/choco.exe`.
 9. write Cage diagnostics/metadata before package install.

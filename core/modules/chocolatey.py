@@ -381,6 +381,12 @@ install_dotnet_msi() {{
   netfx_msi="$2"
   dotnet_mscoree_marker="$3"
   dotnet_clr_marker="$4"
+  if [ -f "$dotnet_mscoree_marker" ] && [ -f "$dotnet_clr_marker" ]; then
+    echo "[cage] .NET Framework 4.8 $label already has native CLR markers; skipping MSI install"
+    echo "[cage] .NET Framework 4.8 $label native mscoree exists: $dotnet_mscoree_marker"
+    echo "[cage] .NET Framework 4.8 $label native CLR exists: $dotnet_clr_marker"
+    return 0
+  fi
   netfx_msi_win="$(winepath -w "$netfx_msi")"
   dotnet_msiexec_log="$dotnet_cache/dotnet48-$label-msiexec.log"
   dotnet_msiexec_log_win="$(winepath -w "$dotnet_msiexec_log")"
@@ -393,7 +399,7 @@ install_dotnet_msi() {{
   set -e
   if [ -f "$dotnet_msiexec_log" ]; then
     echo "[cage] .NET Framework 4.8 $label MSI failure markers:"
-    grep -nEi 'Return value 3|MainEngineThread|Error [0-9]+|Fatal error' "$dotnet_msiexec_log" | head -80 | sed "s/^/[dotnet48-$label-msi-marker] /" || true
+    grep -nEi 'NEWERVERSIONDETECTED|CA_BlockOlderVersionInstall|Return value 0|Return value 3|MainEngineThread|Error [0-9]+|Fatal error' "$dotnet_msiexec_log" | head -80 | sed "s/^/[dotnet48-$label-msi-marker] /" || true
     echo "[cage] .NET Framework 4.8 $label MSI log tail:"
     tail -120 "$dotnet_msiexec_log" | sed "s/^/[dotnet48-$label-msi] /"
   fi
@@ -401,15 +407,21 @@ install_dotnet_msi() {{
   if [ -f "$dotnet_msiexec_log" ] && grep -qE 'Action ended .*INSTALL[.] Return value 1' "$dotnet_msiexec_log"; then
     dotnet_msi_success=1
   fi
-  if [ "$dotnet_msi_success" -ne 1 ]; then
-    echo "[cage] ERROR: .NET Framework 4.8 $label MSI did not report INSTALL success"
+  dotnet_marker_success=0
+  if [ -f "$dotnet_mscoree_marker" ] && [ -f "$dotnet_clr_marker" ]; then
+    dotnet_marker_success=1
+  fi
+  if [ "$dotnet_msi_success" -ne 1 ] && [ "$dotnet_marker_success" -ne 1 ]; then
+    echo "[cage] ERROR: .NET Framework 4.8 $label MSI did not report INSTALL success and required native CLR markers are absent"
     if [ "$dotnet_msi_rc" -ne 0 ]; then
       echo "[cage] ERROR: Wine msiexec exit code for .NET $label: $dotnet_msi_rc"
       exit "$dotnet_msi_rc"
     fi
     exit 67
   fi
-  if [ "$dotnet_msi_rc" -ne 0 ]; then
+  if [ "$dotnet_msi_success" -ne 1 ]; then
+    echo "[cage] .NET Framework 4.8 $label MSI did not report INSTALL success, but required native CLR markers exist; continuing"
+  elif [ "$dotnet_msi_rc" -ne 0 ]; then
     echo "[cage] .NET Framework 4.8 $label MSI log reports INSTALL success; ignoring Wine msiexec exit $dotnet_msi_rc"
   fi
   if [ ! -f "$dotnet_mscoree_marker" ]; then
