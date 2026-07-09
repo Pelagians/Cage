@@ -228,6 +228,7 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertIn("POWER SHELL RUNTIME SMOKE PASSED", smoke)
         self.assertIn("github_error", smoke)
         self.assertIn("CAGE_GITHUB_ANNOTATIONS", smoke)
+        self.assertIn("CAGE_GITHUB_ANNOTATION_LEVEL", smoke)
         self.assertIn("Wine prefix initialization failed", smoke)
         self.assertIn("Wine win10 configuration failed", smoke)
         self.assertIn("PowerShell MSI checksum mismatch", smoke)
@@ -278,6 +279,12 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertIn("tee \"$LOG\"", workflow)
         self.assertIn("tail -80", workflow)
         self.assertIn("summary=\"${summary//$'\\n'/'%0A'}\"", workflow)
+        self.assertIn("Compare PowerShell runtime smoke on candidate Wine images", workflow)
+        self.assertIn("matrix.provider == 'staging'", workflow)
+        self.assertIn("matrix.version == '10.0'", workflow)
+        self.assertIn("CAGE_GITHUB_ANNOTATION_LEVEL=warning", workflow)
+        self.assertIn("Candidate PowerShell smoke failed", workflow)
+        self.assertIn("Candidate PowerShell smoke passed", workflow)
 
 
 if __name__ == "__main__":

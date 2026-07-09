@@ -62,7 +62,12 @@ file_state() {
 github_error() {
   local title="$1" message="$2"
   if [ -n "${GITHUB_ACTIONS:-}" ] || [ -n "${CAGE_GITHUB_ANNOTATIONS:-}" ]; then
-    echo "::error title=${title}::${message}"
+    local level="${CAGE_GITHUB_ANNOTATION_LEVEL:-error}"
+    case "$level" in
+      error|warning|notice) ;;
+      *) level=error ;;
+    esac
+    echo "::${level} title=${title}::${message}"
   fi
 }
 

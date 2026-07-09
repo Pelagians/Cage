@@ -87,3 +87,30 @@ jobs:
             echo "::error title=PowerShell smoke failed::exit=$rc%0A${summary}"
             exit "$rc"
           fi
+
+      - name: Compare PowerShell runtime smoke on candidate Wine images
+        if: (matrix.provider == 'wine' && matrix.version == '10.0') || (matrix.provider == 'staging' && (matrix.version == '11.0' || matrix.version == '11.10'))
+        shell: bash
+        run: |
+          set +e
+          LOG="/tmp/cage-powershell-runtime-smoke-${{ matrix.provider }}-${{ matrix.version }}.log"
+          docker run --rm --pull always --shm-size 2g \
+            -e CAGE_GITHUB_ANNOTATIONS=1 \
+            -e CAGE_GITHUB_ANNOTATION_LEVEL=warning \
+            "${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.sha }}-${{ matrix.tag }}" \
+            cage-powershell-runtime-smoke 2>&1 | tee "$LOG"
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            summary="$(grep -E '^\[cage-pwsh-smoke\]|^\[cage-pwsh-(direct|cmd|reg|msi|wineboot|winecfg|process|prefix)|^::(error|warning)' "$LOG" | tail -80 || true)"
+            if [ -z "$summary" ]; then
+              summary="$(tail -80 "$LOG" || true)"
+            fi
+            summary="${summary//'%'/'%25'}"
+            summary="${summary//$'\n'/'%0A'}"
+            summary="${summary//$'\r'/'%0D'}"
+            echo "::warning title=Candidate PowerShell smoke failed::provider=${{ matrix.provider }} version=${{ matrix.version }} exit=$rc%0A${summary}"
+          else
+            echo "::notice title=Candidate PowerShell smoke passed::provider=${{ matrix.provider }} version=${{ matrix.version }}"
+          fi
+          exit 0
