@@ -85,7 +85,7 @@ reg_add_pwsh_override() {
   local name="$1" value="$2"
   local stdout_file="$CAPTURE_DIR/reg-${name}.stdout"
   local stderr_file="$CAPTURE_DIR/reg-${name}.stderr"
-  local key='HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides'
+  local key='HKCU\Software\Wine\AppDefaults\pwsh.exe\DllOverrides'
 
   echo "[cage-pwsh-smoke] Adding pwsh.exe DLL override: ${name}=${value:-<empty>}"
   set +e
