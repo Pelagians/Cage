@@ -21,11 +21,11 @@ Instead, Cage will consume Chocolatey-for-wine as pinned upstream evidence/data 
 7. apply the Wine/.NET registry state needed by upstream, including native `mscoree` for Chocolatey;
 8. promote the raw Chocolatey payload into canonical `C:/ProgramData/chocolatey/bin/choco.exe` with native file operations, not through a PowerShell finalizer. Canonical `bin/choco.exe` must be the real root Chocolatey executable from the nupkg, not the upstream `redirects/choco.exe` shim; a real build showed the 147 KB redirect shim can become the failing `mscoree.dll not found` loader boundary;
 9. copy native CLR loader dependencies (`mscoree.dll`, `ucrtbase_clr0400.dll`, `vcruntime140_clr0400.dll`) app-local beside canonical `bin/choco.exe`, matching upstream's `ucrtbase_clr0400.dll` readiness boundary and avoiding Wine system DLL search ambiguity;
-10. run structured Chocolatey readiness diagnostics before package install, including canonical/root/redirect/app-local file sizes;
+10. run structured Chocolatey readiness diagnostics before package install, including canonical/root/redirect/app-local file sizes and a direct Windows-path `choco.exe` launch probe so Unix-mounted paths do not route through Wine `start.exe`;
 11. apply upstream Chocolatey feature policy before installs:
     - `choco feature disable --name=powershellHost`
     - `choco feature enable -n allowGlobalConfirmation`
-12. install requested packages only through canonical `C:/ProgramData/chocolatey/bin/choco.exe`.
+12. install requested packages only through canonical `C:/ProgramData/chocolatey/bin/choco.exe`, launched as a Windows path rather than a Unix-mounted `$WINEPREFIX/.../choco.exe` path.
 
 The recipe contract remains:
 

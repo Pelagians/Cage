@@ -480,6 +480,7 @@ canonical_bin_dir="$canonical_choco_dir/bin"
 tools_dir="$wine_prefix/drive_c/tools"
 choco_dir_win='C:\\ProgramData\\chocolatey'
 choco_tools_win='C:\\tools'
+choco_exe_win='C:\\ProgramData\\chocolatey\\bin\\choco.exe'
 
 test -f "$raw_choco_exe"
 echo "[cage] raw ChocolateyInstall payload is only a source: $raw_choco_exe"
@@ -572,7 +573,7 @@ verify_log="${{CAGE_BUNDLE_MOUNT:-/opt/cage}}/logs/chocolatey-verify.log"
 mkdir -p "$(dirname "$verify_log")"
 echo "[cage] Verifying canonical Chocolatey..."
 set +e
-timeout "${{CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}}" wine "$choco_exe" --version > "$verify_log" 2>&1
+timeout "${{CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}}" wine "$choco_exe_win" --version > "$verify_log" 2>&1
 verify_rc="$?"
 set -e
 if [ "$verify_rc" -ne 0 ]; then
@@ -591,6 +592,7 @@ echo "[cage] Diagnose Chocolatey readiness"
 wine_prefix="__WINE_PREFIX__"
 choco_exe="__CHOCO_EXE__"
 raw_choco_exe="__RAW_CHOCO_EXE__"
+choco_exe_win='C:\\ProgramData\\chocolatey\\bin\\choco.exe'
 canonical_choco_dir="$wine_prefix/drive_c/ProgramData/chocolatey"
 canonical_bin_dir="$canonical_choco_dir/bin"
 native_mscoree="$wine_prefix/drive_c/windows/system32/mscoree.dll"
@@ -648,16 +650,16 @@ test -f "$app_local_ucrtbase"
 app_local_ucrtbase_rc="$?"
 test -f "$app_local_vcruntime"
 app_local_vcruntime_rc="$?"
-timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe" --version > "$probe_dir/choco-version.log" 2>&1
+timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe_win" --version > "$probe_dir/choco-version.log" 2>&1
 choco_version_rc="$?"
 timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine cmd /c 'C:\\ProgramData\\chocolatey\\bin\\choco.exe --version' > "$probe_dir/choco-version-cmd.log" 2>&1
 choco_version_cmd_rc="$?"
-timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe" source list > "$probe_dir/choco-source-list.log" 2>&1
+timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe_win" source list > "$probe_dir/choco-source-list.log" 2>&1
 choco_source_rc="$?"
-WINEDEBUG=+loaddll timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-60s}" wine "$choco_exe" --version > "$probe_dir/choco-mscoree-loader.log" 2>&1
+WINEDEBUG=+loaddll timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-60s}" wine "$choco_exe_win" --version > "$probe_dir/choco-mscoree-loader.log" 2>&1
 choco_loader_rc="$?"
 if [ "$choco_version_rc" -ne 0 ] && [ ! -s "$probe_dir/choco-version.log" ]; then
-  WINEDEBUG=+seh,+loaddll timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-60s}" wine "$choco_exe" --version > "$probe_dir/choco-version-winedebug.log" 2>&1 || true
+  WINEDEBUG=+seh,+loaddll timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-60s}" wine "$choco_exe_win" --version > "$probe_dir/choco-version-winedebug.log" 2>&1 || true
 fi
 python3 - "$canonical_choco_dir" > "$probe_dir/promoted-files.log" 2>&1 <<'PY'
 import sys
@@ -828,6 +830,7 @@ echo "[cage] Chocolatey diagnostics passed"'''.replace("__WINE_PREFIX__", wine_p
         script = f'''set -eu
 echo "[cage] Install Chocolatey packages"
 choco_exe="{choco_exe}"
+choco_exe_win='C:\\ProgramData\\chocolatey\\bin\\choco.exe'
 export ChocolateyInstall='C:\\ProgramData\\chocolatey'
 export ChocolateyToolsLocation='C:\\tools'
 export WINEDLLOVERRIDES='mscoree=n'
@@ -853,9 +856,9 @@ powershell_host_log="$logs_dir/chocolatey-feature-powershellHost.log"
 global_confirmation_log="$logs_dir/chocolatey-feature-allowGlobalConfirmation.log"
 echo "[cage] Applying upstream Chocolatey feature policy before package install..."
 set +e
-timeout "${{CAGE_CHOCOLATEY_FEATURE_TIMEOUT:-120s}}" wine "$choco_exe" feature disable --name=powershellHost > "$powershell_host_log" 2>&1
+timeout "${{CAGE_CHOCOLATEY_FEATURE_TIMEOUT:-120s}}" wine "$choco_exe_win" feature disable --name=powershellHost > "$powershell_host_log" 2>&1
 powershell_host_rc="$?"
-timeout "${{CAGE_CHOCOLATEY_FEATURE_TIMEOUT:-120s}}" wine "$choco_exe" feature enable -n allowGlobalConfirmation > "$global_confirmation_log" 2>&1
+timeout "${{CAGE_CHOCOLATEY_FEATURE_TIMEOUT:-120s}}" wine "$choco_exe_win" feature enable -n allowGlobalConfirmation > "$global_confirmation_log" 2>&1
 global_confirmation_rc="$?"
 set -e
 if [ "$powershell_host_rc" -ne 0 ]; then
@@ -869,7 +872,7 @@ if [ "$global_confirmation_rc" -ne 0 ]; then
   exit "$global_confirmation_rc"
 fi
 echo "[cage] Installing Chocolatey packages: {package_args}"
-timeout "${{CAGE_CHOCOLATEY_INSTALL_TIMEOUT:-1800s}}" wine "$choco_exe" install {package_args} -y{source_arg}'''
+timeout "${{CAGE_CHOCOLATEY_INSTALL_TIMEOUT:-1800s}}" wine "$choco_exe_win" install {package_args} -y{source_arg}'''
         return BuildStep(
             commands=[script],
             description=f"Install Chocolatey packages: {package_args}",
