@@ -340,7 +340,8 @@ ndp48_url="https://go.microsoft.com/fwlink/?linkid=2088631"
 ndp48_sha256="{DEFAULT_DOTNET48_SHA256}"
 setupcache="$wine_prefix/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319/SetupCache"
 dotnet_extract="$setupcache/v4.8.03761"
-netfx_msi="$dotnet_extract/netfx_Full_x64.msi"
+netfx_msi_x86="$dotnet_extract/netfx_Full_x86.msi"
+netfx_msi_x64="$dotnet_extract/netfx_Full_x64.msi"
 mkdir -p "$dotnet_cache" "$setupcache"
 if [ ! -f "$ndp48_exe" ]; then
   echo "[cage] Downloading .NET Framework 4.8 offline installer..."
@@ -353,7 +354,7 @@ if [ "$actual_ndp48_sha" != "$ndp48_sha256" ]; then
   echo "[cage]   actual:   $actual_ndp48_sha"
   exit 1
 fi
-if [ ! -f "$netfx_msi" ]; then
+if [ ! -f "$netfx_msi_x86" ] || [ ! -f "$netfx_msi_x64" ]; then
   rm -rf "$dotnet_extract"
   mkdir -p "$dotnet_extract"
   echo "[cage] Extracting .NET Framework 4.8 payload to Wine SetupCache..."
@@ -368,45 +369,63 @@ if [ ! -f "$netfx_msi" ]; then
     exit 1
   fi
 fi
-test -f "$netfx_msi"
-dotnet_success_marker="$wine_prefix/drive_c/windows/system32/ucrtbase_clr0400.dll"
-netfx_msi_win="$(winepath -w "$netfx_msi")"
-dotnet_msiexec_log="$dotnet_cache/dotnet48-msiexec.log"
-dotnet_msiexec_log_win="$(winepath -w "$dotnet_msiexec_log")"
-rm -f "$dotnet_msiexec_log"
-echo "[cage] Installing .NET Framework 4.8 from dedicated MSI step..."
-echo "[cage] .NET Framework 4.8 MSI: $netfx_msi_win"
-set +e
-timeout "${{CAGE_DOTNET48_TIMEOUT:-1800s}}" wine msiexec /i "$netfx_msi_win" MSIFASTINSTALL=2 DISABLEROLLBACK=1 /QN /NORESTART /L*v "$dotnet_msiexec_log_win"
-dotnet_msi_rc="$?"
-set -e
-if [ -f "$dotnet_msiexec_log" ]; then
-  echo "[cage] .NET Framework 4.8 MSI failure markers:"
-  grep -nEi 'Return value 3|MainEngineThread|Error [0-9]+|Fatal error' "$dotnet_msiexec_log" | head -80 | sed 's/^/[dotnet48-msi-marker] /' || true
-  echo "[cage] .NET Framework 4.8 MSI log tail:"
-  tail -120 "$dotnet_msiexec_log" | sed 's/^/[dotnet48-msi] /'
-fi
-dotnet_msi_success=0
-if [ -f "$dotnet_msiexec_log" ] && grep -qE 'Action ended .*INSTALL[.] Return value 1' "$dotnet_msiexec_log"; then
-  dotnet_msi_success=1
-fi
-if [ "$dotnet_msi_success" -ne 1 ]; then
-  echo "[cage] ERROR: .NET Framework 4.8 MSI did not report INSTALL success"
-  if [ "$dotnet_msi_rc" -ne 0 ]; then
-    echo "[cage] ERROR: Wine msiexec exit code: $dotnet_msi_rc"
-    exit "$dotnet_msi_rc"
+test -f "$netfx_msi_x86"
+test -f "$netfx_msi_x64"
+dotnet_mscoree_marker_x86="$wine_prefix/drive_c/windows/syswow64/mscoree.dll"
+dotnet_clr_marker_x86="$wine_prefix/drive_c/windows/Microsoft.NET/Framework/v4.0.30319/clr.dll"
+dotnet_mscoree_marker_x64="$wine_prefix/drive_c/windows/system32/mscoree.dll"
+dotnet_clr_marker_x64="$wine_prefix/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319/clr.dll"
+
+install_dotnet_msi() {{
+  label="$1"
+  netfx_msi="$2"
+  dotnet_mscoree_marker="$3"
+  dotnet_clr_marker="$4"
+  netfx_msi_win="$(winepath -w "$netfx_msi")"
+  dotnet_msiexec_log="$dotnet_cache/dotnet48-$label-msiexec.log"
+  dotnet_msiexec_log_win="$(winepath -w "$dotnet_msiexec_log")"
+  rm -f "$dotnet_msiexec_log"
+  echo "[cage] Installing .NET Framework 4.8 $label MSI from dedicated MSI step..."
+  echo "[cage] .NET Framework 4.8 $label MSI: $netfx_msi_win"
+  set +e
+  timeout "${{CAGE_DOTNET48_TIMEOUT:-1800s}}" wine msiexec /i "$netfx_msi_win" MSIFASTINSTALL=2 DISABLEROLLBACK=1 /QN /NORESTART /L*v "$dotnet_msiexec_log_win"
+  dotnet_msi_rc="$?"
+  set -e
+  if [ -f "$dotnet_msiexec_log" ]; then
+    echo "[cage] .NET Framework 4.8 $label MSI failure markers:"
+    grep -nEi 'Return value 3|MainEngineThread|Error [0-9]+|Fatal error' "$dotnet_msiexec_log" | head -80 | sed "s/^/[dotnet48-$label-msi-marker] /" || true
+    echo "[cage] .NET Framework 4.8 $label MSI log tail:"
+    tail -120 "$dotnet_msiexec_log" | sed "s/^/[dotnet48-$label-msi] /"
   fi
-  exit 67
-fi
-if [ "$dotnet_msi_rc" -ne 0 ]; then
-  echo "[cage] .NET Framework 4.8 MSI log reports INSTALL success; ignoring Wine msiexec exit $dotnet_msi_rc"
-fi
-if [ -f "$dotnet_success_marker" ]; then
-  echo "[cage] .NET Framework 4.8 marker exists: $dotnet_success_marker"
-else
-  echo "[cage] .NET Framework 4.8 marker not present after MSI success: $dotnet_success_marker"
-  echo "[cage] Continuing; finalizer patch skips Chocolatey-for-wine's unbounded marker wait"
-fi
+  dotnet_msi_success=0
+  if [ -f "$dotnet_msiexec_log" ] && grep -qE 'Action ended .*INSTALL[.] Return value 1' "$dotnet_msiexec_log"; then
+    dotnet_msi_success=1
+  fi
+  if [ "$dotnet_msi_success" -ne 1 ]; then
+    echo "[cage] ERROR: .NET Framework 4.8 $label MSI did not report INSTALL success"
+    if [ "$dotnet_msi_rc" -ne 0 ]; then
+      echo "[cage] ERROR: Wine msiexec exit code for .NET $label: $dotnet_msi_rc"
+      exit "$dotnet_msi_rc"
+    fi
+    exit 67
+  fi
+  if [ "$dotnet_msi_rc" -ne 0 ]; then
+    echo "[cage] .NET Framework 4.8 $label MSI log reports INSTALL success; ignoring Wine msiexec exit $dotnet_msi_rc"
+  fi
+  if [ ! -f "$dotnet_mscoree_marker" ]; then
+    echo "[cage] ERROR: .NET Framework 4.8 $label MSI did not create native mscoree: $dotnet_mscoree_marker"
+    exit 67
+  fi
+  if [ ! -f "$dotnet_clr_marker" ]; then
+    echo "[cage] ERROR: .NET Framework 4.8 $label MSI did not create native CLR: $dotnet_clr_marker"
+    exit 67
+  fi
+  echo "[cage] .NET Framework 4.8 $label native mscoree exists: $dotnet_mscoree_marker"
+  echo "[cage] .NET Framework 4.8 $label native CLR exists: $dotnet_clr_marker"
+}}
+
+install_dotnet_msi x86 "$netfx_msi_x86" "$dotnet_mscoree_marker_x86" "$dotnet_clr_marker_x86"
+install_dotnet_msi x64 "$netfx_msi_x64" "$dotnet_mscoree_marker_x64" "$dotnet_clr_marker_x64"
 echo "[cage] .NET Framework 4.8 MSI step complete"'''
         return BuildStep(commands=[script], description="Install .NET Framework 4.8 for Chocolatey", kind="wine-msiexec", timeout=1800)
 
@@ -533,6 +552,9 @@ canonical_bin_dir="$canonical_choco_dir/bin"
 native_mscoree="$wine_prefix/drive_c/windows/system32/mscoree.dll"
 native_mscoreei="$wine_prefix/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319/mscoreei.dll"
 native_clr="$wine_prefix/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319/clr.dll"
+native_wow64_mscoree="$wine_prefix/drive_c/windows/syswow64/mscoree.dll"
+native_wow64_mscoreei="$wine_prefix/drive_c/windows/Microsoft.NET/Framework/v4.0.30319/mscoreei.dll"
+native_wow64_clr="$wine_prefix/drive_c/windows/Microsoft.NET/Framework/v4.0.30319/clr.dll"
 export ChocolateyInstall='C:\\ProgramData\\chocolatey'
 export ChocolateyToolsLocation='C:\\tools'
 export WINEDLLOVERRIDES='mscoree=n'
@@ -561,6 +583,12 @@ test -f "$native_mscoreei"
 native_mscoreei_rc="$?"
 test -f "$native_clr"
 native_clr_rc="$?"
+test -f "$native_wow64_mscoree"
+native_wow64_mscoree_rc="$?"
+test -f "$native_wow64_mscoreei"
+native_wow64_mscoreei_rc="$?"
+test -f "$native_wow64_clr"
+native_wow64_clr_rc="$?"
 timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe" --version > "$probe_dir/choco-version.log" 2>&1
 choco_version_rc="$?"
 timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine cmd /c 'C:\\ProgramData\\chocolatey\\bin\\choco.exe --version' > "$probe_dir/choco-version-cmd.log" 2>&1
@@ -575,7 +603,7 @@ fi
 find "$canonical_choco_dir" -maxdepth 3 -type f | sort > "$probe_dir/promoted-files.log" 2>&1 || true
 set -e
 
-python3 - "$diagnostic_json" "$choco_exe" "$raw_choco_exe" "$canonical_choco_dir" "$native_mscoree" "$native_mscoreei" "$native_clr" "$winepath_rc" "$cmd_dir_rc" "$cmd_echo_rc" "$registry_install_rc" "$registry_tools_rc" "$wine_dll_mscoree_rc" "$dotnet_release_rc" "$native_mscoree_rc" "$native_mscoreei_rc" "$native_clr_rc" "$choco_version_rc" "$choco_version_cmd_rc" "$choco_source_rc" "$choco_loader_rc" <<'PY'
+python3 - "$diagnostic_json" "$choco_exe" "$raw_choco_exe" "$canonical_choco_dir" "$native_mscoree" "$native_mscoreei" "$native_clr" "$native_wow64_mscoree" "$native_wow64_mscoreei" "$native_wow64_clr" "$winepath_rc" "$cmd_dir_rc" "$cmd_echo_rc" "$registry_install_rc" "$registry_tools_rc" "$wine_dll_mscoree_rc" "$dotnet_release_rc" "$native_mscoree_rc" "$native_mscoreei_rc" "$native_clr_rc" "$native_wow64_mscoree_rc" "$native_wow64_mscoreei_rc" "$native_wow64_clr_rc" "$choco_version_rc" "$choco_version_cmd_rc" "$choco_source_rc" "$choco_loader_rc" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -588,6 +616,9 @@ from pathlib import Path
     native_mscoree,
     native_mscoreei,
     native_clr,
+    native_wow64_mscoree,
+    native_wow64_mscoreei,
+    native_wow64_clr,
     winepath_rc,
     cmd_dir_rc,
     cmd_echo_rc,
@@ -598,6 +629,9 @@ from pathlib import Path
     native_mscoree_rc,
     native_mscoreei_rc,
     native_clr_rc,
+    native_wow64_mscoree_rc,
+    native_wow64_mscoreei_rc,
+    native_wow64_clr_rc,
     choco_version_rc,
     choco_version_cmd_rc,
     choco_source_rc,
@@ -619,6 +653,9 @@ checks = {
     "nativeMscoreeExists": native_mscoree_rc == "0" and Path(native_mscoree).is_file(),
     "nativeMscoreeiExists": native_mscoreei_rc == "0" and Path(native_mscoreei).is_file(),
     "nativeClrExists": native_clr_rc == "0" and Path(native_clr).is_file(),
+    "nativeWow64MscoreeExists": native_wow64_mscoree_rc == "0" and Path(native_wow64_mscoree).is_file(),
+    "nativeWow64MscoreeiExists": native_wow64_mscoreei_rc == "0" and Path(native_wow64_mscoreei).is_file(),
+    "nativeWow64ClrExists": native_wow64_clr_rc == "0" and Path(native_wow64_clr).is_file(),
     "chocoVersion": choco_version_rc == "0",
     "chocoVersionViaCmd": choco_version_cmd_rc == "0",
     "sourceList": choco_source_rc == "0",
@@ -635,6 +672,9 @@ payload = {
         "nativeMscoree": native_mscoree,
         "nativeMscoreei": native_mscoreei,
         "nativeClr": native_clr,
+        "nativeWow64Mscoree": native_wow64_mscoree,
+        "nativeWow64Mscoreei": native_wow64_mscoreei,
+        "nativeWow64Clr": native_wow64_clr,
         "logDirectory": "logs/chocolatey-diagnostics",
     },
     "logs": {
