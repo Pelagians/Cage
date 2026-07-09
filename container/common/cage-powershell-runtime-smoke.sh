@@ -81,6 +81,31 @@ launch_failure_message() {
     "$PWSH_EXE_WIN" "$SMOKE_SCRIPT_WIN"
 }
 
+reg_add_pwsh_override() {
+  local name="$1" value="$2"
+  local stdout_file="$CAPTURE_DIR/reg-${name}.stdout"
+  local stderr_file="$CAPTURE_DIR/reg-${name}.stderr"
+  local key='HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides'
+
+  echo "[cage-pwsh-smoke] Adding pwsh.exe DLL override: ${name}=${value:-<empty>}"
+  set +e
+  timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" \
+    wine reg add "$key" /v "$name" /d "$value" /f \
+      > "$stdout_file" 2> "$stderr_file"
+  local rc="$?"
+  set -e
+
+  echo "[cage-pwsh-smoke] DLL override ${name} registry rc=${rc}"
+  log_file "cage-pwsh-reg-${name}-out" "$stdout_file"
+  log_file "cage-pwsh-reg-${name}-err" "$stderr_file"
+
+  if [ "$rc" -ne 0 ]; then
+    github_error "PowerShell DLL override registry prep failed" \
+      "override=$name value=${value:-<empty>} rc=$rc stdout_bytes=$(file_bytes "$stdout_file") stderr_bytes=$(file_bytes "$stderr_file") stdout_b64=$(file_b64_preview "$stdout_file") stderr_b64=$(file_b64_preview "$stderr_file") key=$key"
+    exit "$rc"
+  fi
+}
+
 try_pwsh_launch() {
   local mode="$1"
   local stdout_file="$CAPTURE_DIR/${mode}.stdout"
@@ -232,9 +257,9 @@ log_file cage-pwsh-reg-out /tmp/cage-pwsh-reg.stdout
 log_file cage-pwsh-reg-err /tmp/cage-pwsh-reg.stderr
 
 echo "[cage-pwsh-smoke] Preparing pwsh.exe Wine DLL overrides"
-timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v amsi /d "" /f
-timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v dwmapi /d "" /f
-timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v rpcrt4 /d native,builtin /f
+reg_add_pwsh_override amsi ""
+reg_add_pwsh_override dwmapi ""
+reg_add_pwsh_override rpcrt4 native,builtin
 wineserver -w || true
 
 SMOKE_DIR="$WINEPREFIX/drive_c/ProgramData/CagePowerShellSmoke"

@@ -233,6 +233,8 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertIn("PowerShell MSI checksum mismatch", smoke)
         self.assertIn("PowerShell MSI did not install pwsh.exe", smoke)
         self.assertIn("Preparing pwsh.exe Wine DLL overrides", smoke)
+        self.assertIn("reg_add_pwsh_override", smoke)
+        self.assertIn("PowerShell DLL override registry prep failed", smoke)
         self.assertIn("AppDefaults\\\\pwsh.exe\\\\DllOverrides", smoke)
         self.assertIn("rpcrt4", smoke)
         self.assertIn("PowerShell launch failed", smoke)
