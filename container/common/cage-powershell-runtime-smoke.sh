@@ -120,6 +120,25 @@ reg_add_pwsh_override() {
   fi
 }
 
+wait_for_wine_launch_children() {
+  local label="$1"
+  local stderr_file="$CAPTURE_DIR/wineserver-${label}.stderr"
+
+  echo "[cage-pwsh-smoke] Waiting for Wine child processes after ${label}"
+  set +e
+  timeout "${CAGE_POWERSHELL_SMOKE_SETTLE_TIMEOUT:-30s}" wineserver -w \
+    >/dev/null 2> "$stderr_file"
+  local rc="$?"
+  set -e
+
+  echo "[cage-pwsh-smoke] wineserver wait after ${label} rc=${rc}"
+  if [ "$rc" -ne 0 ]; then
+    log_file "cage-pwsh-wineserver-${label}-err" "$stderr_file"
+    github_error "PowerShell launch settle wait failed" \
+      "label=$label rc=$rc stderr_bytes=$(file_bytes "$stderr_file") stderr_b64=$(file_b64_preview "$stderr_file")"
+  fi
+}
+
 try_pwsh_launch() {
   local mode="$1"
   local stdout_file="$CAPTURE_DIR/${mode}.stdout"
@@ -153,6 +172,7 @@ try_pwsh_launch() {
   esac
   local rc="$?"
   set -e
+  wait_for_wine_launch_children "$mode"
 
   echo "[cage-pwsh-smoke] ${mode} exit code: ${rc}"
   log_file "cage-pwsh-${mode}-out" "$stdout_file"
@@ -192,6 +212,7 @@ run_pwsh_winedebug_probe() {
       > "$stdout_file" 2> "$stderr_file"
   local rc="$?"
   set -e
+  wait_for_wine_launch_children winedebug
 
   echo "[cage-pwsh-smoke] WINEDEBUG probe exit code: ${rc}"
   log_file cage-pwsh-winedebug-out "$stdout_file"
