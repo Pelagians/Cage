@@ -52,7 +52,7 @@ file_state() {
 
 github_error() {
   local title="$1" message="$2"
-  if [ -n "${GITHUB_ACTIONS:-}" ]; then
+  if [ -n "${GITHUB_ACTIONS:-}" ] || [ -n "${CAGE_GITHUB_ANNOTATIONS:-}" ]; then
     echo "::error title=${title}::${message}"
   fi
 }

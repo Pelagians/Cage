@@ -222,6 +222,7 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertIn("try_pwsh_launch cmd", smoke)
         self.assertIn("POWER SHELL RUNTIME SMOKE PASSED", smoke)
         self.assertIn("github_error", smoke)
+        self.assertIn("CAGE_GITHUB_ANNOTATIONS", smoke)
         self.assertIn("Wine prefix initialization failed", smoke)
         self.assertIn("Wine win10 configuration failed", smoke)
         self.assertIn("PowerShell MSI checksum mismatch", smoke)
@@ -257,6 +258,13 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertIn("github.sha", workflow)
         self.assertIn("cage-powershell-runtime-smoke", workflow)
         self.assertIn("--shm-size 2g", workflow)
+        self.assertIn("-e CAGE_GITHUB_ANNOTATIONS=1", workflow)
+        self.assertIn("shell: bash", workflow)
+        self.assertIn("PIPESTATUS[0]", workflow)
+        self.assertIn("PowerShell smoke failed", workflow)
+        self.assertIn("tee \"$LOG\"", workflow)
+        self.assertIn("tail -80", workflow)
+        self.assertIn("summary=\"${summary//$'\\n'/'%0A'}\"", workflow)
 
 
 if __name__ == "__main__":
