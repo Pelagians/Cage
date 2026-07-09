@@ -41,6 +41,15 @@ file_bytes() {
   fi
 }
 
+file_b64_preview() {
+  local file="$1"
+  if [ -f "$file" ] && [ -s "$file" ]; then
+    head -c "${CAGE_ANNOTATION_PREVIEW_BYTES:-768}" "$file" | base64 -w0
+  else
+    echo empty
+  fi
+}
+
 file_state() {
   local file="$1"
   if [ -f "$file" ]; then
@@ -59,13 +68,16 @@ github_error() {
 
 launch_failure_message() {
   local mode="$1" rc="$2" reason="$3" stdout_file="$4" stderr_file="$5"
-  printf 'mode=%s rc=%s reason=%s sentinel=%s output=%s stdout_bytes=%s stderr_bytes=%s output_bytes=%s pwsh=%s script=%s' \
+  printf 'mode=%s rc=%s reason=%s sentinel=%s output=%s stdout_bytes=%s stderr_bytes=%s output_bytes=%s stdout_b64=%s stderr_b64=%s output_b64=%s pwsh=%s script=%s' \
     "$mode" "$rc" "$reason" \
     "$(file_state "$SMOKE_SENTINEL")" \
     "$(file_state "$SMOKE_OUTPUT")" \
     "$(file_bytes "$stdout_file")" \
     "$(file_bytes "$stderr_file")" \
     "$(file_bytes "$SMOKE_OUTPUT")" \
+    "$(file_b64_preview "$stdout_file")" \
+    "$(file_b64_preview "$stderr_file")" \
+    "$(file_b64_preview "$SMOKE_OUTPUT")" \
     "$PWSH_EXE_WIN" "$SMOKE_SCRIPT_WIN"
 }
 
@@ -88,6 +100,11 @@ try_pwsh_launch() {
     cmd)
       timeout "${CAGE_POWERSHELL_SMOKE_TIMEOUT:-120s}" \
         wine cmd /s /c "\"$PWSH_EXE_WIN\" -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"$SMOKE_SCRIPT_WIN\" \"$SMOKE_SENTINEL_WIN\" \"$SMOKE_OUTPUT_WIN\"" \
+          > "$stdout_file" 2> "$stderr_file"
+      ;;
+    cmdfile)
+      timeout "${CAGE_POWERSHELL_SMOKE_TIMEOUT:-120s}" \
+        wine cmd /s /c "\"$SMOKE_LAUNCHER_WIN\"" \
           > "$stdout_file" 2> "$stderr_file"
       ;;
     *)
@@ -222,6 +239,8 @@ SMOKE_SENTINEL="$SMOKE_DIR/cage-pwsh-smoke-ok.txt"
 SMOKE_SENTINEL_WIN="$SMOKE_DIR_WIN/cage-pwsh-smoke-ok.txt"
 SMOKE_OUTPUT="$SMOKE_DIR/cage-pwsh-smoke-output.txt"
 SMOKE_OUTPUT_WIN="$SMOKE_DIR_WIN/cage-pwsh-smoke-output.txt"
+SMOKE_LAUNCHER="$SMOKE_DIR/run-smoke.cmd"
+SMOKE_LAUNCHER_WIN="$SMOKE_DIR_WIN/run-smoke.cmd"
 mkdir -p "$SMOKE_DIR"
 cat > "$SMOKE_SCRIPT" <<'PS1'
 param([string]$SentinelPath, [string]$OutputPath)
@@ -231,6 +250,9 @@ $ErrorActionPreference = 'Stop'
 [System.IO.File]::WriteAllText($OutputPath, 'PWSH-ALIVE')
 [Console]::Out.WriteLine('[cage-pwsh-smoke] PSVersion=' + $PSVersionTable.PSVersion.ToString())
 PS1
+printf '@echo off\r\n"%s" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%s" "%s" "%s"\r\nexit /b %%ERRORLEVEL%%\r\n' \
+  "$PWSH_EXE_WIN" "$SMOKE_SCRIPT_WIN" "$SMOKE_SENTINEL_WIN" "$SMOKE_OUTPUT_WIN" \
+  > "$SMOKE_LAUNCHER"
 
 echo "[cage-pwsh-smoke] WINEPREFIX dosdevices"
 ls -la "$WINEPREFIX/dosdevices" || true
@@ -240,13 +262,13 @@ wine cmd /c "echo CMD-ALIVE" > "$CAPTURE_DIR/cmd.stdout" 2> "$CAPTURE_DIR/cmd.st
 log_file cage-cmd-out "$CAPTURE_DIR/cmd.stdout"
 log_file cage-cmd-err "$CAPTURE_DIR/cmd.stderr"
 
-if try_pwsh_launch direct || try_pwsh_launch cmd; then
+if try_pwsh_launch direct || try_pwsh_launch cmd || try_pwsh_launch cmdfile; then
   echo "[cage-pwsh-smoke] POWER SHELL RUNTIME SMOKE PASSED"
   exit 0
 fi
 
 echo "[cage-pwsh-smoke] ERROR: no PowerShell launch mode produced stdout/sentinel evidence"
-github_error "No PowerShell launch mode produced runtime proof" "direct and cmd launch modes failed; inspect PowerShell launch failed annotations; smoke_dir=$SMOKE_DIR capture_dir=$CAPTURE_DIR pwsh=$PWSH_EXE_WIN script=$SMOKE_SCRIPT_WIN"
+github_error "No PowerShell launch mode produced runtime proof" "direct, cmd, and cmdfile launch modes failed; inspect PowerShell launch failed annotations; smoke_dir=$SMOKE_DIR capture_dir=$CAPTURE_DIR pwsh=$PWSH_EXE_WIN script=$SMOKE_SCRIPT_WIN launcher=$SMOKE_LAUNCHER_WIN"
 echo "[cage-pwsh-smoke] Smoke directory: $SMOKE_DIR"
 find "$SMOKE_DIR" -maxdepth 1 -type f -printf '[cage-pwsh-smoke] C-drive file: %f\n' 2>/dev/null || true
 echo "[cage-pwsh-smoke] Capture directory: $CAPTURE_DIR"
