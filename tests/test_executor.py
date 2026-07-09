@@ -211,6 +211,35 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertIn("rustup target add x86_64-pc-windows-gnu", dockerfile)
         self.assertIn("x86_64-w64-mingw32-gcc --version", dockerfile)
 
+    def test_wine_runtime_images_ship_powershell_runtime_smoke(self):
+        root = Path(__file__).resolve().parents[1]
+        smoke = (root / "container/common/cage-powershell-runtime-smoke.sh").read_text(encoding="utf-8")
+        self.assertIn("PowerShell-7.5.5-win-x64.msi", smoke)
+        self.assertIn("b2ac56b7639e2b259bb78bab077555d76f2a5eec6c516690d63de36bc1d6ca25", smoke)
+        self.assertIn("PWSH-ALIVE", smoke)
+        self.assertIn("cage-pwsh-smoke-ok.txt", smoke)
+        self.assertIn("try_pwsh_launch direct", smoke)
+        self.assertIn("try_pwsh_launch cmd", smoke)
+        self.assertIn("POWER SHELL RUNTIME SMOKE PASSED", smoke)
+        for rel in [
+            "container/runtimes/wine/Dockerfile",
+            "container/runtimes/wine-staging/Dockerfile",
+        ]:
+            with self.subTest(rel=rel):
+                dockerfile = (root / rel).read_text(encoding="utf-8")
+                self.assertIn("cage-powershell-runtime-smoke.sh", dockerfile)
+                self.assertIn("/usr/local/bin/cage-powershell-runtime-smoke", dockerfile)
+
+    def test_container_workflow_smokes_powershell_on_published_wine_11_image(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github/workflows/containers.yml").read_text(encoding="utf-8")
+
+        self.assertIn("Smoke PowerShell runtime on wine 11.0", workflow)
+        self.assertIn("matrix.provider == 'wine' && matrix.version == '11.0'", workflow)
+        self.assertIn("github.sha", workflow)
+        self.assertIn("cage-powershell-runtime-smoke", workflow)
+        self.assertIn("--shm-size 2g", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

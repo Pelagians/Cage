@@ -63,3 +63,10 @@ jobs:
             ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.sha }}-${{ matrix.tag }}
           build-args: |
             ${{ matrix.build_arg }}
+
+      - name: Smoke PowerShell runtime on wine 11.0
+        if: matrix.provider == 'wine' && matrix.version == '11.0'
+        run: |
+          docker run --rm --pull always --shm-size 2g \
+            "${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.sha }}-${{ matrix.tag }}" \
+            cage-powershell-runtime-smoke

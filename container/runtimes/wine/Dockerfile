@@ -85,8 +85,9 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Common scripts
 COPY container/common/xvfb-entrypoint.sh /usr/local/bin/xvfb-entrypoint.sh
+COPY container/common/cage-powershell-runtime-smoke.sh /usr/local/bin/cage-powershell-runtime-smoke
 COPY container/common/wine-env.sh /opt/cage/common/wine-env.sh
-RUN chmod +x /usr/local/bin/xvfb-entrypoint.sh
+RUN chmod +x /usr/local/bin/xvfb-entrypoint.sh /usr/local/bin/cage-powershell-runtime-smoke
 
 # Minimal font cache
 RUN fc-cache -fv 2>/dev/null || true

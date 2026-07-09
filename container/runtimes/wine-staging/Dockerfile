@@ -54,8 +54,9 @@ FROM wine-install
 ENV CAGE_ROOT=/opt/cage WINEPREFIX=/opt/cage/prefix WINEARCH=win64 \
     WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" DISPLAY=:99
 COPY container/common/xvfb-entrypoint.sh /usr/local/bin/xvfb-entrypoint.sh
+COPY container/common/cage-powershell-runtime-smoke.sh /usr/local/bin/cage-powershell-runtime-smoke
 COPY container/common/wine-env.sh /opt/cage/common/wine-env.sh
-RUN chmod +x /usr/local/bin/xvfb-entrypoint.sh && fc-cache -fv 2>/dev/null || true
+RUN chmod +x /usr/local/bin/xvfb-entrypoint.sh /usr/local/bin/cage-powershell-runtime-smoke && fc-cache -fv 2>/dev/null || true
 WORKDIR /opt/cage
 ENTRYPOINT ["/usr/local/bin/xvfb-entrypoint.sh"]
 CMD ["/bin/bash"]
