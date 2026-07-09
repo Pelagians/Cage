@@ -225,7 +225,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertNotIn('wine "$pwsh_exe_win"', promote)
         self.assertNotIn("PWSH-ALIVE", promote)
 
-    def test_chocolatey_native_promotion_preserves_payload_and_creates_bin_redirects(self):
+    def test_chocolatey_native_promotion_preserves_payload_and_uses_real_choco_in_bin(self):
         promote = "\n".join(_manifest().modules[0].build()[4].commands)
 
         self.assertIn('rm -rf "$canonical_choco_dir"', promote)
@@ -233,9 +233,14 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn('dest = Path(sys.argv[2])', promote)
         self.assertIn('redirects = dest / "redirects"', promote)
         self.assertIn('bin_dir = dest / "bin"', promote)
-        self.assertIn('shutil.copy2(item, bin_dir / item.name)', promote)
+        self.assertIn('if item.name.lower() == "choco.exe":', promote)
+        self.assertIn('continue', promote)
+        self.assertIn('shutil.copy2(root_choco, choco)', promote)
         self.assertIn('choco = bin_dir / "choco.exe"', promote)
         self.assertIn('root_choco = dest / "choco.exe"', promote)
+        self.assertIn('if not root_choco.is_file():', promote)
+        self.assertIn('if choco.stat().st_size != root_choco.stat().st_size:', promote)
+        self.assertLess(promote.index('root_choco = dest / "choco.exe"'), promote.index('shutil.copy2(root_choco, choco)'))
         self.assertIn("helpers", promote)
         self.assertIn("tools", promote)
         self.assertIn("redirects", promote)

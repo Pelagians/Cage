@@ -19,7 +19,7 @@ Instead, Cage will consume Chocolatey-for-wine as pinned upstream evidence/data 
 5. extract and flatten upstream `c_drive.7z` into the Wine `drive_c` instead of allowing a nested `drive_c/c:` tree;
 6. install .NET Framework 4.8 through sequential x64 then x86 MSI steps, never in parallel with another MSI operation, so both 64-bit and WOW64 native CLR files exist. MSI return codes are advisory after this point: if Wine reports an MSI block such as `NEWERVERSIONDETECTED` / `INSTALL Return value 0`, Cage treats the step as successful only when the required native CLR markers already exist. The order matters: an x86-first install can make the x64 MSI report `NEWERVERSIONDETECTED` before 64-bit CLR markers are created;
 7. apply the Wine/.NET registry state needed by upstream, including native `mscoree` for Chocolatey;
-8. promote the raw Chocolatey payload into canonical `C:/ProgramData/chocolatey/bin/choco.exe` with native file operations, not through a PowerShell finalizer;
+8. promote the raw Chocolatey payload into canonical `C:/ProgramData/chocolatey/bin/choco.exe` with native file operations, not through a PowerShell finalizer. Canonical `bin/choco.exe` must be the real root Chocolatey executable from the nupkg, not the upstream `redirects/choco.exe` shim; a real build showed the 147 KB redirect shim can become the failing `mscoree.dll not found` loader boundary;
 9. run structured Chocolatey readiness diagnostics before package install;
 10. apply upstream Chocolatey feature policy before installs:
     - `choco feature disable --name=powershellHost`

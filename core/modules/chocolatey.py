@@ -501,17 +501,29 @@ bin_dir.mkdir(parents=True, exist_ok=True)
 redirects = dest / "redirects"
 if redirects.is_dir():
     for item in redirects.iterdir():
-        if item.is_file():
-            shutil.copy2(item, bin_dir / item.name)
+        if not item.is_file():
+            continue
+        # Keep helper redirects such as RefreshEnv.cmd, but do not promote the
+        # upstream redirect/shim choco.exe as canonical. Real Wine builds showed
+        # that 147 KB redirect shim as the loader boundary that failed before
+        # managed Chocolatey output. The canonical bin entry must be the real
+        # root Chocolatey executable from the nupkg.
+        if item.name.lower() == "choco.exe":
+            continue
+        shutil.copy2(item, bin_dir / item.name)
 choco = bin_dir / "choco.exe"
 root_choco = dest / "choco.exe"
-if not choco.is_file() and root_choco.is_file():
-    shutil.copy2(root_choco, choco)
+if not root_choco.is_file():
+    raise SystemExit(f"missing root Chocolatey choco.exe: {{root_choco}}")
+shutil.copy2(root_choco, choco)
+if choco.stat().st_size != root_choco.stat().st_size:
+    raise SystemExit(f"canonical bin choco.exe size mismatch: {{choco}} != {{root_choco}}")
 required = [
     dest / "helpers",
     dest / "tools",
     dest / "redirects",
     choco,
+    root_choco,
 ]
 missing = [str(path) for path in required if not path.exists()]
 if missing:
