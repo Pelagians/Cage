@@ -12,7 +12,7 @@ Source of truth: [ADR 0020 — Deterministic Chocolatey-for-wine MVP reconstruct
 Phase 1 work:
 
 1. Rebuild `chocolatey` as sequential upstream-derived steps rather than trusting `ChoCinstaller_*.exe /s /q` as the success boundary.
-2. Keep pinned/checksummed upstream Chocolatey-for-wine release data, c_drive flattening, Chocolatey nupkg extraction, dedicated .NET x64-then-x86 MSI installs gated by native CLR marker presence, upstream `mscoree=native` registry policy, native promotion that puts the real root nupkg `choco.exe` plus full app-local CLR loader closure in canonical `bin`, diagnostics, and Windows-path canonical `choco.exe` package installs.
+2. Keep pinned/checksummed upstream Chocolatey-for-wine release data, c_drive flattening, Chocolatey nupkg extraction, upstream `dotnet481` manifest payload/registry import, upstream `mscoree=native` registry policy, native promotion that puts the real root nupkg `choco.exe` plus full app-local CLR loader closure in canonical `bin`, diagnostics, and Windows-path canonical `choco.exe` package installs.
 3. Apply upstream Chocolatey feature policy before package installs: disable `powershellHost`, enable `allowGlobalConfirmation`.
 4. Keep manifest-level `chocolatey`/`powershell-wrapper` mutual exclusion until capabilities land.
 5. Keep `--module-cache-dir` for reusable module payloads and upstream installer cache.

@@ -18,7 +18,7 @@ DEFAULT_CHOCOLATEY_FOR_WINE_SHA256 = "87f4ecc08a9b22f16aa5633ca107c151ddf3fed0b2
 DEFAULT_CHOCOLATEY_VERSION = "2.6.0"
 DEFAULT_CHOCOLATEY_NUPKG_SHA256 = "f13a2af9cd4ec2c9b58d81861bc95ad7151e3a871d8f758dffa72a996a3792d8"
 DEFAULT_CFW_WINETRICKS_SHA256 = "1d74ffad96f2052d42a0fa3c7ac5dbc8d099e7ad9f9aba3213446a25b34ff48c"
-DEFAULT_DOTNET48_SHA256 = "0a3a390c47e639d0f7fc65b21195fee6b7f65b066f80f70c60fab191d14b7e40"
+DEFAULT_DOTNET481_SHA256 = "859b556ee19a33353626682b8b6f7e9ce97cd325b0d8f24c7770dc31f688d3c1"
 DEFAULT_POWERSHELL_MSI_VERSION = "7.5.5"
 DEFAULT_POWERSHELL_MSI_NAME = f"PowerShell-{DEFAULT_POWERSHELL_MSI_VERSION}-win-x64.msi"
 DEFAULT_POWERSHELL_MSI_SHA256 = "b2ac56b7639e2b259bb78bab077555d76f2a5eec6c516690d63de36bc1d6ca25"
@@ -330,118 +330,355 @@ echo "[cage] Prepared Chocolatey-for-wine data and Chocolatey nupkg"'''
         return BuildStep(commands=[script], description="Prepare Chocolatey-for-wine data", kind="extract")
 
     def _dotnet48_step(self, wine_prefix: str) -> BuildStep:
-        script = f'''set -eu
+        script = '''set -eu
 unset WINEDLLOVERRIDES
-wine_prefix="{wine_prefix}"
-module_cache="${{CAGE_MODULE_CACHE_DIR:-/tmp/cage-module-cache}}"
-dotnet_cache="$module_cache/dotnet48"
-ndp48_exe="$dotnet_cache/NDP48-x86-x64-AllOS-ENU.exe"
-ndp48_url="https://go.microsoft.com/fwlink/?linkid=2088631"
-ndp48_sha256="{DEFAULT_DOTNET48_SHA256}"
-setupcache="$wine_prefix/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319/SetupCache"
-dotnet_extract="$setupcache/v4.8.03761"
-netfx_msi_x86="$dotnet_extract/netfx_Full_x86.msi"
-netfx_msi_x64="$dotnet_extract/netfx_Full_x64.msi"
-mkdir -p "$dotnet_cache" "$setupcache"
-if [ ! -f "$ndp48_exe" ]; then
-  echo "[cage] Downloading .NET Framework 4.8 offline installer..."
-  curl -fL --retry 3 -o "$ndp48_exe" "$ndp48_url"
+wine_prefix="__WINE_PREFIX__"
+module_cache="${CAGE_MODULE_CACHE_DIR:-/tmp/cage-module-cache}"
+dotnet_cache="$module_cache/dotnet481"
+ndp481_exe="$dotnet_cache/ndp481-x86-x64-allos-enu.exe"
+ndp481_url="https://download.visualstudio.microsoft.com/download/pr/6f083c7e-bd40-44d4-9e3f-ffba71ec8b09/3951fd5af6098f2c7e8ff5c331a0679c/ndp481-x86-x64-allos-enu.exe"
+ndp481_sha256="__DOTNET481_SHA256__"
+dotnet_extract="$dotnet_cache/extracted"
+dotnet_payload="$dotnet_cache/dotnet481_manifest_payload"
+dotnet_cab="$dotnet_extract/x64-Windows10.0-KB5011048-x64.cab"
+reg_dir="$wine_prefix/drive_c/windows/temp"
+mkdir -p "$dotnet_cache" "$dotnet_extract" "$reg_dir"
+if [ ! -f "$ndp481_exe" ]; then
+  echo "[cage] Downloading upstream .NET Framework 4.8.1 payload for Chocolatey..."
+  curl -fL --retry 3 -o "$ndp481_exe" "$ndp481_url"
 fi
-actual_ndp48_sha="$(sha256sum "$ndp48_exe" | cut -d ' ' -f 1)"
-if [ "$actual_ndp48_sha" != "$ndp48_sha256" ]; then
-  echo "[cage] ERROR: .NET Framework 4.8 installer checksum mismatch"
-  echo "[cage]   expected: $ndp48_sha256"
-  echo "[cage]   actual:   $actual_ndp48_sha"
+actual_ndp481_sha="$(sha256sum "$ndp481_exe" | cut -d ' ' -f 1)"
+if [ "$actual_ndp481_sha" != "$ndp481_sha256" ]; then
+  echo "[cage] ERROR: .NET Framework 4.8.1 installer checksum mismatch"
+  echo "[cage]   expected: $ndp481_sha256"
+  echo "[cage]   actual:   $actual_ndp481_sha"
   exit 1
 fi
-if [ ! -f "$netfx_msi_x86" ] || [ ! -f "$netfx_msi_x64" ]; then
+extractor=""
+for candidate in 7z 7zz 7za; do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    extractor="$candidate"
+    break
+  fi
+done
+if [ -z "$extractor" ]; then
+  echo "[cage] ERROR: 7z/7zz/7za is required for upstream dotnet481 manifest extraction"
+  exit 1
+fi
+if [ ! -f "$dotnet_cab" ]; then
   rm -rf "$dotnet_extract"
   mkdir -p "$dotnet_extract"
-  echo "[cage] Extracting .NET Framework 4.8 payload to Wine SetupCache..."
-  if command -v 7z >/dev/null 2>&1; then
-    7z x -y -x!"*.cab" -x!"netfx_c*" -x!"netfx_e*" -x!"NetFx4*" -ms190M "$ndp48_exe" "-o$dotnet_extract"
-  elif command -v 7zz >/dev/null 2>&1; then
-    7zz x -y -x!"*.cab" -x!"netfx_c*" -x!"netfx_e*" -x!"NetFx4*" -ms190M "$ndp48_exe" "-o$dotnet_extract"
-  elif command -v 7za >/dev/null 2>&1; then
-    7za x -y -x!"*.cab" -x!"netfx_c*" -x!"netfx_e*" -x!"NetFx4*" -ms190M "$ndp48_exe" "-o$dotnet_extract"
-  else
-    echo "[cage] ERROR: 7z/7zz/7za is required to extract the .NET Framework 4.8 payload"
-    exit 1
-  fi
+  echo "[cage] Extracting upstream dotnet481 Windows cab..."
+  "$extractor" x -y "$ndp481_exe" "-o$dotnet_extract" "x64-Windows10.0-KB5011048-x64.cab"
 fi
-test -f "$netfx_msi_x86"
-test -f "$netfx_msi_x64"
+test -f "$dotnet_cab"
+rm -rf "$dotnet_payload"
+mkdir -p "$dotnet_payload"
+echo "[cage] Extracting upstream dotnet481 manifests and native payload..."
+"$extractor" x -y "$dotnet_cab" "-o$dotnet_payload" "amd64*/*" "x86*/*" "wow64*/*" "*.manifest"
+
+python3 - "$dotnet_payload" "$wine_prefix/drive_c" "$reg_dir" <<'PY'
+import re
+import shutil
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+payload = Path(sys.argv[1])
+drive_c = Path(sys.argv[2])
+reg_dir = Path(sys.argv[3])
+windows = drive_c / "windows"
+reg_dir.mkdir(parents=True, exist_ok=True)
+
+reg64 = reg_dir / "reg_keys64.reg"
+reg32 = reg_dir / "reg_keys32.reg"
+reg64.write_text("Windows Registry Editor Version 5.00\\n", encoding="utf-8")
+reg32.write_text("Windows Registry Editor Version 5.00\\n", encoding="utf-8")
+
+TOKEN_MAP_64 = dict([
+    ("$(runtime.system32)", "C:/windows/system32"),
+    ("$(runtime.programFiles)", "C:/Program Files"),
+    ("$(runtime.commonFiles)", "C:/Program Files/Common Files"),
+    ("$(runtime.wbem)", "C:/windows/system32/wbem"),
+    ("$(runtime.windows)", "C:/windows"),
+    ("$(runtime.inf)", "C:/windows/inf"),
+])
+TOKEN_MAP_32 = dict([
+    ("$(runtime.system32)", "C:/windows/syswow64"),
+    ("$(runtime.programFiles)", "C:/Program Files (x86)"),
+    ("$(runtime.commonFiles)", "C:/Program Files (x86)/Common Files"),
+    ("$(runtime.wbem)", "C:/windows/syswow64/wbem"),
+    ("$(runtime.windows)", "C:/windows"),
+    ("$(runtime.inf)", "C:/windows/inf"),
+])
+
+def tag_name(element):
+    return element.tag.rsplit("}", 1)[-1]
+
+
+def children(element, name):
+    return [child for child in list(element) if tag_name(child).lower() == name.lower()]
+
+
+def first_child_text(element, *names):
+    wanted = {name.lower() for name in names}
+    for child in list(element):
+        if tag_name(child).lower() in wanted and child.text:
+            return child.text
+    return None
+
+
+def attr(element, *names):
+    wanted = {name.lower() for name in names}
+    for key, value in element.attrib.items():
+        if key.lower() in wanted:
+            return value
+    return None
+
+
+def arch(root):
+    identities = children(root, "assemblyIdentity")
+    value = attr(identities[0], "processorArchitecture") if identities else "amd64"
+    return (value or "amd64").lower()
+
+
+def token_map_for(arch_value):
+    return TOKEN_MAP_32 if arch_value in {"x86", "wow64"} else TOKEN_MAP_64
+
+
+def replace_tokens(value, arch_value):
+    if value is None:
+        return value
+    result = value
+    for token, replacement in token_map_for(arch_value).items():
+        result = result.replace(token, replacement)
+    return result.replace("/", chr(92))
+
+
+def win_to_host(path):
+    bs = chr(92)
+    value = path.replace("/", bs)
+    if value.lower().startswith("c:" + bs):
+        value = value[3:]
+    value = value.lstrip(bs)
+    parts = [part for part in value.split(bs) if part]
+    return drive_c.joinpath(*parts)
+
+
+def source_dir_for(manifest):
+    return Path(str(manifest)[: -len(".manifest")])
+
+
+def find_file(directory, name):
+    direct = directory / name
+    if direct.exists():
+        return direct
+    lower = name.lower()
+    if directory.exists():
+        for candidate in directory.iterdir():
+            if candidate.name.lower() == lower:
+                return candidate
+    matches = list(payload.rglob(name))
+    if matches:
+        return matches[0]
+    for candidate in payload.rglob("*"):
+        if candidate.is_file() and candidate.name.lower() == lower:
+            return candidate
+    return None
+
+
+def copy_file(src, dest):
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dest)
+
+
+def destination_paths(file_element):
+    values = []
+    for key in ("destinationPath", "destinationpath"):
+        value = attr(file_element, key)
+        if value:
+            values.append(value)
+    for child in list(file_element):
+        if tag_name(child).lower() == "destinationpath" and child.text:
+            values.append(child.text)
+        if tag_name(child).lower() == "link":
+            for grandchild in list(child):
+                if tag_name(grandchild).lower() == "destination" and grandchild.text:
+                    values.append(grandchild.text)
+    return values
+
+
+def install_manifest_files(manifest):
+    root = ET.parse(manifest).getroot()
+    arch_value = arch(root)
+    source_dir = source_dir_for(manifest)
+    copied = 0
+    for file_element in children(root, "file"):
+        name = attr(file_element, "name")
+        if not name:
+            continue
+        src = find_file(source_dir, name)
+        if src is None:
+            continue
+        destinations = destination_paths(file_element)
+        for destination in destinations:
+            final = win_to_host(replace_tokens(destination, arch_value))
+            copy_file(src, final)
+            copied += 1
+    return copied
+
+
+def reg_file_for(arch_value):
+    return reg32 if arch_value in {"x86", "wow64"} else reg64
+
+
+def reg_escape(value):
+    bs = chr(92)
+    return value.replace(bs, bs + bs).replace('"', bs + '"')
+
+
+def hex_bytes(data):
+    return ",".join(f"{byte:02x}" for byte in data)
+
+
+def format_reg_value(kind, value):
+    kind = (kind or "REG_SZ").upper()
+    value = value or ""
+    if kind == "REG_DWORD":
+        number = int(value, 0) if value else 0
+        return f"dword:{number:08x}"
+    if kind == "REG_BINARY":
+        compact = re.sub(r"[^0-9A-Fa-f]", "", value)
+        return "hex:" + ",".join(compact[i : i + 2] for i in range(0, len(compact), 2))
+    if kind == "REG_EXPAND_SZ":
+        return "hex(2):" + hex_bytes((value + chr(0)).encode("utf-16le"))
+    if kind == "REG_MULTI_SZ":
+        return "hex(7):" + hex_bytes((value + chr(0) + chr(0)).encode("utf-16le"))
+    if kind == "REG_QWORD":
+        number = int(value, 0) if value else 0
+        return "hex(b):" + hex_bytes(number.to_bytes(8, "little"))
+    if kind == "REG_NONE":
+        return '""'
+    return f'"{reg_escape(value)}"'
+
+
+def write_manifest_registry(manifest):
+    root = ET.parse(manifest).getroot()
+    arch_value = arch(root)
+    output = reg_file_for(arch_value)
+    blocks = []
+    for registry_keys in children(root, "registryKeys"):
+        for key in children(registry_keys, "registryKey"):
+            key_name = attr(key, "keyName")
+            if not key_name:
+                continue
+            key_name = replace_tokens(key_name, arch_value)
+            lines = ["", f"[{key_name}]"]
+            for value in children(key, "registryValue"):
+                name = attr(value, "name", "Name") or ""
+                reg_name = "@" if name in {"", "registryValue"} else f'"{reg_escape(replace_tokens(name, arch_value))}"'
+                reg_value = replace_tokens(attr(value, "value", "Value") or first_child_text(value, "value") or "", arch_value)
+                reg_type = attr(value, "valueType", "type") or "REG_SZ"
+                lines.append(f"{reg_name}={format_reg_value(reg_type, reg_value)}")
+            blocks.append("\\n".join(lines))
+    if blocks:
+        with output.open("a", encoding="utf-8") as handle:
+            handle.write("\\n".join(blocks) + "\\n")
+
+
+def copy_first(name, destination, preferred_prefixes):
+    candidates = []
+    lower = name.lower()
+    for candidate in payload.rglob("*"):
+        if candidate.is_file() and candidate.name.lower() == lower:
+            score = 100
+            text = str(candidate).lower()
+            for index, prefix in enumerate(preferred_prefixes):
+                if prefix in text:
+                    score = index
+                    break
+            candidates.append((score, len(str(candidate)), candidate))
+    if not candidates:
+        return False
+    candidates.sort()
+    copy_file(candidates[0][2], destination)
+    return True
+
+framework64 = windows / "Microsoft.NET" / "Framework64" / "v4.0.30319"
+framework32 = windows / "Microsoft.NET" / "Framework" / "v4.0.30319"
+old_mscoreei = framework64 / "mscoreei_old.dll"
+current_mscoreei = framework64 / "mscoreei.dll"
+if current_mscoreei.exists() and not old_mscoreei.exists():
+    old_mscoreei.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(current_mscoreei, old_mscoreei)
+
+manifests = sorted(payload.glob("*.manifest"))
+if not manifests:
+    raise SystemExit(f"no dotnet481 manifests extracted under {payload}")
+file_count = 0
+for manifest in manifests:
+    file_count += install_manifest_files(manifest)
+    write_manifest_registry(manifest)
+
+# Keep the native CLR loader files explicit even if a manifest uses a path form
+# this parser does not understand. These are the files Wine must load before
+# managed Chocolatey can emit any output.
+required_copies = [
+    ("mscoree.dll", windows / "system32" / "mscoree.dll", ("amd64",)),
+    ("mscoree.dll", windows / "syswow64" / "mscoree.dll", ("x86", "wow64")),
+    ("mscoreei.dll", framework64 / "mscoreei.dll", ("amd64",)),
+    ("mscoreei.dll", framework32 / "mscoreei.dll", ("x86", "wow64")),
+    ("clr.dll", framework64 / "clr.dll", ("amd64",)),
+    ("clr.dll", framework32 / "clr.dll", ("x86", "wow64")),
+    ("clrjit.dll", framework64 / "clrjit.dll", ("amd64",)),
+    ("clrjit.dll", framework32 / "clrjit.dll", ("x86", "wow64")),
+    ("ucrtbase_clr0400.dll", windows / "system32" / "ucrtbase_clr0400.dll", ("amd64",)),
+    ("ucrtbase_clr0400.dll", windows / "syswow64" / "ucrtbase_clr0400.dll", ("x86", "wow64")),
+    ("vcruntime140_clr0400.dll", windows / "system32" / "vcruntime140_clr0400.dll", ("amd64",)),
+    ("vcruntime140_clr0400.dll", windows / "syswow64" / "vcruntime140_clr0400.dll", ("x86", "wow64")),
+]
+missing_sources = []
+for name, destination, prefixes in required_copies:
+    if not copy_first(name, destination, prefixes):
+        missing_sources.append(name)
+if missing_sources:
+    raise SystemExit("missing upstream dotnet481 native files: " + ", ".join(sorted(set(missing_sources))))
+
+required_markers = [
+    windows / "system32" / "mscoree.dll",
+    windows / "syswow64" / "mscoree.dll",
+    framework64 / "clr.dll",
+    framework64 / "clrjit.dll",
+    framework64 / "mscoreei.dll",
+    framework32 / "clr.dll",
+    framework32 / "mscoreei.dll",
+    windows / "system32" / "ucrtbase_clr0400.dll",
+    windows / "system32" / "vcruntime140_clr0400.dll",
+]
+missing = [str(path) for path in required_markers if not path.is_file()]
+if missing:
+    raise SystemExit("missing upstream dotnet481 marker files: " + ", ".join(missing))
+print(f"installed dotnet481 manifest payload: manifests={len(manifests)} files={file_count}")
+PY
+
+# Import manifest-derived registry keys exactly through Wine's 64-bit and 32-bit views.
+wine reg IMPORT 'c:\\windows\\temp\\reg_keys64.reg' /reg:64
+wine reg IMPORT 'c:\\windows\\temp\\reg_keys32.reg' /reg:32
+
 dotnet_mscoree_marker_x86="$wine_prefix/drive_c/windows/syswow64/mscoree.dll"
 dotnet_clr_marker_x86="$wine_prefix/drive_c/windows/Microsoft.NET/Framework/v4.0.30319/clr.dll"
 dotnet_mscoree_marker_x64="$wine_prefix/drive_c/windows/system32/mscoree.dll"
 dotnet_clr_marker_x64="$wine_prefix/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319/clr.dll"
-
-install_dotnet_msi() {{
-  label="$1"
-  netfx_msi="$2"
-  dotnet_mscoree_marker="$3"
-  dotnet_clr_marker="$4"
-  if [ -f "$dotnet_mscoree_marker" ] && [ -f "$dotnet_clr_marker" ]; then
-    echo "[cage] .NET Framework 4.8 $label already has native CLR markers; skipping MSI install"
-    echo "[cage] .NET Framework 4.8 $label native mscoree exists: $dotnet_mscoree_marker"
-    echo "[cage] .NET Framework 4.8 $label native CLR exists: $dotnet_clr_marker"
-    return 0
-  fi
-  netfx_msi_win="$(winepath -w "$netfx_msi")"
-  dotnet_msiexec_log="$dotnet_cache/dotnet48-$label-msiexec.log"
-  dotnet_msiexec_log_win="$(winepath -w "$dotnet_msiexec_log")"
-  rm -f "$dotnet_msiexec_log"
-  echo "[cage] Installing .NET Framework 4.8 $label MSI from dedicated MSI step..."
-  echo "[cage] .NET Framework 4.8 $label MSI: $netfx_msi_win"
-  set +e
-  timeout "${{CAGE_DOTNET48_TIMEOUT:-1800s}}" wine msiexec /i "$netfx_msi_win" MSIFASTINSTALL=2 DISABLEROLLBACK=1 /QN /NORESTART /L*v "$dotnet_msiexec_log_win"
-  dotnet_msi_rc="$?"
-  set -e
-  if [ -f "$dotnet_msiexec_log" ]; then
-    echo "[cage] .NET Framework 4.8 $label MSI failure markers:"
-    grep -nEi 'NEWERVERSIONDETECTED|CA_BlockOlderVersionInstall|Return value 0|Return value 3|MainEngineThread|Error [0-9]+|Fatal error' "$dotnet_msiexec_log" | head -80 | sed "s/^/[dotnet48-$label-msi-marker] /" || true
-    echo "[cage] .NET Framework 4.8 $label MSI log tail:"
-    tail -120 "$dotnet_msiexec_log" | sed "s/^/[dotnet48-$label-msi] /"
-  fi
-  dotnet_msi_success=0
-  if [ -f "$dotnet_msiexec_log" ] && grep -qE 'Action ended .*INSTALL[.] Return value 1' "$dotnet_msiexec_log"; then
-    dotnet_msi_success=1
-  fi
-  dotnet_marker_success=0
-  if [ -f "$dotnet_mscoree_marker" ] && [ -f "$dotnet_clr_marker" ]; then
-    dotnet_marker_success=1
-  fi
-  if [ "$dotnet_msi_success" -ne 1 ] && [ "$dotnet_marker_success" -ne 1 ]; then
-    echo "[cage] ERROR: .NET Framework 4.8 $label MSI did not report INSTALL success and required native CLR markers are absent"
-    if [ "$dotnet_msi_rc" -ne 0 ]; then
-      echo "[cage] ERROR: Wine msiexec exit code for .NET $label: $dotnet_msi_rc"
-      exit "$dotnet_msi_rc"
-    fi
+dotnet_clrjit_marker_x64="$wine_prefix/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319/clrjit.dll"
+for marker in "$dotnet_mscoree_marker_x86" "$dotnet_clr_marker_x86" "$dotnet_mscoree_marker_x64" "$dotnet_clr_marker_x64" "$dotnet_clrjit_marker_x64"; do
+  if [ ! -f "$marker" ]; then
+    echo "[cage] ERROR: upstream dotnet481 marker missing after manifest install: $marker"
     exit 67
   fi
-  if [ "$dotnet_msi_success" -ne 1 ]; then
-    echo "[cage] .NET Framework 4.8 $label MSI did not report INSTALL success, but required native CLR markers exist; continuing"
-  elif [ "$dotnet_msi_rc" -ne 0 ]; then
-    echo "[cage] .NET Framework 4.8 $label MSI log reports INSTALL success; ignoring Wine msiexec exit $dotnet_msi_rc"
-  fi
-  if [ ! -f "$dotnet_mscoree_marker" ]; then
-    echo "[cage] ERROR: .NET Framework 4.8 $label MSI did not create native mscoree: $dotnet_mscoree_marker"
-    exit 67
-  fi
-  if [ ! -f "$dotnet_clr_marker" ]; then
-    echo "[cage] ERROR: .NET Framework 4.8 $label MSI did not create native CLR: $dotnet_clr_marker"
-    exit 67
-  fi
-  echo "[cage] .NET Framework 4.8 $label native mscoree exists: $dotnet_mscoree_marker"
-  echo "[cage] .NET Framework 4.8 $label native CLR exists: $dotnet_clr_marker"
-}}
-
-# Install x64 before x86. Wine/.NET records the x86 product in a way that can make
-# the x64 MSI report NEWERVERSIONDETECTED before 64-bit CLR markers are created.
-install_dotnet_msi x64 "$netfx_msi_x64" "$dotnet_mscoree_marker_x64" "$dotnet_clr_marker_x64"
-install_dotnet_msi x86 "$netfx_msi_x86" "$dotnet_mscoree_marker_x86" "$dotnet_clr_marker_x86"
-echo "[cage] .NET Framework 4.8 MSI step complete"'''
-        return BuildStep(commands=[script], description="Install .NET Framework 4.8 for Chocolatey", kind="wine-msiexec", timeout=1800)
+done
+echo "[cage] Upstream dotnet481 manifest payload installed for Chocolatey"'''
+        script = script.replace("__WINE_PREFIX__", wine_prefix).replace("__DOTNET481_SHA256__", DEFAULT_DOTNET481_SHA256)
+        return BuildStep(commands=[script], description="Install upstream .NET 4.8.1 manifest payload for Chocolatey", kind="extract", timeout=1800)
 
     def _registry_prep_step(self) -> BuildStep:
         script = '''set -eu

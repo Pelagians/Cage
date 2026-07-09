@@ -80,7 +80,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertEqual(descriptions, [
             "Install PowerShell 7 MSI for Chocolatey",
             "Prepare Chocolatey-for-wine data",
-            "Install .NET Framework 4.8 for Chocolatey",
+            "Install upstream .NET 4.8.1 manifest payload for Chocolatey",
             "Prepare Wine registry for Chocolatey",
             "Promote Chocolatey natively",
             "Diagnose Chocolatey readiness",
@@ -147,45 +147,33 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertNotIn('test -f "$cfw_extract/winetricks.ps1"', prepare)
         self.assertNotIn('cp -f "$cfw_extract/winetricks.ps1"', prepare)
 
-    def test_chocolatey_dotnet48_installs_x86_and_x64_msi_steps(self):
+    def test_chocolatey_dotnet481_uses_upstream_manifest_payload(self):
         dotnet = "\n".join(_manifest().modules[0].build()[2].commands)
 
-        self.assertIn("https://go.microsoft.com/fwlink/?linkid=2088631", dotnet)
-        self.assertIn("0a3a390c47e639d0f7fc65b21195fee6b7f65b066f80f70c60fab191d14b7e40", dotnet)
-        self.assertIn("actual_ndp48_sha", dotnet)
-        self.assertIn("setupcache=\"$wine_prefix/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319/SetupCache\"", dotnet)
-        self.assertIn("dotnet_extract=\"$setupcache/v4.8.03761\"", dotnet)
-        self.assertIn("-x!\"*.cab\"", dotnet)
-        self.assertIn("-x!\"netfx_c*\"", dotnet)
-        self.assertIn("-x!\"netfx_e*\"", dotnet)
-        self.assertIn("-x!\"NetFx4*\"", dotnet)
-        self.assertIn("netfx_Full_x86.msi", dotnet)
-        self.assertIn("netfx_Full_x64.msi", dotnet)
-        self.assertNotIn("dotnet_extract=\"$dotnet_cache/extracted\"", dotnet)
-        self.assertIn("dotnet48-$label-msiexec.log", dotnet)
-        self.assertIn("install_dotnet_msi x86", dotnet)
-        self.assertIn("install_dotnet_msi x64", dotnet)
-        self.assertLess(dotnet.index("install_dotnet_msi x64"), dotnet.index("install_dotnet_msi x86"))
-        self.assertIn("wine msiexec /i \"$netfx_msi_win\"", dotnet)
-        self.assertIn("/QN", dotnet)
-        self.assertIn("MSIFASTINSTALL=2", dotnet)
-        self.assertIn("DISABLEROLLBACK=1", dotnet)
-        self.assertIn("/L*v", dotnet)
-        self.assertIn("Return value 3", dotnet)
-        self.assertIn("Action ended .*INSTALL[.] Return value 1", dotnet)
-        self.assertIn("dotnet_msi_success=", dotnet)
-        self.assertIn("dotnet_marker_success=", dotnet)
-        self.assertIn("already has native CLR markers; skipping MSI install", dotnet)
-        self.assertIn("MSI did not report INSTALL success, but required native CLR markers exist; continuing", dotnet)
-        self.assertIn("MSI log reports INSTALL success; ignoring Wine msiexec exit", dotnet)
-        self.assertIn("CAGE_DOTNET48_TIMEOUT", dotnet)
+        self.assertIn("ndp481-x86-x64-allos-enu.exe", dotnet)
+        self.assertIn("https://download.visualstudio.microsoft.com/download/pr/6f083c7e-bd40-44d4-9e3f-ffba71ec8b09/3951fd5af6098f2c7e8ff5c331a0679c/ndp481-x86-x64-allos-enu.exe", dotnet)
+        self.assertIn("859b556ee19a33353626682b8b6f7e9ce97cd325b0d8f24c7770dc31f688d3c1", dotnet)
+        self.assertIn("actual_ndp481_sha", dotnet)
+        self.assertIn("x64-Windows10.0-KB5011048-x64.cab", dotnet)
+        self.assertIn('"amd64*/*" "x86*/*" "wow64*/*" "*.manifest"', dotnet)
+        self.assertIn("dotnet481_manifest_payload", dotnet)
+        self.assertIn("install_manifest_files", dotnet)
+        self.assertIn("write_manifest_registry", dotnet)
+        self.assertIn("reg_keys64.reg", dotnet)
+        self.assertIn("reg_keys32.reg", dotnet)
+        self.assertIn("wine reg IMPORT 'c:\\windows\\temp\\reg_keys64.reg' /reg:64", dotnet)
+        self.assertIn("wine reg IMPORT 'c:\\windows\\temp\\reg_keys32.reg' /reg:32", dotnet)
+        self.assertIn("mscoreei_old.dll", dotnet)
         self.assertIn("windows/syswow64/mscoree.dll", dotnet)
         self.assertIn("windows/system32/mscoree.dll", dotnet)
         self.assertIn("windows/Microsoft.NET/Framework/v4.0.30319/clr.dll", dotnet)
         self.assertIn("windows/Microsoft.NET/Framework64/v4.0.30319/clr.dll", dotnet)
-        self.assertNotIn("marker missing after MSI step", dotnet)
-        self.assertEqual(dotnet.count("wine msiexec"), 1)
-        self.assertEqual(dotnet.count("install_dotnet_msi "), 2)
+        self.assertIn("windows/Microsoft.NET/Framework64/v4.0.30319/clrjit.dll", dotnet)
+        self.assertNotIn("netfx_Full_x86.msi", dotnet)
+        self.assertNotIn("netfx_Full_x64.msi", dotnet)
+        self.assertNotIn("wine msiexec /i \"$netfx_msi_win\"", dotnet)
+        self.assertNotIn("install_dotnet_msi ", dotnet)
+        self.assertNotIn("CAGE_DOTNET48_TIMEOUT", dotnet)
         self.assertNotIn("PowerShell", dotnet)
         self.assertNotIn("choco.exe install", dotnet)
 
