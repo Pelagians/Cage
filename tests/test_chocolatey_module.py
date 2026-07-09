@@ -72,7 +72,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             "Prepare Chocolatey-for-wine data",
             "Install .NET Framework 4.8 for Chocolatey",
             "Prepare Wine registry for Chocolatey",
-            "Finalize Chocolatey-for-wine",
+            "Promote Chocolatey natively",
             "Install Chocolatey packages: 7zip notepadplusplus",
         ])
         self.assertNotIn("PowerShell-7.4.11-win-x64.zip", script)
@@ -104,10 +104,10 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertNotIn("PowerShell-7.4.11-win-x64.zip", powershell)
         self.assertNotIn("zipfile.ZipFile", powershell)
 
-    def test_chocolatey_extracts_nupkg_to_raw_tools_before_finalizer(self):
+    def test_chocolatey_extracts_nupkg_to_raw_tools_before_promotion(self):
         steps = _manifest().modules[0].build()
         prepare = "\n".join(steps[1].commands)
-        finalize = "\n".join(steps[4].commands)
+        promote = "\n".join(steps[4].commands)
 
         self.assertIn("https://community.chocolatey.org/api/v2/package/chocolatey/2.6.0", prepare)
         self.assertIn("f13a2af9cd4ec2c9b58d81861bc95ad7151e3a871d8f758dffa72a996a3792d8", prepare)
@@ -117,8 +117,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("tools/chocolateyInstall/", prepare)
         self.assertIn("choc_install.ps1", prepare)
         self.assertIn('member.filename.replace("\\\\", "/")', prepare)
-        self.assertLess(_all_commands(steps).index("Prepare Chocolatey-for-wine data"), _all_commands(steps).index("Finalize Chocolatey-for-wine"))
-        self.assertIn("ProgramData/tools/ChocolateyInstall/choco.exe", finalize)
+        self.assertLess(_all_commands(steps).index("Prepare Chocolatey-for-wine data"), _all_commands(steps).index("Promote Chocolatey natively"))
+        self.assertIn("ProgramData/tools/ChocolateyInstall/choco.exe", promote)
 
     def test_chocolatey_prepare_matches_release_archive_layout(self):
         """Pinned CFW release archive does not include winetricks.ps1."""
@@ -180,95 +180,61 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("/v PS7", registry)
         self.assertIn("C:\\Program Files\\PowerShell\\7\\pwsh.exe", registry)
 
-    def test_chocolatey_finalizer_makes_native_pwsh_discoverable(self):
-        finalize = "\n".join(_manifest().modules[0].build()[4].commands)
+    def test_chocolatey_native_promotion_replaces_pwsh_finalizer_boundary(self):
+        promote = "\n".join(_manifest().modules[0].build()[4].commands)
 
-        self.assertIn("pwsh_dir=", finalize)
-        self.assertIn("drive_c/Program Files/PowerShell/7", finalize)
-        self.assertIn("pwsh_dir_win='C:\\Program Files\\PowerShell\\7'", finalize)
-        self.assertIn("export PS7=", finalize)
-        self.assertIn(r"$pwsh_dir_win\pwsh.exe", finalize)
-        self.assertIn("export WINEPATH=", finalize)
-        self.assertIn("$pwsh_dir_win${WINEPATH:+;$WINEPATH}", finalize)
-        self.assertNotIn("$pwsh_dir${WINEPATH:+;$WINEPATH}", finalize)
-        self.assertIn("export PATH=", finalize)
-        self.assertIn("$pwsh_dir:$PATH", finalize)
+        self.assertIn("Promote Chocolatey natively", promote)
+        self.assertIn('raw_choco_dir="$wine_prefix/drive_c/ProgramData/tools/ChocolateyInstall"', promote)
+        self.assertIn('canonical_choco_dir="$wine_prefix/drive_c/ProgramData/chocolatey"', promote)
+        self.assertIn('canonical_bin_dir="$canonical_choco_dir/bin"', promote)
+        self.assertIn('test -f "$raw_choco_exe"', promote)
+        self.assertIn("shutil.copytree", promote)
+        self.assertIn("Native Chocolatey promotion copied raw payload", promote)
+        self.assertNotIn("pwsh_probe_script=", promote)
+        self.assertNotIn("finalize_driver=", promote)
+        self.assertNotIn("choc_install.patched.ps1", promote)
+        self.assertNotIn('wine "$pwsh_exe_win"', promote)
+        self.assertNotIn("PWSH-ALIVE", promote)
 
-    def test_chocolatey_finalizer_uses_native_pwsh_contract_like_chocinstaller(self):
-        finalize = "\n".join(_manifest().modules[0].build()[4].commands)
+    def test_chocolatey_native_promotion_preserves_payload_and_creates_bin_redirects(self):
+        promote = "\n".join(_manifest().modules[0].build()[4].commands)
 
-        self.assertIn("pwsh_exe=", finalize)
-        self.assertIn('pwsh_exe="$pwsh_dir/pwsh.exe"', finalize)
-        self.assertIn('pwsh_exe_win="$(winepath -w "$pwsh_exe")"', finalize)
-        self.assertIn("work_dir=\"$wine_prefix/drive_c/ProgramData/CageFinalize\"", finalize)
-        self.assertIn("work_dir_win='C:/ProgramData/CageFinalize'", finalize)
-        self.assertIn('test -f "$pwsh_exe"', finalize)
-        self.assertIn("pwsh_probe_script=", finalize)
-        self.assertIn("pwsh-probe-ok.txt", finalize)
-        self.assertIn("[cfw-pwsh-out]", finalize)
-        self.assertIn('wine "$pwsh_exe_win" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$pwsh_probe_script_win"', finalize)
-        self.assertIn('wine "$pwsh_exe_win" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$finalize_driver_win"', finalize)
-        self.assertNotIn('wine "$pwsh_exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File', finalize)
-        self.assertNotIn("pwsh_command_sentinel=", finalize)
-        self.assertNotIn("pwsh-command-ok.txt", finalize)
-        self.assertNotIn("PowerShell -Command probe", finalize)
+        self.assertIn('rm -rf "$canonical_choco_dir"', promote)
+        self.assertIn('source = Path(sys.argv[1])', promote)
+        self.assertIn('dest = Path(sys.argv[2])', promote)
+        self.assertIn('redirects = dest / "redirects"', promote)
+        self.assertIn('bin_dir = dest / "bin"', promote)
+        self.assertIn('shutil.copy2(item, bin_dir / item.name)', promote)
+        self.assertIn('choco = bin_dir / "choco.exe"', promote)
+        self.assertIn('root_choco = dest / "choco.exe"', promote)
+        self.assertIn("helpers", promote)
+        self.assertIn("tools", promote)
+        self.assertIn("redirects", promote)
 
-    def test_chocolatey_finalizer_does_not_use_dead_cfw_wrapper_probe(self):
-        finalize = "\n".join(_manifest().modules[0].build()[4].commands)
+    def test_chocolatey_native_promotion_sets_environment_without_pwsh(self):
+        promote = "\n".join(_manifest().modules[0].build()[4].commands)
 
-        self.assertIn("winps_exe=", finalize)
-        self.assertIn("WindowsPowerShell/v1.0/powershell.exe", finalize)
-        self.assertNotIn("winps_probe_script=", finalize)
-        self.assertNotIn("winps-probe-ok.txt", finalize)
-        self.assertNotIn("winps_cmd_diag_log=", finalize)
-        self.assertNotIn("[cfw-winps]", finalize)
-        self.assertNotIn('wine "$winps_exe" -NoLogo -ExecutionPolicy Bypass -File "$winps_probe_script_win"', finalize)
-        self.assertNotIn('wine "$winps_exe" -NoLogo -ExecutionPolicy Bypass -File "$finalize_driver_win"', finalize)
+        self.assertIn("ChocolateyInstall", promote)
+        self.assertIn("ChocolateyToolsLocation", promote)
+        self.assertIn("C:\\ProgramData\\chocolatey", promote)
+        self.assertIn("C:\\tools", promote)
+        self.assertIn("wine reg add 'HKCU\\Environment'", promote)
+        self.assertNotIn("WindowsPowerShell/v1.0/powershell.exe", promote)
+        self.assertNotIn("pwsh_exe=", promote)
+        self.assertNotIn("export PS7=", promote)
+        self.assertNotIn("export WINEPATH=", promote)
 
-    def test_chocolatey_finalizer_captures_native_pwsh_probe_on_unix_side(self):
-        finalize = "\n".join(_manifest().modules[0].build()[4].commands)
+    def test_chocolatey_native_promotion_keeps_canonical_choco_gate(self):
+        promote = "\n".join(_manifest().modules[0].build()[4].commands)
 
-        self.assertIn('unix_probe_dir="$(mktemp -d /tmp/cage-pwsh-probe.XXXXXX)"', finalize)
-        self.assertIn('pwsh_probe_script="$work_dir/pwsh-probe.ps1"', finalize)
-        self.assertIn('pwsh_probe_sentinel="$work_dir/pwsh-probe-ok.txt"', finalize)
-        self.assertIn('pwsh_probe_stdout="$unix_probe_dir/pwsh-probe.stdout"', finalize)
-        self.assertIn('pwsh_probe_stderr="$unix_probe_dir/pwsh-probe.stderr"', finalize)
-        self.assertIn('pwsh_probe_script_win="$work_dir_win/pwsh-probe.ps1"', finalize)
-        self.assertIn('pwsh_probe_sentinel_win="$work_dir_win/pwsh-probe-ok.txt"', finalize)
-        self.assertIn("Native PowerShell diagnostic: WINEPREFIX=", finalize)
-        self.assertIn("Native PowerShell diagnostic: pwsh_exe_win=", finalize)
-        self.assertIn('ls -la "$WINEPREFIX/dosdevices/"', finalize)
-        self.assertIn('wine cmd /c "echo CMD-ALIVE"', finalize)
-        self.assertIn('winepath -w "$unix_probe_dir"', finalize)
-        self.assertIn("winepath -u 'C:\\ProgramData'", finalize)
-        self.assertIn("PWSH-ALIVE", finalize)
-        self.assertIn("[cfw-cmd-out]", finalize)
-        self.assertIn("[cfw-cmd-err]", finalize)
-        self.assertIn("[cfw-winepath]", finalize)
-        self.assertIn("[cfw-pwsh-out]", finalize)
-        self.assertIn("[cfw-pwsh-err]", finalize)
-        self.assertIn('ls -la "$unix_probe_dir"', finalize)
-        self.assertNotIn('pwsh_probe_sentinel="$unix_probe_dir/unix-sentinel.txt"', finalize)
-        self.assertNotIn('pwsh_probe_log="$work_dir/pwsh-probe.log"', finalize)
-
-    def test_chocolatey_finalizer_keeps_canonical_choco_gate(self):
-        finalize = "\n".join(_manifest().modules[0].build()[4].commands)
-
-        self.assertIn("choc_install.ps1", finalize)
-        self.assertIn("finalize_driver=", finalize)
-        self.assertIn("cfw_dir_win='C:/ProgramData/Chocolatey-for-wine'", finalize)
-        self.assertIn("choc_install_ps1_win=\"$cfw_dir_win/choc_install.ps1\"", finalize)
-        self.assertIn("choco_exe_win='C:/ProgramData/chocolatey/bin/choco.exe'", finalize)
-        self.assertIn("finalize_driver_win=\"$work_dir_win/finalize-chocolatey-for-wine.ps1\"", finalize)
-        self.assertNotIn("finalize_driver_win=\"$(winepath -w", finalize)
-        self.assertIn("Skipping upstream ucrtbase_clr0400.dll wait", finalize)
-        self.assertIn("choc_install.patched.ps1", finalize)
-        self.assertIn("$ErrorActionPreference = 'Stop'", finalize)
-        self.assertIn("finalize_rc=", finalize)
-        self.assertIn("[cfw-finalize]", finalize)
-        self.assertIn("ProgramData/chocolatey/bin/choco.exe", finalize)
-        self.assertIn("Chocolatey-for-wine finalizer did not create canonical choco.exe", finalize)
-        self.assertIn("CAGE_CHOCOLATEY_FINALIZE_TIMEOUT", finalize)
+        self.assertIn("ProgramData/tools/ChocolateyInstall/choco.exe", promote)
+        self.assertIn("ProgramData/chocolatey/bin/choco.exe", promote)
+        self.assertIn("raw ChocolateyInstall payload is only a source", promote)
+        self.assertIn("ERROR: native Chocolatey promotion did not create canonical choco.exe", promote)
+        self.assertIn("CAGE_CHOCOLATEY_VERIFY_TIMEOUT", promote)
+        self.assertIn('timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe" --version', promote)
+        self.assertNotIn("Chocolatey-for-wine finalizer did not create canonical choco.exe", promote)
+        self.assertNotIn("CAGE_CHOCOLATEY_FINALIZE_TIMEOUT", promote)
 
     def test_chocolatey_package_install_uses_canonical_choco_only(self):
         package = "\n".join(_manifest(["7zip", "notepadplusplus"]).modules[0].build()[5].commands)

@@ -87,11 +87,11 @@ modules:
 
 The module now lowers that declaration into sequential, verifiable build steps:
 
-1. install a pinned/checksummed PowerShell 7 engine from ZIP, with no MSI path.
-2. host-download and SHA-256 verify the Chocolatey nupkg, then extract it as a ZIP into `C:/ProgramData`.
+1. install pinned/checksummed PowerShell MSI compatibility state, without treating `pwsh.exe` as the finalizer boundary.
+2. host-download and SHA-256 verify the Chocolatey nupkg, then extract it as raw `C:/ProgramData/tools/ChocolateyInstall` source data.
 3. host-download and SHA-256 verify .NET 4.8, extract `netfx_Full_x64.msi`, and run one dedicated `msiexec /QN` step.
 4. apply Wine registry prep (`win10`, `pwsh.exe` DLL overrides).
-5. finalize canonical Chocolatey by running upstream `choc_install.ps1` under verified `pwsh.exe`.
+5. natively promote the raw Chocolatey payload into canonical `C:/ProgramData/chocolatey/bin/choco.exe` without running upstream `choc_install.ps1` through `pwsh.exe`.
 6. install requested packages only through canonical `C:/ProgramData/chocolatey/bin/choco.exe`.
 
 Synchro's `powershell-wrapper-for-wine` remains a separate capability. `chocolatey` and `powershell-wrapper` stay mutually exclusive until the PowerShell capability resolver lands.

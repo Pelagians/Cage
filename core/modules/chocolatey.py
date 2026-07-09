@@ -377,173 +377,75 @@ echo "[cage] Wine registry prepared for Chocolatey"'''
     def _finalize_step(self, wine_prefix: str, choco_exe: str, raw_choco_exe: str) -> BuildStep:
         script = f'''set -eu
 unset WINEDLLOVERRIDES
-echo "[cage] Finalize Chocolatey-for-wine"
+echo "[cage] Promote Chocolatey natively"
 wine_prefix="{wine_prefix}"
 choco_exe="{choco_exe}"
 raw_choco_exe="{raw_choco_exe}"
-pwsh_dir="$wine_prefix/drive_c/Program Files/PowerShell/7"
-pwsh_dir_win='C:\\Program Files\\PowerShell\\7'
-pwsh_exe="$pwsh_dir/pwsh.exe"
-pwsh_exe_win="$(winepath -w "$pwsh_exe")"
-winps_exe="$wine_prefix/drive_c/windows/system32/WindowsPowerShell/v1.0/powershell.exe"
-cfw_dir="$wine_prefix/drive_c/ProgramData/Chocolatey-for-wine"
-choc_install_ps1="$cfw_dir/choc_install.ps1"
-work_dir="$wine_prefix/drive_c/ProgramData/CageFinalize"
-work_dir_win='C:/ProgramData/CageFinalize'
-finalize_driver="$work_dir/finalize-chocolatey-for-wine.ps1"
-patched_choc_install_ps1="$work_dir/choc_install.patched.ps1"
-finalize_log="$work_dir/chocolatey-finalize.log"
-unix_probe_dir="$(mktemp -d /tmp/cage-pwsh-probe.XXXXXX)"
-pwsh_probe_script="$work_dir/pwsh-probe.ps1"
-pwsh_probe_stdout="$unix_probe_dir/pwsh-probe.stdout"
-pwsh_probe_stderr="$unix_probe_dir/pwsh-probe.stderr"
-pwsh_probe_sentinel="$work_dir/pwsh-probe-ok.txt"
-cmd_diag_stdout="$unix_probe_dir/cmd.out"
-cmd_diag_stderr="$unix_probe_dir/cmd.err"
-winepath_diag="$unix_probe_dir/winepath.out"
-mkdir -p "$work_dir"
+raw_choco_dir="$wine_prefix/drive_c/ProgramData/tools/ChocolateyInstall"
+canonical_choco_dir="$wine_prefix/drive_c/ProgramData/chocolatey"
+canonical_bin_dir="$canonical_choco_dir/bin"
+tools_dir="$wine_prefix/drive_c/tools"
+choco_dir_win='C:\\ProgramData\\chocolatey'
+choco_tools_win='C:\\tools'
 
-test -f "$pwsh_exe"
-test -f "$winps_exe"
 test -f "$raw_choco_exe"
-test -f "$choc_install_ps1"
-export PS7="$pwsh_dir_win\\pwsh.exe"
-export WINEPATH="$pwsh_dir_win${{WINEPATH:+;$WINEPATH}}"
-export PATH="$pwsh_dir:$PATH"
+echo "[cage] raw ChocolateyInstall payload is only a source: $raw_choco_exe"
+rm -rf "$canonical_choco_dir"
+python3 - "$raw_choco_dir" "$canonical_choco_dir" <<'PY'
+import shutil
+import sys
+from pathlib import Path
 
-pwsh_probe_script_win="$work_dir_win/pwsh-probe.ps1"
-pwsh_probe_sentinel_win="$work_dir_win/pwsh-probe-ok.txt"
-rm -f "$pwsh_probe_sentinel"
-cat > "$pwsh_probe_script" <<'PS1'
-param([string]$SentinelPath)
-$ErrorActionPreference = 'Stop'
-[Console]::Out.WriteLine('PWSH-ALIVE')
-[System.IO.File]::WriteAllText($SentinelPath, 'ok')
-[Console]::Out.WriteLine('[cage] native pwsh probe OK')
-[Console]::Out.WriteLine($PSVersionTable.PSVersion.ToString())
-PS1
-
-echo "[cage] Native PowerShell diagnostic: WINEPREFIX=${{WINEPREFIX:-}}"
-echo "[cage] Native PowerShell diagnostic: pwsh_exe_win=$pwsh_exe_win"
-if [ -n "${{WINEPREFIX:-}}" ] && [ -d "$WINEPREFIX/dosdevices" ]; then
-  ls -la "$WINEPREFIX/dosdevices/"
-else
-  echo "[cage] Native PowerShell diagnostic: WINEPREFIX dosdevices missing"
-fi
-set +e
-wine cmd /c "echo CMD-ALIVE" > "$cmd_diag_stdout" 2> "$cmd_diag_stderr"
-cmd_diag_rc="$?"
-winepath -w "$unix_probe_dir" > "$winepath_diag" 2>&1
-winepath_unix_rc="$?"
-winepath -u 'C:\\ProgramData' >> "$winepath_diag" 2>&1
-winepath_programdata_rc="$?"
-set -e
-echo "[cage] Native PowerShell diagnostic: wine cmd /c echo exit code $cmd_diag_rc"
-if [ -s "$cmd_diag_stdout" ]; then
-  sed 's/^/[cfw-cmd-out] /' "$cmd_diag_stdout"
-else
-  echo "[cage] Native PowerShell diagnostic: cmd stdout was empty"
-fi
-if [ -s "$cmd_diag_stderr" ]; then
-  sed 's/^/[cfw-cmd-err] /' "$cmd_diag_stderr"
-else
-  echo "[cage] Native PowerShell diagnostic: cmd stderr was empty"
-fi
-echo "[cage] Native PowerShell diagnostic: winepath -w unix_probe_dir exit code $winepath_unix_rc"
-echo "[cage] Native PowerShell diagnostic: winepath -u ProgramData exit code $winepath_programdata_rc"
-if [ -s "$winepath_diag" ]; then
-  sed 's/^/[cfw-winepath] /' "$winepath_diag"
-else
-  echo "[cage] Native PowerShell diagnostic: winepath output was empty"
-fi
-
-echo "[cage] Probing native PowerShell engine for Chocolatey finalization..."
-set +e
-timeout 120s wine "$pwsh_exe_win" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$pwsh_probe_script_win" "$pwsh_probe_sentinel_win" > "$pwsh_probe_stdout" 2> "$pwsh_probe_stderr"
-pwsh_probe_rc="$?"
-set -e
-echo "[cage] Native PowerShell probe exit code: $pwsh_probe_rc"
-echo "[cage] pwsh-probe.stdout contents begin"
-if [ -s "$pwsh_probe_stdout" ]; then
-  sed 's/^/[cfw-pwsh-out] /' "$pwsh_probe_stdout"
-else
-  echo "[cage] Native PowerShell probe stdout was empty"
-fi
-echo "[cage] pwsh-probe.stdout contents end"
-echo "[cage] pwsh-probe.stderr contents begin"
-if [ -s "$pwsh_probe_stderr" ]; then
-  sed 's/^/[cfw-pwsh-err] /' "$pwsh_probe_stderr"
-else
-  echo "[cage] Native PowerShell probe stderr was empty"
-fi
-echo "[cage] pwsh-probe.stderr contents end"
-echo "[cage] Native PowerShell diagnostic: unix probe directory"
-ls -la "$unix_probe_dir"
-if [ "$pwsh_probe_rc" -ne 0 ]; then
-  echo "[cage] ERROR: native PowerShell probe failed with exit code $pwsh_probe_rc"
-  exit "$pwsh_probe_rc"
-fi
-if [ ! -f "$pwsh_probe_sentinel" ]; then
-  echo "[cage] ERROR: native PowerShell probe did not create sentinel: $pwsh_probe_sentinel"
-  find "$work_dir" -maxdepth 1 -type f -printf '[cage] CageFinalize file: %f\n' 2>/dev/null || true
-  exit 99
-fi
-if [ ! -s "$pwsh_probe_stdout" ]; then
-  echo "[cage] ERROR: native PowerShell probe produced no stdout"
-  exit 99
-fi
-
-cfw_dir_win='C:/ProgramData/Chocolatey-for-wine'
-choc_install_ps1_win="$cfw_dir_win/choc_install.ps1"
-choco_exe_win='C:/ProgramData/chocolatey/bin/choco.exe'
-patched_choc_install_ps1_win="$work_dir_win/choc_install.patched.ps1"
-finalize_driver_win="$work_dir_win/finalize-chocolatey-for-wine.ps1"
-cat > "$finalize_driver" <<'PS1'
-$ErrorActionPreference = 'Stop'
-$scriptPath = $args[0]
-$cfwDir = $args[1]
-$chocoExe = $args[2]
-$patchedScriptPath = $args[3]
-$scriptText = [System.IO.File]::ReadAllText($scriptPath)
-$waitLoop = 'while(!(Test-path "$env:systemroot\\system32\\ucrtbase_clr0400.dll") ) {{start-Sleep 0.25}}'
-$replacement = 'if (!(Test-Path "$env:systemroot\\system32\\ucrtbase_clr0400.dll")) {{ Write-Host "[cage] Skipping upstream ucrtbase_clr0400.dll wait; deterministic .NET MSI step already completed" }}'
-$patchedText = $scriptText.Replace($waitLoop, $replacement)
-if ($patchedText -eq $scriptText) {{
-    Write-Host "[cage] WARNING: upstream ucrtbase_clr0400.dll wait was not found; running script unchanged"
-}}
-[System.IO.File]::WriteAllText($patchedScriptPath, $patchedText)
-Write-Host "[cage] Running patched upstream choc_install.ps1 through native PowerShell engine: $patchedScriptPath"
-& $patchedScriptPath $cfwDir '/q'
-if (!(Test-Path $chocoExe)) {{
-    throw "Chocolatey-for-wine finalizer did not create canonical choco.exe: $chocoExe"
-}}
-Write-Host "[cage] Upstream Chocolatey-for-wine finalizer completed"
-PS1
-
-set +e
-timeout "${{CAGE_CHOCOLATEY_FINALIZE_TIMEOUT:-1200s}}" wine "$pwsh_exe_win" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$finalize_driver_win" "$choc_install_ps1_win" "$cfw_dir_win" "$choco_exe_win" "$patched_choc_install_ps1_win" > "$finalize_log" 2>&1
-finalize_rc="$?"
-set -e
-if [ -s "$finalize_log" ]; then
-  sed 's/^/[cfw-finalize] /' "$finalize_log"
-fi
-if [ "$finalize_rc" -ne 0 ]; then
-  echo "[cage] ERROR: Chocolatey-for-wine finalizer failed with exit code $finalize_rc"
-  exit "$finalize_rc"
-fi
+source = Path(sys.argv[1])
+dest = Path(sys.argv[2])
+if not source.is_dir():
+    raise SystemExit(f"missing raw Chocolatey source directory: {{source}}")
+if not (source / "choco.exe").is_file():
+    raise SystemExit(f"missing raw Chocolatey choco.exe: {{source / 'choco.exe'}}")
+shutil.copytree(source, dest)
+bin_dir = dest / "bin"
+bin_dir.mkdir(parents=True, exist_ok=True)
+redirects = dest / "redirects"
+if redirects.is_dir():
+    for item in redirects.iterdir():
+        if item.is_file():
+            shutil.copy2(item, bin_dir / item.name)
+choco = bin_dir / "choco.exe"
+root_choco = dest / "choco.exe"
+if not choco.is_file() and root_choco.is_file():
+    shutil.copy2(root_choco, choco)
+required = [
+    dest / "helpers",
+    dest / "tools",
+    dest / "redirects",
+    choco,
+]
+missing = [str(path) for path in required if not path.exists()]
+if missing:
+    raise SystemExit("missing promoted Chocolatey payload: " + ", ".join(missing))
+PY
+mkdir -p "$tools_dir"
+chmod +x "$choco_exe"
+test -d "$canonical_choco_dir/helpers"
+test -d "$canonical_choco_dir/tools"
+test -d "$canonical_choco_dir/redirects"
+test -f "$canonical_choco_dir/helpers/chocolateyInstaller.psm1"
+test -f "$canonical_choco_dir/tools/7z.exe"
+test -f "$canonical_choco_dir/redirects/choco.exe"
 if [ ! -f "$choco_exe" ]; then
-  echo "[cage] ERROR: Chocolatey-for-wine finalizer returned success but left choco.exe missing: $choco_exe"
-  if [ ! -s "$finalize_log" ]; then
-    echo "[cage] Finalizer log was empty"
-  fi
+  echo "[cage] ERROR: native Chocolatey promotion did not create canonical choco.exe: $choco_exe"
   find "$wine_prefix/drive_c/ProgramData" -maxdepth 4 -iname '*choco*' 2>/dev/null | sort || true
   exit 1
 fi
 
-echo "[cage] Verifying Chocolatey..."
-timeout 120s wine "$choco_exe" --version
-echo "[cage] Chocolatey finalization complete"'''
-        return BuildStep(commands=[script], description="Finalize Chocolatey-for-wine")
+echo "[cage] Native Chocolatey promotion copied raw payload to canonical directory"
+timeout "${{CAGE_WINE_REG_TIMEOUT:-120s}}" wine reg add 'HKCU\\Environment' /v ChocolateyInstall /t REG_SZ /d "$choco_dir_win" /f
+timeout "${{CAGE_WINE_REG_TIMEOUT:-120s}}" wine reg add 'HKCU\\Environment' /v ChocolateyToolsLocation /t REG_SZ /d "$choco_tools_win" /f
+
+echo "[cage] Verifying canonical Chocolatey..."
+timeout "${{CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}}" wine "$choco_exe" --version
+echo "[cage] Chocolatey native promotion complete"'''
+        return BuildStep(commands=[script], description="Promote Chocolatey natively")
 
     def _package_install_step(self, choco_exe: str, package_args: str, source_arg: str) -> BuildStep:
         script = f'''set -eu
