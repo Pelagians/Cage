@@ -35,10 +35,10 @@ def _write_fixture_workspace(root: Path) -> Path:
         "sources": [
             {
                 "id": "installer",
-                "type": "http",
+                "type": "installer",
                 "url": "file://sources/demo-installer.exe",
                 "sha256": _sha256(installer),
-                "policy": "required",
+                "policy": "external-local-file-required",
             }
         ],
         "modules": [
@@ -59,7 +59,6 @@ def _write_fixture_workspace(root: Path) -> Path:
             "entrypoint": "C:/Program Files/Demo/Demo.exe",
             "workingDirectory": "C:/Program Files/Demo",
         },
-        "state": {"persistence": "persistent"},
         "exports": [],
         "provenance": {"sources": []},
     }

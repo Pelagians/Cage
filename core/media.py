@@ -11,7 +11,6 @@ import subprocess
 import tarfile
 import tempfile
 import zipfile
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -25,37 +24,6 @@ _SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 class MediaStageError(ValueError):
     """Raised when media staging cannot safely proceed."""
 
-
-@dataclass(frozen=True)
-class SourcePolicyRule:
-    id: str
-    pattern: re.Pattern[str]
-    reason: str
-    severity: str = "blocked"
-
-
-SOURCE_POLICY_RULES: tuple[SourcePolicyRule, ...] = (
-    SourcePolicyRule(
-        "activation-artifact",
-        re.compile(r"activat|pre.?activ|ospp\.vbs|slmgr|tokens\.dat|rearm", re.IGNORECASE),
-        "activation-related artifact name",
-    ),
-    SourcePolicyRule(
-        "kms-artifact",
-        re.compile(r"\bkms\b|vlmcs|autokms|kmsauto|microsoft[ _-]*toolkit|ez[ _-]*activator", re.IGNORECASE),
-        "KMS/emulator-related artifact name",
-    ),
-    SourcePolicyRule(
-        "crack-or-bypass-artifact",
-        re.compile(r"crack|keygen|loader|bypass|patch.*activation", re.IGNORECASE),
-        "crack/bypass-related artifact name",
-    ),
-    SourcePolicyRule(
-        "product-key-artifact",
-        re.compile(r"pidkey|product.?key", re.IGNORECASE),
-        "product-key-related artifact name",
-    ),
-)
 
 
 def stage_media(
@@ -142,14 +110,8 @@ def stage_media(
 
 
 def audit_source_path(path: Path | str, *, location: str | None = None) -> dict[str, Any]:
-    """Audit a local source path for disallowed/suspicious artifact names.
-
-    The audit intentionally inspects paths and file names only. It does not read
-    file contents, which avoids copying product keys or other local secrets into
-    report output.
-    """
+    """Audit a local source path for path/symlink safety without filename policing."""
     source = Path(path).expanduser()
-    findings: list[dict[str, Any]] = []
     errors: list[str] = []
     if not source.exists():
         errors.append(f"missing source path: {source}")
@@ -161,34 +123,18 @@ def audit_source_path(path: Path | str, *, location: str | None = None) -> dict[
             errors.append(str(exc))
             candidates = []
 
-    base = source if source.is_dir() else source.parent
-    for candidate in candidates:
-        display_path = source.name if candidate == source else _display_relative(candidate, base)
-        normalized = display_path.replace(os.sep, "/")
-        matched = _match_policy_rule(normalized)
-        if matched is None:
-            continue
-        findings.append({
-            "ruleId": matched.id,
-            "severity": matched.severity,
-            "path": normalized,
-            "reason": matched.reason,
-            **({"location": location} if location else {}),
-        })
-
-    blocked = sum(1 for finding in findings if finding["severity"] == "blocked")
     return {
         "schemaVersion": SOURCE_POLICY_SCHEMA_VERSION,
         "path": str(source),
         **({"location": location} if location else {}),
-        "valid": not errors and blocked == 0,
+        "valid": not errors,
         "summary": {
             "checked": len(candidates),
-            "findings": len(findings),
-            "blocked": blocked,
+            "findings": 0,
+            "blocked": 0,
             "errors": len(errors),
         },
-        "findings": findings,
+        "findings": [],
         "errors": errors,
     }
 
@@ -443,8 +389,3 @@ def _display_relative(path: Path, base: Path) -> str:
         return path.name
 
 
-def _match_policy_rule(path: str) -> SourcePolicyRule | None:
-    for rule in SOURCE_POLICY_RULES:
-        if rule.pattern.search(path):
-            return rule
-    return None

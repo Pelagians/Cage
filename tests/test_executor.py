@@ -14,16 +14,14 @@ from runtime.launcher import RunError, build_run_plan
 
 
 VALID = {
-    "schemaVersion": "cage.dev/v0",
+    "schemaVersion": "cage.app/v0",
     "name": "sample",
     "version": "1.0.0",
     "runtime": {"provider": "wine", "version": "9.0"},
-    "dependencies": [{"kind": "winetricks", "verbs": ["corefonts"]}],
-    "install": [{
-        "kind": "portable",
-        "source": "file://app.zip",
-        "target": "C:/Program Files/App",
-    }],
+    "modules": [
+        {"type": "winetricks", "verbs": ["corefonts"]},
+        {"type": "portable", "source": "file://app.zip", "target": "C:/Program Files/App"},
+    ],
     "launch": {
         "entrypoint": "C:/Program Files/App/App.exe",
         "args": ["--profile", "default"],
@@ -201,15 +199,25 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
                 self.assertIn("x11vnc", dockerfile)
                 self.assertIn("websockify", dockerfile)
 
-    def test_wine_image_contains_powershell_wrapper_build_toolchain(self):
+    def test_default_wine_image_does_not_ship_build_toolchains(self):
         root = Path(__file__).resolve().parents[1]
         dockerfile = (root / "container/runtimes/wine/Dockerfile").read_text(encoding="utf-8")
 
-        self.assertIn("python3 git", dockerfile)
-        self.assertIn("build-essential", dockerfile)
-        self.assertIn("gcc-mingw-w64-x86-64", dockerfile)
-        self.assertIn("rustup target add x86_64-pc-windows-gnu", dockerfile)
-        self.assertIn("x86_64-w64-mingw32-gcc --version", dockerfile)
+        self.assertNotIn("build-essential", dockerfile)
+        self.assertNotIn("gcc-mingw-w64", dockerfile)
+        self.assertNotIn("rustup", dockerfile)
+        self.assertNotIn("cargo", dockerfile)
+        self.assertNotIn("/root/.cargo", dockerfile)
+
+    def test_umu_final_image_does_not_ship_git_or_pip_install_tooling(self):
+        root = Path(__file__).resolve().parents[1]
+        dockerfile = (root / "container/runtimes/umu-proton-ge/Dockerfile").read_text(encoding="utf-8")
+        final_stage = dockerfile.split("FROM ge-download AS final", 1)[1]
+
+        self.assertNotIn(" git ", final_stage)
+        self.assertNotIn("python3-venv", final_stage)
+        self.assertNotIn("pip install", final_stage)
+        self.assertIn("COPY --from=umu-build /opt/umu /opt/umu", dockerfile)
 
     def test_wine_runtime_images_ship_powershell_runtime_smoke(self):
         root = Path(__file__).resolve().parents[1]

@@ -88,6 +88,35 @@ class ModuleCacheExecutionTests(unittest.TestCase):
         self.assertIn(f"{bundle.resolve()}:/opt/cage:z", argv)
         self.assertIn(f"{cache.resolve()}:/opt/cage-module-cache:z", argv)
 
+
+    def test_execute_inside_container_uses_build_network_without_changing_runtime_network(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            data = dict(MANIFEST)
+            data["runtime"] = {"provider": "wine", "version": "latest", "network": "none"}
+            data["build"] = {"network": "host"}
+            manifest = Manifest.from_dict(data)
+            bundle = create_bundle(manifest, tmp / "dist", dry_run=False)
+
+            class Completed:
+                returncode = 0
+                stdout = "container ok"
+                stderr = ""
+
+            with patch("builder.executor._run_container_command", return_value=Completed()) as run, patch("sys.stderr", io.StringIO()):
+                execute_inside_container(
+                    manifest,
+                    bundle,
+                    engine="docker",
+                    image_ref="local/runtime:test",
+                    timeout=5,
+                    workspace=tmp,
+                )
+
+        argv = run.call_args.args[0]
+        self.assertIn("--net", argv)
+        self.assertEqual(argv[argv.index("--net") + 1], "host")
+
     def test_build_and_compat_cli_accept_module_cache_dir(self):
         parser = build_parser()
 

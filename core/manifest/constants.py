@@ -17,22 +17,20 @@ ROOT_FIELDS = {
     "name",
     "version",
     "runtime",
+    "build",
     "profiles",
     "modules",
     "sources",
-    "dependencies",
-    "install",
     "config",
     "compatibility",
-    "registry",
     "launch",
     "entrypoints",
     "fileAssociations",
-    "state",
     "exports",
     "provenance",
 }
-RUNTIME_FIELDS = {"provider", "version", "source", "channel", "digest", "runner", "network"}
+RUNTIME_FIELDS = {"provider", "version", "source", "channel", "digest", "runner", "network", "image", "imageRef"}
+BUILD_FIELDS = {"network"}
 DEPENDENCY_FIELDS = {"kind", "verbs", "name", "version", "sha256"}
 INSTALL_FIELDS = {"kind", "source", "sha256", "target", "command", "args", "workingDirectory"}
 FILESYSTEM_FIELDS = {"source", "target", "sha256", "mode"}

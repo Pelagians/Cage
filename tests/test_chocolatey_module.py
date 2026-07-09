@@ -15,6 +15,7 @@ def _manifest(packages: list[str] | None = None, **module_overrides):
         "version": "1.0.0",
         "runtime": {"provider": "wine", "version": "latest"},
         "modules": [module],
+        "launch": {"entrypoint": "C:/Program Files/App/App.exe"},
     })
 
 
@@ -30,6 +31,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             "version": "1.0.0",
             "runtime": {"provider": "wine", "version": "latest"},
             "modules": [],
+            "launch": {"entrypoint": "C:/Program Files/App/App.exe"},
         })
         self.assertEqual(manifest.modules, [])
 
@@ -40,6 +42,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             "version": "1.0.0",
             "runtime": {"provider": "wine", "version": "latest"},
             "modules": [{"type": "chocolatey", "install": {"packages": ["7zip", "notepadplusplus"]}}],
+            "launch": {"entrypoint": "C:/Program Files/App/App.exe"},
             "provenance": {"test": "value"},
         })
 
@@ -73,6 +76,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             "Install .NET Framework 4.8 for Chocolatey",
             "Prepare Wine registry for Chocolatey",
             "Promote Chocolatey natively",
+            "Diagnose Chocolatey readiness",
             "Install Chocolatey packages: 7zip notepadplusplus",
         ])
         self.assertNotIn("PowerShell-7.4.11-win-x64.zip", script)
@@ -237,12 +241,38 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertNotIn("CAGE_CHOCOLATEY_FINALIZE_TIMEOUT", promote)
 
     def test_chocolatey_package_install_uses_canonical_choco_only(self):
-        package = "\n".join(_manifest(["7zip", "notepadplusplus"]).modules[0].build()[5].commands)
+        package = "\n".join(_manifest(["7zip", "notepadplusplus"]).modules[0].build()[6].commands)
 
         self.assertIn("ProgramData/chocolatey/bin/choco.exe", package)
         self.assertNotIn("ProgramData/tools/chocolateyInstall/choco.exe", package)
+        self.assertIn("CAGE_CHOCOLATEY_INSTALL_TIMEOUT", package)
         self.assertIn("wine \"$choco_exe\" install 7zip notepadplusplus -y", package)
+        self.assertIn("choco_diag_status", package)
         self.assertIn("unset WINEDLLOVERRIDES", package)
+
+    def test_chocolatey_diagnostic_writes_json_before_package_install(self):
+        steps = _manifest(["7zip"]).modules[0].build()
+        diagnostic = "\n".join(steps[5].commands)
+        package = "\n".join(steps[6].commands)
+
+        self.assertIn("metadata/chocolatey-diagnostic.json", diagnostic)
+        self.assertIn("cage.chocolatey-diagnostic/v0", diagnostic)
+        self.assertIn("canonicalChocoExists", diagnostic)
+        self.assertIn("rawToolsPayloadExists", diagnostic)
+        self.assertIn("winepathCanonical", diagnostic)
+        self.assertIn("registryEnvironment", diagnostic)
+        self.assertIn("chocoVersion", diagnostic)
+        self.assertIn("sourceList", diagnostic)
+        self.assertLess(_all_commands(steps).index("Diagnose Chocolatey readiness"), _all_commands(steps).index("Install Chocolatey packages"))
+        self.assertIn("choco_diag_status", package)
+
+    def test_chocolatey_module_rejects_non_string_package_names(self):
+        manifest = _manifest(["7zip", 42])
+
+        with self.assertRaises(Exception) as ctx:
+            manifest.modules[0].build()
+
+        self.assertIn("install.packages", str(ctx.exception))
 
     def test_direct_script_module_still_accepts_arbitrary_commands(self):
         manifest = Manifest.from_dict({
@@ -251,9 +281,11 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             "version": "1.0.0",
             "runtime": {"provider": "wine", "version": "latest"},
             "modules": [{"type": "script", "command": "choco install 7zip; rm -rf /"}],
+            "launch": {"entrypoint": "C:/Program Files/App/App.exe"},
         })
 
         self.assertEqual(len(manifest.modules), 1)
+        self.assertTrue(manifest.modules[0].build()[0].unsafe)
 
 
 if __name__ == "__main__":

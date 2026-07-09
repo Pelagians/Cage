@@ -82,9 +82,6 @@ entrypoints:
       chocolateyVersion: "1.4.0"
     workingDirectory: C:/users/cage
 
-state:
-  persistence: persistent
-
 exports:
   - name: powershell-profile
     path: C:/Program Files/PowerShell/7/profile.ps1

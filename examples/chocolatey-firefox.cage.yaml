@@ -14,6 +14,3 @@ modules:
 
 launch:
   entrypoint: C:/Program Files/Mozilla Firefox/firefox.exe
-
-state:
-  persistence: persistent

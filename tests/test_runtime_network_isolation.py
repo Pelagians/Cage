@@ -22,8 +22,6 @@ APP = {
     "name": "network-demo",
     "version": "1.0.0",
     "runtime": {"provider": "wine", "version": "latest"},
-    "dependencies": [],
-    "install": [],
     "launch": {"entrypoint": "C:/Program Files/NetworkDemo/demo.exe"},
     "provenance": {"sources": []},
 }
@@ -83,6 +81,25 @@ class RuntimeNetworkGraphTests(unittest.TestCase):
 
 
 class RuntimeNetworkRunPlanTests(unittest.TestCase):
+
+    def test_run_plan_requires_launch_or_override_for_no_launch_bundle(self):
+        data = copy.deepcopy(APP)
+        data.pop("launch")
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=True)
+            with self.assertRaisesRegex(RunError, "no default launch"):
+                build_run_plan(bundle, graphics="headless", engine="docker")
+
+            plan = build_run_plan(
+                bundle,
+                graphics="headless",
+                engine="docker",
+                entrypoint="C:/Windows/notepad.exe",
+            )
+
+        self.assertEqual(plan["launch"]["entrypoint"], "C:/Windows/notepad.exe")
+        self.assertEqual(plan["selectedEntrypoint"]["source"], "cli")
+
     def test_run_plan_air_gaps_runtime_container_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
             plan = build_run_plan(_bundle(tmp), graphics="headless", engine="docker")

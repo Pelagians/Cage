@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from builder.pipeline import build_plan
-from core.manifest import Manifest
+from core.manifest import Manifest, resolve_module_capabilities
 from runtime.providers import RuntimeBinding, resolve_runtime
 
 SCHEMA_VERSION = "cage.execution-graph/v0"
@@ -28,10 +28,13 @@ def build_execution_graph(manifest: Manifest) -> dict[str, Any]:
     manifest_node_id = f"manifest:{manifest.name}:{manifest.version}"
     phase_plan = build_plan(manifest)
     phase_nodes = [_phase_node(phase) for phase in phase_plan]
+    capabilities = resolve_module_capabilities(manifest.modules)
 
     builder_runtime_payload = _runtime_payload(runtime)
     runner_runtime_payload = dict(builder_runtime_payload)
     runner_runtime_payload["network"] = manifest.runtime.network
+    build_payload = {"network": manifest.build.network}
+    launch_payload = manifest.launch.to_dict() if manifest.launch else {"hasDefaultLaunch": False}
 
     nodes: list[dict[str, Any]] = [
         {
@@ -59,8 +62,8 @@ def build_execution_graph(manifest: Manifest) -> dict[str, Any]:
         {
             "id": "launch:entrypoint",
             "kind": "launch",
-            "label": manifest.launch.entrypoint,
-            "launch": manifest.launch.to_dict(),
+            "label": manifest.launch.entrypoint if manifest.launch else "No default launch",
+            "launch": launch_payload,
         },
         {
             "id": "artifact:bundle",
@@ -106,12 +109,13 @@ def build_execution_graph(manifest: Manifest) -> dict[str, Any]:
             "path": ".",
         },
         "builderRuntime": dict(builder_runtime_payload),
+        "build": build_payload,
         "runnerRuntime": dict(runner_runtime_payload),
         "graphics": {
             "defaultMode": DEFAULT_GRAPHICS_MODE,
             "supportedModes": SUPPORTED_GRAPHICS_MODES,
         },
-        "launch": manifest.launch.to_dict(),
+        "launch": launch_payload,
         "entrypoints": [entrypoint if isinstance(entrypoint, dict) else entrypoint.to_dict() for entrypoint in manifest.entrypoints],
         "fileAssociations": [association if isinstance(association, dict) else association.to_dict() for association in manifest.file_associations],
         "compatibility": {
@@ -123,6 +127,8 @@ def build_execution_graph(manifest: Manifest) -> dict[str, Any]:
                 "must run with the same provider/version used to build them."
             ),
         },
+        "modules": _module_payloads(manifest),
+        "capabilities": capabilities,
         "nodes": nodes,
         "edges": edges,
     }
@@ -142,11 +148,34 @@ def _runtime_node_id(runtime: RuntimeBinding) -> str:
 
 def _phase_node(phase: dict[str, object]) -> dict[str, Any]:
     name = str(phase["phase"])
-    return {
+    node: dict[str, Any] = {
         "id": f"phase:{name}",
         "kind": "build-phase",
         "label": name,
         "phase": name,
+        "stepKind": phase.get("kind"),
+        "description": phase.get("description"),
+        "unsafe": bool(phase.get("unsafe", False)),
         "inputs": list(phase.get("inputs", [])),
         "actions": list(phase.get("actions", [])),
     }
+    if phase.get("moduleType") is not None:
+        node["moduleType"] = phase.get("moduleType")
+        node["moduleIndex"] = phase.get("moduleIndex")
+        node["stepIndex"] = phase.get("stepIndex")
+    if phase.get("metadata") is not None:
+        node["metadata"] = phase.get("metadata")
+    return node
+
+
+def _module_payloads(manifest: Manifest) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for index, module in enumerate(manifest.modules):
+        steps = module.build()
+        payloads.append({
+            "moduleIndex": index,
+            "type": module.type,
+            "unsafe": any(step.unsafe for step in steps),
+            "capabilities": module.capabilities(),
+        })
+    return payloads

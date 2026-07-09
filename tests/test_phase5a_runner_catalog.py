@@ -11,12 +11,10 @@ from core.manifest import Manifest
 from runtime.launcher import build_run_plan
 
 LATEST_WINE = {
-    "schemaVersion": "cage.dev/v0",
+    "schemaVersion": "cage.app/v0",
     "name": "latest-wine-app",
     "version": "1.0.0",
     "runtime": {"provider": "wine", "version": "latest"},
-    "dependencies": [],
-    "install": [],
     "launch": {"entrypoint": "C:/App/App.exe"},
     "provenance": {"sources": []},
 }

@@ -29,6 +29,14 @@ class PowerShellWrapperModule(ModuleBase):
     version: str = "7"
     wrapper_version: str = DEFAULT_WRAPPER_VERSION
 
+    def capabilities(self) -> dict[str, str]:
+        """Return PowerShell-related capability slots claimed by the wrapper."""
+        return {
+            "engine": "powershell-zip",
+            "winps-shim": "powershell-wrapper",
+            "shim-library": "powershell-wrapper-for-wine",
+        }
+
     def build(self) -> list[BuildStep]:
         """Generate build steps for the PowerShell wrapper installation."""
         wine_prefix = "${WINEPREFIX:-$HOME/.wine}"

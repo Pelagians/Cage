@@ -417,6 +417,11 @@ def _select_launch(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     if requested is None:
         entrypoint = default_launch.get("entrypoint")
+        if not isinstance(entrypoint, str) or not entrypoint:
+            raise RunError(
+                "bundle has no default launch; pass --entrypoint with a Windows executable path "
+                "or add launch.entrypoint to the recipe"
+            )
         selected = {
             "id": "default",
             "name": "Default launch entrypoint",
@@ -442,6 +447,16 @@ def _select_launch(
             "name": item.get("name"),
             "source": "entrypoints",
             "executable": item.get("executable"),
+        }
+        return selected, launch
+
+    if requested and (":" in requested or requested.lower().endswith((".exe", ".bat", ".cmd"))):
+        launch = {"entrypoint": requested, "args": [], "env": {}}
+        selected = {
+            "id": "cli",
+            "name": "CLI launch override",
+            "source": "cli",
+            "executable": requested,
         }
         return selected, launch
 

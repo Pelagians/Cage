@@ -4,20 +4,18 @@ version: "8.6.0"
 
 runtime:
   provider: wine
-  version: latest
+  version: "11.0"
+  network: none
+
+build:
+  network: host
 
 modules:
-  - type: exe
-    source: https://example.invalid/notepad-plus-plus.exe
-    sha256: unverified-example-placeholder
-    silentArgs: /S
-    config: overlays/notepad-plus-plus/config.xml
-  - type: winetricks
-    verbs: [corefonts, vcrun2022]
+  - type: chocolatey
+    install:
+      packages:
+        - notepadplusplus
 
 launch:
   entrypoint: C:/Program Files/Notepad++/notepad++.exe
   workingDirectory: C:/Program Files/Notepad++
-
-state:
-  persistence: persistent

@@ -40,14 +40,27 @@ class ChocolateyModule(ModuleBase):
     version: str = DEFAULT_CHOCOLATEY_FOR_WINE_VERSION
     sha256: str | None = None
 
+    def capabilities(self) -> dict[str, str]:
+        """Return PowerShell-related capability slots claimed by Chocolatey."""
+        return {
+            "engine": "chocolatey-powershell-msi",
+            "winps-shim": "chocolatey-native",
+            "shim-library": "chocolatey-for-wine",
+        }
+
     def build(self) -> list[BuildStep]:
         """Generate deterministic Chocolatey setup and package install steps."""
         if not self.install:
             raise ModuleError("chocolatey module requires 'install' field")
 
+        if not isinstance(self.install, dict):
+            raise ModuleError("chocolatey module 'install' must be an object")
+
         packages = self.install.get("packages", [])
         if not packages:
             raise ModuleError("chocolatey module 'install.packages' cannot be empty")
+        if not isinstance(packages, list) or not all(isinstance(pkg, str) and pkg for pkg in packages):
+            raise ModuleError("chocolatey module 'install.packages' must be a list of non-empty strings")
 
         package_pattern = re.compile(r"^[a-zA-Z0-9._+\-]+$")
         for pkg in packages:
@@ -72,6 +85,7 @@ class ChocolateyModule(ModuleBase):
             self._dotnet48_step(wine_prefix),
             self._registry_prep_step(),
             self._finalize_step(wine_prefix, choco_exe, raw_choco_exe),
+            self._diagnostic_step(wine_prefix, choco_exe, raw_choco_exe),
             self._package_install_step(choco_exe, package_args, source_arg),
         ]
 
@@ -138,7 +152,7 @@ else
   echo "[cage] PowerShell MSI product registry key present"
 fi
 echo "[cage] PowerShell MSI installed: $pwsh_exe"'''
-        return BuildStep(commands=[script], description="Install PowerShell 7 MSI for Chocolatey")
+        return BuildStep(commands=[script], description="Install PowerShell 7 MSI for Chocolatey", kind="wine-msiexec", timeout=1200)
 
     def _prepare_chocolatey_data_step(self, wine_prefix: str, raw_choco_exe: str) -> BuildStep:
         release_url = (
@@ -278,7 +292,7 @@ cp -f "$cfw_winetricks_ps1" "$cfw_prefix_dir/winetricks.ps1"
 cp -f "$cfw_extract/7z.exe" "$cfw_prefix_dir/7z.exe"
 cp -f "$cfw_extract/7z.dll" "$cfw_prefix_dir/7z.dll"
 echo "[cage] Prepared Chocolatey-for-wine data and Chocolatey nupkg"'''
-        return BuildStep(commands=[script], description="Prepare Chocolatey-for-wine data")
+        return BuildStep(commands=[script], description="Prepare Chocolatey-for-wine data", kind="extract")
 
     def _dotnet48_step(self, wine_prefix: str) -> BuildStep:
         script = f'''set -eu
@@ -359,7 +373,7 @@ else
   echo "[cage] Continuing; finalizer patch skips Chocolatey-for-wine's unbounded marker wait"
 fi
 echo "[cage] .NET Framework 4.8 MSI step complete"'''
-        return BuildStep(commands=[script], description="Install .NET Framework 4.8 for Chocolatey")
+        return BuildStep(commands=[script], description="Install .NET Framework 4.8 for Chocolatey", kind="wine-msiexec", timeout=1800)
 
     def _registry_prep_step(self) -> BuildStep:
         script = '''set -eu
@@ -372,7 +386,7 @@ timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\App
 timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v dwmapi /d "" /f
 timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v rpcrt4 /d native,builtin /f
 echo "[cage] Wine registry prepared for Chocolatey"'''
-        return BuildStep(commands=[script], description="Prepare Wine registry for Chocolatey")
+        return BuildStep(commands=[script], description="Prepare Wine registry for Chocolatey", kind="wine-reg", timeout=120)
 
     def _finalize_step(self, wine_prefix: str, choco_exe: str, raw_choco_exe: str) -> BuildStep:
         script = f'''set -eu
@@ -445,19 +459,129 @@ timeout "${{CAGE_WINE_REG_TIMEOUT:-120s}}" wine reg add 'HKCU\\Environment' /v C
 echo "[cage] Verifying canonical Chocolatey..."
 timeout "${{CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}}" wine "$choco_exe" --version
 echo "[cage] Chocolatey native promotion complete"'''
-        return BuildStep(commands=[script], description="Promote Chocolatey natively")
+        return BuildStep(commands=[script], description="Promote Chocolatey natively", kind="raw-shell")
+
+    def _diagnostic_step(self, wine_prefix: str, choco_exe: str, raw_choco_exe: str) -> BuildStep:
+        script = '''set -eu
+unset WINEDLLOVERRIDES
+echo "[cage] Diagnose Chocolatey readiness"
+wine_prefix="__WINE_PREFIX__"
+choco_exe="__CHOCO_EXE__"
+raw_choco_exe="__RAW_CHOCO_EXE__"
+canonical_choco_dir="$wine_prefix/drive_c/ProgramData/chocolatey"
+canonical_bin_dir="$canonical_choco_dir/bin"
+probe_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/chocolatey-diagnostics"
+diagnostic_json="${CAGE_BUNDLE_MOUNT:-/opt/cage}/metadata/chocolatey-diagnostic.json"
+mkdir -p "$probe_dir" "$(dirname "$diagnostic_json")"
+
+set +e
+winepath -w "$choco_exe" > "$probe_dir/winepath-canonical.log" 2>&1
+winepath_rc="$?"
+wine cmd /c dir 'C:\\ProgramData\\chocolatey\\bin' > "$probe_dir/cmd-dir-chocolatey-bin.log" 2>&1
+cmd_dir_rc="$?"
+wine reg query 'HKCU\\Environment' /v ChocolateyInstall > "$probe_dir/registry-chocolatey-install.log" 2>&1
+registry_install_rc="$?"
+wine reg query 'HKCU\\Environment' /v ChocolateyToolsLocation > "$probe_dir/registry-chocolatey-tools.log" 2>&1
+registry_tools_rc="$?"
+timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe" --version > "$probe_dir/choco-version.log" 2>&1
+choco_version_rc="$?"
+timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe" source list > "$probe_dir/choco-source-list.log" 2>&1
+choco_source_rc="$?"
+set -e
+
+python3 - "$diagnostic_json" "$choco_exe" "$raw_choco_exe" "$canonical_choco_dir" "$winepath_rc" "$cmd_dir_rc" "$registry_install_rc" "$registry_tools_rc" "$choco_version_rc" "$choco_source_rc" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+(
+    diagnostic_json,
+    choco_exe,
+    raw_choco_exe,
+    canonical_choco_dir,
+    winepath_rc,
+    cmd_dir_rc,
+    registry_install_rc,
+    registry_tools_rc,
+    choco_version_rc,
+    choco_source_rc,
+) = sys.argv[1:]
+canonical = Path(choco_exe)
+raw = Path(raw_choco_exe)
+canonical_dir = Path(canonical_choco_dir)
+checks = {
+    "canonicalChocoExists": canonical.is_file(),
+    "rawToolsPayloadExists": raw.is_file(),
+    "redirectExists": (canonical_dir / "redirects" / "choco.exe").is_file(),
+    "winepathCanonical": winepath_rc == "0",
+    "cmdDirCanonicalBin": cmd_dir_rc == "0",
+    "registryEnvironment": registry_install_rc == "0" and registry_tools_rc == "0",
+    "chocoVersion": choco_version_rc == "0",
+    "sourceList": choco_source_rc == "0",
+}
+payload = {
+    "schemaVersion": "cage.chocolatey-diagnostic/v0",
+    "phase": "Chocolatey diagnostic",
+    "status": "passed" if all(checks.values()) else "failed",
+    "checks": checks,
+    "paths": {
+        "canonicalChoco": choco_exe,
+        "rawToolsPayload": raw_choco_exe,
+        "logDirectory": "logs/chocolatey-diagnostics",
+    },
+}
+Path(diagnostic_json).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+
+choco_diag_status="$(python3 - "$diagnostic_json" <<'PY'
+import json
+import sys
+from pathlib import Path
+print(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")).get("status", "failed"))
+PY
+)"
+if [ "$choco_diag_status" != "passed" ]; then
+  echo "[cage] ERROR: Chocolatey diagnostics failed; see $diagnostic_json"
+  exit 69
+fi
+echo "[cage] Chocolatey diagnostics passed"'''.replace("__WINE_PREFIX__", wine_prefix).replace("__CHOCO_EXE__", choco_exe).replace("__RAW_CHOCO_EXE__", raw_choco_exe)
+        return BuildStep(
+            commands=[script],
+            description="Diagnose Chocolatey readiness",
+            kind="wine-run",
+            timeout=120,
+            metadata={"diagnostic": "metadata/chocolatey-diagnostic.json"},
+        )
 
     def _package_install_step(self, choco_exe: str, package_args: str, source_arg: str) -> BuildStep:
         script = f'''set -eu
 unset WINEDLLOVERRIDES
+echo "[cage] Install Chocolatey packages"
 choco_exe="{choco_exe}"
+diagnostic_json="${{CAGE_BUNDLE_MOUNT:-/opt/cage}}/metadata/chocolatey-diagnostic.json"
 if [ ! -f "$choco_exe" ]; then
   echo "[cage] ERROR: choco.exe is missing before package install: $choco_exe"
   exit 1
 fi
+choco_diag_status="$(python3 - "$diagnostic_json" <<'PY'
+import json
+import sys
+from pathlib import Path
+print(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")).get("status", "failed"))
+PY
+)"
+if [ "$choco_diag_status" != "passed" ]; then
+  echo "[cage] ERROR: refusing package install because Chocolatey diagnostics did not pass: $choco_diag_status"
+  exit 69
+fi
 echo "[cage] Installing Chocolatey packages: {package_args}"
-wine "$choco_exe" install {package_args} -y{source_arg}'''
-        return BuildStep(commands=[script], description=f"Install Chocolatey packages: {package_args}")
+timeout "${{CAGE_CHOCOLATEY_INSTALL_TIMEOUT:-1800s}}" wine "$choco_exe" install {package_args} -y{source_arg}'''
+        return BuildStep(
+            commands=[script],
+            description=f"Install Chocolatey packages: {package_args}",
+            kind="wine-run",
+            timeout=1800,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {"type": self.type}

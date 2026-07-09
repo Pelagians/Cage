@@ -18,8 +18,8 @@ class ByoSourcePolicyAndFilesModuleTests(unittest.TestCase):
             "sources": [
                 {
                     "id": "office-files",
-                    "type": "byo",
-                    "policy": "require",
+                    "type": "files",
+                    "policy": "bring-your-own-files",
                     "path": "sources/office-files",
                 }
             ],
@@ -35,13 +35,11 @@ class ByoSourcePolicyAndFilesModuleTests(unittest.TestCase):
         manifest = Manifest.from_dict(data)
         self.assertEqual(len(manifest.sources), 1)
         self.assertEqual(manifest.sources[0].id, "office-files")
-        self.assertEqual(manifest.sources[0].type, "byo")
-        self.assertEqual(manifest.sources[0].policy, "require")
+        self.assertEqual(manifest.sources[0].type, "files")
+        self.assertEqual(manifest.sources[0].policy, "bring-your-own-files")
 
     def test_invalid_source_policy_is_rejected(self):
         """Test that invalid source policy is rejected."""
-        # In the new architecture, policy validation is not implemented at parse time
-        # This is acceptable - validation can happen at build time
         data = {
             "schemaVersion": "cage.app/v0",
             "name": "byo-test",
@@ -50,14 +48,13 @@ class ByoSourcePolicyAndFilesModuleTests(unittest.TestCase):
             "sources": [
                 {
                     "id": "test",
-                    "type": "byo",
+                    "type": "files",
                     "policy": "invalid-policy",
                 }
             ]
         }
-        # This parses successfully - validation is not implemented
-        manifest = Manifest.from_dict(data)
-        self.assertEqual(manifest.sources[0].policy, "invalid-policy")
+        with self.assertRaises(Exception):
+            Manifest.from_dict(data)
 
     def test_filesystem_merge_layers_folder_contents_into_target(self):
         """Test that files module with merge mode works correctly."""

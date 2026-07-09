@@ -25,12 +25,7 @@ RUN set -eux; \
         ca-certificates curl gnupg software-properties-common \
         xvfb x11-utils xauth x11vnc websockify novnc \
         cabextract p7zip-full unzip bzip2 xz-utils \
-        fontconfig \
-        # Build / scripting
-        python3 git \
-        build-essential \
-        # MinGW cross-linker for Rust's x86_64-pc-windows-gnu target
-        gcc-mingw-w64-x86-64 \
+        fontconfig python3 \
     ; \
     rm -rf /var/lib/apt/lists/*
 
@@ -72,16 +67,6 @@ ENV CAGE_ROOT=/opt/cage \
     WINEDLLOVERRIDES="mscoree,mshtml=" \
     WINEDBG=-all \
     DISPLAY=:99
-
-# Install Rust toolchain (latest stable) via rustup for powershell-wrapper-for-wine
-RUN set -eux; \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
-    /root/.cargo/bin/rustup target add x86_64-pc-windows-gnu; \
-    /root/.cargo/bin/cargo --version; \
-    /root/.cargo/bin/rustc --version; \
-    x86_64-w64-mingw32-gcc --version; \
-    echo '[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"' >> /etc/bash.bashrc
-ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Common scripts
 COPY container/common/xvfb-entrypoint.sh /usr/local/bin/xvfb-entrypoint.sh

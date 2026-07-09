@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from artifact.bundle import update_bundle_execution_metadata
 from builder.pipeline import generate_build_script
 from core.manifest import Manifest
 from runtime.providers import resolve_runtime
@@ -331,6 +332,9 @@ def execute_inside_container(
     cmd = [
         engine, "run", "--rm",
     ]
+    build_network = getattr(getattr(manifest, "build", None), "network", "none") or "none"
+    if build_network != "none":
+        cmd.extend(["--net", build_network])
     for m in mounts:
         cmd.extend(["-v", m])
     for key, value in environment.items():
@@ -379,6 +383,15 @@ def execute_inside_container(
             except (json.JSONDecodeError, OSError):
                 pass
 
+        update_bundle_execution_metadata(
+            bundle_path,
+            state="build-passed" if success else "build-failed",
+            runnable=success,
+            exit_code=exit_code,
+            error=None if success else f"container exited with code {exit_code}",
+            log_excerpt=(log_text[-1000:] if log_text else None),
+        )
+
         # ---- Verify prefix exists ----
         prefix_path = bundle_path / "prefix"
         if success and not prefix_path.exists():
@@ -406,7 +419,15 @@ def execute_inside_container(
         error = (f"Container engine '{engine}' not found. "
                  "Install Docker or Podman, or use --dry-run to skip execution.")
         log_lines.append(error)
-        (bundle_path / "logs" / "build.log").write_text("\n".join(log_lines), encoding="utf-8")
+        log_text = "\n".join(log_lines)
+        (bundle_path / "logs" / "build.log").write_text(log_text, encoding="utf-8")
+        update_bundle_execution_metadata(
+            bundle_path,
+            state="build-failed",
+            runnable=False,
+            error=error,
+            log_excerpt=(log_text[-1000:] if log_text else None),
+        )
         return BuildResult(
             success=False, bundle_path=str(host_bundle),
             runtime_provider=manifest.runtime.provider,
@@ -423,7 +444,15 @@ def execute_inside_container(
             log_lines.append(output)
         error = f"Build timed out after {timeout}s."
         log_lines.append(error)
-        (bundle_path / "logs" / "build.log").write_text("\n".join(log_lines), encoding="utf-8")
+        log_text = "\n".join(log_lines)
+        (bundle_path / "logs" / "build.log").write_text(log_text, encoding="utf-8")
+        update_bundle_execution_metadata(
+            bundle_path,
+            state="build-failed",
+            runnable=False,
+            error=error,
+            log_excerpt=(log_text[-1000:] if log_text else None),
+        )
         return BuildResult(
             success=False, bundle_path=str(host_bundle),
             runtime_provider=manifest.runtime.provider,
@@ -438,7 +467,16 @@ def execute_inside_container(
         error = f"Container exited with code {exc.returncode}: {exc.stderr[-500:] if exc.stderr else '(no stderr)'}"
         log_lines.append(exc.stdout or "")
         log_lines.append(exc.stderr or "")
-        (bundle_path / "logs" / "build.log").write_text("\n".join(log_lines), encoding="utf-8")
+        log_text = "\n".join(log_lines)
+        (bundle_path / "logs" / "build.log").write_text(log_text, encoding="utf-8")
+        update_bundle_execution_metadata(
+            bundle_path,
+            state="build-failed",
+            runnable=False,
+            exit_code=exc.returncode,
+            error=error,
+            log_excerpt=(log_text[-1000:] if log_text else None),
+        )
         return BuildResult(
             success=False, bundle_path=str(host_bundle),
             runtime_provider=manifest.runtime.provider,
@@ -451,12 +489,23 @@ def execute_inside_container(
         )
 
     except RuntimeError as exc:
+        error = str(exc)
+        log_lines.append(error)
+        log_text = "\n".join(log_lines)
+        (bundle_path / "logs" / "build.log").write_text(log_text, encoding="utf-8")
+        update_bundle_execution_metadata(
+            bundle_path,
+            state="build-failed",
+            runnable=False,
+            error=error,
+            log_excerpt=(log_text[-1000:] if log_text else None),
+        )
         return BuildResult(
             success=False, bundle_path=str(host_bundle),
             runtime_provider=manifest.runtime.provider,
             runtime_version=manifest.runtime.version,
             image_ref=img or "", engine=engine,
-            error=str(exc),
+            error=error,
             runner_cache=runner_cache,
             module_cache=module_cache,
         )

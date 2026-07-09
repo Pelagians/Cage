@@ -27,15 +27,12 @@ APP = {
     "name": "oci-demo-app",
     "version": "1.2.3",
     "runtime": {"provider": "wine", "version": "latest"},
-    "dependencies": [],
-    "install": [],
     "launch": {
         "entrypoint": "C:/Program Files/OciDemo/demo.exe",
         "args": ["--safe"],
         "env": {"DEMO_MODE": "1"},
         "workingDirectory": "C:/Program Files/OciDemo",
     },
-    "state": {"defaultPersistence": "persistent"},
     "exports": [{"name": "reports", "path": "C:/Reports"}],
     "provenance": {"sources": []},
 }

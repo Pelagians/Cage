@@ -13,16 +13,14 @@ from core.manifest import Manifest
 
 
 VALID = {
-    "schemaVersion": "cage.dev/v0",
+    "schemaVersion": "cage.app/v0",
     "name": "sample",
     "version": "1.0.0",
     "runtime": {"provider": "wine", "version": "9.0"},
-    "dependencies": [{"kind": "winetricks", "verbs": ["corefonts"]}],
-    "install": [{
-        "kind": "portable",
-        "source": "file://app.zip",
-        "target": "C:/Program Files/App",
-    }],
+    "modules": [
+        {"type": "winetricks", "verbs": ["corefonts"]},
+        {"type": "portable", "source": "file://app.zip", "target": "C:/Program Files/App"},
+    ],
     "launch": {
         "entrypoint": "C:/Program Files/App/App.exe",
         "args": [],
@@ -47,8 +45,8 @@ class BundleInspectionTests(unittest.TestCase):
         self.assertEqual(summary["application"], {"name": "sample", "version": "1.0.0"})
         self.assertEqual(summary["runtime"]["runner"]["image"], "ghcr.io/pelagians/cage-wine:9.0")
         self.assertEqual(summary["graph"]["schemaVersion"], "cage.execution-graph/v0")
-        self.assertEqual(summary["graph"]["nodes"], 8)
-        self.assertEqual(summary["graph"]["edges"], 9)
+        self.assertEqual(summary["graph"]["nodes"], 10)
+        self.assertEqual(summary["graph"]["edges"], 11)
         self.assertTrue(summary["files"]["metadata/graph.json"]["exists"])
         self.assertTrue(summary["provenance"]["dryRun"])
 

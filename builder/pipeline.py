@@ -131,41 +131,49 @@ def build_plan(manifest: Manifest) -> list[dict[str, object]]:
     
     # Phase 1: Init prefix
     steps.append({
+        "id": "init-prefix",
         "phase": "init-prefix",
+        "kind": "wineboot",
         "description": "Initialize Wine prefix",
         "commands": ["wine wineboot --init"],
+        "unsafe": False,
     })
     
     # Phase 2: Execute modules
+    total_modules = len(manifest.modules)
     for i, module in enumerate(manifest.modules, 1):
-        try:
-            build_steps = module.build()
-            for step in build_steps:
-                steps.append({
-                    "phase": "modules",
-                    "description": f"Module {i}/{len(manifest.modules)} ({module.type}): {step.description}",
-                    "commands": step.commands,
-                })
-        except Exception as exc:
-            steps.append({
-                "phase": "modules",
-                "description": f"Module {i}/{len(manifest.modules)} ({module.type}): FAILED",
-                "commands": [f"echo 'ERROR: {exc}'"],
+        build_steps = module.build()
+        for step_index, step in enumerate(build_steps, 1):
+            step_payload = step.to_dict()
+            step_payload.update({
+                "id": f"module-{i}-step-{step_index}",
+                "phase": f"module-{i}-step-{step_index}",
+                "description": f"Module {i}/{total_modules} ({module.type}): {step.description}",
+                "moduleType": module.type,
+                "moduleIndex": i,
+                "stepIndex": step_index,
             })
+            steps.append(step_payload)
     
     # Phase 3: Configure launch
     if manifest.launch:
         steps.append({
+            "id": "launch",
             "phase": "launch",
+            "kind": "raw-shell",
             "description": "Configure launch",
             "commands": ["echo 'Configuring launch'"],
+            "unsafe": False,
         })
     
     # Phase 4: Export bundle
     steps.append({
+        "id": "export",
         "phase": "export",
+        "kind": "copy-tree",
         "description": "Export bundle",
         "commands": ["echo 'Exporting bundle'"],
+        "unsafe": False,
     })
     
     return steps

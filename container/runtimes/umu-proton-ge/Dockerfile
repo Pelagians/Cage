@@ -26,7 +26,7 @@ RUN set -eux; \
         ca-certificates curl \
         xvfb x11-utils xauth x11vnc websockify novnc \
         cabextract p7zip-full unzip bzip2 xz-utils \
-        git python3 python3-venv \
+        python3 \
     ; \
     rm -rf /var/lib/apt/lists/*
 
@@ -46,13 +46,23 @@ RUN set -eux; \
     tar -xzf proton-ge.tar.gz -C /opt/proton-ge --strip-components=1; \
     rm proton-ge.tar.gz
 
-FROM ge-download
+FROM debian:bookworm-slim AS umu-build
 ARG UMU_LAUNCHER_REF
 RUN set -eux; \
+    apt-get update -qq; \
+    apt-get install -y -qq --no-install-recommends \
+        ca-certificates git python3 python3-venv \
+    ; \
     python3 -m venv /opt/umu; \
     /opt/umu/bin/pip install --no-cache-dir --upgrade pip; \
     /opt/umu/bin/pip install --no-cache-dir "git+https://github.com/Open-Wine-Components/umu-launcher.git@${UMU_LAUNCHER_REF}"; \
     test -x /opt/umu/bin/umu-run; \
+    /opt/umu/bin/umu-run --help >/tmp/umu-run-help.txt; \
+    rm -rf /var/lib/apt/lists/* /root/.cache
+
+FROM ge-download AS final
+COPY --from=umu-build /opt/umu /opt/umu
+RUN set -eux; \
     ln -s /opt/umu/bin/umu-run /usr/local/bin/umu-run; \
     /usr/local/bin/umu-run --help >/tmp/umu-run-help.txt
 ENV CAGE_ROOT=/opt/cage WINEPREFIX=/opt/cage/prefix \

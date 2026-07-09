@@ -10,23 +10,20 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .errors import ManifestError
-from .helpers import _reject_unknown, _required_str, _optional_str, _drop_none
-from .constants import ROOT_FIELDS, RUNTIME_FIELDS, LAUNCH_FIELDS, SOURCE_FIELDS
+from .helpers import _reject_unknown, _required_str, _optional_str, _drop_none, _load_strict_yaml
+from .constants import (
+    ROOT_FIELDS,
+    RUNTIME_FIELDS,
+    BUILD_FIELDS,
+    LAUNCH_FIELDS,
+    SOURCE_FIELDS,
+    SUPPORTED_SCHEMA_VERSIONS,
+    ALLOWED_RUNTIME_NETWORK_MODES,
+    ALLOWED_SOURCE_TYPES,
+    ALLOWED_SOURCE_POLICIES,
+)
+from ..compatibility import CompatibilityPolicyError, normalize_compatibility_policy
 from ..modules import parse_module, ModuleBase, ModuleError
-
-
-def _load_strict_yaml(text: str) -> dict[str, Any]:
-    """Load YAML with strict parsing."""
-    try:
-        import yaml
-        data = yaml.safe_load(text)
-        if not isinstance(data, dict):
-            raise ManifestError("YAML root must be a dict")
-        return data
-    except ImportError:
-        raise ManifestError("PyYAML is required for YAML support")
-    except yaml.YAMLError as exc:
-        raise ManifestError(f"invalid YAML: {exc}") from exc
 
 
 def load_manifest(path: Path) -> Manifest:
@@ -51,6 +48,8 @@ def load_manifest(path: Path) -> Manifest:
             data = json.loads(text)
         except json.JSONDecodeError as exc:
             raise ManifestError(f"invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}") from exc
+    if not isinstance(data, dict):
+        raise ManifestError("manifest root must be an object")
     return Manifest.from_dict(data)
 
 
@@ -63,6 +62,7 @@ class RuntimeSpec:
     channel: str | None = None
     digest: str | None = None
     runner: str | None = None
+    image: str | None = None
     network: str = "none"
 
     @classmethod
@@ -72,11 +72,20 @@ class RuntimeSpec:
         version = _required_str(data, "runtime.version")
         network = _optional_str(data, "network") or "none"
         
-        # Validate network mode
-        valid_network_modes = {"none", "bridge", "host"}
-        if network not in valid_network_modes:
+        if network not in ALLOWED_RUNTIME_NETWORK_MODES:
             raise ManifestError(
-                f"runtime.network must be one of {sorted(valid_network_modes)}, got {network!r}"
+                f"runtime.network must be one of {sorted(ALLOWED_RUNTIME_NETWORK_MODES)}, got {network!r}"
+            )
+
+        from runtime.catalog import list_catalog_providers, resolve_catalog_version
+
+        if resolve_catalog_version(provider, version, _optional_str(data, "channel")) is None:
+            known = set(list_catalog_providers())
+            if provider not in known:
+                raise ManifestError(f"unsupported runtime provider: {provider}")
+            raise ManifestError(
+                f"unsupported runtime version for {provider}: {version}. "
+                "Add it to runtime/catalog.json before building."
             )
         
         return cls(
@@ -86,6 +95,7 @@ class RuntimeSpec:
             channel=_optional_str(data, "channel"),
             digest=_optional_str(data, "digest"),
             runner=_optional_str(data, "runner"),
+            image=_optional_str(data, "image") or _optional_str(data, "imageRef"),
             network=network,
         )
 
@@ -97,30 +107,55 @@ class RuntimeSpec:
             "channel": self.channel,
             "digest": self.digest,
             "runner": self.runner,
+            "image": self.image,
             "network": self.network,
         })
 
 
 @dataclass(frozen=True)
+class BuildSpec:
+    """Build-time settings kept separate from runtime settings."""
+    network: str = "none"
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> BuildSpec:
+        data = data or {}
+        if not isinstance(data, dict):
+            raise ManifestError("build must be a dict")
+        _reject_unknown(data, BUILD_FIELDS, "build")
+        network = _optional_str(data, "network") or "none"
+        if network not in ALLOWED_RUNTIME_NETWORK_MODES:
+            raise ManifestError(
+                f"build.network must be one of {sorted(ALLOWED_RUNTIME_NETWORK_MODES)}, got {network!r}"
+            )
+        return cls(network=network)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"network": self.network}
+
+
+@dataclass(frozen=True)
 class LaunchSpec:
     """Launch configuration."""
-    entrypoint: str | None = None
+    entrypoint: str
     args: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
+    working_directory: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> LaunchSpec:
         _reject_unknown(data, LAUNCH_FIELDS, "launch")
         args = data.get("args", []) or []
         env = data.get("env", {}) or {}
-        if not isinstance(args, list):
-            raise ManifestError("launch.args must be a list")
-        if not isinstance(env, dict):
-            raise ManifestError("launch.env must be a dict")
+        if not isinstance(args, list) or not all(isinstance(x, str) for x in args):
+            raise ManifestError("launch.args must be a list of strings")
+        if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
+            raise ManifestError("launch.env must be an object with string keys and values")
         return cls(
-            entrypoint=_optional_str(data, "entrypoint"),
+            entrypoint=_required_str(data, "launch.entrypoint"),
             args=args,
             env=env,
+            working_directory=_optional_str(data, "workingDirectory"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -128,6 +163,7 @@ class LaunchSpec:
             "entrypoint": self.entrypoint,
             "args": self.args,
             "env": self.env,
+            "workingDirectory": self.working_directory,
         })
 
 
@@ -145,14 +181,26 @@ class SourceSpec:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], index: int) -> SourceSpec:
+        if not isinstance(data, dict):
+            raise ManifestError(f"sources[{index}] must be an object")
         _reject_unknown(data, SOURCE_FIELDS, f"sources[{index}]")
         sid = _optional_str(data, "id") or _optional_str(data, "name")
         if not sid:
             raise ManifestError(f"sources[{index}].id or sources[{index}].name is required")
+        source_type = _required_str(data, f"sources[{index}].type")
+        if source_type not in ALLOWED_SOURCE_TYPES:
+            raise ManifestError(
+                f"sources[{index}].type must be one of: " + ", ".join(sorted(ALLOWED_SOURCE_TYPES))
+            )
+        policy = _required_str(data, f"sources[{index}].policy")
+        if policy not in ALLOWED_SOURCE_POLICIES:
+            raise ManifestError(
+                f"sources[{index}].policy must be one of: " + ", ".join(sorted(ALLOWED_SOURCE_POLICIES))
+            )
         return cls(
             id=sid,
-            type=_required_str(data, f"sources[{index}].type"),
-            policy=_required_str(data, f"sources[{index}].policy"),
+            type=source_type,
+            policy=policy,
             url=_optional_str(data, "url"),
             source=_optional_str(data, "source"),
             path=_optional_str(data, "path"),
@@ -173,14 +221,31 @@ class SourceSpec:
         })
 
 
+def resolve_module_capabilities(modules: list[ModuleBase]) -> dict[str, dict[str, Any]]:
+    """Resolve declared module capability providers or raise on conflicts."""
+    resolved: dict[str, dict[str, Any]] = {}
+    for index, module in enumerate(modules):
+        for slot, provider in module.capabilities().items():
+            claim = {
+                "slot": slot,
+                "provider": provider,
+                "moduleType": module.type,
+                "moduleIndex": index,
+            }
+            existing = resolved.get(slot)
+            if existing and existing["provider"] != provider:
+                raise ManifestError(
+                    "modules cannot be used together; PowerShell capability conflict on "
+                    f"slot '{slot}': {existing['moduleType']} provides "
+                    f"{existing['provider']}, but {module.type} provides {provider}"
+                )
+            resolved[slot] = claim
+    return resolved
+
+
 def _validate_module_combinations(modules: list[ModuleBase]) -> None:
-    """Validate temporary module incompatibilities."""
-    module_types = {module.type for module in modules}
-    if "chocolatey" in module_types and "powershell-wrapper" in module_types:
-        raise ManifestError(
-            "modules 'chocolatey' and 'powershell-wrapper' cannot be used together yet; "
-            "both claim PowerShell capability slots before the Phase 2 provider resolver exists"
-        )
+    """Validate module capability combinations."""
+    resolve_module_capabilities(modules)
 
 
 @dataclass(frozen=True)
@@ -194,6 +259,7 @@ class Manifest:
     name: str
     version: str
     runtime: RuntimeSpec
+    build: BuildSpec = field(default_factory=BuildSpec)
     modules: list[ModuleBase] = field(default_factory=list)
     sources: list[SourceSpec] = field(default_factory=list)
     launch: LaunchSpec | None = None
@@ -211,9 +277,15 @@ class Manifest:
         
         This is the new simplified parser that handles modules directly.
         """
+        if not isinstance(data, dict):
+            raise ManifestError("manifest must be an object")
         _reject_unknown(data, ROOT_FIELDS, "manifest")
         
         schema_version = _required_str(data, "schemaVersion")
+        if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
+            raise ManifestError(
+                "schemaVersion must be one of: " + ", ".join(sorted(SUPPORTED_SCHEMA_VERSIONS))
+            )
         name = _required_str(data, "name")
         version = _required_str(data, "version")
         
@@ -222,6 +294,7 @@ class Manifest:
         if not isinstance(runtime_data, dict):
             raise ManifestError("runtime must be a dict")
         runtime = RuntimeSpec.from_dict(runtime_data)
+        build = BuildSpec.from_dict(data.get("build"))
         
         # Parse modules (first-class, no expansion)
         modules_data = data.get("modules", []) or []
@@ -238,20 +311,33 @@ class Manifest:
         if not isinstance(sources_data, list):
             raise ManifestError("sources must be a list")
         sources = [SourceSpec.from_dict(s, i) for i, s in enumerate(sources_data)]
+        source_ids = [source.id for source in sources]
+        duplicate_source_ids = sorted({sid for sid in source_ids if source_ids.count(sid) > 1})
+        if duplicate_source_ids:
+            raise ManifestError("duplicate source id(s): " + ", ".join(duplicate_source_ids))
         
         # Parse launch
         launch_data = data.get("launch")
-        launch = LaunchSpec.from_dict(launch_data) if launch_data else None
+        if launch_data is not None and not isinstance(launch_data, dict):
+            raise ManifestError("launch must be a dict")
+        launch = LaunchSpec.from_dict(launch_data) if launch_data is not None else None
         
-        # Parse compatibility (runtime policy, not a build step)
-        compatibility = data.get("compatibility", {}) or {}
-        if not isinstance(compatibility, dict):
-            raise ManifestError("compatibility must be a dict")
-        
-        # Parse config
+        # Parse config before compatibility so legacy config can normalize into
+        # the explicit first-class compatibility policy.
         config = data.get("config", {}) or {}
         if not isinstance(config, dict):
             raise ManifestError("config must be a dict")
+
+        raw_compatibility = data.get("compatibility", {}) or {}
+        if not isinstance(raw_compatibility, dict):
+            raise ManifestError("compatibility must be a dict")
+        try:
+            compatibility = normalize_compatibility_policy(
+                config=config,
+                compatibility=raw_compatibility,
+            )
+        except CompatibilityPolicyError as exc:
+            raise ManifestError(str(exc)) from exc
         
         # Parse provenance
         provenance = data.get("provenance", {}) or {}
@@ -265,24 +351,25 @@ class Manifest:
         
         # Parse entrypoints
         entrypoints = data.get("entrypoints", []) or []
-        if not isinstance(entrypoints, list):
-            raise ManifestError("entrypoints must be a list")
+        if not isinstance(entrypoints, list) or not all(isinstance(x, dict) for x in entrypoints):
+            raise ManifestError("entrypoints must be a list of objects")
         
         # Parse file associations
         file_associations = data.get("fileAssociations", []) or []
-        if not isinstance(file_associations, list):
-            raise ManifestError("fileAssociations must be a list")
+        if not isinstance(file_associations, list) or not all(isinstance(x, dict) for x in file_associations):
+            raise ManifestError("fileAssociations must be a list of objects")
         
         # Parse profiles
         profiles = data.get("profiles", []) or []
-        if not isinstance(profiles, list):
-            raise ManifestError("profiles must be a list")
+        if not isinstance(profiles, list) or not all(isinstance(x, str) and x for x in profiles):
+            raise ManifestError("profiles must be a list of non-empty strings")
         
         return cls(
             schema_version=schema_version,
             name=name,
             version=version,
             runtime=runtime,
+            build=build,
             modules=modules,
             sources=sources,
             launch=launch,
@@ -303,6 +390,8 @@ class Manifest:
             "version": self.version,
             "runtime": self.runtime.to_dict(),
         }
+        if self.build.network != "none":
+            result["build"] = self.build.to_dict()
         
         if self.modules:
             result["modules"] = [m.to_dict() for m in self.modules]
@@ -337,4 +426,4 @@ class Manifest:
         return result
 
 
-__all__ = ["Manifest", "RuntimeSpec", "LaunchSpec", "SourceSpec"]
+__all__ = ["Manifest", "RuntimeSpec", "BuildSpec", "LaunchSpec", "SourceSpec", "resolve_module_capabilities"]

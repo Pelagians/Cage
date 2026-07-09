@@ -23,13 +23,10 @@ APP = {
     "name": "verify-demo",
     "version": "2.0.0",
     "runtime": {"provider": "wine", "version": "latest"},
-    "dependencies": [],
-    "install": [],
     "launch": {
         "entrypoint": "C:/Program Files/VerifyDemo/demo.exe",
         "workingDirectory": "C:/Program Files/VerifyDemo",
     },
-    "state": {"defaultPersistence": "persistent"},
     "exports": [],
     "provenance": {"sources": []},
 }

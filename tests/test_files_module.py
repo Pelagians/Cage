@@ -26,6 +26,44 @@ class FilesModuleUnitTests(unittest.TestCase):
         self.assertEqual(module.mappings[0]["target"], "C:/app/config")
         self.assertEqual(module.mappings[1]["mode"], "merge")
 
+    def test_parse_module_rejects_non_object_module(self):
+        with self.assertRaises(ModuleError) as ctx:
+            parse_module("files", 0)
+
+        self.assertIn("modules[0] must be an object", str(ctx.exception))
+
+    def test_parse_exe_rejects_unknown_config_field(self):
+        with self.assertRaises(ModuleError) as ctx:
+            parse_module({
+                "type": "exe",
+                "source": "setup.exe",
+                "config": "unsupported.xml",
+            }, 0)
+
+        self.assertIn("modules[0].config", str(ctx.exception))
+
+    def test_parse_files_mapping_rejects_unknown_field(self):
+        with self.assertRaises(ModuleError) as ctx:
+            parse_module({
+                "type": "files",
+                "mappings": [
+                    {"source": "./config", "target": "C:/app/config", "owner": "ignored"},
+                ],
+            }, 0)
+
+        self.assertIn("modules[0].mappings[0].owner", str(ctx.exception))
+
+    def test_parse_files_mapping_rejects_invalid_mode(self):
+        with self.assertRaises(ModuleError) as ctx:
+            parse_module({
+                "type": "files",
+                "mappings": [
+                    {"source": "./config", "target": "C:/app/config", "mode": "link"},
+                ],
+            }, 0)
+
+        self.assertIn("modules[0].mappings[0].mode", str(ctx.exception))
+
     def test_files_module_requires_mappings(self):
         """Test that files module requires mappings field."""
         module = FilesModule(type="files", mappings=None)

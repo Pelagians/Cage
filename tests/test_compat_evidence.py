@@ -45,21 +45,21 @@ def _manifest_data(hashes: dict[str, str]) -> dict[str, object]:
         "sources": [
             {
                 "id": "installer",
-                "type": "http",
+                "type": "installer",
                 "url": "file://sources/demo-installer.exe",
                 "sha256": hashes["installer"],
-                "policy": "required",
+                "policy": "external-local-file-required",
             },
             {
                 "id": "config",
-                "type": "http",
+                "type": "installer",
                 "url": "file://overlays/demo/config.ini",
                 "sha256": hashes["config"],
-                "policy": "required",
+                "policy": "external-local-file-required",
             },
             {
                 "id": "winetricks-cache",
-                "type": "http",
+                "type": "installer",
                 "url": "file://cache/winetricks/d3dx9_43.dll",
                 "sha256": hashes["winetricks"],
                 "policy": "redistributable",
@@ -87,7 +87,6 @@ def _manifest_data(hashes: dict[str, str]) -> dict[str, object]:
             "entrypoint": "C:/Program Files/Demo/Demo.exe",
             "workingDirectory": "C:/Program Files/Demo",
         },
-        "state": {"persistence": "persistent"},
         "exports": [],
         "provenance": {"sources": []},
     }

@@ -23,13 +23,10 @@ APP = {
     "name": "indexed-demo",
     "version": "1.2.3",
     "runtime": {"provider": "wine", "version": "latest"},
-    "dependencies": [],
-    "install": [],
     "launch": {
         "entrypoint": "C:/Program Files/IndexedDemo/demo.exe",
         "workingDirectory": "C:/Program Files/IndexedDemo",
     },
-    "state": {"defaultPersistence": "persistent"},
     "exports": [],
     "provenance": {"sources": []},
 }

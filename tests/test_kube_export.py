@@ -23,13 +23,10 @@ APP = {
     "name": "Kube Demo_App",
     "version": "2.1.0",
     "runtime": {"provider": "wine", "version": "latest"},
-    "dependencies": [],
-    "install": [],
     "launch": {
         "entrypoint": "C:/Program Files/KubeDemo/demo.exe",
         "workingDirectory": "C:/Program Files/KubeDemo",
     },
-    "state": {"defaultPersistence": "persistent"},
     "exports": [{"path": "C:/Program Files/KubeDemo/output", "description": "demo exports"}],
     "provenance": {"sources": []},
 }

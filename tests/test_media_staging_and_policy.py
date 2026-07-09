@@ -170,7 +170,7 @@ class MediaStagingTests(unittest.TestCase):
 
 
 class SourcePolicyAuditTests(unittest.TestCase):
-    def test_audit_manifest_sources_blocks_activation_kms_artifacts_without_reading_contents(self):
+    def test_audit_manifest_sources_allows_activation_kms_artifact_names_without_reading_contents(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             media = root / "sources" / "office2010" / "media"
@@ -201,13 +201,13 @@ class SourcePolicyAuditTests(unittest.TestCase):
 
             serialized = json.dumps(result, sort_keys=True)
             self.assertEqual(result["schemaVersion"], "cage.source-policy/v0")
-            self.assertFalse(result["valid"])
-            self.assertEqual(result["summary"]["blocked"], 1)
-            self.assertIn("Online_KMS_Activation/Activate.cmd", serialized)
-            self.assertIn("activation", result["findings"][0]["ruleId"])
+            self.assertTrue(result["valid"])
+            self.assertEqual(result["summary"]["blocked"], 0)
+            self.assertEqual(result["findings"], [])
+            self.assertNotIn("Online_KMS_Activation/Activate.cmd", serialized)
             self.assertNotIn("SECRET_SHOULD_NOT_APPEAR_IN_AUDIT", serialized)
 
-    def test_audit_manifest_sources_blocks_suspicious_root_source_name(self):
+    def test_audit_manifest_sources_allows_legacy_suspicious_root_source_name(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             media = root / "sources" / "KMSAuto"
@@ -230,9 +230,9 @@ class SourcePolicyAuditTests(unittest.TestCase):
 
             result = audit_manifest_sources(manifest, workspace=root)
 
-            self.assertFalse(result["valid"])
-            self.assertEqual(result["summary"]["blocked"], 1)
-            self.assertEqual(result["findings"][0]["path"], "KMSAuto")
+            self.assertTrue(result["valid"])
+            self.assertEqual(result["summary"]["blocked"], 0)
+            self.assertEqual(result["findings"], [])
 
     def test_audit_manifest_sources_accepts_clean_media_and_reports_missing_sources(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -265,7 +265,7 @@ class SourcePolicyAuditTests(unittest.TestCase):
             self.assertEqual(missing["summary"]["errors"], 1)
             self.assertIn("missing local source", missing["errors"][0])
 
-    def test_sources_audit_cli_reports_policy_findings(self):
+    def test_sources_audit_cli_allows_legacy_policy_names(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             media = root / "sources" / "office2010" / "media"
@@ -300,10 +300,11 @@ class SourcePolicyAuditTests(unittest.TestCase):
                 check=False,
             )
 
-            self.assertEqual(proc.returncode, 8, proc.stdout + proc.stderr)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             payload = json.loads(proc.stdout)
-            self.assertFalse(payload["valid"])
-            self.assertEqual(payload["summary"]["blocked"], 1)
+            self.assertTrue(payload["valid"])
+            self.assertEqual(payload["summary"]["blocked"], 0)
+            self.assertEqual(payload["findings"], [])
 
     def test_media_stage_cli_writes_staged_media(self):
         with tempfile.TemporaryDirectory() as tmp:

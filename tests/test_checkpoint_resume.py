@@ -24,16 +24,14 @@ from core.manifest import Manifest
 
 
 VALID = {
-    "schemaVersion": "cage.dev/v0",
+    "schemaVersion": "cage.app/v0",
     "name": "checkpoint-demo",
     "version": "1.0.0",
     "runtime": {"provider": "wine", "version": "9.0"},
-    "dependencies": [{"kind": "winetricks", "verbs": ["corefonts"]}],
-    "install": [{
-        "kind": "portable",
-        "source": "file://app.zip",
-        "target": "C:/Program Files/App",
-    }],
+    "modules": [
+        {"type": "winetricks", "verbs": ["corefonts"]},
+        {"type": "portable", "source": "file://app.zip", "target": "C:/Program Files/App"},
+    ],
     "launch": {
         "entrypoint": "C:/Program Files/App/App.exe",
         "args": [],

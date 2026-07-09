@@ -146,7 +146,7 @@ def resolve_runtime(spec: RuntimeSpec) -> RuntimeBinding:
         channel=entry.channel or spec.channel,
         digest=spec.digest,
         notes=entry.notes,
-        oci_image=entry.published_ref,
+        oci_image=spec.image or entry.published_ref,
         local_oci_image=entry.local_ref,
         runtime_usable=entry.runtime_usable,
     )
