@@ -231,6 +231,12 @@ echo "[cage-pwsh-smoke] PowerShell product registry query rc=$reg_rc"
 log_file cage-pwsh-reg-out /tmp/cage-pwsh-reg.stdout
 log_file cage-pwsh-reg-err /tmp/cage-pwsh-reg.stderr
 
+echo "[cage-pwsh-smoke] Preparing pwsh.exe Wine DLL overrides"
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v amsi /d "" /f
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v dwmapi /d "" /f
+timeout "${CAGE_WINE_REG_TIMEOUT:-120s}" wine reg add 'HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides' /v rpcrt4 /d native,builtin /f
+wineserver -w || true
+
 SMOKE_DIR="$WINEPREFIX/drive_c/ProgramData/CagePowerShellSmoke"
 SMOKE_DIR_WIN='C:/ProgramData/CagePowerShellSmoke'
 SMOKE_SCRIPT="$SMOKE_DIR/smoke.ps1"
