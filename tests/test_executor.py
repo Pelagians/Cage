@@ -221,6 +221,14 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertIn("try_pwsh_launch direct", smoke)
         self.assertIn("try_pwsh_launch cmd", smoke)
         self.assertIn("POWER SHELL RUNTIME SMOKE PASSED", smoke)
+        self.assertIn('export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-mscoree,mshtml=}"', smoke)
+        self.assertIn("wine wineboot --init", smoke)
+        self.assertIn('export WINEDLLOVERRIDES=""', smoke)
+        self.assertLess(
+            smoke.index("wine wineboot --init"),
+            smoke.index('export WINEDLLOVERRIDES=""'),
+        )
+        self.assertNotIn("unset WINEDLLOVERRIDES", smoke)
         for rel in [
             "container/runtimes/wine/Dockerfile",
             "container/runtimes/wine-staging/Dockerfile",

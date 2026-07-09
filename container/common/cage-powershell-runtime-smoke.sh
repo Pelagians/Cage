@@ -18,7 +18,10 @@ CAPTURE_DIR="$(mktemp -d /tmp/cage-pwsh-runtime-smoke.XXXXXX)"
 export WINEPREFIX="$PREFIX"
 export WINEARCH="${WINEARCH:-win64}"
 export WINEDEBUG="${WINEDEBUG:--all}"
-unset WINEDLLOVERRIDES
+# Match Cage builder prefix initialization: keep Wine's default mscoree/mshtml
+# suppression during wineboot to avoid Mono/HTML setup hangs, then clear it
+# before .NET/PowerShell MSI work so CoreCLR dependencies can resolve.
+export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-mscoree,mshtml=}"
 
 log_file() {
   local prefix="$1" file="$2"
@@ -87,14 +90,24 @@ rm -rf "$PREFIX"
 mkdir -p "$PREFIX" "$CACHE"
 
 echo "[cage-pwsh-smoke] Initializing fresh Wine prefix"
-timeout "${CAGE_WINEBOOT_TIMEOUT:-180s}" wineboot --init >/tmp/cage-pwsh-wineboot.stdout 2>/tmp/cage-pwsh-wineboot.stderr || {
+echo "[cage-pwsh-smoke] wineboot DLL override policy: ${WINEDLLOVERRIDES:-<empty>}"
+timeout "${CAGE_WINEBOOT_TIMEOUT:-300s}" wine wineboot --init >/tmp/cage-pwsh-wineboot.stdout 2>/tmp/cage-pwsh-wineboot.stderr || {
   rc="$?"
   echo "[cage-pwsh-smoke] wineboot failed: $rc"
   log_file cage-wineboot-out /tmp/cage-pwsh-wineboot.stdout
   log_file cage-wineboot-err /tmp/cage-pwsh-wineboot.stderr
+  echo "[cage-pwsh-smoke] DISPLAY=${DISPLAY:-<unset>}"
+  xdpyinfo -display "${DISPLAY:-:99}" >/tmp/cage-pwsh-xdpyinfo.stdout 2>/tmp/cage-pwsh-xdpyinfo.stderr || true
+  log_file cage-xdpyinfo-out /tmp/cage-pwsh-xdpyinfo.stdout
+  log_file cage-xdpyinfo-err /tmp/cage-pwsh-xdpyinfo.stderr
+  ps -ef | grep -Ei 'wine|wineserver|xvfb' | grep -v grep | sed 's/^/[cage-pwsh-process] /' || true
+  find "$PREFIX" -maxdepth 3 -printf '[cage-pwsh-prefix] %p\n' 2>/dev/null | head -80 || true
   exit "$rc"
 }
 wineserver -w || true
+
+# Clear the image's prefix-init DLL policy before PowerShell/.NET work.
+export WINEDLLOVERRIDES=""
 
 echo "[cage-pwsh-smoke] Setting prefix to win10"
 timeout "${CAGE_WINECFG_TIMEOUT:-120s}" winecfg /v win10 >/tmp/cage-pwsh-winecfg.stdout 2>/tmp/cage-pwsh-winecfg.stderr || {
