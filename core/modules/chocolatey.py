@@ -600,7 +600,7 @@ payload = {
         "promotedFiles": "logs/chocolatey-diagnostics/promoted-files.log",
     },
 }
-Path(diagnostic_json).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+Path(diagnostic_json).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
 PY
 
 choco_diag_status="$(python3 - "$diagnostic_json" <<'PY'

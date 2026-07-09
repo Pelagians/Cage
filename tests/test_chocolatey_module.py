@@ -285,6 +285,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("export ChocolateyInstall=", diagnostic)
         self.assertIn("export ChocolateyToolsLocation=", diagnostic)
         self.assertIn("mscoree=native,builtin", diagnostic)
+        self.assertIn('json.dumps(payload, indent=2, sort_keys=True) + "\\n"', diagnostic)
+        self.assertNotIn('json.dumps(payload, indent=2, sort_keys=True) + "\n"', diagnostic)
         self.assertLess(_all_commands(steps).index("Diagnose Chocolatey readiness"), _all_commands(steps).index("Install Chocolatey packages"))
         self.assertIn("choco_diag_status", package)
 
