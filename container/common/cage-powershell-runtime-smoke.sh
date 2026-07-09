@@ -134,6 +134,7 @@ echo "[cage-pwsh-smoke] wineboot DLL override policy: ${WINEDLLOVERRIDES:-<empty
 timeout "${CAGE_WINEBOOT_TIMEOUT:-300s}" wine wineboot --init >/tmp/cage-pwsh-wineboot.stdout 2>/tmp/cage-pwsh-wineboot.stderr || {
   rc="$?"
   echo "[cage-pwsh-smoke] wineboot failed: $rc"
+  github_error "Wine prefix initialization failed" "rc=$rc display=${DISPLAY:-<unset>} stdout_bytes=$(file_bytes /tmp/cage-pwsh-wineboot.stdout) stderr_bytes=$(file_bytes /tmp/cage-pwsh-wineboot.stderr) prefix=$PREFIX dll_overrides=${WINEDLLOVERRIDES:-<empty>}"
   log_file cage-wineboot-out /tmp/cage-pwsh-wineboot.stdout
   log_file cage-wineboot-err /tmp/cage-pwsh-wineboot.stderr
   echo "[cage-pwsh-smoke] DISPLAY=${DISPLAY:-<unset>}"
@@ -153,6 +154,7 @@ echo "[cage-pwsh-smoke] Setting prefix to win10"
 timeout "${CAGE_WINECFG_TIMEOUT:-120s}" winecfg /v win10 >/tmp/cage-pwsh-winecfg.stdout 2>/tmp/cage-pwsh-winecfg.stderr || {
   rc="$?"
   echo "[cage-pwsh-smoke] winecfg failed: $rc"
+  github_error "Wine win10 configuration failed" "rc=$rc stdout_bytes=$(file_bytes /tmp/cage-pwsh-winecfg.stdout) stderr_bytes=$(file_bytes /tmp/cage-pwsh-winecfg.stderr) prefix=$PREFIX"
   log_file cage-winecfg-out /tmp/cage-pwsh-winecfg.stdout
   log_file cage-winecfg-err /tmp/cage-pwsh-winecfg.stderr
   exit "$rc"
@@ -169,6 +171,7 @@ if [ "$actual_sha" != "$POWERSHELL_SHA256" ]; then
   echo "[cage-pwsh-smoke] ERROR: PowerShell MSI checksum mismatch"
   echo "[cage-pwsh-smoke] expected=$POWERSHELL_SHA256"
   echo "[cage-pwsh-smoke] actual=$actual_sha"
+  github_error "PowerShell MSI checksum mismatch" "expected=$POWERSHELL_SHA256 actual=$actual_sha path=$MSI_PATH"
   exit 64
 fi
 
@@ -196,6 +199,7 @@ fi
 PWSH_EXE="$WINEPREFIX/drive_c/Program Files/PowerShell/7/pwsh.exe"
 if [ ! -f "$PWSH_EXE" ]; then
   echo "[cage-pwsh-smoke] ERROR: MSI did not install pwsh.exe: $PWSH_EXE"
+  github_error "PowerShell MSI did not install pwsh.exe" "msi_rc=$msi_rc expected=$PWSH_EXE log_bytes=$(file_bytes "$MSI_LOG") prefix=$PREFIX"
   exit 65
 fi
 chmod +x "$PWSH_EXE"
