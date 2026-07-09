@@ -1,9 +1,11 @@
 # 0019. Upstream Chocolatey-for-wine wrapper
 
-Status: accepted
+Status: superseded by [0020. Deterministic Chocolatey-for-wine MVP reconstruction](0020-deterministic-chocolatey-for-wine-mvp.md)
 Date: 2026-07-09
 Owner: Noah Giroux / CTO
 Supersedes: [0018. Deterministic PowerShell and Chocolatey capabilities](0018-deterministic-powershell-chocolatey-capabilities.md)
+
+> Supersession note (2026-07-09): a real Notepad++ build hit ADR 0019's review trigger: `ChoCinstaller_*.exe /s /q` exited `0` while canonical `C:/ProgramData/chocolatey/bin/choco.exe` was absent. ADR 0020 is now current and returns the MVP to a deterministic upstream-derived setup with Cage-owned success boundaries.
 
 ## Decision
 
@@ -37,7 +39,7 @@ modules:
         - 7zip.install
 ```
 
-`chocolatey` and `powershell-wrapper` remain temporarily incompatible in one recipe because both own overlapping PowerShell/profile/shim state. The future capability resolver remains useful, but the Chocolatey side's provider is now `chocolatey-for-wine-upstream`, not a Cage-authored PowerShell/nupkg/bootstrap sequence.
+Under ADR 0019's now-superseded design, `chocolatey` and `powershell-wrapper` remained temporarily incompatible in one recipe because both owned overlapping PowerShell/profile/shim state. ADR 0020 returns the Chocolatey side to Cage-owned sequential capability slots for the MVP while preserving the future capability resolver as the v2 composition path.
 
 ## Reasoning
 

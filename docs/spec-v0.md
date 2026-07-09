@@ -61,7 +61,7 @@ modules:
         - 7zip.install
 ```
 
-The Chocolatey module is self-contained and consumes PietJankbal's Chocolatey-for-wine release as pinned upstream data. Cage downloads and checksum-verifies the upstream archive, extracts it into the module cache, runs the upstream `ChoCinstaller_*.exe /s /q` path noninteractively, verifies canonical `C:/ProgramData/chocolatey/bin/choco.exe`, writes diagnostics, and then runs `choco install <package> -y` during the online build phase. `chocolatey` and `powershell-wrapper` are temporarily incompatible in the same recipe until the Phase 2 PowerShell capability resolver lands. Package names must be non-empty strings containing only letters, numbers, dot, underscore, plus, or dash.
+The Chocolatey module is self-contained and consumes PietJankbal's Chocolatey-for-wine release as pinned upstream data, but Cage does not trust `ChoCinstaller_*.exe` as the success boundary. Cage downloads and checksum-verifies upstream data, flattens `c_drive.7z`, extracts the pinned Chocolatey nupkg into raw `ProgramData/tools/ChocolateyInstall`, runs .NET 4.8 as a dedicated MSI step, applies Wine/native CLR registry policy, promotes the raw payload into canonical `C:/ProgramData/chocolatey/bin/choco.exe`, runs readiness diagnostics, applies upstream Chocolatey feature policy, and then runs `choco install <package> -y` during the online build phase. `chocolatey` and `powershell-wrapper` are temporarily incompatible in the same recipe until the Phase 2 PowerShell capability resolver lands. Package names must be non-empty strings containing only letters, numbers, dot, underscore, plus, or dash.
 
 `dependencies` supports build-time dependency installation. Allowed kinds: `winetricks`, `font`, `directx`, `package`, `runtime-component`.
 

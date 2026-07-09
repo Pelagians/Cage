@@ -55,15 +55,15 @@ The manifest field captures *intent*; the CLI flag allows the operator to *overr
 
 ---
 
-## Theme 2: Upstream Chocolatey-for-wine Integration
+## Theme 2: Deterministic Chocolatey-for-wine MVP Integration
 
 ### Status
 
-Architecture revised and accepted in [ADR 0019](decisions/0019-upstream-chocolatey-for-wine-wrapper.md). ADR 0018 is preserved as superseded historical context for the failed manual reconstruction path.
+Architecture revised and accepted in [ADR 0020](decisions/0020-deterministic-chocolatey-for-wine-mvp.md). ADR 0019 is superseded by real-build evidence: `ChoCinstaller_*.exe /s /q` can exit `0` while canonical Chocolatey is absent.
 
 ### Problem
 
-Chocolatey has a Wine-specific prerequisite chain: CLR/PowerShell setup, Chocolatey bootstrap, profile/QPR compatibility shims, and package install commands must exist inside the prefix before package installation can work. PietJankbal's Chocolatey-for-wine release is not just a file layout; it is the upstream compatibility environment. A partial Cage reimplementation kept rediscovering hidden side effects and produced canonical-looking `choco.exe` layouts that still failed at the CLR boundary.
+Chocolatey has a Wine-specific prerequisite chain: CLR/PowerShell setup, Chocolatey bootstrap, profile/QPR compatibility shims, and package install commands must exist inside the prefix before package installation can work. PietJankbal's Chocolatey-for-wine release is not just a file layout; it is the upstream compatibility environment. But its opaque installer is not a reliable Cage success boundary: a real build showed archive/nupkg extraction output with installer exit `0`, while `C:/ProgramData/chocolatey/bin/choco.exe` was missing.
 
 ### Accepted design: `modules[].type: chocolatey`
 
@@ -85,14 +85,19 @@ modules:
         - 7zip.install
 ```
 
-The module now lowers that declaration into an upstream-wrapper build path:
+The module now lowers that declaration into sequential, upstream-derived build steps:
 
-1. download the pinned Chocolatey-for-wine release archive.
-2. SHA-256 verify and extract it into the module cache.
-3. locate `ChoCinstaller_*.exe` and run upstream exactly as documented, with noninteractive/cache flags: `wine ChoCinstaller_*.exe /s /q`.
-4. verify canonical `C:/ProgramData/chocolatey/bin/choco.exe`.
-5. write Cage diagnostics/metadata before package install.
-6. install requested packages only through canonical `C:/ProgramData/chocolatey/bin/choco.exe`.
+1. install the pinned/checksummed PowerShell MSI prerequisite class upstream expects.
+2. download, SHA-256 verify, and extract the pinned Chocolatey-for-wine release archive.
+3. download and verify matching `winetricks.ps1`.
+4. download, verify, and extract the pinned Chocolatey nupkg into raw `C:/ProgramData/tools/ChocolateyInstall`.
+5. extract and flatten upstream `c_drive.7z` into the Wine `drive_c`.
+6. install .NET Framework 4.8 as a dedicated MSI step.
+7. apply Wine/native CLR registry policy, including native `mscoree` for Chocolatey.
+8. natively promote raw Chocolatey into canonical `C:/ProgramData/chocolatey/bin/choco.exe`.
+9. write Cage diagnostics/metadata before package install.
+10. apply upstream Chocolatey feature policy (`powershellHost` disabled, `allowGlobalConfirmation` enabled).
+11. install requested packages only through canonical `C:/ProgramData/chocolatey/bin/choco.exe`.
 
 Synchro's `powershell-wrapper-for-wine` remains a separate capability. `chocolatey` and `powershell-wrapper` stay mutually exclusive until the PowerShell capability resolver lands.
 
@@ -100,18 +105,18 @@ Synchro's `powershell-wrapper-for-wine` remains a separate capability. `chocolat
 
 | File / area | Change |
 |---|---|
-| `core/modules/chocolatey.py` | Wrap pinned upstream Chocolatey-for-wine `ChoCinstaller_*.exe /s /q`, verify canonical Chocolatey, write diagnostics, then install packages |
+| `core/modules/chocolatey.py` | Implement sequential upstream-derived Chocolatey-for-wine setup: PowerShell MSI, CFW data, Chocolatey nupkg, .NET MSI, registry/native CLR policy, native promotion, diagnostics, feature policy, package install |
 | `core/manifest/manifest.py` | Keep manifest-level mutual exclusion and reword around capability-provider conflict |
 | `core/modules/powershell_wrapper.py` | Add SHA-256 verification to pinned Codeberg downloads |
 | CLI / executor | Keep `--module-cache-dir` mounted so Chocolatey-for-wine release/cache payloads survive repeated builds |
-| docs/tests/examples | Remove assumptions from ADR 0018's manual PowerShell/nupkg/.NET/native-promotion path |
+| docs/tests/examples | Point current source of truth at ADR 0020 and preserve ADR 0019 as failed pure-wrapper evidence |
 
 ### Acceptance criteria
 
 - `modules: - type: chocolatey` loads from strict YAML.
-- Generated build plan contains named steps for upstream installer, Chocolatey readiness diagnostics, and package install.
-- The upstream installer archive is pinned and checksum-verified.
-- Generated Chocolatey setup executes `ChoCinstaller_*.exe /s /q` rather than a partial reimplementation.
+- Generated build plan contains named steps for PowerShell MSI, Chocolatey-for-wine data prep, .NET MSI, registry prep, native promotion, diagnostics, feature policy, and package install.
+- The upstream release archive, `winetricks.ps1`, Chocolatey nupkg, PowerShell MSI, and .NET installer are pinned and checksum-verified.
+- Generated Chocolatey setup does **not** trust `ChoCinstaller_*.exe /s /q` as success proof.
 - Package names are validated before build-script generation.
 - Wrapper assets are downloaded from pinned URLs and verified by SHA-256.
 - `--module-cache-dir` lets repeated builds reuse downloaded module payloads.
@@ -121,7 +126,7 @@ Synchro's `powershell-wrapper-for-wine` remains a separate capability. `chocolat
 
 - PowerShell capability `requires`/`provides` resolver and graph/provenance recording — Phase 2.
 - Profile/shim layering for Chocolatey + WindowsPowerShell coexistence — not-now until a real recipe needs both Chocolatey packages and WinPS-dependent installers.
-- Pre-baked `cage-wine-choco` runtime/build image — proposed after the upstream wrapper works and bootstrap time becomes the bottleneck.
+- Pre-baked `cage-wine-choco` runtime/build image — proposed after the deterministic MVP path works and bootstrap time becomes the bottleneck.
 
 ## Theme 3: End-to-End Production Architecture
 
@@ -133,7 +138,7 @@ Once Themes 1 and 2 are complete, Cage's architecture matches the Gemini-describ
 │                                                         │
 │  1. Pull base Wine image (or pre-baked choco image)     │
 │  2. Initialize Wine prefix                              │
-│  3. Run upstream Chocolatey-for-wine setup              │
+│  3. Run deterministic Chocolatey-for-wine setup         │
 │  4. Verify canonical choco.exe                          │
 │  5. choco install <packages>                            │
 │  6. Install application (exe/msi/portable)              │
@@ -161,7 +166,7 @@ Once Themes 1 and 2 are complete, Cage's architecture matches the Gemini-describ
 | Order | Theme | Effort | Dependencies | Delivers |
 |---|---|---|---|---|
 | 1 | Runtime `--net none` default | Small (1–2 files + tests) | None | Implemented — immediate security hardening |
-| 2 | Upstream Chocolatey wrapper | Medium/large (module steps + cache + tests) | ADR 0019 | In progress — recipe authors still declare `modules: - type: chocolatey`; Cage wraps upstream `ChoCinstaller_*.exe /s /q` with diagnostics |
+| 2 | Deterministic Chocolatey MVP path | Medium/large (module steps + cache + tests) | ADR 0020 | In progress — recipe authors still declare `modules: - type: chocolatey`; Cage uses upstream-derived sequential setup and canonical `choco.exe` diagnostics |
 | 3 | Network escape hatch (manifest field + CLI flag) | Small (manifest + launcher + kube) | Theme 1 (parallel ok) | Implemented — overridable isolation |
 | 4 | External module registry | Medium (module.yaml resolver) | Built-in Chocolatey module proves the pattern | Proposed — cleaner abstraction |
 | 5 | Pre-baked chocolatey runtime image | Medium (Dockerfile + CI + GHCR push) | Theme 2 | Proposed — faster builds |
