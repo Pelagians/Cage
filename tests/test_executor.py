@@ -40,7 +40,7 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
     def test_build_run_plan_uses_verified_graph_contract(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = self._bundle(tmp)
-            plan = build_run_plan(bundle, graphics="headless", engine="podman")
+            plan = build_run_plan(bundle, graphics="headless", engine="podman", allow_non_runnable=True)
 
         self.assertEqual(plan["schemaVersion"], "cage.run-plan/v0")
         self.assertEqual(plan["graphics"]["mode"], "headless")
@@ -59,15 +59,27 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
             bundle = self._bundle(tmp)
             (bundle / "metadata" / "graph.json").unlink()
             with self.assertRaises(RunError) as cm:
-                build_run_plan(bundle, graphics="headless", engine="podman")
+                build_run_plan(bundle, graphics="headless", engine="podman", allow_non_runnable=True)
 
         self.assertIn("missing required file: metadata/graph.json", str(cm.exception))
+
+    def test_build_run_plan_rejects_structurally_valid_non_runnable_bundle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = self._bundle(tmp)
+
+            with self.assertRaises(RunError) as cm:
+                build_run_plan(bundle, graphics="headless", engine="podman")
+
+        message = str(cm.exception)
+        self.assertIn("not runnable", message)
+        self.assertIn("dry-run-placeholder", message)
+        self.assertIn("state=planned", message)
 
     def test_build_run_plan_rejects_invalid_graphics_mode(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = self._bundle(tmp)
             with self.assertRaises(RunError) as cm:
-                build_run_plan(bundle, graphics="wayland", engine="docker")
+                build_run_plan(bundle, graphics="wayland", engine="docker", allow_non_runnable=True)
 
         self.assertIn("graphics mode 'wayland' must be one of", str(cm.exception))
 
@@ -79,7 +91,7 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
             graph["graphics"]["supportedModes"] = ["headless"]
             graph_path.write_text(json.dumps(graph, indent=2), encoding="utf-8")
             with self.assertRaises(RunError) as cm:
-                build_run_plan(bundle, graphics="vnc", engine="docker")
+                build_run_plan(bundle, graphics="vnc", engine="docker", allow_non_runnable=True)
 
         self.assertIn("graph graphics must include defaultMode", str(cm.exception))
 
@@ -93,6 +105,7 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
                 network="bridge",
                 vnc_port=5901,
                 novnc_port=6081,
+            allow_non_runnable=True,
             )
 
         argv = plan["container"]["argv"]
@@ -104,7 +117,7 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
     def test_run_plan_clears_inherited_base_image_dll_overrides_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = self._bundle(tmp)
-            plan = build_run_plan(bundle, graphics="headless", engine="docker")
+            plan = build_run_plan(bundle, graphics="headless", engine="docker", allow_non_runnable=True)
 
         env = plan["container"]["environment"]
         argv = plan["container"]["argv"]
@@ -125,7 +138,7 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as tmp:
             bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=True)
-            plan = build_run_plan(bundle, graphics="headless", engine="docker")
+            plan = build_run_plan(bundle, graphics="headless", engine="docker", allow_non_runnable=True)
 
         self.assertEqual(
             plan["launchCommand"],
@@ -170,7 +183,7 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         data["runtime"] = {"provider": "umu-proton-ge", "version": "GE-Proton9-27"}
         with tempfile.TemporaryDirectory() as tmp:
             bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=True)
-            plan = build_run_plan(bundle, graphics="headless", engine="podman")
+            plan = build_run_plan(bundle, graphics="headless", engine="podman", allow_non_runnable=True)
 
         self.assertEqual(plan["runtime"]["provider"], "umu-proton-ge")
         self.assertEqual(plan["runtime"]["launcher"], "umu")
@@ -198,6 +211,13 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
                 dockerfile = (root / rel).read_text(encoding="utf-8")
                 self.assertIn("x11vnc", dockerfile)
                 self.assertIn("websockify", dockerfile)
+                self.assertIn("novnc", dockerfile)
+
+    def test_vnc_launcher_accepts_debian_novnc_assets(self):
+        root = Path(__file__).resolve().parents[1]
+        launcher = (root / "runtime/launcher.py").read_text(encoding="utf-8")
+
+        self.assertIn("/usr/share/novnc", launcher)
 
     def test_default_wine_image_does_not_ship_build_toolchains(self):
         root = Path(__file__).resolve().parents[1]

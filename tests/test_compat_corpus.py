@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from builder.executor import BuildResult
+from artifact.bundle import update_bundle_execution_metadata
 from compat.corpus import CORPUS_SCHEMA_VERSION, load_default_corpus
 from compat.evidence import COMPAT_TEST_SCHEMA_VERSION, run_compat_test
 from runtime.launcher import RUN_RESULT_SCHEMA_VERSION
@@ -112,6 +113,12 @@ class RealCompatibilityEvidenceTests(unittest.TestCase):
             manifest_path = _write_fixture_workspace(root)
 
             def fake_build(manifest, bundle_path, *, engine, image_ref, timeout, workspace):
+                update_bundle_execution_metadata(
+                    bundle_path,
+                    state="build-passed",
+                    runnable=True,
+                    exit_code=0,
+                )
                 return BuildResult(
                     success=True,
                     bundle_path=str(bundle_path),

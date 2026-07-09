@@ -253,8 +253,11 @@ def cmd_build(args):
                   f"{build_result.prefix_file_count} files",
                   file=sys.stderr)
     else:
-        print(f"\n[cage] Build FAILED — see {bundle_path}/logs/build.log",
-              file=sys.stderr)
+        print(
+            f"\n[cage] Build FAILED — evidence bundle at {bundle_path}; "
+            f"see {bundle_path}/logs/build.log",
+            file=sys.stderr,
+        )
         return 1
 
     return 0
@@ -276,6 +279,7 @@ def cmd_run(args):
         runner_cache_dir=Path(args.runner_cache_dir) if args.runner_cache_dir else None,
         require_runner=not args.dry_run,
         network=args.network,
+        allow_non_runnable=args.dry_run,
     )
     if args.dry_run:
         print(json.dumps(plan, indent=2, sort_keys=True))

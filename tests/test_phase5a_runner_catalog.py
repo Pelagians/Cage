@@ -42,7 +42,7 @@ class Phase5ARunnerCatalogTests(unittest.TestCase):
     def test_run_plan_for_latest_uses_resolved_runtime_image(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = create_bundle(Manifest.from_dict(LATEST_WINE), Path(tmp), dry_run=True)
-            plan = build_run_plan(bundle, graphics="headless", engine="podman")
+            plan = build_run_plan(bundle, graphics="headless", engine="podman", allow_non_runnable=True)
 
         self.assertEqual(plan["runtime"]["provider"], "wine")
         self.assertEqual(plan["runtime"]["requestedVersion"], "latest")

@@ -72,8 +72,6 @@ entrypoints:
       - set PATH=C:\ProgramData\chocolatey\bin;%PATH%
     workingDirectory: C:/
 
-state:
-  persistence: persistent
 
 exports:
   - name: chocolatey-for-wine-tools

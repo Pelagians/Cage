@@ -30,5 +30,3 @@ modules:
 launch:
   entrypoint: C:/Program Files/App/app.exe
 
-state:
-  persistence: persistent

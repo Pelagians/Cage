@@ -70,6 +70,7 @@ class SuiteRunPlanTests(unittest.TestCase):
                 engine="docker",
                 entrypoint="sheet",
                 files=[doc],
+            allow_non_runnable=True,
             )
 
         self.assertEqual(plan["selectedEntrypoint"]["id"], "sheet")
@@ -87,7 +88,7 @@ class SuiteRunPlanTests(unittest.TestCase):
             tmp = Path(tmpdir)
             bundle = create_bundle(Manifest.from_dict(suite_manifest_data()), tmp / "dist", dry_run=True)
             with self.assertRaisesRegex(RunError, "unknown suite entrypoint"):
-                build_run_plan(bundle, graphics="headless", engine="docker", entrypoint="publisher")
+                build_run_plan(bundle, graphics="headless", engine="docker", entrypoint="publisher", allow_non_runnable=True)
 
     def test_cli_run_accepts_entrypoint_and_file_arguments(self):
         with tempfile.TemporaryDirectory() as tmpdir:

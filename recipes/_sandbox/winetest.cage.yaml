@@ -14,5 +14,3 @@ entrypoints:
     name: Wine built-in Notepad
     executable: C:/windows/system32/notepad.exe
 
-state:
-  persistence: persistent

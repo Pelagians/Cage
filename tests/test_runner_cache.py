@@ -228,7 +228,7 @@ class RunnerManifestIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             bundle = create_bundle(Manifest.from_dict(runner_manifest_data()), Path(tmpdir), dry_run=True)
             graph = json.loads((bundle / 'metadata' / 'graph.json').read_text(encoding='utf-8'))
-            plan = build_run_plan(bundle, graphics='headless', engine='podman')
+            plan = build_run_plan(bundle, graphics='headless', engine='podman', allow_non_runnable=True)
 
         self.assertEqual(graph['runnerRuntime']['runner'], 'pol-8.2')
         self.assertEqual(graph['runnerRuntime']['runnerVersion'], '8.2')

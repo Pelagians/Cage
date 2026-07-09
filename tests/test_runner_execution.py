@@ -94,6 +94,7 @@ class RunnerExecutionRunPlanTests(unittest.TestCase):
                 graphics="headless",
                 engine="podman",
                 runner_cache_dir=tmp / "cache",
+            allow_non_runnable=True,
             )
 
         self.assertEqual(plan["runnerCache"]["status"], "present")
@@ -117,6 +118,7 @@ class RunnerExecutionRunPlanTests(unittest.TestCase):
                 graphics="headless",
                 engine="podman",
                 runner_cache_dir=tmp / "cache",
+            allow_non_runnable=True,
             )
 
         self.assertEqual(plan["container"]["bundleMount"], f"{bundle.resolve()}:/opt/cage/bundle:ro,z")
@@ -136,6 +138,7 @@ class RunnerExecutionRunPlanTests(unittest.TestCase):
                 graphics="headless",
                 engine="docker",
                 runner_cache_dir=tmp / "cache",
+            allow_non_runnable=True,
             )
 
         self.assertEqual(plan["container"]["bundleMount"], f"{bundle.resolve()}:/opt/cage/bundle:ro")
@@ -155,6 +158,7 @@ class RunnerExecutionRunPlanTests(unittest.TestCase):
                 engine="podman",
                 runner_cache_dir=tmp / "cache",
                 require_runner=True,
+            allow_non_runnable=True,
             )
 
         self.assertIsNone(plan["runnerCache"])
@@ -170,6 +174,7 @@ class RunnerExecutionRunPlanTests(unittest.TestCase):
                 graphics="headless",
                 engine="podman",
                 runner_cache_dir=tmp / "cache",
+            allow_non_runnable=True,
             )
             with self.assertRaisesRegex(RunError, "cached runner is missing"):
                 build_run_plan(
@@ -178,6 +183,7 @@ class RunnerExecutionRunPlanTests(unittest.TestCase):
                     engine="podman",
                     runner_cache_dir=tmp / "cache",
                     require_runner=True,
+                allow_non_runnable=True,
                 )
 
         self.assertEqual(plan["runnerCache"]["status"], "missing")

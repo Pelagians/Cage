@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.compatibility import compatibility_environment
 from core.manifest import Manifest
 from core.modules import generate_module_script
 
@@ -44,12 +45,10 @@ def _compatibility_policy_lines(manifest: Manifest) -> list[str]:
         'echo "[cage] Applying compatibility policy"',
     ]
     
-    # DLL overrides
-    dll_overrides = compat.get("dllOverrides", {})
-    if dll_overrides:
-        override_str = ";".join(f"{k}={v}" for k, v in dll_overrides.items())
-        lines.append(f'export WINEDLLOVERRIDES="{override_str}"')
-        lines.append(f'echo "  DLL overrides: {override_str}"')
+    for key, value in compatibility_environment(compat).items():
+        lines.append(f"export {key}={_shell_quote(value)}")
+        if key == "WINEDLLOVERRIDES" and value:
+            lines.append(f'echo "  DLL overrides: {value}"')
     
     # Windows version
     windows_version = compat.get("windowsVersion")

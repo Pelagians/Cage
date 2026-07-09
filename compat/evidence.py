@@ -131,6 +131,7 @@ def run_compat_test(
                 entrypoints=requested_entrypoints,
                 run_files=run_files or [],
                 runner_cache_dir=runner_cache_dir,
+                allow_non_runnable=True,
             )
             run_plan = run_plans[0]
             payload["build"] = {
@@ -193,19 +194,6 @@ def run_compat_test(
             "stopBefore": stop_before,
         }
         payload["bundleVerification"] = verification
-        run_plans = _build_run_plans(
-            bundle,
-            graphics=graphics,
-            network=network,
-            engine=engine,
-            entrypoints=requested_entrypoints,
-            run_files=run_files or [],
-            runner_cache_dir=runner_cache_dir,
-            require_runner=True,
-        )
-        payload["runPlan"] = run_plans[0]
-        payload["runPlans"] = run_plans
-        payload["entrypointEvidence"] = _entrypoint_evidence_from_plans(run_plans)
 
         if not build_result.success:
             failure_analysis = analyze_failure_path(bundle, write=True)
@@ -215,6 +203,22 @@ def run_compat_test(
         if not verification.get("valid"):
             payload["classification"] = "bundle-verification-failed"
             return payload
+
+        run_plans = _build_run_plans(
+            bundle,
+            graphics=graphics,
+            network=network,
+            engine=engine,
+            entrypoints=requested_entrypoints,
+            run_files=run_files or [],
+            runner_cache_dir=runner_cache_dir,
+            require_runner=True,
+            allow_non_runnable=mode == "build",
+        )
+        payload["runPlan"] = run_plans[0]
+        payload["runPlans"] = run_plans
+        payload["entrypointEvidence"] = _entrypoint_evidence_from_plans(run_plans)
+
         if mode == "build":
             payload["success"] = True
             payload["classification"] = "checkpoint-prepared" if stop_before else "build-passed"
@@ -263,6 +267,7 @@ def _build_run_plans(
     run_files: list[Path | str],
     runner_cache_dir: Path | str | None = None,
     require_runner: bool = False,
+    allow_non_runnable: bool = False,
 ) -> list[dict[str, Any]]:
     if not entrypoints:
         return [build_run_plan(
@@ -273,6 +278,7 @@ def _build_run_plans(
             files=run_files,
             runner_cache_dir=runner_cache_dir,
             require_runner=require_runner,
+            allow_non_runnable=allow_non_runnable,
         )]
     return [
         build_run_plan(
@@ -284,6 +290,7 @@ def _build_run_plans(
             files=run_files,
             runner_cache_dir=runner_cache_dir,
             require_runner=require_runner,
+            allow_non_runnable=allow_non_runnable,
         )
         for entrypoint in entrypoints
     ]

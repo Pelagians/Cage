@@ -88,13 +88,14 @@ class RuntimeNetworkRunPlanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=True)
             with self.assertRaisesRegex(RunError, "no default launch"):
-                build_run_plan(bundle, graphics="headless", engine="docker")
+                build_run_plan(bundle, graphics="headless", engine="docker", allow_non_runnable=True)
 
             plan = build_run_plan(
                 bundle,
                 graphics="headless",
                 engine="docker",
                 entrypoint="C:/Windows/notepad.exe",
+            allow_non_runnable=True,
             )
 
         self.assertEqual(plan["launch"]["entrypoint"], "C:/Windows/notepad.exe")
@@ -102,7 +103,7 @@ class RuntimeNetworkRunPlanTests(unittest.TestCase):
 
     def test_run_plan_air_gaps_runtime_container_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
-            plan = build_run_plan(_bundle(tmp), graphics="headless", engine="docker")
+            plan = build_run_plan(_bundle(tmp), graphics="headless", engine="docker", allow_non_runnable=True)
 
         self.assertEqual(plan["runtime"]["network"], "none")
         self.assertEqual(plan["container"]["network"], "none")
@@ -117,6 +118,7 @@ class RuntimeNetworkRunPlanTests(unittest.TestCase):
                 graphics="headless",
                 engine="docker",
                 network="bridge",
+            allow_non_runnable=True,
             )
 
         self.assertEqual(plan["runtime"]["network"], "bridge")
@@ -128,20 +130,20 @@ class RuntimeNetworkRunPlanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = _bundle(tmp)
             with self.assertRaisesRegex(RunError, "network mode"):
-                build_run_plan(bundle, graphics="headless", engine="docker", network="internet")
+                build_run_plan(bundle, graphics="headless", engine="docker", network="internet", allow_non_runnable=True)
 
 
     def test_vnc_requires_bridge_network_for_loopback_port_publish(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = _bundle(tmp)
             with self.assertRaisesRegex(RunError, "graphics vnc requires network bridge"):
-                build_run_plan(bundle, graphics="vnc", engine="docker")
+                build_run_plan(bundle, graphics="vnc", engine="docker", allow_non_runnable=True)
 
     def test_vnc_rejects_host_network_to_avoid_exposing_unauthenticated_listeners(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = _bundle(tmp)
             with self.assertRaisesRegex(RunError, "graphics vnc requires network bridge"):
-                build_run_plan(bundle, graphics="vnc", engine="docker", network="host")
+                build_run_plan(bundle, graphics="vnc", engine="docker", network="host", allow_non_runnable=True)
 
     def test_vnc_with_bridge_network_keeps_loopback_port_publish(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -152,6 +154,7 @@ class RuntimeNetworkRunPlanTests(unittest.TestCase):
                 network="bridge",
                 vnc_port=5901,
                 novnc_port=6081,
+            allow_non_runnable=True,
             )
 
         self.assertEqual(plan["runtime"]["network"], "bridge")
@@ -164,7 +167,7 @@ class RuntimeNetworkRunPlanTests(unittest.TestCase):
 
     def test_vnc_uses_manifest_bridge_network_without_cli_override(self):
         with tempfile.TemporaryDirectory() as tmp:
-            plan = build_run_plan(_bundle(tmp, network="bridge"), graphics="vnc", engine="docker")
+            plan = build_run_plan(_bundle(tmp, network="bridge"), graphics="vnc", engine="docker", allow_non_runnable=True)
 
         self.assertEqual(plan["runtime"]["network"], "bridge")
         argv = plan["container"]["argv"]
@@ -210,7 +213,7 @@ class RuntimeNetworkRunPlanTests(unittest.TestCase):
             bundle = _bundle(tmp, network="none")
             _tamper_graph_network(bundle, "host")
             with self.assertRaisesRegex(RunError, "runtime.network"):
-                build_run_plan(bundle, graphics="headless", engine="docker")
+                build_run_plan(bundle, graphics="headless", engine="docker", allow_non_runnable=True)
 
     def test_kube_export_rejects_network_mismatch_before_export(self):
         with tempfile.TemporaryDirectory() as tmp:

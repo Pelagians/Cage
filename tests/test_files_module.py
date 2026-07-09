@@ -4,6 +4,7 @@ from pathlib import Path
 
 from core.manifest import Manifest, load_manifest
 from core.modules import parse_module, FilesModule, ModuleError
+from builder.pipeline import generate_build_script
 
 
 class FilesModuleUnitTests(unittest.TestCase):
@@ -135,6 +136,25 @@ class FilesModuleManifestTests(unittest.TestCase):
         # Test build() method
         steps = manifest.modules[0].build()
         self.assertGreater(len(steps), 0)
+
+    def test_build_script_uses_normalized_dll_policy_environment(self):
+        manifest = Manifest.from_dict({
+            "schemaVersion": "cage.app/v0",
+            "name": "compat-demo",
+            "version": "1.0.0",
+            "runtime": {"provider": "wine", "version": "9.0"},
+            "modules": [],
+            "compatibility": {
+                "windowsVersion": "win10",
+                "dllPolicy": {"mscoree": "disabled", "d3d11": "native,builtin"},
+            },
+            "launch": {"entrypoint": "C:/app/demo.exe"},
+        })
+
+        script = generate_build_script(manifest)
+
+        self.assertIn("export WINEDLLOVERRIDES='d3d11=n,b;mscoree='", script)
+        self.assertIn("winecfg -v win10", script)
 
 
 if __name__ == "__main__":

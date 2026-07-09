@@ -47,12 +47,22 @@ def build_run_plan(
     runner_cache_dir: Path | str | None = None,
     require_runner: bool = False,
     network: str | None = None,
+    allow_non_runnable: bool = False,
 ) -> dict[str, Any]:
     """Return a deterministic container run plan for a verified bundle."""
     bundle = Path(bundle_path)
     verification = verify_bundle(bundle)
     if not verification.get("valid"):
         raise RunError("invalid Cage bundle: " + _verification_error_text(verification))
+    if not verification.get("runnable") and not allow_non_runnable:
+        status = dict(verification.get("status") or {})
+        classification = verification.get("classification") or "unknown"
+        state = status.get("state", "unknown")
+        raise RunError(
+            "Cage bundle is structurally valid but not runnable "
+            f"(classification={classification}, state={state}, "
+            f"runnable={status.get('runnable')})"
+        )
 
     graph = _load_json(bundle / "metadata" / "graph.json")
     runtime = dict(graph.get("runnerRuntime") or {})

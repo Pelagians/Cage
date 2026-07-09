@@ -52,6 +52,21 @@ class ManifestAndBundleTests(unittest.TestCase):
 
         self.assertIn("unsupported runtime version", str(ctx.exception))
 
+    def test_runtime_image_ref_overrides_after_catalog_validation_only(self):
+        valid = json.loads(json.dumps(VALID))
+        valid["runtime"]["imageRef"] = "registry.example/cage-wine:custom"
+
+        manifest = Manifest.from_dict(valid)
+
+        self.assertEqual(manifest.runtime.image, "registry.example/cage-wine:custom")
+
+        invalid = json.loads(json.dumps(valid))
+        invalid["runtime"]["version"] = "wine-does-not-exist"
+        with self.assertRaises(ManifestError) as ctx:
+            Manifest.from_dict(invalid)
+
+        self.assertIn("unsupported runtime version", str(ctx.exception))
+
     def test_rejects_legacy_root_fields_not_in_v0_contract(self):
         for field, value in {
             "dependencies": [],

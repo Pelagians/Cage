@@ -21,5 +21,3 @@ entrypoints:
     name: PowerShell 7 (via powershell-wrapper)
     executable: C:/windows/system32/WindowsPowerShell/v1.0/powershell.exe
 
-state:
-  persistence: persistent
