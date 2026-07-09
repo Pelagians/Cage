@@ -165,6 +165,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("dotnet48-$label-msiexec.log", dotnet)
         self.assertIn("install_dotnet_msi x86", dotnet)
         self.assertIn("install_dotnet_msi x64", dotnet)
+        self.assertLess(dotnet.index("install_dotnet_msi x64"), dotnet.index("install_dotnet_msi x86"))
         self.assertIn("wine msiexec /i \"$netfx_msi_win\"", dotnet)
         self.assertIn("/QN", dotnet)
         self.assertIn("MSIFASTINSTALL=2", dotnet)

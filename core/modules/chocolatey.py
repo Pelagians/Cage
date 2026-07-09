@@ -436,8 +436,10 @@ install_dotnet_msi() {{
   echo "[cage] .NET Framework 4.8 $label native CLR exists: $dotnet_clr_marker"
 }}
 
-install_dotnet_msi x86 "$netfx_msi_x86" "$dotnet_mscoree_marker_x86" "$dotnet_clr_marker_x86"
+# Install x64 before x86. Wine/.NET records the x86 product in a way that can make
+# the x64 MSI report NEWERVERSIONDETECTED before 64-bit CLR markers are created.
 install_dotnet_msi x64 "$netfx_msi_x64" "$dotnet_mscoree_marker_x64" "$dotnet_clr_marker_x64"
+install_dotnet_msi x86 "$netfx_msi_x86" "$dotnet_mscoree_marker_x86" "$dotnet_clr_marker_x86"
 echo "[cage] .NET Framework 4.8 MSI step complete"'''
         return BuildStep(commands=[script], description="Install .NET Framework 4.8 for Chocolatey", kind="wine-msiexec", timeout=1800)
 
