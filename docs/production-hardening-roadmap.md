@@ -93,7 +93,7 @@ The module now lowers that declaration into sequential, upstream-derived build s
 4. download, verify, and extract the pinned Chocolatey nupkg into raw `C:/ProgramData/tools/ChocolateyInstall`.
 5. extract and flatten upstream `c_drive.7z` into the Wine `drive_c`.
 6. install .NET Framework 4.8 through sequential x64 then x86 MSI steps so both 64-bit and WOW64 native CLR files exist. Treat MSI return/status as secondary to those marker files; an x86-first install can make the x64 MSI no-op/block with `NEWERVERSIONDETECTED` before 64-bit CLR markers exist.
-7. apply Wine/native-first CLR registry policy, including native-first/builtin-fallback `mscoree` (`native,builtin`) for Chocolatey.
+7. apply Wine/native CLR registry policy, matching upstream `mscoree=native` for Chocolatey and clearing process-level `WINEDLLOVERRIDES` before Chocolatey launches;
 8. natively promote raw Chocolatey into canonical `C:/ProgramData/chocolatey/bin/choco.exe`, using the real root nupkg `choco.exe` for canonical `bin/choco.exe` and keeping the upstream `redirects/choco.exe` shim out of that slot.
 9. copy the native CLR loader closure (`mscoree.dll`, `mscoreei.dll`, `clr.dll`, `clrjit.dll`, `ucrtbase_clr0400.dll`, `vcruntime140_clr0400.dll`) app-local beside canonical `bin/choco.exe`.
 10. write Cage diagnostics/metadata before package install, including size-bearing promoted-file inventory and a direct Windows-path `choco.exe` launch probe.
@@ -106,7 +106,7 @@ Synchro's `powershell-wrapper-for-wine` remains a separate capability. `chocolat
 
 | File / area | Change |
 |---|---|
-| `core/modules/chocolatey.py` | Implement sequential upstream-derived Chocolatey-for-wine setup: PowerShell MSI, CFW data, Chocolatey nupkg, .NET x64/x86 MSIs, native-first/builtin-fallback CLR policy, native promotion with real root `choco.exe` and full app-local CLR loader closure in canonical `bin`, diagnostics, feature policy, Windows-path package install |
+| `core/modules/chocolatey.py` | Implement sequential upstream-derived Chocolatey-for-wine setup: PowerShell MSI, CFW data, Chocolatey nupkg, .NET x64/x86 MSIs, upstream `mscoree=native` registry policy with no process-level override for Chocolatey launches, native promotion with real root `choco.exe` and full app-local CLR loader closure in canonical `bin`, diagnostics, feature policy, Windows-path package install |
 | `core/manifest/manifest.py` | Keep manifest-level mutual exclusion and reword around capability-provider conflict |
 | `core/modules/powershell_wrapper.py` | Add SHA-256 verification to pinned Codeberg downloads |
 | CLI / executor | Keep `--module-cache-dir` mounted so Chocolatey-for-wine release/cache payloads survive repeated builds |

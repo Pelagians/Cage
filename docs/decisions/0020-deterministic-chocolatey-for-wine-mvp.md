@@ -18,7 +18,7 @@ Instead, Cage will consume Chocolatey-for-wine as pinned upstream evidence/data 
 4. download/checksum/extract the pinned Chocolatey nupkg into raw `C:/ProgramData/tools/ChocolateyInstall`;
 5. extract and flatten upstream `c_drive.7z` into the Wine `drive_c` instead of allowing a nested `drive_c/c:` tree;
 6. install .NET Framework 4.8 through sequential x64 then x86 MSI steps, never in parallel with another MSI operation, so both 64-bit and WOW64 native CLR files exist. MSI return codes are advisory after this point: if Wine reports an MSI block such as `NEWERVERSIONDETECTED` / `INSTALL Return value 0`, Cage treats the step as successful only when the required native CLR markers already exist. The order matters: an x86-first install can make the x64 MSI report `NEWERVERSIONDETECTED` before 64-bit CLR markers are created;
-7. apply the Wine/.NET registry state needed by upstream, including native-first/builtin-fallback `mscoree` (`native,builtin`) for Chocolatey;
+7. apply the Wine/.NET registry state needed by upstream, including `mscoree=native` for Chocolatey, and clear inherited process-level `WINEDLLOVERRIDES` before Chocolatey launches rather than forcing a different load order;
 8. promote the raw Chocolatey payload into canonical `C:/ProgramData/chocolatey/bin/choco.exe` with native file operations, not through a PowerShell finalizer. Canonical `bin/choco.exe` must be the real root Chocolatey executable from the nupkg, not the upstream `redirects/choco.exe` shim; a real build showed the 147 KB redirect shim can become the failing `mscoree.dll not found` loader boundary;
 9. copy the native CLR loader closure (`mscoree.dll`, `mscoreei.dll`, `clr.dll`, `clrjit.dll`, `ucrtbase_clr0400.dll`, `vcruntime140_clr0400.dll`) app-local beside canonical `bin/choco.exe`, matching upstream's `ucrtbase_clr0400.dll` readiness boundary and avoiding Wine system DLL search/dependency ambiguity;
 10. run structured Chocolatey readiness diagnostics before package install, including canonical/root/redirect/app-local file sizes and a direct Windows-path `choco.exe` launch probe so Unix-mounted paths do not route through Wine `start.exe`;
@@ -64,7 +64,7 @@ The right distinction is not "upstream versus custom." The right distinction is 
 
 For MVP:
 
-- Upstream remains the behavioral reference: pinned versions, payload layout, c_drive contents, .NET/PowerShell prerequisite class, registry policy, native-first/builtin-fallback `mscoree`, Chocolatey feature settings.
+- Upstream remains the behavioral reference: pinned versions, payload layout, c_drive contents, .NET/PowerShell prerequisite class, registry policy, `mscoree=native`, Chocolatey feature settings.
 - Cage owns the execution boundary: sequential steps, checksums, bounded timeouts, concrete file/registry markers, diagnostic JSON/logs, and canonical `choco.exe` gating.
 - The opaque `ChoCinstaller` executable is useful evidence, but not a reliable success boundary inside fresh deterministic container builds.
 
@@ -82,7 +82,7 @@ This path is less elegant than a future v2 module, but it is more likely to prod
 
 - **Keep pure `ChoCinstaller_*.exe /s /q` wrapper.** Rejected by uploaded real-build evidence: exit `0`, canonical `choco.exe` absent.
 - **Treat raw `tools/ChocolateyInstall` as success.** Rejected because package install and provenance must use canonical Chocolatey.
-- **Return to partial manual reconstruction without upstream behavior.** Rejected. The reconstruction must remain upstream-derived: pinned CFW data, c_drive flattening, .NET/PowerShell prerequisite class, native-first/builtin-fallback CLR policy, and Chocolatey feature policy.
+- **Return to partial manual reconstruction without upstream behavior.** Rejected. The reconstruction must remain upstream-derived: pinned CFW data, c_drive flattening, .NET/PowerShell prerequisite class, upstream `mscoree=native` registry policy, and Chocolatey feature policy.
 - **Pre-bake Chocolatey immediately into a runtime/build image.** Deferred. It may be valuable after the module path works, but it should not hide the current bootstrap failure boundary.
 
 ## Review triggers
