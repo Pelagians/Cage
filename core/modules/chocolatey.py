@@ -178,6 +178,7 @@ cfw_archive_sha256="{expected_cfw_sha}"
 cfw_winetricks_ps1="$cfw_cache/winetricks.ps1"
 cfw_winetricks_url="https://raw.githubusercontent.com/PietJankbal/Chocolatey-for-wine/{self.version}/winetricks.ps1"
 cfw_winetricks_sha256="{DEFAULT_CFW_WINETRICKS_SHA256 if self.version == DEFAULT_CHOCOLATEY_FOR_WINE_VERSION else ''}"
+cfw_c_drive_extract="$cfw_cache/c_drive-extracted"
 choco_cache="$module_cache/chocolatey/{DEFAULT_CHOCOLATEY_VERSION}"
 choco_nupkg="$choco_cache/chocolatey.{DEFAULT_CHOCOLATEY_VERSION}.nupkg"
 choco_nupkg_url="{choco_nupkg_url}"
@@ -264,7 +265,41 @@ if [ "$actual_choco_nupkg_sha" != "$choco_nupkg_sha256" ]; then
 fi
 
 echo "[cage] Extracting Chocolatey-for-wine c_drive.7z data..."
-extract_7z_archive "$cfw_extract/c_drive.7z" "$wine_prefix/drive_c"
+rm -rf "$cfw_c_drive_extract"
+mkdir -p "$cfw_c_drive_extract" "$wine_prefix/drive_c"
+extract_7z_archive "$cfw_extract/c_drive.7z" "$cfw_c_drive_extract"
+python3 - "$cfw_c_drive_extract" "$wine_prefix/drive_c" <<'PY'
+import shutil
+import sys
+from pathlib import Path
+
+extract_root = Path(sys.argv[1])
+drive_c = Path(sys.argv[2])
+
+# PietJankbal's c_drive.7z preserves a Windows drive root as "c:". 7z on
+# Linux treats that as a literal directory name, so extracting straight into
+# the Wine drive creates drive_c/c:/ProgramData/... instead of
+# drive_c/ProgramData/....  Flatten that root explicitly before continuing.
+source_root = extract_root / "c:"
+if not source_root.exists():
+    source_root = extract_root
+
+for item in source_root.iterdir():
+    target = drive_c / item.name
+    if item.is_dir():
+        shutil.copytree(item, target, dirs_exist_ok=True)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(item, target)
+
+bad_nested_root = drive_c / "c:"
+if bad_nested_root.exists():
+    shutil.rmtree(bad_nested_root)
+PY
+if [ -d "$wine_prefix/drive_c/c:" ]; then
+  echo "[cage] ERROR: Chocolatey-for-wine c_drive.7z extracted nested c: root into Wine drive_c"
+  exit 66
+fi
 
 rm -rf "$raw_choco_dir"
 mkdir -p "$raw_choco_dir" "$cfw_prefix_dir"
