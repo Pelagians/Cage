@@ -99,12 +99,12 @@ try_pwsh_launch() {
       ;;
     cmd)
       timeout "${CAGE_POWERSHELL_SMOKE_TIMEOUT:-120s}" \
-        wine cmd /s /c "\"$PWSH_EXE_WIN\" -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"$SMOKE_SCRIPT_WIN\" \"$SMOKE_SENTINEL_WIN\" \"$SMOKE_OUTPUT_WIN\"" \
+        wine cmd /s /c "call \"$PWSH_EXE_WIN\" -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"$SMOKE_SCRIPT_WIN\" \"$SMOKE_SENTINEL_WIN\" \"$SMOKE_OUTPUT_WIN\"" \
           > "$stdout_file" 2> "$stderr_file"
       ;;
     cmdfile)
       timeout "${CAGE_POWERSHELL_SMOKE_TIMEOUT:-120s}" \
-        wine cmd /s /c "\"$SMOKE_LAUNCHER_WIN\"" \
+        wine cmd /s /c "$SMOKE_LAUNCHER_WIN" \
           > "$stdout_file" 2> "$stderr_file"
       ;;
     *)
@@ -250,7 +250,7 @@ $ErrorActionPreference = 'Stop'
 [System.IO.File]::WriteAllText($OutputPath, 'PWSH-ALIVE')
 [Console]::Out.WriteLine('[cage-pwsh-smoke] PSVersion=' + $PSVersionTable.PSVersion.ToString())
 PS1
-printf '@echo off\r\n"%s" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%s" "%s" "%s"\r\nexit /b %%ERRORLEVEL%%\r\n' \
+printf '@echo off\r\ncall "%s" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%s" "%s" "%s"\r\nexit /b %%ERRORLEVEL%%\r\n' \
   "$PWSH_EXE_WIN" "$SMOKE_SCRIPT_WIN" "$SMOKE_SENTINEL_WIN" "$SMOKE_OUTPUT_WIN" \
   > "$SMOKE_LAUNCHER"
 
