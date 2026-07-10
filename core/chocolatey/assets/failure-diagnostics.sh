@@ -34,7 +34,31 @@ PY
   promoted_rc="$?"
   timeout "$inventory_timeout" sh -c 'wine reg query "HKCU\Software\Wine" /s 2>&1 | head -n "$1"' sh "$inventory_limit" > "$probe_dir/registry-wine-dump.log" 2>&1
   registry_dump_rc="$?"
-  timeout "$inventory_timeout" sh -c 'ps -eo pid,ppid,stat,comm,args --sort=pid 2>&1 | head -n "$1"' sh "$inventory_limit" > "$probe_dir/process-tree.log" 2>&1
+  timeout "$inventory_timeout" python3 - "$inventory_limit" > "$probe_dir/process-tree.log" 2>&1 <<'PY'
+import sys
+from pathlib import Path
+
+limit = int(sys.argv[1])
+processes = []
+for path in Path("/proc").iterdir():
+    if not path.name.isdigit():
+        continue
+    try:
+        status = (path / "status").read_text(encoding="utf-8")
+        fields = dict(
+            line.split(":", 1) for line in status.splitlines() if ":" in line
+        )
+        command = (path / "cmdline").read_bytes().replace(b"\0", b" ").decode(
+            "utf-8", errors="replace"
+        ).strip() or fields.get("Name", "").strip()
+        processes.append((int(path.name), fields.get("PPid", "").strip(), fields.get("State", "").strip(), command))
+    except (OSError, ValueError):
+        continue
+for pid, parent_pid, state, command in sorted(processes)[:limit]:
+    print(f"{pid}\t{parent_pid}\t{state}\t{command}")
+if len(processes) > limit:
+    print(f"[truncated after {limit} processes]")
+PY
   process_tree_rc="$?"
   timeout "$inventory_timeout" python3 - "$wine_prefix/drive_c" "$inventory_limit" > "$probe_dir/prefix-files.log" 2>&1 <<'PY'
 import sys

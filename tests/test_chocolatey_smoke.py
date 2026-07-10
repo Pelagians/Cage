@@ -204,6 +204,8 @@ class ChocolateyDiagnosticTierTests(unittest.TestCase):
         helper = load_asset("failure-diagnostics.sh")
         self.assertIn("CAGE_CHOCOLATEY_FAILURE_INVENTORY_TIMEOUT", helper)
         self.assertIn("CAGE_CHOCOLATEY_FAILURE_INVENTORY_LIMIT", helper)
+        self.assertIn("/proc", helper)
+        self.assertNotIn("ps -eo", helper)
         self.assertNotIn("ps -ef", helper)
         self.assertIn("failureTrigger", helper)
         self.assertIn("if [ \"$required_status\" != \"passed\" ]", verify)
