@@ -62,8 +62,8 @@ cfw_installer_win="$(winepath -w "$cfw_installer")"
 export CFW_CACHE="$cfw_cache_win"
 export CFW_OFFLINE=1
 set +e
-timeout "${CAGE_CHOCOLATEY_UPSTREAM_TIMEOUT:-3600s}" wine "$cfw_installer_win" /s /q > "$logs_dir/installer.log" 2>&1
-installer_rc="$?"
+timeout "${CAGE_CHOCOLATEY_UPSTREAM_TIMEOUT:-3600s}" wine "$cfw_installer_win" /s /q 2>&1 | tee "$logs_dir/installer.log" | grep -a --line-buffered '^\[cfw\] stage='
+installer_rc="${PIPESTATUS[0]}"
 timeout "${CAGE_CHOCOLATEY_UPSTREAM_SETTLE_TIMEOUT:-300s}" wineserver -w > "$logs_dir/wineserver-settle.log" 2>&1
 settle_rc="$?"
 test -f "$canonical_choco"

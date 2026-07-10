@@ -108,10 +108,13 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
     def test_fork_bootstrap_uses_private_verified_workdir_and_strict_success_boundary(self):
         bootstrap = _commands_for(_manifest().modules[0].build(), "Bootstrap Chocolatey-for-Wine fork")
 
-        self.assertIn('cfw_work="$wine_prefix/.cage/chocolatey-bootstrap/cfw-v0.5c.755-noah.2-choco-2.6.0-fork-r8"', bootstrap)
+        self.assertIn('cfw_work="$wine_prefix/.cage/chocolatey-bootstrap/cfw-v0.5c.755-noah.3-choco-2.6.0-fork-r9"', bootstrap)
         self.assertIn('rm -rf "$cfw_work"', bootstrap)
         self.assertIn('cfw_payload_cache="$cfw_work/choc_install_files"', bootstrap)
         self.assertIn('cfw_installer="$cfw_extract/ChoCinstaller_0.5c.755.exe"', bootstrap)
+        self.assertIn('2>&1 | tee "$logs_dir/installer.log"', bootstrap)
+        self.assertIn("grep -a --line-buffered '^\\[cfw\\] stage='", bootstrap)
+        self.assertIn('installer_rc="${PIPESTATUS[0]}"', bootstrap)
         self.assertIn('wine "$cfw_installer_win" /s /q', bootstrap)
         self.assertIn('export CFW_CACHE="$cfw_cache_win"', bootstrap)
         self.assertIn('export CFW_OFFLINE=1', bootstrap)
