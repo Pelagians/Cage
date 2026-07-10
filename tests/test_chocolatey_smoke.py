@@ -175,6 +175,8 @@ class ChocolateySmokePackageTests(unittest.TestCase):
         self.assertIn("--build-timeout 7200", workflow)
         self.assertIn("chocolatey-upstream-bootstrap.json", workflow)
         self.assertIn("Chocolatey-for-Wine stages", workflow)
+        self.assertIn("installer non-stage tail", workflow)
+        self.assertIn("grep -av '^\\[cfw\\] stage='", workflow)
         self.assertIn("grep -a", workflow)
         self.assertIn("installer.log", workflow)
         self.assertIn("Chocolatey path inventory", workflow)
