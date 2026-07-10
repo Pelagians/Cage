@@ -21,6 +21,7 @@ from artifact.oci import (
     prepare_oci_build_context,
 )
 from core.manifest import Manifest
+from tests.bundle_fixtures import materialize_runnable_prefix
 
 APP = {
     "schemaVersion": "cage.app/v0",
@@ -39,7 +40,9 @@ APP = {
 
 
 def _bundle(tmp: str | Path) -> Path:
-    return create_bundle(Manifest.from_dict(APP), Path(tmp), dry_run=True)
+    bundle = create_bundle(Manifest.from_dict(APP), Path(tmp), dry_run=True)
+    materialize_runnable_prefix(bundle, entrypoint=APP["launch"]["entrypoint"])
+    return bundle
 
 
 class OCIExportPlanTests(unittest.TestCase):

@@ -17,6 +17,7 @@ from artifact.oci import (
     verify_oci_image_metadata,
 )
 from core.manifest import Manifest
+from tests.bundle_fixtures import materialize_runnable_prefix
 
 APP = {
     "schemaVersion": "cage.app/v0",
@@ -59,7 +60,9 @@ ARTIFACT = {
 
 
 def _bundle(tmp: str | Path) -> Path:
-    return create_bundle(Manifest.from_dict(APP), Path(tmp), dry_run=True)
+    bundle = create_bundle(Manifest.from_dict(APP), Path(tmp), dry_run=True)
+    materialize_runnable_prefix(bundle, entrypoint=APP["launch"]["entrypoint"])
+    return bundle
 
 
 def _completed(args, stdout="", stderr="", returncode=0):

@@ -12,6 +12,7 @@ from builder.executor import execute_inside_container
 from cage.cli import build_parser
 from compat.evidence import run_compat_test
 from core.manifest import Manifest
+from tests.bundle_fixtures import materialize_runnable_prefix
 
 
 MANIFEST = {
@@ -37,7 +38,14 @@ class ModuleCacheExecutionTests(unittest.TestCase):
                 stdout = "container ok"
                 stderr = ""
 
-            with patch("builder.executor._run_container_command", return_value=Completed()) as run, patch("sys.stderr", io.StringIO()):
+            def fake_run(*_args, **_kwargs):
+                materialize_runnable_prefix(
+                    bundle,
+                    entrypoint=MANIFEST["launch"]["entrypoint"],
+                )
+                return Completed()
+
+            with patch("builder.executor._run_container_command", side_effect=fake_run) as run, patch("sys.stderr", io.StringIO()):
                 result = execute_inside_container(
                     manifest,
                     bundle,
@@ -103,7 +111,14 @@ class ModuleCacheExecutionTests(unittest.TestCase):
                 stdout = "container ok"
                 stderr = ""
 
-            with patch("builder.executor._run_container_command", return_value=Completed()) as run, patch("sys.stderr", io.StringIO()):
+            def fake_run(*_args, **_kwargs):
+                materialize_runnable_prefix(
+                    bundle,
+                    entrypoint=MANIFEST["launch"]["entrypoint"],
+                )
+                return Completed()
+
+            with patch("builder.executor._run_container_command", side_effect=fake_run) as run, patch("sys.stderr", io.StringIO()):
                 execute_inside_container(
                     manifest,
                     bundle,

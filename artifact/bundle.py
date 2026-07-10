@@ -16,6 +16,8 @@ STATUS_STATES = {
     "build-running",
     "build-failed",
     "build-passed",
+    "verification-failed",
+    "runnable",
     "run-passed",
 }
 
@@ -55,7 +57,7 @@ def create_bundle(manifest: Manifest, output_dir: Path, *,
         state=initial_status,
         dry_run=dry_run,
         runnable=False,
-        materialized_prefix=not dry_run,
+        materialized_prefix=False,
         has_default_launch=manifest.launch is not None,
     )
     _write_step_evidence(
@@ -134,7 +136,17 @@ def update_bundle_execution_metadata(
     plan_path = bundle_path / "build" / "build-plan.json"
     plan_payload = json.loads(plan_path.read_text(encoding="utf-8"))
     phases = plan_payload.get("phases", [])
-    success = state in {"build-passed", "run-passed"}
+    current_status_path = bundle_path / "metadata" / "status.json"
+    current_status = (
+        json.loads(current_status_path.read_text(encoding="utf-8"))
+        if current_status_path.exists()
+        else {}
+    )
+    if materialized_prefix is None:
+        materialized_prefix = bool(current_status.get("materializedPrefix", False))
+    if has_default_launch is None:
+        has_default_launch = bool(current_status.get("hasDefaultLaunch", False))
+    success = state in {"build-passed", "runnable", "run-passed"}
     _write_status(
         bundle_path,
         state=state,
@@ -173,8 +185,8 @@ def _write_status(
         "state": state,
         "dryRun": dry_run,
         "runnable": runnable,
-        "materializedPrefix": materialized_prefix if materialized_prefix is not None else runnable,
-        "hasDefaultLaunch": has_default_launch if has_default_launch is not None else True,
+        "materializedPrefix": materialized_prefix if materialized_prefix is not None else False,
+        "hasDefaultLaunch": has_default_launch if has_default_launch is not None else False,
         "exitCode": exit_code,
         "error": error,
     }

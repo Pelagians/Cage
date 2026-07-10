@@ -5,12 +5,13 @@ container, producing a real built prefix with installed dependencies
 and applications.
 """
 from __future__ import annotations
-import json, os, queue, shutil, subprocess, sys, threading, time
+import os, queue, shutil, subprocess, sys, threading, time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from artifact.bundle import update_bundle_execution_metadata
+from artifact.inspection import verify_bundle, verify_prefix_materialization
 from builder.pipeline import generate_build_script
 from core.manifest import Manifest
 from runtime.providers import resolve_runtime
@@ -89,6 +90,7 @@ class BuildResult:
     runtime_version: str
     image_ref: str
     engine: str
+    runnable: bool = False
     exit_code: int | None = None
     log: str = ""
     prefix_size: int | None = None
@@ -100,6 +102,7 @@ class BuildResult:
     def to_dict(self) -> dict[str, Any]:
         return {
             "success": self.success,
+            "runnable": self.runnable,
             "bundlePath": self.bundle_path,
             "runtimeProvider": self.runtime_provider,
             "runtimeVersion": self.runtime_version,
@@ -368,40 +371,69 @@ def execute_inside_container(
         log_text = "\n".join(log_lines)
         (bundle_path / "logs" / "build.log").write_text(log_text, encoding="utf-8")
 
-        success = result.returncode == 0
+        container_success = result.returncode == 0
         exit_code = result.returncode
-
-        # ---- Parse build result marker ----
         prefix_size = None
         prefix_file_count = None
-        build_result_path = bundle_path / "metadata" / "build-result.json"
-        if build_result_path.exists():
-            try:
-                bd = json.loads(build_result_path.read_text(encoding="utf-8"))
-                prefix_size = bd.get("prefixSize", 0)
-                prefix_file_count = bd.get("prefixFileCount", 0)
-            except (json.JSONDecodeError, OSError):
-                pass
+        runnable = False
+        error: str | None = None
+
+        if not container_success:
+            success = False
+            state = "build-failed"
+            error = f"container exited with code {exit_code}"
+            materialized_prefix = False
+        else:
+            prefix_verification = verify_prefix_materialization(bundle_path)
+            checks = list(prefix_verification.get("checks") or [])
+            has_default_launch = manifest.launch is not None
+            failed_checks = [
+                check for check in checks
+                if check.get("ok") is not True
+                and (check.get("id") != "launch-executable" or has_default_launch)
+            ]
+            materialized_prefix = prefix_verification.get("materialized") is True
+            prefix_size = int(prefix_verification.get("byteSize") or 0)
+            prefix_file_count = int(prefix_verification.get("fileCount") or 0)
+            success = not failed_checks
+            runnable = success and has_default_launch
+            state = "runnable" if runnable else "build-passed" if success else "verification-failed"
+            if failed_checks:
+                reasons = "; ".join(str(check.get("message")) for check in failed_checks)
+                error = f"materialized prefix verification failed: {reasons}"
 
         update_bundle_execution_metadata(
             bundle_path,
-            state="build-passed" if success else "build-failed",
-            runnable=success,
+            state=state,
+            runnable=runnable,
+            materialized_prefix=materialized_prefix,
+            has_default_launch=manifest.launch is not None,
             exit_code=exit_code,
-            error=None if success else f"container exited with code {exit_code}",
+            error=error,
             log_excerpt=(log_text[-1000:] if log_text else None),
         )
 
-        # ---- Verify prefix exists ----
-        prefix_path = bundle_path / "prefix"
-        if success and not prefix_path.exists():
-            success = True  # Still success if the script completed with 0
-            log_lines.append("[cage] Note: prefix directory not found at expected path")
-            log_text = "\n".join(log_lines)
-            (bundle_path / "logs" / "build.log").write_text(log_text, encoding="utf-8")
+        if runnable:
+            bundle_verification = verify_bundle(bundle_path)
+            if not bundle_verification.get("runnable"):
+                success = False
+                runnable = False
+                state = "verification-failed"
+                error = "bundle verification rejected the materialized prefix"
+                update_bundle_execution_metadata(
+                    bundle_path,
+                    state=state,
+                    runnable=False,
+                    materialized_prefix=materialized_prefix,
+                    has_default_launch=True,
+                    exit_code=exit_code,
+                    error=error,
+                    log_excerpt=(log_text[-1000:] if log_text else None),
+                )
 
         return BuildResult(
             success=success,
+            runnable=runnable,
             bundle_path=str(host_bundle),
             runtime_provider=manifest.runtime.provider,
             runtime_version=manifest.runtime.version,
@@ -411,6 +443,7 @@ def execute_inside_container(
             log=log_text,
             prefix_size=prefix_size,
             prefix_file_count=prefix_file_count,
+            error=error,
             runner_cache=runner_cache,
             module_cache=module_cache,
         )

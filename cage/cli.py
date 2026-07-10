@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse, json, sys
 from pathlib import Path
 
-from artifact.bundle import create_bundle
+from artifact.bundle import create_bundle, update_bundle_execution_metadata
 from artifact.checkpoint import CheckpointError, inspect_checkpoint, resume_checkpoint
 from artifact.oci import (
     OCIExportError,
@@ -173,6 +173,41 @@ def cmd_build(args):
     bundle_path = create_bundle(
         manifest, Path(args.output), dry_run=args.dry_run,
     )
+    workspace = Path(args.workspace).resolve() if args.workspace else Path.cwd().resolve()
+
+    if not args.dry_run:
+        integrity = verify_manifest_sources(manifest, workspace=workspace)
+        policy = audit_manifest_sources(manifest, workspace=workspace)
+        (bundle_path / "metadata/source-integrity.json").write_text(
+            json.dumps(integrity, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        (bundle_path / "metadata/source-policy.json").write_text(
+            json.dumps(policy, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        if not integrity.get("valid") or not policy.get("valid"):
+            errors = [*integrity.get("errors", []), *policy.get("errors", [])]
+            error = "source preflight failed: " + "; ".join(str(item) for item in errors)
+            update_bundle_execution_metadata(
+                bundle_path,
+                state="source-failed",
+                runnable=False,
+                materialized_prefix=False,
+                has_default_launch=manifest.launch is not None,
+                error=error,
+                log_excerpt=error,
+            )
+            result = {
+                "bundle": str(bundle_path),
+                "dryRun": False,
+                "sourceIntegrity": integrity,
+                "sourcePolicy": policy,
+                "status": "source-failed",
+                "error": error,
+            }
+            print(json.dumps(result, indent=2))
+            return 1
 
     binding = resolve_runtime(manifest.runtime)
     base_image = binding.oci_image or get_image_ref(
@@ -210,6 +245,7 @@ def cmd_build(args):
         engine=args.engine,
         image_ref=base_image,
         timeout=args.build_timeout,
+        workspace=workspace,
         runner_cache_dir=Path(args.runner_cache_dir) if args.runner_cache_dir else None,
         module_cache_dir=Path(args.module_cache_dir) if args.module_cache_dir else None,
     )
@@ -520,6 +556,8 @@ def build_parser():
     p.add_argument("manifest")
     p.add_argument("--output", default="dist",
                    help="Output directory")
+    p.add_argument("--workspace",
+                   help="Workspace root for recipe-local sources (default: cwd)")
     p.add_argument("--dry-run", action="store_true",
                    help="Record contract without executing Wine commands")
     p.add_argument("--engine", default=None,

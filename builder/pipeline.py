@@ -77,14 +77,14 @@ def _launch_lines(manifest: Manifest) -> list[str]:
     
     # Entrypoint
     if launch.entrypoint:
-        lines.append(f'echo "  Entrypoint: {launch.entrypoint}"')
-        # Write entrypoint configuration
-        lines.append(f'echo "{launch.entrypoint}" > $WINEPREFIX/entrypoint')
-    
+        entrypoint = _shell_quote(launch.entrypoint)
+        lines.append(f'printf "  Entrypoint: %s\\n" {entrypoint}')
+        lines.append(f'printf "%s\\n" {entrypoint} > "$WINEPREFIX/entrypoint"')
+
     # Args
     if launch.args:
-        args_str = " ".join(launch.args)
-        lines.append(f'echo "  Args: {args_str}"')
+        quoted_args = " ".join(_shell_quote(arg) for arg in launch.args)
+        lines.append(f'printf "  Args:"; printf " %s" {quoted_args}; printf "\\n"')
     
     # Environment
     if launch.env:
@@ -94,23 +94,58 @@ def _launch_lines(manifest: Manifest) -> list[str]:
     return lines
 
 
-def _export_lines(manifest: Manifest) -> list[str]:
-    """Generate export/bundle packaging commands."""
+def _windows_prefix_relative_path(value: str) -> str:
+    """Return a safe prefix-relative path for a C: launch target."""
+    normalized = value.replace("\\", "/")
+    if len(normalized) < 3 or normalized[1:3] != ":/" or normalized[0].lower() != "c":
+        raise ValueError(f"launch entrypoint must be an absolute C: path: {value}")
+    parts = [part for part in normalized[3:].split("/") if part and part != "."]
+    if not parts or any(part == ".." for part in parts):
+        raise ValueError(f"launch entrypoint contains an unsafe path: {value}")
+    return "/".join(["drive_c", *parts])
+
+
+def _export_lines(manifest: Manifest, *, bundle_mount: str) -> list[str]:
+    """Verify and recoverably promote the completed Wine prefix."""
+    entrypoint = manifest.launch.entrypoint if manifest.launch else None
+    launch_relative = _windows_prefix_relative_path(entrypoint) if entrypoint else None
+    requires_chocolatey = any(module.type == "chocolatey" for module in manifest.modules)
     lines = [
         'echo "[cage] Exporting bundle"',
-        # Create rootfs directory in bundle mount
-        'mkdir -p /opt/cage/rootfs',
-        # Copy Wine prefix to rootfs
-        'WINEPREFIX="${WINEPREFIX:-$HOME/.wine}"',
-        'if [ -d "$WINEPREFIX" ]; then',
-        '  echo "  Copying Wine prefix to rootfs..."',
-        '  cp -a "$WINEPREFIX/." /opt/cage/rootfs/',
-        '  echo "  Wine prefix copied successfully"',
-        'else',
-        '  echo "  WARNING: Wine prefix not found at $WINEPREFIX"',
-        'fi',
-        'echo "  Bundle export complete"',
+        'test -d "$WINEPREFIX/drive_c" || { echo "[cage] ERROR: built Wine prefix is missing drive_c" >&2; exit 70; }',
+        'rm -rf "$CAGE_PREFIX_PARTIAL"',
+        'mkdir -p "$CAGE_PREFIX_PARTIAL"',
+        'cp -a "$WINEPREFIX/." "$CAGE_PREFIX_PARTIAL/"',
+        'CAGE_PREFIX_FILE_COUNT="$(find "$CAGE_PREFIX_PARTIAL" -type f -print | wc -l)"',
+        'CAGE_PREFIX_BYTE_SIZE="$(du -sb "$CAGE_PREFIX_PARTIAL" | cut -f1)"',
+        'test "$CAGE_PREFIX_FILE_COUNT" -gt 1 || { echo "[cage] ERROR: materialized prefix contains only a placeholder/baseline" >&2; exit 71; }',
+        'test "$CAGE_PREFIX_BYTE_SIZE" -gt 0 || { echo "[cage] ERROR: materialized prefix is empty" >&2; exit 71; }',
     ]
+    if requires_chocolatey:
+        lines.extend([
+            'echo "[cage] Verifying canonical Chocolatey executable"',
+            'test -f "$CAGE_PREFIX_PARTIAL/drive_c/ProgramData/chocolatey/bin/choco.exe" || { echo "[cage] ERROR: canonical Chocolatey executable is missing" >&2; exit 72; }',
+        ])
+    if launch_relative:
+        lines.extend([
+            f'CAGE_LAUNCH_RELATIVE={_shell_quote(launch_relative)}',
+            'echo "[cage] Verifying launch executable"',
+            'test -f "$CAGE_PREFIX_PARTIAL/$CAGE_LAUNCH_RELATIVE" || { echo "[cage] ERROR: declared launch executable is missing" >&2; exit 73; }',
+        ])
+    lines.extend([
+        'export CAGE_PREFIX_FILE_COUNT CAGE_PREFIX_BYTE_SIZE CAGE_PREFIX_METADATA_PARTIAL',
+        "python3 -c 'import json, os; from pathlib import Path; Path(os.environ[\"CAGE_PREFIX_METADATA_PARTIAL\"]).write_text(json.dumps({\"schemaVersion\": \"cage.prefix-materialization/v0\", \"completed\": True, \"fileCount\": int(os.environ[\"CAGE_PREFIX_FILE_COUNT\"]), \"byteSize\": int(os.environ[\"CAGE_PREFIX_BYTE_SIZE\"])}, indent=2, sort_keys=True) + \"\\n\", encoding=\"utf-8\")'",
+        'rm -rf "$CAGE_PREFIX_PREVIOUS"',
+        'if [ -e "$CAGE_PREFIX_FINAL" ]; then mv "$CAGE_PREFIX_FINAL" "$CAGE_PREFIX_PREVIOUS"; fi',
+        'if ! mv "$CAGE_PREFIX_PARTIAL" "$CAGE_PREFIX_FINAL"; then',
+        '  if [ -e "$CAGE_PREFIX_PREVIOUS" ]; then mv "$CAGE_PREFIX_PREVIOUS" "$CAGE_PREFIX_FINAL"; fi',
+        '  exit 74',
+        'fi',
+        'mv "$CAGE_PREFIX_METADATA_PARTIAL" "$CAGE_PREFIX_METADATA_FINAL"',
+        'rm -rf "$CAGE_PREFIX_PREVIOUS"',
+        'trap - EXIT',
+        'echo "  Bundle export complete"',
+    ])
     return lines
 
 
@@ -209,6 +244,16 @@ def generate_build_script(
         f'echo "[cage] Starting build for {manifest.name} v{manifest.version}"',
         f'echo "[cage] Bundle mount: {bundle_mount}"',
         f'echo "[cage] Workspace mount: {workspace_mount}"',
+        'export WINEPREFIX="${CAGE_BUILD_PREFIX:-/tmp/cage-build-prefix}"',
+        f'CAGE_PREFIX_FINAL={_shell_quote(bundle_mount + "/prefix")}',
+        f'CAGE_PREFIX_PARTIAL={_shell_quote(bundle_mount + "/prefix.partial")}',
+        f'CAGE_PREFIX_PREVIOUS={_shell_quote(bundle_mount + "/prefix.previous")}',
+        f'CAGE_PREFIX_METADATA_PARTIAL={_shell_quote(bundle_mount + "/metadata/prefix-materialization.partial.json")}',
+        f'CAGE_PREFIX_METADATA_FINAL={_shell_quote(bundle_mount + "/metadata/prefix-materialization.json")}',
+        'export CAGE_PREFIX_FINAL CAGE_PREFIX_PARTIAL CAGE_PREFIX_PREVIOUS CAGE_PREFIX_METADATA_PARTIAL CAGE_PREFIX_METADATA_FINAL',
+        'rm -rf "$WINEPREFIX" "$CAGE_PREFIX_PARTIAL" "$CAGE_PREFIX_PREVIOUS" "$CAGE_PREFIX_METADATA_PARTIAL"',
+        'mkdir -p "$WINEPREFIX"',
+        'trap \'rm -rf "$CAGE_PREFIX_PARTIAL" "$CAGE_PREFIX_METADATA_PARTIAL"\' EXIT',
         'echo ""',
         "",
         # Phase 1: Initialize Wine prefix
@@ -251,7 +296,7 @@ def generate_build_script(
         "",
         # Phase 4: Export bundle
         'echo "[cage] Phase 4: Exporting bundle"',
-        *_export_lines(manifest),
+        *_export_lines(manifest, bundle_mount=bundle_mount),
         'echo ""',
         "",
         'echo "[cage] Build complete"',

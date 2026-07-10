@@ -38,6 +38,12 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str) -> dict[str, An
     verification = verify_bundle(bundle)
     if not verification.get('valid'):
         raise OCIExportError('invalid Cage bundle: ' + _verification_error_text(verification))
+    if not verification.get('runnable'):
+        classification = verification.get('classification', 'non-runnable-artifact')
+        state = (verification.get('status') or {}).get('state')
+        raise OCIExportError(
+            f'Cage bundle is not runnable: classification={classification}, state={state}'
+        )
 
     manifest = _load_json(bundle, 'manifest.cage.json')
     graph = _load_json(bundle, 'metadata/graph.json')
@@ -89,6 +95,7 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str) -> dict[str, An
         'verification': {
             'schemaVersion': verification.get('schemaVersion'),
             'valid': True,
+            'runnable': True,
             'warnings': verification.get('warnings', []),
         },
     }

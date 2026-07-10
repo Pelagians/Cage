@@ -12,6 +12,7 @@ from builder.executor import execute_inside_container
 from builder.pipeline import generate_build_script
 from core.manifest import Manifest
 from runtime.launcher import RunError, build_run_plan
+from tests.bundle_fixtures import materialize_runnable_prefix
 
 
 RUNNER_MANIFEST = {
@@ -56,8 +57,15 @@ class RunnerExecutionBuildTests(unittest.TestCase):
                 "runner": {"id": "pol-4.3"},
                 "diagnostic": {"status": "missing-elf-interpreter"},
             }
+            def fake_run(*_args, **_kwargs):
+                materialize_runnable_prefix(
+                    bundle,
+                    entrypoint=RUNNER_MANIFEST["launch"]["entrypoint"],
+                )
+                return Completed()
+
             with patch("builder.executor.ensure_runner", return_value=ensure_result) as ensure_runner:
-                with patch("builder.executor._run_container_command", return_value=Completed()) as run, patch("sys.stderr", io.StringIO()):
+                with patch("builder.executor._run_container_command", side_effect=fake_run) as run, patch("sys.stderr", io.StringIO()):
                     result = execute_inside_container(
                         manifest,
                         bundle,

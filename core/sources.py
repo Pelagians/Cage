@@ -144,6 +144,10 @@ def verify_manifest_sources(manifest: Manifest, *, workspace: Path | str | None 
 
     # Check modules for source references
     for index, module in enumerate(manifest.modules):
+        if module.type == "chocolatey":
+            # Chocolatey bootstrap assets are resolved and checksum-verified by
+            # its immutable internal profile, not as recipe-local sources.
+            continue
         if hasattr(module, 'source') and module.source:
             add_item(
                 location=f"modules[{index}].source",
@@ -300,6 +304,10 @@ def audit_manifest_sources(manifest: Manifest, *, workspace: Path | str | None =
 
     # Check modules for source references
     for index, module in enumerate(manifest.modules):
+        if module.type == "chocolatey":
+            # Chocolatey bootstrap assets are resolved and checksum-verified by
+            # its immutable internal profile, not as recipe-local sources.
+            continue
         if hasattr(module, 'source') and module.source:
             add_item(
                 location=f"modules[{index}].source",

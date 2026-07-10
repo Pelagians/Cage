@@ -16,6 +16,7 @@ INSPECTION_SCHEMA_VERSION = "cage.bundle-inspection/v0"
 VERIFICATION_SCHEMA_VERSION = "cage.bundle-verification/v0"
 STATUS_SCHEMA_VERSION = "cage.bundle-status/v0"
 STEP_EVIDENCE_SCHEMA_VERSION = "cage.step-evidence/v0"
+PREFIX_MATERIALIZATION_SCHEMA_VERSION = "cage.prefix-materialization/v0"
 SUPPORTED_NETWORK_MODES = {"none", "bridge", "host"}
 STATUS_STATES = {
     "planned",
@@ -23,6 +24,8 @@ STATUS_STATES = {
     "build-running",
     "build-failed",
     "build-passed",
+    "verification-failed",
+    "runnable",
     "run-passed",
 }
 
@@ -102,6 +105,132 @@ def inspect_bundle(bundle_path: Path | str) -> dict[str, Any]:
             "createdAt": provenance.get("createdAt"),
         },
         "files": {rel: _file_summary(bundle / rel) for rel in REQUIRED_FILES},
+    }
+
+
+def _case_insensitive_child(parent: Path, name: str) -> Path:
+    direct = parent / name
+    if direct.exists():
+        return direct
+    if not parent.is_dir():
+        return direct
+    lowered = name.casefold()
+    for child in parent.iterdir():
+        if child.name.casefold() == lowered:
+            return child
+    return direct
+
+
+def _prefix_path_for_windows_path(prefix: Path, value: str) -> Path | None:
+    normalized = value.replace("\\", "/")
+    if len(normalized) < 3 or normalized[1:3] != ":/" or normalized[0].lower() != "c":
+        return None
+    parts = [part for part in normalized[3:].split("/") if part and part != "."]
+    if not parts or any(part == ".." for part in parts):
+        return None
+    current = prefix / "drive_c"
+    for part in parts:
+        current = _case_insensitive_child(current, part)
+    return current
+
+
+def _is_contained_regular_file(path: Path | None, root: Path) -> bool:
+    if path is None or not path.is_file() or path.is_symlink():
+        return False
+    try:
+        return path.resolve().is_relative_to(root.resolve())
+    except OSError:
+        return False
+
+
+def verify_prefix_materialization(
+    bundle_path: Path | str,
+    *,
+    manifest: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Verify the canonical prefix and application-specific readiness gates."""
+    bundle = Path(bundle_path)
+    prefix = bundle / "prefix"
+    manifest_payload = manifest if manifest is not None else _load_json(bundle, "manifest.cage.json")
+    metadata_path = bundle / "metadata" / "prefix-materialization.json"
+    metadata: dict[str, Any] = {}
+    metadata_error: str | None = None
+    if metadata_path.exists():
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            metadata_error = str(exc)
+
+    files = [path for path in prefix.rglob("*") if path.is_file()] if prefix.exists() else []
+    actual_file_count = len(files)
+    actual_byte_size = sum(path.stat().st_size for path in files)
+    placeholder = prefix / "drive_c" / ".keep"
+    recorded_count = metadata.get("fileCount")
+    recorded_size = metadata.get("byteSize")
+    materialization_ok = (
+        metadata_error is None
+        and metadata.get("schemaVersion") == PREFIX_MATERIALIZATION_SCHEMA_VERSION
+        and metadata.get("completed") is True
+        and type(recorded_count) is int
+        and recorded_count > 1
+        and recorded_count == actual_file_count
+        and type(recorded_size) is int
+        and recorded_size > 0
+        and actual_byte_size > 0
+        and not placeholder.exists()
+        and (prefix / "drive_c").is_dir()
+    )
+    checks: list[dict[str, Any]] = [{
+        "id": "prefix-materialization",
+        "ok": materialization_ok,
+        "message": "canonical prefix was materialized after build verification" if materialization_ok else "canonical prefix lacks trustworthy materialization evidence",
+        "details": {
+            "metadataPath": "metadata/prefix-materialization.json",
+            "metadataError": metadata_error,
+            "recordedFileCount": recorded_count,
+            "actualFileCount": actual_file_count,
+            "recordedByteSize": recorded_size,
+            "actualFileByteSize": actual_byte_size,
+            "placeholderPresent": placeholder.exists(),
+        },
+    }]
+
+    modules_value = manifest_payload.get("modules")
+    modules = modules_value if isinstance(modules_value, list) else []
+    requires_chocolatey = any(
+        isinstance(module, dict) and module.get("type") == "chocolatey"
+        for module in modules
+    )
+    choco_path = prefix / "drive_c" / "ProgramData" / "chocolatey" / "bin" / "choco.exe"
+    choco_ok = not requires_chocolatey or _is_contained_regular_file(choco_path, prefix)
+    checks.append({
+        "id": "chocolatey-readiness",
+        "ok": choco_ok,
+        "required": requires_chocolatey,
+        "message": "canonical Chocolatey executable exists" if requires_chocolatey and choco_ok else "Chocolatey is not required" if not requires_chocolatey else "canonical Chocolatey executable is missing",
+        "details": {"path": str(choco_path)},
+    })
+
+    launch_value = manifest_payload.get("launch")
+    launch = launch_value if isinstance(launch_value, dict) else {}
+    entrypoint = launch.get("entrypoint")
+    launch_path = _prefix_path_for_windows_path(prefix, entrypoint) if isinstance(entrypoint, str) else None
+    launch_ok = _is_contained_regular_file(launch_path, prefix)
+    checks.append({
+        "id": "launch-executable",
+        "ok": launch_ok,
+        "required": True,
+        "message": "declared launch executable exists in canonical prefix" if launch_ok else "declared launch executable is missing from canonical prefix",
+        "details": {"entrypoint": entrypoint, "resolvedPath": str(launch_path) if launch_path else None},
+    })
+
+    return {
+        "valid": all(check["ok"] for check in checks),
+        "materialized": materialization_ok,
+        "launchExecutable": str(launch_path) if launch_path else None,
+        "fileCount": actual_file_count,
+        "byteSize": actual_byte_size,
+        "checks": checks,
     }
 
 
@@ -326,9 +455,21 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
     )
 
     structural_valid = bool(checks) and all(check["ok"] for check in checks)
-    materialized_prefix = structural_valid and status.get("materializedPrefix") is True
+    prefix_verification = verify_prefix_materialization(bundle, manifest=manifest)
+    runnability_checks = prefix_verification["checks"]
+    materialized_prefix = (
+        structural_valid
+        and status.get("materializedPrefix") is True
+        and prefix_verification.get("materialized") is True
+    )
     has_default_launch = structural_valid and status.get("hasDefaultLaunch") is True
-    runnable = structural_valid and status.get("runnable") is True and materialized_prefix and has_default_launch
+    runnable = (
+        structural_valid
+        and status.get("runnable") is True
+        and materialized_prefix
+        and has_default_launch
+        and all(check.get("ok") is True for check in runnability_checks)
+    )
     state = status.get("state")
     if structural_valid and not runnable:
         warnings.append(f"bundle is structurally valid but not runnable yet (state={state})")
@@ -338,6 +479,8 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
         classification = "dry-run-placeholder"
     elif state == "build-failed":
         classification = "failed-build-artifact"
+    elif state == "verification-failed":
+        classification = "failed-verification-artifact"
     elif state == "source-failed":
         classification = "failed-source-artifact"
     else:
@@ -357,6 +500,12 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
             "hasDefaultLaunch": status.get("hasDefaultLaunch"),
         },
         "checks": checks,
+        "runnabilityChecks": runnability_checks,
+        "prefix": {
+            "fileCount": prefix_verification.get("fileCount"),
+            "byteSize": prefix_verification.get("byteSize"),
+            "launchExecutable": prefix_verification.get("launchExecutable"),
+        },
         "errors": errors,
         "warnings": warnings,
     }

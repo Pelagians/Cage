@@ -117,7 +117,7 @@ class ArtifactIndexCLITests(unittest.TestCase):
         self.assertEqual(payload["schemaVersion"], ARTIFACT_INDEX_SCHEMA_VERSION)
         self.assertIn("notepad-plus-plus", payload["artifacts"])
 
-    def test_cli_resolve_run_and_export_accept_app_name_from_index(self):
+    def test_cli_resolve_and_run_plan_accept_app_name_but_oci_rejects_dry_run_bundle(self):
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "dist"
@@ -194,10 +194,10 @@ class ArtifactIndexCLITests(unittest.TestCase):
 
         self.assertEqual(resolved.returncode, 0, resolved.stderr)
         self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertEqual(export.returncode, 0, export.stderr)
+        self.assertEqual(export.returncode, 5, export.stderr)
         self.assertTrue(json.loads(resolved.stdout)["bundle"].endswith("notepad-plus-plus-8.6.0"))
         self.assertEqual(json.loads(run.stdout)["schemaVersion"], "cage.run-plan/v0")
-        self.assertEqual(json.loads(export.stdout)["schemaVersion"], "cage.oci-export-plan/v0")
+        self.assertIn("not runnable", export.stderr)
 
 
 if __name__ == "__main__":
