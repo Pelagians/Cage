@@ -1,0 +1,16 @@
+schemaVersion: cage.app/v0
+name: chocolatey-bootstrap-smoke
+version: "0.1.0"
+
+runtime:
+  provider: wine
+  version: "11.0"
+  network: none
+
+build:
+  network: host
+
+modules:
+  - type: chocolatey
+    install:
+      packages: []

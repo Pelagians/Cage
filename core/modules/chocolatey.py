@@ -78,8 +78,8 @@ class ChocolateyModule(ModuleBase):
         if not isinstance(self.install, dict):
             raise ModuleError("chocolatey module requires 'install' object")
         packages = self.install.get("packages")
-        if not isinstance(packages, list) or not packages:
-            raise ModuleError("chocolatey module 'install.packages' cannot be empty")
+        if not isinstance(packages, list):
+            raise ModuleError("chocolatey module 'install.packages' must be a list")
         if not all(isinstance(package, str) and package for package in packages):
             raise ModuleError("chocolatey module 'install.packages' must be a list of non-empty strings")
         for package in packages:
@@ -139,6 +139,8 @@ class ChocolateyModule(ModuleBase):
         fetch_helper = load_asset("fetch-verified.sh").rstrip()
         failure_helper = load_asset("failure-diagnostics.sh").rstrip()
         for asset_name, description, kind, timeout in _STEP_SPECS:
+            if asset_name == "install-package.sh" and not packages:
+                continue
             script = render_asset(asset_name, values)
             if asset_name in _DOWNLOAD_ASSETS:
                 script = fetch_helper + "\n\n" + script

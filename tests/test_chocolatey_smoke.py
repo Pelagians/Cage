@@ -11,7 +11,7 @@ import zipfile
 from pathlib import Path
 
 from core.chocolatey.assets import asset_sha256, load_asset, load_asset_bytes
-from core.manifest import Manifest
+from core.manifest import Manifest, load_manifest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -122,6 +122,24 @@ class ChocolateySmokePackageTests(unittest.TestCase):
         self.assertIn("marker-absent-before.log", smoke)
         self.assertIn("cage_chocolatey_collect_failure_diagnostics", smoke)
         self.assertNotIn("community.chocolatey.org", smoke)
+
+    def test_bootstrap_only_module_stops_after_local_lifecycle(self):
+        manifest = load_manifest(
+            ROOT / "tests/fixtures/chocolatey-bootstrap-smoke.cage.yaml"
+        )
+        descriptions = [step.description for step in manifest.modules[0].build()]
+
+        self.assertEqual(getattr(manifest.modules[0], "install"), {"packages": []})
+        self.assertIn("Prove Chocolatey local package lifecycle", descriptions)
+        self.assertFalse(any(name.startswith("Install Chocolatey packages:") for name in descriptions))
+
+        workflow = (
+            ROOT / ".github/workflows/chocolatey-smoke.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("ghcr.io/pelagians/cage-wine:11.0", workflow)
+        self.assertIn("--build-timeout 7200", workflow)
+        self.assertIn("if: always()", workflow)
+        self.assertIn("actions/upload-artifact@v4", workflow)
 
     def test_lifecycle_outer_timeouts_cover_cumulative_inner_probes(self):
         steps = {step.description: step for step in _steps()}
