@@ -78,6 +78,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         script = _all_commands(steps)
 
         self.assertEqual(descriptions, [
+            "Record Chocolatey bootstrap profile",
             "Install PowerShell 7 MSI for Chocolatey",
             "Prepare Chocolatey-for-wine data",
             "Install upstream .NET 4.8.1 manifest payload for Chocolatey",
@@ -93,7 +94,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertLess(script.index("Diagnose Chocolatey readiness"), script.index("Install Chocolatey packages"))
 
     def test_chocolatey_uses_pinned_powershell_msi_like_upstream_chocinstaller(self):
-        powershell = "\n".join(_manifest().modules[0].build()[0].commands)
+        powershell = "\n".join(_manifest().modules[0].build()[1].commands)
 
         self.assertIn("PowerShell-7.5.5-win-x64.msi", powershell)
         self.assertIn("https://github.com/PowerShell/PowerShell/releases/download/v7.5.5/PowerShell-7.5.5-win-x64.msi", powershell)
@@ -114,8 +115,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
 
     def test_chocolatey_extracts_nupkg_to_raw_tools_before_promotion(self):
         steps = _manifest().modules[0].build()
-        prepare = "\n".join(steps[1].commands)
-        promote = "\n".join(steps[4].commands)
+        prepare = "\n".join(steps[2].commands)
+        promote = "\n".join(steps[5].commands)
 
         self.assertIn("https://community.chocolatey.org/api/v2/package/chocolatey/2.6.0", prepare)
         self.assertIn("f13a2af9cd4ec2c9b58d81861bc95ad7151e3a871d8f758dffa72a996a3792d8", prepare)
@@ -130,7 +131,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
 
     def test_chocolatey_prepare_matches_release_archive_layout(self):
         """Pinned CFW release archive does not include winetricks.ps1."""
-        prepare = "\n".join(_manifest().modules[0].build()[1].commands)
+        prepare = "\n".join(_manifest().modules[0].build()[2].commands)
 
         self.assertIn('cfw_extract="$cfw_cache/extracted/Chocolatey-for-wine"', prepare)
         self.assertIn('test -f "$cfw_extract/choc_install.ps1"', prepare)
@@ -148,7 +149,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertNotIn('cp -f "$cfw_extract/winetricks.ps1"', prepare)
 
     def test_chocolatey_dotnet481_uses_upstream_manifest_payload(self):
-        dotnet = "\n".join(_manifest().modules[0].build()[2].commands)
+        dotnet = "\n".join(_manifest().modules[0].build()[3].commands)
 
         self.assertIn("ndp481-x86-x64-allos-enu.exe", dotnet)
         self.assertIn("https://download.visualstudio.microsoft.com/download/pr/6f083c7e-bd40-44d4-9e3f-ffba71ec8b09/3951fd5af6098f2c7e8ff5c331a0679c/ndp481-x86-x64-allos-enu.exe", dotnet)
@@ -178,7 +179,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertNotIn("choco.exe install", dotnet)
 
     def test_chocolatey_registry_prep_sets_win10_and_upstream_dll_policy(self):
-        registry = "\n".join(_manifest().modules[0].build()[3].commands)
+        registry = "\n".join(_manifest().modules[0].build()[4].commands)
 
         self.assertIn("winecfg /v win10", registry)
         self.assertIn("CAGE_WINECFG_TIMEOUT", registry)
@@ -199,7 +200,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("C:\\Program Files\\PowerShell\\7\\pwsh.exe", registry)
 
     def test_chocolatey_native_promotion_replaces_pwsh_finalizer_boundary(self):
-        promote = "\n".join(_manifest().modules[0].build()[4].commands)
+        promote = "\n".join(_manifest().modules[0].build()[5].commands)
 
         self.assertIn("Promote Chocolatey natively", promote)
         self.assertIn('raw_choco_dir="$wine_prefix/drive_c/ProgramData/tools/ChocolateyInstall"', promote)
@@ -215,7 +216,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertNotIn("PWSH-ALIVE", promote)
 
     def test_chocolatey_native_promotion_preserves_payload_and_uses_real_choco_in_bin(self):
-        promote = "\n".join(_manifest().modules[0].build()[4].commands)
+        promote = "\n".join(_manifest().modules[0].build()[5].commands)
 
         self.assertIn('rm -rf "$canonical_choco_dir"', promote)
         self.assertIn('source = Path(sys.argv[1])', promote)
@@ -247,7 +248,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("redirects", promote)
 
     def test_chocolatey_native_promotion_sets_environment_without_pwsh(self):
-        promote = "\n".join(_manifest().modules[0].build()[4].commands)
+        promote = "\n".join(_manifest().modules[0].build()[5].commands)
 
         self.assertIn("ChocolateyInstall", promote)
         self.assertIn("ChocolateyToolsLocation", promote)
@@ -260,7 +261,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertNotIn("export WINEPATH=", promote)
 
     def test_chocolatey_native_promotion_keeps_canonical_choco_gate(self):
-        promote = "\n".join(_manifest().modules[0].build()[4].commands)
+        promote = "\n".join(_manifest().modules[0].build()[5].commands)
 
         self.assertIn("ProgramData/tools/ChocolateyInstall/choco.exe", promote)
         self.assertIn("ProgramData/chocolatey/bin/choco.exe", promote)
@@ -282,7 +283,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertNotIn("CAGE_CHOCOLATEY_FINALIZE_TIMEOUT", promote)
 
     def test_chocolatey_package_install_uses_canonical_choco_only(self):
-        package = "\n".join(_manifest(["7zip", "notepadplusplus"]).modules[0].build()[6].commands)
+        package = "\n".join(_manifest(["7zip", "notepadplusplus"]).modules[0].build()[7].commands)
 
         self.assertIn("ProgramData/chocolatey/bin/choco.exe", package)
         self.assertNotIn("ProgramData/tools/chocolateyInstall/choco.exe", package)
@@ -304,8 +305,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
 
     def test_chocolatey_diagnostic_writes_json_before_package_install(self):
         steps = _manifest(["7zip"]).modules[0].build()
-        diagnostic = "\n".join(steps[5].commands)
-        package = "\n".join(steps[6].commands)
+        diagnostic = "\n".join(steps[6].commands)
+        package = "\n".join(steps[7].commands)
 
         self.assertIn("metadata/chocolatey-diagnostic.json", diagnostic)
         self.assertIn("cage.chocolatey-diagnostic/v0", diagnostic)

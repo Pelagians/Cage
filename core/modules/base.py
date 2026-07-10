@@ -64,7 +64,7 @@ class ModuleBase:
 
 
 MODULE_FIELDS: dict[str, set[str]] = {
-    "chocolatey": {"type", "defaults", "install", "source", "version", "sha256"},
+    "chocolatey": {"type", "defaults", "install", "source", "bootstrap"},
     "exe": {"type", "defaults", "source", "sha256", "silentArgs"},
     "msi": {"type", "defaults", "source", "sha256", "silentArgs"},
     "iso": {"type", "defaults", "source", "autorun"},
@@ -168,8 +168,7 @@ def _validate_common_module_data(module_type: str, data: dict[str, Any], index: 
         if install is not None and not isinstance(install, dict):
             raise ModuleError(f"{location}.install must be an object")
         _optional_str(data, "source", location)
-        _optional_str(data, "version", location)
-        _optional_str(data, "sha256", location)
+        _optional_str(data, "bootstrap", location)
 
 
 @dataclass
@@ -459,8 +458,7 @@ def parse_module(data: dict[str, Any], index: int = 0) -> ModuleBase:
             defaults=defaults,
             install=merged_data.get("install"),
             source=merged_data.get("source"),
-            version=merged_data.get("version", "v0.5c.755"),
-            sha256=merged_data.get("sha256"),
+            bootstrap=merged_data.get("bootstrap", "cfw-v0.5c.755-choco-2.6.0-dotnet481-r1"),
         )
     elif module_type == "exe":
         return ExeModule(
