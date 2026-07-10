@@ -14,9 +14,9 @@ cage_chocolatey_collect_failure_diagnostics() {
   esac
   mkdir -p "$probe_dir"
   set +e
-  WINEDEBUG=+loaddll timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-30s}" wine "$choco_exe_win" --version > "$probe_dir/choco-mscoree-loader.log" 2>&1
+  WINEDEBUG=+loaddll timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-15s}" wine "$choco_exe_win" --version > "$probe_dir/choco-mscoree-loader.log" 2>&1
   loader_rc="$?"
-  WINEDEBUG=+seh,+loaddll timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-30s}" wine "$choco_exe_win" --version > "$probe_dir/choco-version-winedebug.log" 2>&1
+  WINEDEBUG=+seh,+loaddll timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-15s}" wine "$choco_exe_win" --version > "$probe_dir/choco-version-winedebug.log" 2>&1
   seh_rc="$?"
   timeout "$inventory_timeout" python3 - "$canonical_choco_dir" "$inventory_limit" > "$probe_dir/promoted-files.log" 2>&1 <<'PY'
 import sys
