@@ -351,8 +351,8 @@ for manifest in manifests:
 
 # Keep the NDP-owned native CLR implementation files explicit even if a
 # manifest uses a path form this parser does not understand. mscoree.dll is a
-# Windows OS component absent from the pinned Windows 10 NDP payload; preserve
-# and verify the copies created by Wine prefix initialization instead.
+# Windows OS component installed and verified by the preceding pinned KB958488
+# compatibility step; preserve those native copies here.
 required_copies = [
     ("mscoreei.dll", framework64 / "mscoreei.dll", ("amd64",)),
     ("mscoreei.dll", framework32 / "mscoreei.dll", ("x86", "wow64")),
@@ -388,7 +388,7 @@ if missing:
     raise SystemExit("missing dotnet481 profile marker files: " + ", ".join(missing))
 preserved_files = [
     {
-        "source": "wine-prefix-prerequisite",
+        "source": "native-mscoree-update-prerequisite",
         "destination": "C:/" + str(path.relative_to(drive_c)).replace(chr(92), "/"),
         "sha256": sha256_file(path),
     }

@@ -5,6 +5,7 @@ import io
 import runpy
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -80,12 +81,44 @@ class ChocolateySmokePackageTests(unittest.TestCase):
         self.assertIn("CAGE_CHOCOLATEY_SMOKE_RUN_ID", uninstall)
 
     def test_built_wheel_contains_smoke_nupkg(self):
-        uv = shutil.which("uv")
-        if uv is None:
-            self.fail("uv is required for the wheel-content acceptance test")
         with tempfile.TemporaryDirectory() as temporary:
+            temporary_path = Path(temporary)
+            source_copy = temporary_path / "source"
+            shutil.copytree(
+                ROOT,
+                source_copy,
+                ignore=shutil.ignore_patterns(
+                    ".git",
+                    ".venv",
+                    "build",
+                    "dist",
+                    "*.egg-info",
+                    "__pycache__",
+                ),
+            )
+            uv = shutil.which("uv")
+            if uv:
+                command = [
+                    uv,
+                    "build",
+                    "--wheel",
+                    "--out-dir",
+                    str(temporary_path),
+                    str(source_copy),
+                ]
+            else:
+                command = [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "wheel",
+                    str(source_copy),
+                    "--no-deps",
+                    "--wheel-dir",
+                    temporary,
+                ]
             subprocess.run(
-                [uv, "build", "--wheel", "--out-dir", temporary],
+                command,
                 cwd=ROOT,
                 check=True,
                 capture_output=True,
@@ -94,10 +127,12 @@ class ChocolateySmokePackageTests(unittest.TestCase):
             wheels = list(Path(temporary).glob("*.whl"))
             self.assertEqual(len(wheels), 1)
             with zipfile.ZipFile(wheels[0]) as wheel:
+                names = wheel.namelist()
                 self.assertIn(
                     f"core/chocolatey/assets/{SMOKE_NUPKG}",
-                    wheel.namelist(),
+                    names,
                 )
+                self.assertNotIn("core/chocolatey/assets.py", names)
 
     def test_local_lifecycle_step_precedes_user_package_install(self):
         steps = _steps()

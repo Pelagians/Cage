@@ -88,7 +88,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             "Record Chocolatey bootstrap profile",
             "Install PowerShell 7 MSI for Chocolatey",
             "Prepare Chocolatey-for-wine data",
-            "Install upstream .NET 4.8.1 manifest payload for Chocolatey",
+            "Install native .NET loader",
+            "Install frozen dotnet481 profile",
             "Prepare Wine registry for Chocolatey",
             "Promote Chocolatey natively",
             "Diagnose Chocolatey readiness",
@@ -105,7 +106,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertLess(script.index("Prove Chocolatey local package lifecycle"), script.index("Install Chocolatey packages"))
 
     def test_chocolatey_uses_pinned_powershell_msi_like_upstream_chocinstaller(self):
-        powershell = "\n".join(_manifest().modules[0].build()[1].commands)
+        powershell = _commands_for(_manifest().modules[0].build(), "Install PowerShell 7 MSI for Chocolatey")
 
         self.assertIn("PowerShell-7.5.5-win-x64.msi", powershell)
         self.assertIn("https://github.com/PowerShell/PowerShell/releases/download/v7.5.5/PowerShell-7.5.5-win-x64.msi", powershell)
@@ -126,8 +127,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
 
     def test_chocolatey_extracts_nupkg_to_raw_tools_before_promotion(self):
         steps = _manifest().modules[0].build()
-        prepare = "\n".join(steps[2].commands)
-        promote = "\n".join(steps[5].commands)
+        prepare = _commands_for(steps, "Prepare Chocolatey-for-wine data")
+        promote = _commands_for(steps, "Promote Chocolatey natively")
 
         self.assertIn("https://community.chocolatey.org/api/v2/package/chocolatey/2.6.0", prepare)
         self.assertIn("f13a2af9cd4ec2c9b58d81861bc95ad7151e3a871d8f758dffa72a996a3792d8", prepare)
@@ -142,7 +143,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
 
     def test_chocolatey_prepare_matches_release_archive_layout(self):
         """Pinned CFW release archive does not include winetricks.ps1."""
-        prepare = "\n".join(_manifest().modules[0].build()[2].commands)
+        prepare = _commands_for(_manifest().modules[0].build(), "Prepare Chocolatey-for-wine data")
 
         self.assertIn('cfw_extract="$cfw_cache/extracted/Chocolatey-for-wine"', prepare)
         self.assertIn('test -f "$cfw_extract/choc_install.ps1"', prepare)
@@ -160,7 +161,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertNotIn('cp -f "$cfw_extract/winetricks.ps1"', prepare)
 
     def test_chocolatey_dotnet481_uses_upstream_manifest_payload(self):
-        dotnet = "\n".join(_manifest().modules[0].build()[3].commands)
+        dotnet = _commands_for(_manifest().modules[0].build(), "Install frozen dotnet481 profile")
 
         self.assertIn("ndp481-x86-x64-allos-enu.exe", dotnet)
         self.assertIn("https://download.visualstudio.microsoft.com/download/pr/6f083c7e-bd40-44d4-9e3f-ffba71ec8b09/3951fd5af6098f2c7e8ff5c331a0679c/ndp481-x86-x64-allos-enu.exe", dotnet)
@@ -190,7 +191,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertNotIn("choco.exe install", dotnet)
 
     def test_chocolatey_registry_prep_sets_win10_and_upstream_dll_policy(self):
-        registry = "\n".join(_manifest().modules[0].build()[4].commands)
+        registry = _commands_for(_manifest().modules[0].build(), "Prepare Wine registry for Chocolatey")
 
         self.assertIn("winecfg /v win10", registry)
         self.assertIn("CAGE_WINECFG_TIMEOUT", registry)
@@ -211,7 +212,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("C:\\Program Files\\PowerShell\\7\\pwsh.exe", registry)
 
     def test_chocolatey_native_promotion_replaces_pwsh_finalizer_boundary(self):
-        promote = "\n".join(_manifest().modules[0].build()[5].commands)
+        promote = _commands_for(_manifest().modules[0].build(), "Promote Chocolatey natively")
 
         self.assertIn("Promote Chocolatey natively", promote)
         self.assertIn('raw_choco_dir="$wine_prefix/drive_c/ProgramData/tools/ChocolateyInstall"', promote)
@@ -227,7 +228,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertNotIn("PWSH-ALIVE", promote)
 
     def test_chocolatey_native_promotion_preserves_payload_and_uses_real_choco_in_bin(self):
-        promote = "\n".join(_manifest().modules[0].build()[5].commands)
+        promote = _commands_for(_manifest().modules[0].build(), "Promote Chocolatey natively")
 
         self.assertIn('rm -rf "$canonical_choco_dir"', promote)
         self.assertIn('source = Path(sys.argv[1])', promote)
@@ -259,7 +260,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("redirects", promote)
 
     def test_chocolatey_native_promotion_sets_environment_without_pwsh(self):
-        promote = "\n".join(_manifest().modules[0].build()[5].commands)
+        promote = _commands_for(_manifest().modules[0].build(), "Promote Chocolatey natively")
 
         self.assertIn("ChocolateyInstall", promote)
         self.assertIn("ChocolateyToolsLocation", promote)

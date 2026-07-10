@@ -10,7 +10,7 @@ class ChocolateyProfileError(ValueError):
     """Raised when a Chocolatey bootstrap profile is invalid or unknown."""
 
 
-DEFAULT_BOOTSTRAP_PROFILE_ID = "cfw-v0.5c.755-choco-2.6.0-dotnet481-r2"
+DEFAULT_BOOTSTRAP_PROFILE_ID = "cfw-v0.5c.755-choco-2.6.0-dotnet481-r3"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -41,6 +41,8 @@ class ChocolateyBootstrapProfile:
     powershell_host_feature: str = "powershellHost"
     powershell_host: str = "disabled"
     allow_global_confirmation: str = "disabled"
+    mscoree_update_url: str = "https://catalog.s.download.windowsupdate.com/msdownload/update/software/crup/2010/06/windows6.1-kb958488-v6001-x64_a137e4f328f01146dfa75d7b5a576090dee948dc.msu"
+    mscoree_update_sha256: str = "a5f4243ce8b07c9222284fd8ff6f7e742d934c57c89de9cab5d88c74402264e3"
 
     def validate(self) -> None:
         if not self.id or not self.dotnet_profile or not self.revision:
@@ -72,6 +74,8 @@ class ChocolateyBootstrapProfile:
             "dotnetProfile": self.dotnet_profile,
             "dotnetInstallerUrl": self.dotnet_installer_url,
             "dotnetInstallerSha256": self.dotnet_installer_sha256,
+            "mscoreeUpdateUrl": self.mscoree_update_url,
+            "mscoreeUpdateSha256": self.mscoree_update_sha256,
             "features": {
                 "powershellHostFeature": self.powershell_host_feature,
                 "powershellHost": self.powershell_host,
@@ -101,6 +105,8 @@ class ChocolateyBootstrapProfile:
             "DOTNET_PROFILE": self.dotnet_profile,
             "DOTNET_INSTALLER_URL": self.dotnet_installer_url,
             "DOTNET_INSTALLER_SHA256": self.dotnet_installer_sha256,
+            "MSCOREE_UPDATE_URL": self.mscoree_update_url,
+            "MSCOREE_UPDATE_SHA256": self.mscoree_update_sha256,
             "POWERSHELL_HOST_FEATURE": self.powershell_host_feature,
             "POWERSHELL_HOST_POLICY": self.powershell_host,
             "ALLOW_GLOBAL_CONFIRMATION_POLICY": self.allow_global_confirmation,
@@ -128,7 +134,7 @@ _BUILTIN_PROFILES = {
         dotnet_installer_sha256="859b556ee19a33353626682b8b6f7e9ce97cd325b0d8f24c7770dc31f688d3c1",
         upstream_project="PietJankbal/Chocolatey-for-wine",
         upstream_tag="v0.5c.755",
-        revision="r2",
+        revision="r3",
     ),
 }
 
