@@ -5,6 +5,7 @@ import dataclasses
 import hashlib
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -161,6 +162,86 @@ class ChocolateyAssetContractTests(unittest.TestCase):
             subprocess.run([str(runner)], env=environment, check=True)
             self.assertEqual(blob.read_bytes(), payload)
             self.assertEqual((root / "output.bin").read_bytes(), payload)
+
+    def test_dotnet_manifest_destination_is_a_directory_not_a_filename(self):
+        script = load_asset("install-dotnet481.sh")
+        embedded = script[
+            script.index("import hashlib\n") : script.index("\nPY\n", script.index("import hashlib\n"))
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            payload = root / "payload"
+            drive = root / "drive"
+            registry = root / "registry"
+            payload.mkdir()
+            drive.mkdir()
+            registry.mkdir()
+
+            def manifest(
+                stem: str,
+                name: str,
+                destination: str,
+            ) -> None:
+                source_dir = payload / stem
+                source_dir.mkdir()
+                (source_dir / name.lower()).write_bytes(name.encode("ascii"))
+                (payload / f"{stem}.manifest").write_text(
+                    '<?xml version="1.0" encoding="UTF-8"?>\n'
+                    '<assembly xmlns="urn:schemas-microsoft-com:asm.v3">\n'
+                    '  <assemblyIdentity processorArchitecture="amd64" />\n'
+                    f'  <file name="{name}" destinationPath="{destination}" />\n'
+                    '</assembly>\n',
+                    encoding="utf-8",
+                )
+
+            manifest(
+                "amd64_oracle_header",
+                "OracleHeader.h",
+                "$(runtime.inf)\\.NET Data Provider for Oracle\\",
+            )
+            manifest(
+                "amd64_oracle_locale",
+                "OracleCounters.ini",
+                "$(runtime.inf)\\.NET Data Provider for Oracle\\0000\\",
+            )
+            required = (
+                "mscoree.dll",
+                "mscoreei.dll",
+                "clr.dll",
+                "clrjit.dll",
+                "ucrtbase_clr0400.dll",
+                "vcruntime140_clr0400.dll",
+            )
+            for architecture in ("amd64", "x86"):
+                directory = payload / f"{architecture}_required"
+                directory.mkdir()
+                for name in required:
+                    (directory / name).write_bytes(f"{architecture}:{name}".encode("ascii"))
+
+            argv = [
+                "embedded-dotnet-profile",
+                str(payload),
+                str(drive),
+                str(registry),
+                str(root / "profile.json"),
+                "dotnet481-cfw-r1",
+                "0" * 64,
+            ]
+            runner = (
+                "import sys\n"
+                f"sys.argv = {argv!r}\n"
+                f"exec(compile({embedded!r}, 'install-dotnet481.sh', 'exec'), {{'__name__': '__main__'}})\n"
+            )
+            result = subprocess.run(
+                [sys.executable, "-c", runner],
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            oracle = drive / "windows/inf/.NET Data Provider for Oracle"
+            self.assertTrue((oracle / "OracleHeader.h").is_file())
+            self.assertTrue((oracle / "0000/OracleCounters.ini").is_file())
 
     def test_dotnet_profile_fails_closed_and_emits_install_manifest(self):
         script = load_asset("install-dotnet481.sh")

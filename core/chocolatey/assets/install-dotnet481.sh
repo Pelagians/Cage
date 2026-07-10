@@ -123,12 +123,14 @@ def token_map_for(arch_value):
 def replace_tokens(value, arch_value):
     if value is None:
         return value
-    result = value
+    assembly_empty_sentinel = "__CAGE_ASSEMBLY_EMPTY__"
+    result = value.replace("$$(assembly.empty)", assembly_empty_sentinel)
     for token, replacement in token_map_for(arch_value).items():
         result = result.replace(token, replacement)
     unknown = sorted(set(re.findall(r"\$\([^)]+\)", result)))
     if unknown:
         raise SystemExit("unknown required manifest token: " + ", ".join(unknown))
+    result = result.replace(assembly_empty_sentinel, "$")
     return result.replace("/", chr(92))
 
 
@@ -220,7 +222,8 @@ def install_manifest_files(manifest):
         if not destinations:
             raise SystemExit(f"missing required dotnet481 destination for {name} in {manifest}")
         for destination in destinations:
-            final = win_to_host(replace_tokens(destination, arch_value))
+            destination_dir = win_to_host(replace_tokens(destination, arch_value))
+            final = destination_dir / name
             copy_file(src, final)
             copied += 1
     return copied
