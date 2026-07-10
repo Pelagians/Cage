@@ -137,6 +137,11 @@ payload = {
     "phase": "Chocolatey diagnostic",
     "status": "passed" if required_passed else "failed",
     "failedChecks": failed_checks,
+    "returnCodes": {
+        "chocoVersion": int(choco_version_rc),
+        "chocoVersionViaCmd": int(choco_version_cmd_rc),
+        "sourceList": int(choco_source_rc),
+    },
     "checks": checks,
     "tiers": {
         "required": {"status": "passed" if required_passed else "failed", "checks": required},

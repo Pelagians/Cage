@@ -70,7 +70,7 @@ jobs:
             {
               echo '--- chocolatey diagnostic ---'
               if [ -f "$diagnostic" ]; then
-                cat "$diagnostic"
+                python3 -c 'import json,sys; from pathlib import Path; p=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); s=p.get("fileSizes", {}); print(json.dumps({"status":p.get("status"),"failedChecks":p.get("failedChecks", []),"returnCodes":p.get("returnCodes", {}),"required":p.get("tiers", {}).get("required", {}),"failureOnly":p.get("tiers", {}).get("failureOnly", {}),"criticalFileSizes":{n:s.get(n) for n in ("canonicalChoco","nativeMscoree","appLocalMscoree","nativeClr","appLocalClr")}}, sort_keys=True))' "$diagnostic"
               else
                 echo 'diagnostic unavailable'
               fi
