@@ -16,7 +16,7 @@ if [ ! -f "$cab" ]; then
   echo "[cage] ERROR: KB958488 inner CAB missing" >&2
   exit 66
 fi
-7z x -y -o"$work/payload" "$cab" '*mscoree.dll' >/dev/null
+7z x -y -o"$work/payload" "$cab" >/dev/null
 python3 - "$work/payload" "$wine_prefix/drive_c" "$metadata" '{{MSCOREE_UPDATE_SHA256}}' <<'PY'
 import hashlib
 import json

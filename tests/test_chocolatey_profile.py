@@ -46,7 +46,7 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
         self.assertTrue(dataclasses.is_dataclass(profile))
         with self.assertRaises(dataclasses.FrozenInstanceError):
             profile.id = "mutated"  # type: ignore[misc]
-        self.assertEqual(profile.id, "cfw-v0.5c.755-choco-2.6.0-dotnet481-r3")
+        self.assertEqual(profile.id, "cfw-v0.5c.755-choco-2.6.0-dotnet481-r4")
         self.assertEqual(profile.dotnet_profile, "dotnet481-cfw-r1")
         self.assertEqual(profile.chocolatey_for_wine_version, "v0.5c.755")
         self.assertEqual(profile.chocolatey_version, "2.6.0")
@@ -54,7 +54,7 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
         self.assertEqual(profile.powershell_host_feature, "powershellHost")
         self.assertEqual(profile.powershell_host, "disabled")
         self.assertEqual(profile.allow_global_confirmation, "disabled")
-        self.assertEqual(profile.revision, "r3")
+        self.assertEqual(profile.revision, "r4")
         for name, value in profile.to_dict().items():
             if name.endswith("Sha256"):
                 self.assertRegex(value, r"^[0-9a-f]{64}$", name)
@@ -106,6 +106,7 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
         self.assertIn("cage_fetch_verified", script)
         self.assertIn("0x8664", script)
         self.assertIn("0x014C", script)
+        self.assertNotIn("'*mscoree.dll'", script)
         self.assertIn("chocolatey-mscoree.json", script)
         descriptions = [
             step.description
