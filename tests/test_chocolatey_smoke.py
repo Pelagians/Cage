@@ -175,6 +175,7 @@ class ChocolateySmokePackageTests(unittest.TestCase):
         self.assertIn("--build-timeout 7200", workflow)
         self.assertIn("if: always()", workflow)
         self.assertIn("actions/upload-artifact@v4", workflow)
+        self.assertIn("choco-live-process-tree.log", workflow)
 
     def test_lifecycle_outer_timeouts_cover_cumulative_inner_probes(self):
         steps = {step.description: step for step in _steps()}
