@@ -85,6 +85,26 @@ record_chocolatey_path canonicalRedirect "$wine_prefix/drive_c/ProgramData/choco
 record_chocolatey_path canonicalBin "$canonical_choco"
 record_chocolatey_path nestedRoot "$wine_prefix/drive_c/ProgramData/chocolatey/ChocolateyInstall/choco.exe"
 record_chocolatey_path nestedRedirect "$wine_prefix/drive_c/ProgramData/chocolatey/ChocolateyInstall/redirects/choco.exe"
+python3 - "$wine_prefix/drive_c" "$path_inventory" <<'PY'
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+inventory = Path(sys.argv[2])
+matches = []
+for path in root.rglob('*'):
+    try:
+        if path.is_file() and path.name.lower() == 'choco.exe':
+            matches.append((path.relative_to(root).as_posix(), path.stat().st_size))
+    except OSError:
+        continue
+with inventory.open('a', encoding='utf-8') as output:
+    if not matches:
+        print('[cage] chocolatey-path discoveredChoco=none', file=output)
+    for relative, size in sorted(matches)[:20]:
+        print(f'[cage] chocolatey-path discoveredChoco={relative} bytes={size}', file=output)
+PY
+cat "$path_inventory"
 test -f "$canonical_choco"
 canonical_rc="$?"
 set -e

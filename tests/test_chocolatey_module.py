@@ -121,6 +121,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn('canonicalRedirect', bootstrap)
         self.assertIn('canonicalBin', bootstrap)
         self.assertIn('nestedRoot', bootstrap)
+        self.assertIn('discoveredChoco', bootstrap)
+        self.assertIn("path.name.lower() == 'choco.exe'", bootstrap)
         self.assertIn('wine "$cfw_installer_win" /s /q', bootstrap)
         self.assertIn('export CFW_CACHE="$cfw_cache_win"', bootstrap)
         self.assertIn('export CFW_OFFLINE=1', bootstrap)
