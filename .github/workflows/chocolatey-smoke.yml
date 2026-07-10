@@ -69,6 +69,7 @@ jobs:
             diagnostic="$bundle/metadata/chocolatey-diagnostic.json"
             bootstrap_metadata="$bundle/metadata/chocolatey-upstream-bootstrap.json"
             installer_log="$bundle/logs/chocolatey-upstream/installer.log"
+            path_inventory="$bundle/logs/chocolatey-upstream/chocolatey-path-inventory.log"
             {
               echo '--- Chocolatey-for-Wine stages ---'
               if [ -f "$installer_log" ]; then
@@ -81,6 +82,12 @@ jobs:
                 python3 -c 'import json,sys; from pathlib import Path; p=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); print(json.dumps({"status":p.get("status"),"returnCodes":p.get("returnCodes", {}),"checks":p.get("checks", {}),"offline":p.get("offline")}, sort_keys=True))' "$bootstrap_metadata"
               else
                 echo 'bootstrap metadata unavailable'
+              fi
+              echo '--- Chocolatey path inventory ---'
+              if [ -f "$path_inventory" ]; then
+                cat "$path_inventory"
+              else
+                echo 'path inventory unavailable'
               fi
               echo '--- chocolatey diagnostic ---'
               if [ -f "$diagnostic" ]; then
@@ -108,7 +115,12 @@ jobs:
               echo '--- build tail ---'
               tail -30 /tmp/cage-chocolatey-smoke.log || true
             } > /tmp/cage-chocolatey-summary.log
-            summary="$(tail -180 /tmp/cage-chocolatey-summary.log)"
+            summary="$(tail -160 /tmp/cage-chocolatey-summary.log)"
+            if [ -f "$path_inventory" ]; then
+              summary="${summary}"$'\n--- Chocolatey path inventory ---\n'"$(cat "$path_inventory")"
+            else
+              summary="${summary}"$'\n--- Chocolatey path inventory ---\npath inventory unavailable'
+            fi
             summary="${summary//'%'/'%25'}"
             summary="${summary//$'\n'/'%0A'}"
             summary="${summary//$'\r'/'%0D'}"

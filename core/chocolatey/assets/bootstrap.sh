@@ -66,6 +66,25 @@ timeout "${CAGE_CHOCOLATEY_UPSTREAM_TIMEOUT:-3600s}" wine "$cfw_installer_win" /
 installer_rc="${PIPESTATUS[0]}"
 timeout "${CAGE_CHOCOLATEY_UPSTREAM_SETTLE_TIMEOUT:-300s}" wineserver -w > "$logs_dir/wineserver-settle.log" 2>&1
 settle_rc="$?"
+path_inventory="$logs_dir/chocolatey-path-inventory.log"
+: > "$path_inventory"
+record_chocolatey_path() {
+  label="$1"
+  candidate="$2"
+  if [ -f "$candidate" ]; then
+    bytes="$(wc -c < "$candidate")"
+    echo "[cage] chocolatey-path $label=present bytes=$bytes" | tee -a "$path_inventory"
+  else
+    echo "[cage] chocolatey-path $label=missing" | tee -a "$path_inventory"
+  fi
+}
+record_chocolatey_path rawRoot "$wine_prefix/drive_c/ProgramData/tools/ChocolateyInstall/choco.exe"
+record_chocolatey_path rawRedirect "$wine_prefix/drive_c/ProgramData/tools/ChocolateyInstall/redirects/choco.exe"
+record_chocolatey_path canonicalRoot "$wine_prefix/drive_c/ProgramData/chocolatey/choco.exe"
+record_chocolatey_path canonicalRedirect "$wine_prefix/drive_c/ProgramData/chocolatey/redirects/choco.exe"
+record_chocolatey_path canonicalBin "$canonical_choco"
+record_chocolatey_path nestedRoot "$wine_prefix/drive_c/ProgramData/chocolatey/ChocolateyInstall/choco.exe"
+record_chocolatey_path nestedRedirect "$wine_prefix/drive_c/ProgramData/chocolatey/ChocolateyInstall/redirects/choco.exe"
 test -f "$canonical_choco"
 canonical_rc="$?"
 set -e
