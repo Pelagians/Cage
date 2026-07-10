@@ -458,7 +458,7 @@ def parse_module(data: dict[str, Any], index: int = 0) -> ModuleBase:
             defaults=defaults,
             install=merged_data.get("install"),
             source=merged_data.get("source"),
-            bootstrap=merged_data.get("bootstrap", "cfw-v0.5c.755-choco-2.6.0-dotnet481-wrapper-r5"),
+            bootstrap=merged_data.get("bootstrap", "cfw-v0.5c.755-choco-2.6.0-upstream-r6"),
         )
     elif module_type == "exe":
         return ExeModule(

@@ -16,7 +16,7 @@ class ChocolateyProfileError(ValueError):
     """Raised when a Chocolatey bootstrap profile is invalid or unknown."""
 
 
-DEFAULT_BOOTSTRAP_PROFILE_ID = "cfw-v0.5c.755-choco-2.6.0-dotnet481-wrapper-r5"
+DEFAULT_BOOTSTRAP_PROFILE_ID = "cfw-v0.5c.755-choco-2.6.0-upstream-r6"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -155,7 +155,7 @@ _BUILTIN_PROFILES = {
         dotnet_installer_sha256="859b556ee19a33353626682b8b6f7e9ce97cd325b0d8f24c7770dc31f688d3c1",
         upstream_project="PietJankbal/Chocolatey-for-wine",
         upstream_tag="v0.5c.755",
-        revision="r5",
+        revision="r6",
     ),
 }
 

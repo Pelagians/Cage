@@ -46,7 +46,7 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
         self.assertTrue(dataclasses.is_dataclass(profile))
         with self.assertRaises(dataclasses.FrozenInstanceError):
             profile.id = "mutated"  # type: ignore[misc]
-        self.assertEqual(profile.id, "cfw-v0.5c.755-choco-2.6.0-dotnet481-wrapper-r5")
+        self.assertEqual(profile.id, "cfw-v0.5c.755-choco-2.6.0-upstream-r6")
         self.assertEqual(profile.dotnet_profile, "dotnet481-cfw-r1")
         self.assertEqual(profile.chocolatey_for_wine_version, "v0.5c.755")
         self.assertEqual(profile.chocolatey_version, "2.6.0")
@@ -54,7 +54,7 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
         self.assertEqual(profile.powershell_host_feature, "powershellHost")
         self.assertEqual(profile.powershell_host, "disabled")
         self.assertEqual(profile.allow_global_confirmation, "disabled")
-        self.assertEqual(profile.revision, "r5")
+        self.assertEqual(profile.revision, "r6")
         for name, value in profile.to_dict().items():
             if name.endswith("Sha256"):
                 self.assertRegex(value, r"^[0-9a-f]{64}$", name)
@@ -95,72 +95,8 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
         self.assertIn('"core.chocolatey.assets"', pyproject)
         self.assertIn('"*.sh"', pyproject)
 
-    def test_native_mscoree_update_is_frozen_and_installed_before_dotnet(self):
-        profile = get_bootstrap_profile()
-        self.assertEqual(
-            profile.mscoree_update_sha256,
-            "a5f4243ce8b07c9222284fd8ff6f7e742d934c57c89de9cab5d88c74402264e3",
-        )
-        self.assertTrue(profile.mscoree_update_url.startswith("https://"))
-        script = load_asset("install-mscoree.sh")
-        self.assertIn("cage_fetch_verified", script)
-        self.assertIn("0x8664", script)
-        self.assertIn("0x014C", script)
-        self.assertNotIn("'*mscoree.dll'", script)
-        self.assertIn("chocolatey-mscoree.json", script)
-        descriptions = [
-            step.description
-            for step in _manifest(install={"packages": []}).modules[0].build()
-        ]
-        self.assertLess(
-            descriptions.index("Install native .NET loader"),
-            descriptions.index("Install frozen dotnet481 profile"),
-        )
 
-    def test_chocolatey_profile_freezes_powershell_wrapper_assets(self):
-        profile = get_bootstrap_profile()
 
-        self.assertEqual(profile.powershell_wrapper_version, "v4.2.0")
-        self.assertRegex(profile.powershell_wrapper64_sha256, r"^[0-9a-f]{64}$")
-        self.assertRegex(profile.powershell_wrapper32_sha256, r"^[0-9a-f]{64}$")
-        self.assertRegex(profile.powershell_wrapper_profile_sha256, r"^[0-9a-f]{64}$")
-        self.assertTrue(profile.powershell_wrapper_base_url.startswith("https://"))
-        payload = profile.to_dict()
-        self.assertEqual(payload["powershellWrapperVersion"], "v4.2.0")
-        self.assertEqual(
-            payload["powershellWrapper64Sha256"],
-            profile.powershell_wrapper64_sha256,
-        )
-
-    def test_chocolatey_installs_and_verifies_wrapper_before_readiness(self):
-        profile = get_bootstrap_profile()
-        steps = _manifest(install={"packages": []}).modules[0].build()
-        descriptions = [step.description for step in steps]
-        wrapper_description = "Install Chocolatey PowerShell wrapper"
-
-        self.assertIn(wrapper_description, descriptions)
-        self.assertLess(
-            descriptions.index("Prepare Wine registry for Chocolatey"),
-            descriptions.index(wrapper_description),
-        )
-        self.assertLess(
-            descriptions.index(wrapper_description),
-            descriptions.index("Diagnose Chocolatey readiness"),
-        )
-        wrapper = "\n".join(
-            next(step for step in steps if step.description == wrapper_description).commands
-        )
-        self.assertIn("cage_fetch_verified", wrapper)
-        self.assertIn(profile.powershell_wrapper64_sha256, wrapper)
-        self.assertIn(profile.powershell_wrapper32_sha256, wrapper)
-        self.assertIn(profile.powershell_wrapper_profile_sha256, wrapper)
-        self.assertIn("WindowsPowerShell/v1.0/powershell.exe", wrapper)
-        self.assertIn("windows/syswow64/WindowsPowerShell/v1.0/powershell.exe", wrapper)
-        self.assertIn("chocolatey-powershell-wrapper.json", wrapper)
-        self.assertIn("wrapper64-sentinel.txt", wrapper)
-        self.assertIn("wrapper32-sentinel.txt", wrapper)
-        self.assertIn("CAGE-POWERSHELL-WRAPPER-64", wrapper)
-        self.assertIn("CAGE-POWERSHELL-WRAPPER-32", wrapper)
 
 
 class ChocolateyAssetContractTests(unittest.TestCase):
@@ -168,13 +104,8 @@ class ChocolateyAssetContractTests(unittest.TestCase):
         names = [
             "fetch-verified.sh",
             "failure-diagnostics.sh",
-            "powershell-msi.sh",
             "prepare-data.sh",
-            "install-mscoree.sh",
-            "install-dotnet481.sh",
-            "install-powershell-wrapper.sh",
-            "prepare-registry.sh",
-            "promote-chocolatey.sh",
+            "upstream-bootstrap.sh",
             "verify-chocolatey.sh",
             "feature-policy.sh",
             "smoke-lifecycle.sh",
@@ -241,117 +172,7 @@ class ChocolateyAssetContractTests(unittest.TestCase):
             self.assertEqual(blob.read_bytes(), payload)
             self.assertEqual((root / "output.bin").read_bytes(), payload)
 
-    def test_dotnet_manifest_destination_is_a_directory_not_a_filename(self):
-        script = load_asset("install-dotnet481.sh")
-        embedded = script[
-            script.index("import hashlib\n") : script.index("\nPY\n", script.index("import hashlib\n"))
-        ]
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            payload = root / "payload"
-            drive = root / "drive"
-            registry = root / "registry"
-            payload.mkdir()
-            drive.mkdir()
-            registry.mkdir()
 
-            def manifest(
-                stem: str,
-                name: str,
-                destination: str,
-                source_name: str | None = None,
-            ) -> None:
-                source_dir = payload / stem
-                source_dir.mkdir()
-                payload_name = source_name or name.replace("\\", "/").rsplit("/", 1)[-1]
-                (source_dir / payload_name.lower()).write_bytes(name.encode("ascii"))
-                source_attribute = (
-                    f' sourceName="{source_name}"' if source_name is not None else ""
-                )
-                (payload / f"{stem}.manifest").write_text(
-                    '<?xml version="1.0" encoding="UTF-8"?>\n'
-                    '<assembly xmlns="urn:schemas-microsoft-com:asm.v3">\n'
-                    '  <assemblyIdentity processorArchitecture="amd64" />\n'
-                    f'  <file name="{name}" destinationPath="{destination}"{source_attribute} />\n'
-                    '</assembly>\n',
-                    encoding="utf-8",
-                )
-
-            manifest(
-                "amd64_oracle_header",
-                "OracleHeader.h",
-                "$(runtime.inf)\\.NET Data Provider for Oracle\\",
-            )
-            manifest(
-                "amd64_oracle_locale",
-                "GAC\\OracleCounters.ini",
-                "$(runtime.inf)\\.NET Data Provider for Oracle\\0000\\",
-                source_name="OracleCounters.ini",
-            )
-            for relative in (
-                "windows/system32/mscoree.dll",
-                "windows/syswow64/mscoree.dll",
-            ):
-                marker = drive / relative
-                marker.parent.mkdir(parents=True, exist_ok=True)
-                marker.write_bytes(f"wine-prefix:{relative}".encode("ascii"))
-            required = (
-                "mscoreei.dll",
-                "clr.dll",
-                "clrjit.dll",
-                "ucrtbase_clr0400.dll",
-                "vcruntime140_clr0400.dll",
-            )
-            for architecture in ("amd64", "x86"):
-                directory = payload / f"{architecture}_required"
-                directory.mkdir()
-                for name in required:
-                    (directory / name).write_bytes(f"{architecture}:{name}".encode("ascii"))
-
-            argv = [
-                "embedded-dotnet-profile",
-                str(payload),
-                str(drive),
-                str(registry),
-                str(root / "profile.json"),
-                "dotnet481-cfw-r1",
-                "0" * 64,
-            ]
-            runner = (
-                "import sys\n"
-                f"sys.argv = {argv!r}\n"
-                f"exec(compile({embedded!r}, 'install-dotnet481.sh', 'exec'), {{'__name__': '__main__'}})\n"
-            )
-            result = subprocess.run(
-                [sys.executable, "-c", runner],
-                capture_output=True,
-                text=True,
-            )
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            oracle = drive / "windows/inf/.NET Data Provider for Oracle"
-            self.assertTrue((oracle / "OracleHeader.h").is_file())
-            self.assertTrue((oracle / "0000/GAC/OracleCounters.ini").is_file())
-            profile = json.loads((root / "profile.json").read_text(encoding="utf-8"))
-            self.assertEqual(
-                [entry["destination"] for entry in profile["preservedFiles"]],
-                [
-                    "C:/windows/system32/mscoree.dll",
-                    "C:/windows/syswow64/mscoree.dll",
-                ],
-            )
-
-    def test_dotnet_profile_fails_closed_and_emits_install_manifest(self):
-        script = load_asset("install-dotnet481.sh")
-
-        self.assertIn("unknown required manifest token", script)
-        self.assertIn("ambiguous dotnet481 source", script)
-        self.assertIn("missing required dotnet481 source", script)
-        self.assertIn("sha256", script)
-        self.assertIn("chocolatey-dotnet-profile.json", script)
-        self.assertIn("dotnet481-cfw-r1", script)
-        self.assertNotIn("return matches[0]", script)
-        self.assertNotRegex(script, re.compile(r"if src is None:\s+continue"))
 
 
 if __name__ == "__main__":

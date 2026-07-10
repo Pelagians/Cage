@@ -198,40 +198,22 @@ class ChocolateyDiagnosticTierTests(unittest.TestCase):
         self.assertIn('"failureOnly"', verify)
         self.assertIn('"failedChecks"', verify)
         self.assertIn('"returnCodes"', verify)
-        self.assertIn('"chocoVersion": int(choco_version_rc)', verify)
+        self.assertIn('"chocoVersion": int(version_rc)', verify)
         self.assertIn('CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-20s', verify)
-        self.assertIn("required_passed", verify)
         self.assertIn("cage_chocolatey_collect_failure_diagnostics", verify)
+        self.assertIn('if [ "$required_status" != "passed" ]', verify)
         helper = load_asset("failure-diagnostics.sh")
         self.assertIn("CAGE_CHOCOLATEY_FAILURE_INVENTORY_TIMEOUT", helper)
-        self.assertIn("CAGE_CHOCOLATEY_FAILURE_INVENTORY_LIMIT", helper)
         self.assertIn("/proc", helper)
         self.assertIn("choco-live-process-tree.log", helper)
-        self.assertIn("CAGE_CHOCOLATEY_LIVE_SNAPSHOT_DELAY", helper)
         self.assertNotIn("ps -eo", helper)
-        self.assertNotIn("ps -ef", helper)
-        self.assertIn("failureTrigger", helper)
-        self.assertIn("if [ \"$required_status\" != \"passed\" ]", verify)
-        failure_boundary = verify.index('if [ "$required_status" != "passed" ]')
-        self.assertGreater(
-            verify.index("cage_chocolatey_collect_failure_diagnostics", failure_boundary),
-            failure_boundary,
-        )
-        self.assertIn("WINEDEBUG=+loaddll", helper)
-        self.assertIn('> "$probe_dir/promoted-files.log"', helper)
 
     def test_advisory_checks_do_not_determine_overall_status(self):
         verify = load_asset("verify-chocolatey.sh")
 
-        self.assertIn('"status": "passed" if required_passed else "failed"', verify)
+        self.assertIn('"status": "passed" if not failed else "failed"', verify)
         self.assertNotIn('"status": "passed" if all(checks.values()) else "failed"', verify)
 
-    def test_promotion_constructs_state_without_running_chocolatey(self):
-        promote = load_asset("promote-chocolatey.sh")
-
-        self.assertNotIn("CAGE_CHOCOLATEY_VERIFY_TIMEOUT", promote)
-        self.assertNotIn('wine "$choco_exe_win" --version', promote)
-        self.assertNotIn("Continuing to diagnostic step", promote)
 
     def test_package_policy_uses_command_confirmation_only(self):
         policy = load_asset("feature-policy.sh")

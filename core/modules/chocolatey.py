@@ -23,26 +23,15 @@ from .base import ModuleBase, ModuleError
 from ..build_step import BuildStep
 
 _PACKAGE_RE = re.compile(r"^[A-Za-z0-9._+\-]+$")
-_DOWNLOAD_ASSETS = {
-    "powershell-msi.sh",
-    "prepare-data.sh",
-    "install-mscoree.sh",
-    "install-dotnet481.sh",
-    "install-powershell-wrapper.sh",
-}
+_DOWNLOAD_ASSETS = {"prepare-data.sh"}
 _FAILURE_DIAGNOSTIC_ASSETS = {
     "verify-chocolatey.sh",
     "feature-policy.sh",
     "smoke-lifecycle.sh",
 }
 _STEP_SPECS = (
-    ("powershell-msi.sh", "Install PowerShell 7 MSI for Chocolatey", "wine-msiexec", 1200),
     ("prepare-data.sh", "Prepare Chocolatey-for-wine data", "extract", None),
-    ("install-mscoree.sh", "Install native .NET loader", "extract", 600),
-    ("install-dotnet481.sh", "Install frozen dotnet481 profile", "extract", 1800),
-    ("prepare-registry.sh", "Prepare Wine registry for Chocolatey", "wine-reg", 120),
-    ("install-powershell-wrapper.sh", "Install Chocolatey PowerShell wrapper", "raw-shell", None),
-    ("promote-chocolatey.sh", "Promote Chocolatey natively", "raw-shell", None),
+    ("upstream-bootstrap.sh", "Run upstream Chocolatey-for-wine bootstrap", "wine-run", 3900),
     ("verify-chocolatey.sh", "Diagnose Chocolatey readiness", "wine-run", 600),
     ("feature-policy.sh", "Apply Chocolatey feature policy", "wine-run", 360),
     ("smoke-lifecycle.sh", "Prove Chocolatey local package lifecycle", "wine-run", 1800),
