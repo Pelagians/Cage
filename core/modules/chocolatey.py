@@ -23,15 +23,14 @@ from .base import ModuleBase, ModuleError
 from ..build_step import BuildStep
 
 _PACKAGE_RE = re.compile(r"^[A-Za-z0-9._+\-]+$")
-_DOWNLOAD_ASSETS = {"prepare-data.sh"}
+_DOWNLOAD_ASSETS = {"bootstrap.sh"}
 _FAILURE_DIAGNOSTIC_ASSETS = {
     "verify-chocolatey.sh",
     "feature-policy.sh",
     "smoke-lifecycle.sh",
 }
 _STEP_SPECS = (
-    ("prepare-data.sh", "Prepare Chocolatey-for-wine data", "extract", None),
-    ("upstream-bootstrap.sh", "Run upstream Chocolatey-for-wine bootstrap", "wine-run", 3900),
+    ("bootstrap.sh", "Bootstrap Chocolatey-for-Wine fork", "wine-run", 3900),
     ("verify-chocolatey.sh", "Diagnose Chocolatey readiness", "wine-run", 600),
     ("feature-policy.sh", "Apply Chocolatey feature policy", "wine-run", 360),
     ("smoke-lifecycle.sh", "Prove Chocolatey local package lifecycle", "wine-run", 1800),

@@ -35,7 +35,8 @@ Architecture Decision Records (ADRs) in chronological order:
 18. [Deterministic PowerShell and Chocolatey Capabilities](decisions/0018-deterministic-powershell-chocolatey-capabilities.md) — refined
 19. [Upstream Chocolatey-for-wine Wrapper](decisions/0019-upstream-chocolatey-for-wine-wrapper.md) — superseded
 20. [Deterministic Chocolatey-for-wine MVP Reconstruction](decisions/0020-deterministic-chocolatey-for-wine-mvp.md) — superseded
-21. [Upstream-first Chocolatey-for-Wine bootstrap](decisions/0021-upstream-first-chocolatey-bootstrap.md)
+21. [Upstream-first Chocolatey-for-Wine bootstrap](decisions/0021-upstream-first-chocolatey-bootstrap.md) — superseded
+22. [Deterministic Chocolatey-for-Wine fork](decisions/0022-deterministic-chocolatey-fork.md)
 
 ## Roadmaps
 

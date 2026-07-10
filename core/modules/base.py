@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..build_step import BuildStep
+from core.chocolatey import DEFAULT_BOOTSTRAP_PROFILE_ID
 
 
 class ModuleError(Exception):
@@ -458,7 +459,7 @@ def parse_module(data: dict[str, Any], index: int = 0) -> ModuleBase:
             defaults=defaults,
             install=merged_data.get("install"),
             source=merged_data.get("source"),
-            bootstrap=merged_data.get("bootstrap", "cfw-v0.5c.755-choco-2.6.0-upstream-r6"),
+            bootstrap=merged_data.get("bootstrap", DEFAULT_BOOTSTRAP_PROFILE_ID),
         )
     elif module_type == "exe":
         return ExeModule(

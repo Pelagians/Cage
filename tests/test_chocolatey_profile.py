@@ -46,15 +46,27 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
         self.assertTrue(dataclasses.is_dataclass(profile))
         with self.assertRaises(dataclasses.FrozenInstanceError):
             profile.id = "mutated"  # type: ignore[misc]
-        self.assertEqual(profile.id, "cfw-v0.5c.755-choco-2.6.0-upstream-r6")
-        self.assertEqual(profile.dotnet_profile, "dotnet481-cfw-r1")
-        self.assertEqual(profile.chocolatey_for_wine_version, "v0.5c.755")
+        self.assertEqual(profile.id, "cfw-v0.5c.755-noah.2-choco-2.6.0-fork-r8")
+        self.assertEqual(profile.dotnet_profile, "dotnet48-cfw-r1")
+        self.assertEqual(profile.dotnet_installer_sha256, "95889d6de3f2070c07790ad6cf2000d33d9a1bdfc6a381725ab82ab1c314fd53")
+        self.assertEqual(profile.chocolatey_for_wine_version, "v0.5c.755-noah.2")
+        self.assertEqual(profile.chocolatey_for_wine_installer_version, "0.5c.755")
+        self.assertEqual(
+            profile.chocolatey_for_wine_url,
+            "https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.2/Chocolatey-for-wine.7z",
+        )
+        self.assertEqual(
+            profile.chocolatey_for_wine_sha256,
+            "b973ca8557449d64791f82b724aea1ecc4d6a91d11d6c401f92a7ce33cb9029f",
+        )
+        self.assertEqual(profile.upstream_project, "noahgiroux/Chocolatey-for-wine")
         self.assertEqual(profile.chocolatey_version, "2.6.0")
         self.assertEqual(profile.powershell_version, "7.5.5")
         self.assertEqual(profile.powershell_host_feature, "powershellHost")
         self.assertEqual(profile.powershell_host, "disabled")
         self.assertEqual(profile.allow_global_confirmation, "disabled")
-        self.assertEqual(profile.revision, "r6")
+        self.assertFalse(any(key.startswith("powershellWrapper") for key in profile.to_dict()))
+        self.assertEqual(profile.revision, "r8")
         for name, value in profile.to_dict().items():
             if name.endswith("Sha256"):
                 self.assertRegex(value, r"^[0-9a-f]{64}$", name)
@@ -87,7 +99,10 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
 
     def test_module_uses_packaged_assets_instead_of_python_heredocs(self):
         module_source = (ROOT / "core/modules/chocolatey.py").read_text(encoding="utf-8")
+        base_source = (ROOT / "core/modules/base.py").read_text(encoding="utf-8")
 
+        self.assertNotIn("cfw-v0.5c.755-noah", base_source)
+        self.assertIn("DEFAULT_BOOTSTRAP_PROFILE_ID", base_source)
         self.assertNotIn("<<'PY'", module_source)
         self.assertNotIn('f\'\'\'set -eu', module_source)
         self.assertLess(len(module_source.splitlines()), 300)
@@ -104,8 +119,7 @@ class ChocolateyAssetContractTests(unittest.TestCase):
         names = [
             "fetch-verified.sh",
             "failure-diagnostics.sh",
-            "prepare-data.sh",
-            "upstream-bootstrap.sh",
+            "bootstrap.sh",
             "verify-chocolatey.sh",
             "feature-policy.sh",
             "smoke-lifecycle.sh",
@@ -115,6 +129,19 @@ class ChocolateyAssetContractTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertTrue(load_asset(name).strip())
                 self.assertRegex(asset_sha256(name), r"^[0-9a-f]{64}$")
+
+        legacy = {
+            "install-mscoree.sh",
+            "install-dotnet481.sh",
+            "install-powershell-wrapper.sh",
+            "prepare-registry.sh",
+            "promote-chocolatey.sh",
+            "powershell-msi.sh",
+            "prepare-data.sh",
+            "upstream-bootstrap.sh",
+        }
+        assets_dir = ROOT / "core/chocolatey/assets"
+        self.assertFalse(legacy & {path.name for path in assets_dir.glob("*.sh")})
 
     def test_verified_fetch_uses_content_addressing_locking_and_atomic_promotion(self):
         helper = load_asset("fetch-verified.sh")

@@ -86,49 +86,51 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
 
         self.assertEqual(descriptions, [
             "Record Chocolatey bootstrap profile",
-            "Prepare Chocolatey-for-wine data",
-            "Run upstream Chocolatey-for-wine bootstrap",
+            "Bootstrap Chocolatey-for-Wine fork",
             "Diagnose Chocolatey readiness",
             "Apply Chocolatey feature policy",
             "Prove Chocolatey local package lifecycle",
             "Install Chocolatey packages: 7zip notepadplusplus",
         ])
-        self.assertIn("Run upstream Chocolatey-for-wine bootstrap", script)
+        self.assertIn("Bootstrap pinned Chocolatey-for-Wine fork", script)
         self.assertIn("ChoCinstaller_", script)
         self.assertIn("canonical choco.exe", script)
-        self.assertNotIn('wine "$cfw_installer" /s /q', script)
         self.assertNotIn("Install native .NET loader", script)
         self.assertNotIn("Install frozen dotnet481 profile", script)
         self.assertNotIn("Promote Chocolatey natively", script)
-        self.assertLess(descriptions.index("Prepare Chocolatey-for-wine data"), descriptions.index("Run upstream Chocolatey-for-wine bootstrap"))
-        self.assertLess(descriptions.index("Run upstream Chocolatey-for-wine bootstrap"), descriptions.index("Diagnose Chocolatey readiness"))
+        self.assertLess(descriptions.index("Bootstrap Chocolatey-for-Wine fork"), descriptions.index("Diagnose Chocolatey readiness"))
         self.assertLess(descriptions.index("Diagnose Chocolatey readiness"), descriptions.index("Apply Chocolatey feature policy"))
         self.assertLess(descriptions.index("Apply Chocolatey feature policy"), descriptions.index("Prove Chocolatey local package lifecycle"))
         self.assertLess(descriptions.index("Prove Chocolatey local package lifecycle"), descriptions.index("Install Chocolatey packages: 7zip notepadplusplus"))
 
 
 
-    def test_chocolatey_prepare_matches_release_archive_layout(self):
-        prepare = _commands_for(_manifest().modules[0].build(), "Prepare Chocolatey-for-wine data")
+    def test_fork_bootstrap_uses_private_verified_workdir_and_strict_success_boundary(self):
+        bootstrap = _commands_for(_manifest().modules[0].build(), "Bootstrap Chocolatey-for-Wine fork")
 
-        self.assertIn('cfw_extract="$cfw_cache/extracted/Chocolatey-for-wine"', prepare)
-        self.assertIn('ChoCinstaller_${cfw_release_version}.exe', prepare)
-        self.assertIn('test -f "$cfw_extract/choc_install.ps1"', prepare)
-        self.assertIn('test -f "$cfw_extract/c_drive.7z"', prepare)
-        self.assertIn('extract_7z_archive "$cfw_archive"', prepare)
-        self.assertIn('cp -f "$cfw_winetricks_ps1" "$cfw_prefix_dir/winetricks.ps1"', prepare)
-        self.assertNotIn('c_drive-extracted', prepare)
-
-    def test_upstream_bootstrap_keeps_canonical_choco_as_cage_success_boundary(self):
-        bootstrap = _commands_for(_manifest().modules[0].build(), "Run upstream Chocolatey-for-wine bootstrap")
-
-        self.assertIn('ChoCinstaller_${cfw_release_version}.exe', bootstrap)
+        self.assertIn('cfw_work="$wine_prefix/.cage/chocolatey-bootstrap/cfw-v0.5c.755-noah.2-choco-2.6.0-fork-r8"', bootstrap)
+        self.assertIn('rm -rf "$cfw_work"', bootstrap)
+        self.assertIn('cfw_payload_cache="$cfw_work/choc_install_files"', bootstrap)
+        self.assertIn('cfw_installer="$cfw_extract/ChoCinstaller_0.5c.755.exe"', bootstrap)
         self.assertIn('wine "$cfw_installer_win" /s /q', bootstrap)
         self.assertIn('export CFW_CACHE="$cfw_cache_win"', bootstrap)
+        self.assertIn('export CFW_OFFLINE=1', bootstrap)
+        self.assertIn('installer_rc == 0 and settle_rc == 0 and canonical_rc == 0', bootstrap)
+        self.assertIn('[ "$installer_rc" -ne 0 ] || [ "$settle_rc" -ne 0 ] || [ "$canonical_rc" -ne 0 ]', bootstrap)
         self.assertIn('ProgramData/chocolatey/bin/choco.exe', bootstrap)
-        self.assertIn('canonicalChocoExists', bootstrap)
-        self.assertIn('upstream bootstrap did not create canonical choco.exe', bootstrap)
-        self.assertIn('CAGE_CHOCOLATEY_UPSTREAM_TIMEOUT', bootstrap)
+        self.assertIn('Chocolatey-for-Wine bootstrap failed', bootstrap)
+        for payload in (
+            "chocolatey.2.6.0.nupkg",
+            "PowerShell-7.5.5-win-x64.msi",
+            "ndp48-x86-x64-allos-enu.exe",
+            "windows6.1-kb958488-v6001-x64_a137e4f328f01146dfa75d7b5a576090dee948dc.msu",
+            "d3dcompiler_47.dll",
+            "d3dcompiler_47_32.dll",
+            "ConEmuPack.230724.7z",
+            "sevenzipextractor.1.0.19.nupkg",
+            "windowsserver2003-kb968930-x64-eng_8ba702aa016e4c5aed581814647f4d55635eff5c.exe",
+        ):
+            self.assertIn(payload, bootstrap)
 
 
 

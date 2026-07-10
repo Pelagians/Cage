@@ -1,6 +1,6 @@
 # 0021. Upstream-first Chocolatey-for-Wine bootstrap
 
-Status: accepted
+Status: superseded by [0022. Deterministic Chocolatey-for-Wine fork](0022-deterministic-chocolatey-fork.md)
 Date: 2026-07-10
 Owner: Noah Giroux / CTO
 Supersedes: [0020. Deterministic Chocolatey-for-wine MVP reconstruction](0020-deterministic-chocolatey-for-wine-mvp.md)

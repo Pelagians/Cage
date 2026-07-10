@@ -13,18 +13,19 @@ sources:
   - id: chocolatey-for-wine
     type: archive
     policy: redistributable
-    url: https://github.com/PietJankbal/Chocolatey-for-wine/releases/download/v0.5c.755/Chocolatey-for-wine.7z
-    sha256: 87f4ecc08a9b22f16aa5633ca107c151ddf3fed0b256fed9fb99680af7095d14
-    description: PietJankbal Chocolatey-for-wine release consumed as pinned data; Cage does not execute ChoCinstaller.
+    url: https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.2/Chocolatey-for-wine.7z
+    sha256: b973ca8557449d64791f82b724aea1ecc4d6a91d11d6c401f92a7ce33cb9029f
+    description: Noah's deterministic Chocolatey-for-Wine fork release, executed by the Chocolatey module and independently verified by Cage.
   - id: chocolatey
     type: archive
     policy: redistributable
     url: https://community.chocolatey.org/api/v2/package/chocolatey/2.6.0
     sha256: f13a2af9cd4ec2c9b58d81861bc95ad7151e3a871d8f758dffa72a996a3792d8
-    description: Chocolatey nupkg extracted by the deterministic Chocolatey module.
+    description: Chocolatey nupkg version consumed by the pinned fork installer.
 
 modules:
   - type: chocolatey
+    bootstrap: cfw-v0.5c.755-noah.2-choco-2.6.0-fork-r8
     install:
       packages:
         - 7zip.install
@@ -81,9 +82,9 @@ exports:
 
 provenance:
   sources:
-    - uri: https://github.com/PietJankbal/Chocolatey-for-wine/releases/download/v0.5c.755/Chocolatey-for-wine.7z
-      sha256: 87f4ecc08a9b22f16aa5633ca107c151ddf3fed0b256fed9fb99680af7095d14
-      note: Release asset is consumed as pinned data; ChoCinstaller is not executed.
+    - uri: https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.2/Chocolatey-for-wine.7z
+      sha256: b973ca8557449d64791f82b724aea1ecc4d6a91d11d6c401f92a7ce33cb9029f
+      note: Patched fork release serializes finalization and propagates installer failures; Cage independently proves readiness and lifecycle.
     - uri: https://community.chocolatey.org/api/v2/package/chocolatey/2.6.0
       sha256: f13a2af9cd4ec2c9b58d81861bc95ad7151e3a871d8f758dffa72a996a3792d8
-      note: Nupkg is extracted to ProgramData/tools/ChocolateyInstall before finalization.
+      note: The fork extracts this nupkg to ProgramData/tools/ChocolateyInstall before serialized finalization.

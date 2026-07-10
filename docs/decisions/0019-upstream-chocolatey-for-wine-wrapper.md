@@ -1,11 +1,11 @@
 # 0019. Upstream Chocolatey-for-wine wrapper
 
-Status: superseded by [0020. Deterministic Chocolatey-for-wine MVP reconstruction](0020-deterministic-chocolatey-for-wine-mvp.md)
+Status: historical; superseded by [0022. Deterministic Chocolatey-for-Wine fork](0022-deterministic-chocolatey-fork.md)
 Date: 2026-07-09
 Owner: Noah Giroux / CTO
 Supersedes: [0018. Deterministic PowerShell and Chocolatey capabilities](0018-deterministic-powershell-chocolatey-capabilities.md)
 
-> Supersession note (2026-07-09): a real Notepad++ build hit ADR 0019's review trigger: `ChoCinstaller_*.exe /s /q` exited `0` while canonical `C:/ProgramData/chocolatey/bin/choco.exe` was absent. ADR 0020 is now current and returns the MVP to a deterministic upstream-derived setup with Cage-owned success boundaries.
+> Supersession note (2026-07-10): the unmodified installer could exit `0` without canonical Chocolatey. ADR 0022 is current and carries a narrow fork that serializes finalization, propagates failures, and supports verified offline inputs.
 
 ## Decision
 

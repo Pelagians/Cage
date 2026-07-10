@@ -1,10 +1,10 @@
 # 0018. Deterministic PowerShell and Chocolatey capabilities
 
-Status: refined by [0020. Deterministic Chocolatey-for-wine MVP reconstruction](0020-deterministic-chocolatey-for-wine-mvp.md)
+Status: historical; superseded by [0022. Deterministic Chocolatey-for-Wine fork](0022-deterministic-chocolatey-fork.md)
 Date: 2026-07-08
 Owner: Noah Giroux / CTO
 
-> Update note (2026-07-09): ADR 0019 briefly superseded this with a pure upstream `ChoCinstaller_*.exe /s /q` wrapper, but real build evidence showed that wrapper can exit `0` while canonical Chocolatey is absent. ADR 0020 is current: use an upstream-derived deterministic reconstruction with Cage-owned success boundaries.
+> Update note (2026-07-10): ADRs 0019–0021 tested subsequent approaches. ADR 0022 is current: use the patched fork with verified offline inputs and Cage-owned readiness/lifecycle gates.
 
 ## Decision
 
