@@ -67,7 +67,21 @@ jobs:
           if [ "$rc" -ne 0 ]; then
             bundle="$(find dist -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
             diagnostic="$bundle/metadata/chocolatey-diagnostic.json"
+            bootstrap_metadata="$bundle/metadata/chocolatey-upstream-bootstrap.json"
+            installer_log="$bundle/logs/chocolatey-upstream/installer.log"
             {
+              echo '--- Chocolatey-for-Wine stages ---'
+              if [ -f "$installer_log" ]; then
+                grep -a '^\[cfw\] stage=' "$installer_log" || true
+              else
+                grep -a '^\[cfw\] stage=' /tmp/cage-chocolatey-smoke.log || true
+              fi
+              echo '--- bootstrap result ---'
+              if [ -f "$bootstrap_metadata" ]; then
+                python3 -c 'import json,sys; from pathlib import Path; p=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); print(json.dumps({"status":p.get("status"),"returnCodes":p.get("returnCodes", {}),"checks":p.get("checks", {}),"offline":p.get("offline")}, sort_keys=True))' "$bootstrap_metadata"
+              else
+                echo 'bootstrap metadata unavailable'
+              fi
               echo '--- chocolatey diagnostic ---'
               if [ -f "$diagnostic" ]; then
                 python3 -c 'import json,sys; from pathlib import Path; p=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); s=p.get("fileSizes", {}); f=p.get("tiers", {}).get("failureOnly", {}); print(json.dumps({"status":p.get("status"),"failedChecks":p.get("failedChecks", []),"returnCodes":p.get("returnCodes", {}),"failureTrigger":f.get("failureTrigger"),"criticalFileSizes":{n:s.get(n) for n in ("canonicalChoco","nativeMscoree","appLocalMscoree","nativeClr","appLocalClr")}}, sort_keys=True))' "$diagnostic"
