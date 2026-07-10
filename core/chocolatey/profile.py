@@ -10,7 +10,7 @@ class ChocolateyProfileError(ValueError):
     """Raised when a Chocolatey bootstrap profile is invalid or unknown."""
 
 
-DEFAULT_BOOTSTRAP_PROFILE_ID = "cfw-v0.5c.755-noah.3-choco-2.6.0-fork-r9"
+DEFAULT_BOOTSTRAP_PROFILE_ID = "cfw-v0.5c.755-noah.4-choco-2.6.0-fork-r10"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _INSTALLER_VERSION_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -152,11 +152,11 @@ class ChocolateyBootstrapProfile:
 _BUILTIN_PROFILES = {
     DEFAULT_BOOTSTRAP_PROFILE_ID: ChocolateyBootstrapProfile(
         id=DEFAULT_BOOTSTRAP_PROFILE_ID,
-        chocolatey_for_wine_version="v0.5c.755-noah.3",
+        chocolatey_for_wine_version="v0.5c.755-noah.4",
         chocolatey_for_wine_installer_version="0.5c.755",
-        chocolatey_for_wine_url="https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.3/Chocolatey-for-wine.7z",
-        chocolatey_for_wine_sha256="2dc2f5f48e0328875d566757ba1c4e6fbd92d1bb6d8372418dc666c27ebc54a5",
-        winetricks_ps1_url="https://raw.githubusercontent.com/noahgiroux/Chocolatey-for-wine/6b8f27fa49c8edf4db8edc972d13e3e3f9839b2b/winetricks.ps1",
+        chocolatey_for_wine_url="https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.4/Chocolatey-for-wine.7z",
+        chocolatey_for_wine_sha256="502a5d8e69b4e9508502f6dd70fc19a403d6fc599425e692d103fcaa8ba1acae",
+        winetricks_ps1_url="https://raw.githubusercontent.com/noahgiroux/Chocolatey-for-wine/8af60cc1880f749e3b4171faeb02dc0f77ff2e5e/winetricks.ps1",
         winetricks_ps1_sha256="1d74ffad96f2052d42a0fa3c7ac5dbc8d099e7ad9f9aba3213446a25b34ff48c",
         chocolatey_version="2.6.0",
         chocolatey_nupkg_url="https://community.chocolatey.org/api/v2/package/chocolatey/2.6.0",
@@ -170,8 +170,8 @@ _BUILTIN_PROFILES = {
         dotnet_installer_url="https://download.visualstudio.microsoft.com/download/pr/7afca223-55d2-470a-8edc-6a1739ae3252/abd170b4b0ec15ad0222a809b761a036/ndp48-x86-x64-allos-enu.exe",
         dotnet_installer_sha256="95889d6de3f2070c07790ad6cf2000d33d9a1bdfc6a381725ab82ab1c314fd53",
         upstream_project="noahgiroux/Chocolatey-for-wine",
-        upstream_tag="v0.5c.755-noah.3",
-        revision="r9",
+        upstream_tag="v0.5c.755-noah.4",
+        revision="r10",
         d3dcompiler47_url="https://github.com/mozilla/fxc2/raw/master/dll/d3dcompiler_47.dll",
         d3dcompiler47_sha256="4432bbd1a390874f3f0a503d45cc48d346abc3a8c0213c289f4b615bf0ee84f3",
         d3dcompiler47_x86_url="https://github.com/mozilla/fxc2/raw/master/dll/d3dcompiler_47_32.dll",

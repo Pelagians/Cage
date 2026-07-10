@@ -108,7 +108,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
     def test_fork_bootstrap_uses_private_verified_workdir_and_strict_success_boundary(self):
         bootstrap = _commands_for(_manifest().modules[0].build(), "Bootstrap Chocolatey-for-Wine fork")
 
-        self.assertIn('cfw_work="$wine_prefix/.cage/chocolatey-bootstrap/cfw-v0.5c.755-noah.3-choco-2.6.0-fork-r9"', bootstrap)
+        self.assertIn('cfw_work="$wine_prefix/.cage/chocolatey-bootstrap/cfw-v0.5c.755-noah.4-choco-2.6.0-fork-r10"', bootstrap)
         self.assertIn('rm -rf "$cfw_work"', bootstrap)
         self.assertIn('cfw_payload_cache="$cfw_work/choc_install_files"', bootstrap)
         self.assertIn('cfw_installer="$cfw_extract/ChoCinstaller_0.5c.755.exe"', bootstrap)

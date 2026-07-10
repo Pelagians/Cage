@@ -7,7 +7,7 @@ Supersedes: [0021. Upstream-first Chocolatey-for-Wine bootstrap](0021-upstream-f
 
 ## Decision
 
-Cage will consume the pinned `noahgiroux/Chocolatey-for-wine` prerelease `v0.5c.755-noah.3`, derived from `Twig6943/Chocolatey-for-wine` and ultimately `PietJankbal/Chocolatey-for-wine`.
+Cage will consume the pinned `noahgiroux/Chocolatey-for-wine` prerelease `v0.5c.755-noah.4`, derived from `Twig6943/Chocolatey-for-wine` and ultimately `PietJankbal/Chocolatey-for-wine`.
 
 The fork keeps upstream compatibility behavior and release layout but patches installer orchestration:
 
@@ -15,15 +15,17 @@ The fork keeps upstream compatibility behavior and release layout but patches in
 2. PowerShell installation and `choc_install.ps1` finalization start only after all prerequisite workers succeed;
 3. process, thread, download, and PowerShell failures propagate to the installer exit code;
 4. PowerShell uses terminating error behavior;
-5. installer success requires canonical `C:/ProgramData/chocolatey/bin/choco.exe`.
+5. the PowerShell child receives a real quoted `argv[0]` and explicit `-File` command so `choc_install.ps1` executes in container builders rather than returning success as a no-op;
+6. a fixed `finalizer-script-entry` stage proves the script body actually started;
+7. installer success requires canonical `C:/ProgramData/chocolatey/bin/choco.exe`.
 
 Cage still treats the installer as a bootstrap mechanism, not proof of readiness. It independently requires canonical Chocolatey, bounded command probes, feature policy, and a local install/uninstall lifecycle before user packages run.
 
 ## Provenance
 
-- Fork commit: `6b8f27fa49c8edf4db8edc972d13e3e3f9839b2b`
-- Release: `v0.5c.755-noah.3`
-- Asset SHA-256: `2dc2f5f48e0328875d566757ba1c4e6fbd92d1bb6d8372418dc666c27ebc54a5`
+- Fork commit: `8af60cc1880f749e3b4171faeb02dc0f77ff2e5e`
+- Release: `v0.5c.755-noah.4`
+- Asset SHA-256: `502a5d8e69b4e9508502f6dd70fc19a403d6fc599425e692d103fcaa8ba1acae`
 - Installer build/package CI: passed before Cage integration
 - Canonical upstream: `PietJankbal/Chocolatey-for-wine`, monitored weekly and manually by the fork without automatic merging
 
@@ -33,7 +35,7 @@ The unmodified upstream installer reproduced the failure previously recorded in 
 
 ## Consequences
 
-- The active profile is `cfw-v0.5c.755-noah.3-choco-2.6.0-fork-r9`.
+- The active profile is `cfw-v0.5c.755-noah.4-choco-2.6.0-fork-r10`.
 - Cage stores the complete installer output as lifecycle evidence but emits only the fork's fixed `[cfw] stage=...` progress records to live CI logs.
 - The release tag and packaged installer version are represented separately because the asset contains `ChoCinstaller_0.5c.755.exe`.
 - Cage depends on a personally owned fork while this remains an upstream contribution experiment. Transfer it to Pelagians before treating it as a permanent supported production dependency if upstream does not merge the fixes.
