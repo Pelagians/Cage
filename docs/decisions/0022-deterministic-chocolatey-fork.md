@@ -7,7 +7,7 @@ Supersedes: [0021. Upstream-first Chocolatey-for-Wine bootstrap](0021-upstream-f
 
 ## Decision
 
-Cage will consume the pinned `noahgiroux/Chocolatey-for-wine` prerelease `v0.5c.755-noah.4`, derived from `Twig6943/Chocolatey-for-wine` and ultimately `PietJankbal/Chocolatey-for-wine`.
+Cage will consume the pinned `noahgiroux/Chocolatey-for-wine` prerelease `v0.5c.755-noah.5`, derived from `Twig6943/Chocolatey-for-wine` and ultimately `PietJankbal/Chocolatey-for-wine`.
 
 The fork keeps upstream compatibility behavior and release layout but patches installer orchestration:
 
@@ -23,9 +23,9 @@ Cage still treats the installer as a bootstrap mechanism, not proof of readiness
 
 ## Provenance
 
-- Fork commit: `8af60cc1880f749e3b4171faeb02dc0f77ff2e5e`
-- Release: `v0.5c.755-noah.4`
-- Asset SHA-256: `502a5d8e69b4e9508502f6dd70fc19a403d6fc599425e692d103fcaa8ba1acae`
+- Fork commit: `e2b85633d2619d0db7a3ed0d9ad5e3048abf9d03`
+- Release: `v0.5c.755-noah.5`
+- Asset SHA-256: `580f31fa4829a8a5f5cfcd9389126c9efc0f778c0f8074b7bf1c40c0da5991c7`
 - Installer build/package CI: passed before Cage integration
 - Canonical upstream: `PietJankbal/Chocolatey-for-wine`, monitored weekly and manually by the fork without automatic merging
 
@@ -35,7 +35,7 @@ The unmodified upstream installer reproduced the failure previously recorded in 
 
 ## Consequences
 
-- The active profile is `cfw-v0.5c.755-noah.4-choco-2.6.0-fork-r10`.
+- The active profile is `cfw-v0.5c.755-noah.5-choco-2.6.0-fork-r11`.
 - Cage stores the complete installer output as lifecycle evidence but emits only the fork's fixed `[cfw] stage=...` progress records to live CI logs.
 - The release tag and packaged installer version are represented separately because the asset contains `ChoCinstaller_0.5c.755.exe`.
 - Cage depends on a personally owned fork while this remains an upstream contribution experiment. Transfer it to Pelagians before treating it as a permanent supported production dependency if upstream does not merge the fixes.
