@@ -65,7 +65,30 @@ jobs:
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -ne 0 ]; then
-            summary="$(tail -100 /tmp/cage-chocolatey-smoke.log || true)"
+            bundle="$(find dist -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
+            diagnostic="$bundle/metadata/chocolatey-diagnostic.json"
+            {
+              echo '--- chocolatey diagnostic ---'
+              if [ -f "$diagnostic" ]; then
+                cat "$diagnostic"
+              else
+                echo 'diagnostic unavailable'
+              fi
+              echo '--- focused Chocolatey errors ---'
+              for log in \
+                "$bundle/logs/chocolatey-diagnostics/choco-version.log" \
+                "$bundle/logs/chocolatey-diagnostics/choco-version-cmd.log" \
+                "$bundle/logs/chocolatey-diagnostics/choco-mscoree-loader.log" \
+                "$bundle/logs/chocolatey-diagnostics/choco-version-winedebug.log"; do
+                if [ -f "$log" ]; then
+                  echo "[$log]"
+                  grep -Eai '(^|:)(err|fatal):|error|exception|failed|missing|cannot|status c[0-9a-f]+' "$log" | tail -25 || true
+                fi
+              done
+              echo '--- build tail ---'
+              tail -30 /tmp/cage-chocolatey-smoke.log || true
+            } > /tmp/cage-chocolatey-summary.log
+            summary="$(tail -180 /tmp/cage-chocolatey-summary.log)"
             summary="${summary//'%'/'%25'}"
             summary="${summary//$'\n'/'%0A'}"
             summary="${summary//$'\r'/'%0D'}"
