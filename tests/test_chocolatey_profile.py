@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import json
 import re
 import subprocess
 import sys
@@ -181,15 +182,20 @@ class ChocolateyAssetContractTests(unittest.TestCase):
                 stem: str,
                 name: str,
                 destination: str,
+                source_name: str | None = None,
             ) -> None:
                 source_dir = payload / stem
                 source_dir.mkdir()
-                (source_dir / name.lower()).write_bytes(name.encode("ascii"))
+                payload_name = source_name or name.replace("\\", "/").rsplit("/", 1)[-1]
+                (source_dir / payload_name.lower()).write_bytes(name.encode("ascii"))
+                source_attribute = (
+                    f' sourceName="{source_name}"' if source_name is not None else ""
+                )
                 (payload / f"{stem}.manifest").write_text(
                     '<?xml version="1.0" encoding="UTF-8"?>\n'
                     '<assembly xmlns="urn:schemas-microsoft-com:asm.v3">\n'
                     '  <assemblyIdentity processorArchitecture="amd64" />\n'
-                    f'  <file name="{name}" destinationPath="{destination}" />\n'
+                    f'  <file name="{name}" destinationPath="{destination}"{source_attribute} />\n'
                     '</assembly>\n',
                     encoding="utf-8",
                 )
@@ -201,11 +207,18 @@ class ChocolateyAssetContractTests(unittest.TestCase):
             )
             manifest(
                 "amd64_oracle_locale",
-                "OracleCounters.ini",
+                "GAC\\OracleCounters.ini",
                 "$(runtime.inf)\\.NET Data Provider for Oracle\\0000\\",
+                source_name="OracleCounters.ini",
             )
+            for relative in (
+                "windows/system32/mscoree.dll",
+                "windows/syswow64/mscoree.dll",
+            ):
+                marker = drive / relative
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.write_bytes(f"wine-prefix:{relative}".encode("ascii"))
             required = (
-                "mscoree.dll",
                 "mscoreei.dll",
                 "clr.dll",
                 "clrjit.dll",
@@ -241,7 +254,15 @@ class ChocolateyAssetContractTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             oracle = drive / "windows/inf/.NET Data Provider for Oracle"
             self.assertTrue((oracle / "OracleHeader.h").is_file())
-            self.assertTrue((oracle / "0000/OracleCounters.ini").is_file())
+            self.assertTrue((oracle / "0000/GAC/OracleCounters.ini").is_file())
+            profile = json.loads((root / "profile.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                [entry["destination"] for entry in profile["preservedFiles"]],
+                [
+                    "C:/windows/system32/mscoree.dll",
+                    "C:/windows/syswow64/mscoree.dll",
+                ],
+            )
 
     def test_dotnet_profile_fails_closed_and_emits_install_manifest(self):
         script = load_asset("install-dotnet481.sh")

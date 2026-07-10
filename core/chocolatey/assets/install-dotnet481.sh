@@ -148,30 +148,53 @@ def source_dir_for(manifest):
     return Path(str(manifest)[: -len(".manifest")])
 
 
-def find_file(directory, name):
-    direct = directory / name
-    if direct.is_file():
-        return direct
-    lower = name.lower()
-    local_matches = []
-    if directory.exists():
-        local_matches = [
-            candidate for candidate in directory.iterdir()
-            if candidate.is_file() and candidate.name.lower() == lower
+def windows_relative_parts(value, context):
+    normalized = value.replace("/", chr(92))
+    if re.match(r"^[A-Za-z]:", normalized) or normalized.startswith(chr(92)):
+        raise SystemExit(f"unsafe absolute dotnet481 {context}: {value}")
+    parts = [part for part in normalized.split(chr(92)) if part not in {"", "."}]
+    if not parts or any(part == ".." for part in parts):
+        raise SystemExit(f"unsafe relative dotnet481 {context}: {value}")
+    return parts
+
+
+def find_local_file(directory, name):
+    current = directory
+    for part in windows_relative_parts(name, "source"):
+        if not current.is_dir():
+            return None
+        matches = [candidate for candidate in current.iterdir() if candidate.name.lower() == part.lower()]
+        if len(matches) > 1:
+            raise SystemExit(
+                f"ambiguous dotnet481 source for {name}: "
+                + ", ".join(map(str, matches))
+            )
+        if not matches:
+            return None
+        current = next(iter(matches))
+    return current if current.is_file() else None
+
+
+def find_file(directory, *names):
+    candidates = tuple(dict.fromkeys(name for name in names if name))
+    for name in candidates:
+        local = find_local_file(directory, name)
+        if local is not None:
+            return local
+    for name in candidates:
+        basename = windows_relative_parts(name, "source")[-1].lower()
+        matches = [
+            candidate for candidate in payload.rglob("*")
+            if candidate.is_file() and candidate.name.lower() == basename
         ]
-    if len(local_matches) == 1:
-        return local_matches[0]
-    if len(local_matches) > 1:
-        raise SystemExit(f"ambiguous dotnet481 source for {name}: " + ", ".join(map(str, local_matches)))
-    matches = [
-        candidate for candidate in payload.rglob("*")
-        if candidate.is_file() and candidate.name.lower() == lower
-    ]
-    if not matches:
-        raise SystemExit(f"missing required dotnet481 source: {name}")
-    if len(matches) > 1:
-        raise SystemExit(f"ambiguous dotnet481 source for {name}: " + ", ".join(map(str, matches)))
-    return next(iter(matches))
+        if len(matches) == 1:
+            return next(iter(matches))
+        if len(matches) > 1:
+            raise SystemExit(
+                f"ambiguous dotnet481 source for {name}: "
+                + ", ".join(map(str, matches))
+            )
+    raise SystemExit("missing required dotnet481 source: " + ", ".join(candidates))
 
 
 def sha256_file(path):
@@ -217,13 +240,15 @@ def install_manifest_files(manifest):
         name = attr(file_element, "name")
         if not name:
             continue
-        src = find_file(source_dir, name)
+        source_name = attr(file_element, "sourceName") or name
+        logical_parts = windows_relative_parts(name, "logical name")
+        src = find_file(source_dir, source_name, logical_parts[-1])
         destinations = destination_paths(file_element)
         if not destinations:
             raise SystemExit(f"missing required dotnet481 destination for {name} in {manifest}")
         for destination in destinations:
             destination_dir = win_to_host(replace_tokens(destination, arch_value))
-            final = destination_dir / name
+            final = destination_dir.joinpath(*logical_parts)
             copy_file(src, final)
             copied += 1
     return copied
@@ -324,12 +349,11 @@ for manifest in manifests:
     file_count += install_manifest_files(manifest)
     write_manifest_registry(manifest)
 
-# Keep the native CLR loader files explicit even if a manifest uses a path form
-# this parser does not understand. These are the files Wine must load before
-# managed Chocolatey can emit any output.
+# Keep the NDP-owned native CLR implementation files explicit even if a
+# manifest uses a path form this parser does not understand. mscoree.dll is a
+# Windows OS component absent from the pinned Windows 10 NDP payload; preserve
+# and verify the copies created by Wine prefix initialization instead.
 required_copies = [
-    ("mscoree.dll", windows / "system32" / "mscoree.dll", ("amd64",)),
-    ("mscoree.dll", windows / "syswow64" / "mscoree.dll", ("x86", "wow64")),
     ("mscoreei.dll", framework64 / "mscoreei.dll", ("amd64",)),
     ("mscoreei.dll", framework32 / "mscoreei.dll", ("x86", "wow64")),
     ("clr.dll", framework64 / "clr.dll", ("amd64",)),
@@ -361,7 +385,18 @@ required_markers = [
 ]
 missing = [str(path) for path in required_markers if not path.is_file()]
 if missing:
-    raise SystemExit("missing upstream dotnet481 marker files: " + ", ".join(missing))
+    raise SystemExit("missing dotnet481 profile marker files: " + ", ".join(missing))
+preserved_files = [
+    {
+        "source": "wine-prefix-prerequisite",
+        "destination": "C:/" + str(path.relative_to(drive_c)).replace(chr(92), "/"),
+        "sha256": sha256_file(path),
+    }
+    for path in (
+        windows / "system32" / "mscoree.dll",
+        windows / "syswow64" / "mscoree.dll",
+    )
+]
 install_record = {
     "schemaVersion": "cage.chocolatey-dotnet-profile/v0",
     "profile": profile_id,
@@ -370,6 +405,7 @@ install_record = {
     "manifestCount": len(manifests),
     "copiedFileCount": len(copied_files),
     "copiedFiles": copied_files,
+    "preservedFiles": preserved_files,
     "registryImports": [
         {"view": "64", "path": "C:/windows/temp/reg_keys64.reg", "sha256": sha256_file(reg64)},
         {"view": "32", "path": "C:/windows/temp/reg_keys32.reg", "sha256": sha256_file(reg32)},
