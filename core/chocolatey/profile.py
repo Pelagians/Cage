@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from typing import Any
 import re
 
 
@@ -9,7 +10,7 @@ class ChocolateyProfileError(ValueError):
     """Raised when a Chocolatey bootstrap profile is invalid or unknown."""
 
 
-DEFAULT_BOOTSTRAP_PROFILE_ID = "cfw-v0.5c.755-choco-2.6.0-dotnet481-r1"
+DEFAULT_BOOTSTRAP_PROFILE_ID = "cfw-v0.5c.755-choco-2.6.0-dotnet481-r2"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -37,6 +38,9 @@ class ChocolateyBootstrapProfile:
     upstream_project: str
     upstream_tag: str
     revision: str
+    powershell_host_feature: str = "powershellHost"
+    powershell_host: str = "disabled"
+    allow_global_confirmation: str = "disabled"
 
     def validate(self) -> None:
         if not self.id or not self.dotnet_profile or not self.revision:
@@ -49,7 +53,7 @@ class ChocolateyBootstrapProfile:
                     f"Chocolatey bootstrap profile {field_name} must be a complete sha256"
                 )
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "chocolateyForWineVersion": self.chocolatey_for_wine_version,
@@ -68,6 +72,11 @@ class ChocolateyBootstrapProfile:
             "dotnetProfile": self.dotnet_profile,
             "dotnetInstallerUrl": self.dotnet_installer_url,
             "dotnetInstallerSha256": self.dotnet_installer_sha256,
+            "features": {
+                "powershellHostFeature": self.powershell_host_feature,
+                "powershellHost": self.powershell_host,
+                "allowGlobalConfirmation": self.allow_global_confirmation,
+            },
             "upstreamProject": self.upstream_project,
             "upstreamTag": self.upstream_tag,
             "revision": self.revision,
@@ -92,6 +101,9 @@ class ChocolateyBootstrapProfile:
             "DOTNET_PROFILE": self.dotnet_profile,
             "DOTNET_INSTALLER_URL": self.dotnet_installer_url,
             "DOTNET_INSTALLER_SHA256": self.dotnet_installer_sha256,
+            "POWERSHELL_HOST_FEATURE": self.powershell_host_feature,
+            "POWERSHELL_HOST_POLICY": self.powershell_host,
+            "ALLOW_GLOBAL_CONFIRMATION_POLICY": self.allow_global_confirmation,
         }
 
 
@@ -116,7 +128,7 @@ _BUILTIN_PROFILES = {
         dotnet_installer_sha256="859b556ee19a33353626682b8b6f7e9ce97cd325b0d8f24c7770dc31f688d3c1",
         upstream_project="PietJankbal/Chocolatey-for-wine",
         upstream_tag="v0.5c.755",
-        revision="r1",
+        revision="r2",
     ),
 }
 

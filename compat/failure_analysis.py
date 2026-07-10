@@ -261,7 +261,11 @@ def _read_chocolatey_diagnostic(bundle: Path | None) -> dict[str, Any] | None:
     checks = payload.get("checks")
     if not isinstance(checks, dict):
         checks = {}
-    failed_checks = sorted(str(name) for name, value in checks.items() if value is False)
+    explicit_failed = payload.get("failedChecks")
+    if isinstance(explicit_failed, list) and all(isinstance(item, str) for item in explicit_failed):
+        failed_checks = sorted(set(explicit_failed))
+    else:
+        failed_checks = sorted(str(name) for name, value in checks.items() if value is False)
     logs = payload.get("logs") if isinstance(payload.get("logs"), dict) else {}
     file_sizes = payload.get("fileSizes") if isinstance(payload.get("fileSizes"), dict) else {}
     return {

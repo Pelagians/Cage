@@ -263,7 +263,7 @@ def execute_inside_container(
     *,
     engine: str | None = None,
     image_ref: str | None = None,
-    timeout: int = 600,
+    timeout: int = 7200,
     workspace: Path | str | None = None,
     runner_cache_dir: Path | str | None = None,
     module_cache_dir: Path | str | None = None,

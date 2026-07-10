@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import base64
 import json
 import re
 import shlex
@@ -14,6 +15,7 @@ from core.chocolatey import (
     asset_sha256,
     get_bootstrap_profile,
     load_asset,
+    load_asset_bytes,
     render_asset,
 )
 
@@ -22,18 +24,25 @@ from ..build_step import BuildStep
 
 _PACKAGE_RE = re.compile(r"^[A-Za-z0-9._+\-]+$")
 _DOWNLOAD_ASSETS = {"powershell-msi.sh", "prepare-data.sh", "install-dotnet481.sh"}
+_FAILURE_DIAGNOSTIC_ASSETS = {
+    "verify-chocolatey.sh",
+    "feature-policy.sh",
+    "smoke-lifecycle.sh",
+}
 _STEP_SPECS = (
     ("powershell-msi.sh", "Install PowerShell 7 MSI for Chocolatey", "wine-msiexec", 1200),
     ("prepare-data.sh", "Prepare Chocolatey-for-wine data", "extract", None),
     ("install-dotnet481.sh", "Install upstream .NET 4.8.1 manifest payload for Chocolatey", "extract", 1800),
     ("prepare-registry.sh", "Prepare Wine registry for Chocolatey", "wine-reg", 120),
     ("promote-chocolatey.sh", "Promote Chocolatey natively", "raw-shell", None),
-    ("verify-chocolatey.sh", "Diagnose Chocolatey readiness", "wine-run", 120),
+    ("verify-chocolatey.sh", "Diagnose Chocolatey readiness", "wine-run", 600),
+    ("feature-policy.sh", "Apply Chocolatey feature policy", "wine-run", 360),
+    ("smoke-lifecycle.sh", "Prove Chocolatey local package lifecycle", "wine-run", 1800),
     ("install-package.sh", "Install Chocolatey packages", "wine-run", 1800),
 )
 
 
-def _profile_record_command(profile_payload: dict[str, str], asset_hashes: dict[str, str]) -> str:
+def _profile_record_command(profile_payload: dict[str, Any], asset_hashes: dict[str, str]) -> str:
     payload = {
         "schemaVersion": "cage.chocolatey-bootstrap/v0",
         "profile": profile_payload,
@@ -97,10 +106,21 @@ class ChocolateyModule(ModuleBase):
                 " -s '" + self.source.replace("'", "'\"'\"'") + "'"
                 if self.source else ""
             ),
+            "SMOKE_NUPKG_BASE64": base64.b64encode(
+                load_asset_bytes("cage-chocolatey-smoke.0.1.0.nupkg")
+            ).decode("ascii"),
+            "SMOKE_NUPKG_SHA256": asset_sha256(
+                "cage-chocolatey-smoke.0.1.0.nupkg"
+            ),
         })
         asset_hashes = {
             name: asset_sha256(name)
-            for name in ("fetch-verified.sh", *(spec[0] for spec in _STEP_SPECS))
+            for name in (
+                "fetch-verified.sh",
+                "failure-diagnostics.sh",
+                "cage-chocolatey-smoke.0.1.0.nupkg",
+                *(spec[0] for spec in _STEP_SPECS),
+            )
         }
         common_metadata = {
             "bootstrapProfile": profile.id,
@@ -117,10 +137,13 @@ class ChocolateyModule(ModuleBase):
         )]
 
         fetch_helper = load_asset("fetch-verified.sh").rstrip()
+        failure_helper = load_asset("failure-diagnostics.sh").rstrip()
         for asset_name, description, kind, timeout in _STEP_SPECS:
             script = render_asset(asset_name, values)
             if asset_name in _DOWNLOAD_ASSETS:
                 script = fetch_helper + "\n\n" + script
+            if asset_name in _FAILURE_DIAGNOSTIC_ASSETS:
+                script = failure_helper + "\n\n" + script
             metadata: dict[str, Any] = {
                 **common_metadata,
                 "scriptAsset": f"core/chocolatey/assets/{asset_name}",
@@ -128,6 +151,8 @@ class ChocolateyModule(ModuleBase):
             }
             if asset_name == "verify-chocolatey.sh":
                 metadata["diagnostic"] = "metadata/chocolatey-diagnostic.json"
+            if asset_name == "smoke-lifecycle.sh":
+                metadata["smokeEvidence"] = "metadata/chocolatey-smoke.json"
             steps.append(BuildStep(
                 commands=[script],
                 description=(

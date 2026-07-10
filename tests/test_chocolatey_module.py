@@ -23,6 +23,13 @@ def _all_commands(steps) -> str:
     return "\n".join("\n".join(step.commands) for step in steps)
 
 
+def _commands_for(steps, description: str) -> str:
+    matches = [step for step in steps if step.description == description]
+    if len(matches) != 1:
+        raise AssertionError(f"expected one step named {description!r}, found {len(matches)}")
+    return "\n".join(matches[0].commands)
+
+
 class ChocolateyModuleUnitTests(unittest.TestCase):
     def test_empty_modules_parse(self):
         manifest = Manifest.from_dict({
@@ -85,13 +92,17 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             "Prepare Wine registry for Chocolatey",
             "Promote Chocolatey natively",
             "Diagnose Chocolatey readiness",
+            "Apply Chocolatey feature policy",
+            "Prove Chocolatey local package lifecycle",
             "Install Chocolatey packages: 7zip notepadplusplus",
         ])
         self.assertNotIn('wine "$cfw_installer" /s /q', script)
         self.assertNotIn("Install Chocolatey-for-wine via upstream ChoCinstaller", script)
         self.assertLess(script.index("Prepare Chocolatey-for-wine data"), script.index("Promote Chocolatey natively"))
         self.assertLess(script.index("Promote Chocolatey natively"), script.index("Diagnose Chocolatey readiness"))
-        self.assertLess(script.index("Diagnose Chocolatey readiness"), script.index("Install Chocolatey packages"))
+        self.assertLess(script.index("Diagnose Chocolatey readiness"), script.index("Apply Chocolatey feature policy"))
+        self.assertLess(script.index("Apply Chocolatey feature policy"), script.index("Prove Chocolatey local package lifecycle"))
+        self.assertLess(script.index("Prove Chocolatey local package lifecycle"), script.index("Install Chocolatey packages"))
 
     def test_chocolatey_uses_pinned_powershell_msi_like_upstream_chocinstaller(self):
         powershell = "\n".join(_manifest().modules[0].build()[1].commands)
@@ -261,42 +272,46 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertNotIn("export WINEPATH=", promote)
 
     def test_chocolatey_native_promotion_keeps_canonical_choco_gate(self):
-        promote = "\n".join(_manifest().modules[0].build()[5].commands)
+        steps = _manifest().modules[0].build()
+        promote = _commands_for(steps, "Promote Chocolatey natively")
+        diagnostic = _commands_for(steps, "Diagnose Chocolatey readiness")
 
         self.assertIn("ProgramData/tools/ChocolateyInstall/choco.exe", promote)
         self.assertIn("ProgramData/chocolatey/bin/choco.exe", promote)
         self.assertIn("raw ChocolateyInstall payload is only a source", promote)
         self.assertIn("ERROR: native Chocolatey promotion did not create canonical choco.exe", promote)
-        self.assertIn("CAGE_CHOCOLATEY_VERIFY_TIMEOUT", promote)
-        self.assertIn("choco_exe_win='C:\\ProgramData\\chocolatey\\bin\\choco.exe'", promote)
-        self.assertIn('timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe_win" --version', promote)
-        self.assertNotIn('timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe" --version', promote)
+        self.assertNotIn("CAGE_CHOCOLATEY_VERIFY_TIMEOUT", promote)
+        self.assertNotIn("choco --version", promote)
+        self.assertIn("CAGE_CHOCOLATEY_VERIFY_TIMEOUT", diagnostic)
+        self.assertIn("choco_exe_win='C:\\ProgramData\\chocolatey\\bin\\choco.exe'", diagnostic)
+        self.assertIn('timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe_win" --version', diagnostic)
+        self.assertNotIn('timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe" --version', diagnostic)
         self.assertIn("export ChocolateyInstall=", promote)
         self.assertIn("export ChocolateyToolsLocation=", promote)
         self.assertIn("unset WINEDLLOVERRIDES", promote)
         self.assertNotIn("mscoree=n,b", promote)
         self.assertNotIn("mscoree=n'", promote)
-        self.assertIn("logs/chocolatey-verify.log", promote)
-        self.assertIn("canonical Chocolatey verification failed", promote)
-        self.assertIn("Continuing to diagnostic step", promote)
+        self.assertNotIn("logs/chocolatey-verify.log", promote)
+        self.assertNotIn("Continuing to diagnostic step", promote)
         self.assertNotIn("Chocolatey-for-wine finalizer did not create canonical choco.exe", promote)
         self.assertNotIn("CAGE_CHOCOLATEY_FINALIZE_TIMEOUT", promote)
 
     def test_chocolatey_package_install_uses_canonical_choco_only(self):
-        package = "\n".join(_manifest(["7zip", "notepadplusplus"]).modules[0].build()[7].commands)
+        steps = _manifest(["7zip", "notepadplusplus"]).modules[0].build()
+        policy = _commands_for(steps, "Apply Chocolatey feature policy")
+        package = _commands_for(steps, "Install Chocolatey packages: 7zip notepadplusplus")
 
         self.assertIn("ProgramData/chocolatey/bin/choco.exe", package)
         self.assertNotIn("ProgramData/tools/chocolateyInstall/choco.exe", package)
         self.assertIn("CAGE_CHOCOLATEY_INSTALL_TIMEOUT", package)
-        self.assertIn("feature disable --name=powershellHost", package)
-        self.assertIn("feature enable -n allowGlobalConfirmation", package)
-        self.assertIn("chocolatey-feature-powershellHost.log", package)
-        self.assertIn("chocolatey-feature-allowGlobalConfirmation.log", package)
-        self.assertLess(package.index("feature disable --name=powershellHost"), package.index("wine \"$choco_exe_win\" install 7zip notepadplusplus -y"))
-        self.assertLess(package.index("feature enable -n allowGlobalConfirmation"), package.index("wine \"$choco_exe_win\" install 7zip notepadplusplus -y"))
+        self.assertIn("feature disable --name=powershellHost", policy)
+        self.assertNotIn("feature enable -n allowGlobalConfirmation", policy)
+        self.assertIn("disable-powershellHost.log", policy)
+        self.assertIn("feature-list.log", policy)
         self.assertIn("wine \"$choco_exe_win\" install 7zip notepadplusplus -y", package)
         self.assertNotIn("wine \"$choco_exe\" install", package)
         self.assertIn("choco_diag_status", package)
+        self.assertIn("policy_status", package)
         self.assertIn("export ChocolateyInstall=", package)
         self.assertIn("export ChocolateyToolsLocation=", package)
         self.assertIn("unset WINEDLLOVERRIDES", package)
@@ -305,8 +320,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
 
     def test_chocolatey_diagnostic_writes_json_before_package_install(self):
         steps = _manifest(["7zip"]).modules[0].build()
-        diagnostic = "\n".join(steps[6].commands)
-        package = "\n".join(steps[7].commands)
+        diagnostic = _commands_for(steps, "Diagnose Chocolatey readiness")
+        package = _commands_for(steps, "Install Chocolatey packages: 7zip")
 
         self.assertIn("metadata/chocolatey-diagnostic.json", diagnostic)
         self.assertIn("cage.chocolatey-diagnostic/v0", diagnostic)

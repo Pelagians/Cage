@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>cage-chocolatey-smoke</id>
+    <version>0.1.0</version>
+    <title>Cage Chocolatey lifecycle smoke package</title>
+    <authors>Pelagians</authors>
+    <description>Local-only package used to prove Chocolatey PowerShell install and uninstall lifecycle execution under Wine.</description>
+    <tags>cage smoke test local</tags>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>

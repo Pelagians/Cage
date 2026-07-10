@@ -563,8 +563,8 @@ def build_parser():
     p.add_argument("--engine", default=None,
                    help="Container engine (docker, podman). "
                         "Auto-detect if omitted.")
-    p.add_argument("--build-timeout", "--timeout", dest="build_timeout", type=int, default=600,
-                   help="Max seconds for container build and generated Wine phase timeout (default: 600)")
+    p.add_argument("--build-timeout", "--timeout", dest="build_timeout", type=int, default=7200,
+                   help="Max seconds for container build and generated Wine phase timeout (default: 7200)")
     p.add_argument("--image-tag",
                    help="Optional OCI output tag (e.g. myapp:latest)")
     p.add_argument("--runner-cache-dir",

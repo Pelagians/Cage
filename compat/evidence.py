@@ -32,7 +32,7 @@ def run_compat_test(
     network: str | None = None,
     engine: str | None = None,
     mode: str = "dry-run",
-    build_timeout: int = 600,
+    build_timeout: int = 7200,
     run_timeout: int | None = None,
     entrypoints: list[str] | None = None,
     all_entrypoints: bool = False,

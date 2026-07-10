@@ -194,6 +194,40 @@ class FailureAnalysisTests(unittest.TestCase):
             self.assertIn("chocolatey-diagnostic-failed", summary)
             self.assertIn("chocoVersion", summary)
 
+    def test_failure_analysis_uses_explicit_required_failures_not_advisory_failures(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = Path(tmp) / "failure-demo-1.0.0"
+            metadata = bundle / "metadata"
+            logs = bundle / "logs"
+            metadata.mkdir(parents=True)
+            logs.mkdir()
+            (metadata / "execution-result.json").write_text(
+                json.dumps({"success": False, "exitCode": 69}), encoding="utf-8"
+            )
+            (metadata / "chocolatey-diagnostic.json").write_text(
+                json.dumps({
+                    "schemaVersion": "cage.chocolatey-diagnostic/v0",
+                    "status": "failed",
+                    "failedChecks": ["chocoVersion"],
+                    "checks": {
+                        "chocoVersion": False,
+                        "chocoVersionViaCmd": False,
+                    },
+                    "tiers": {
+                        "required": {"checks": {"chocoVersion": False}},
+                        "advisory": {"checks": {"chocoVersionViaCmd": False}},
+                    },
+                }),
+                encoding="utf-8",
+            )
+
+            result = analyze_failure_path(bundle, write=False)
+
+            self.assertEqual(
+                result["chocolateyDiagnostic"]["failedChecks"],
+                ["chocoVersion"],
+            )
+
     def test_failure_windows_prioritize_first_real_msi_failure_over_rollback_noise(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

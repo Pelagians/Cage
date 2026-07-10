@@ -104,18 +104,4 @@ export ChocolateyInstall="$choco_dir_win"
 export ChocolateyToolsLocation="$choco_tools_win"
 unset WINEDLLOVERRIDES
 
-verify_log="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/chocolatey-verify.log"
-mkdir -p "$(dirname "$verify_log")"
-echo "[cage] Verifying canonical Chocolatey..."
-set +e
-timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe_win" --version > "$verify_log" 2>&1
-verify_rc="$?"
-set -e
-if [ "$verify_rc" -ne 0 ]; then
-  echo "[cage] WARNING: canonical Chocolatey verification failed rc=$verify_rc; see $verify_log"
-  echo "[cage] Continuing to diagnostic step for structured evidence"
-  tail -80 "$verify_log" || true
-else
-  cat "$verify_log"
-fi
 echo "[cage] Chocolatey native promotion complete"

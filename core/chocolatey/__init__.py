@@ -1,6 +1,12 @@
 """Deterministic Chocolatey bootstrap internals."""
 
-from .assets import ChocolateyAssetError, asset_sha256, load_asset, render_asset
+from .assets import (
+    ChocolateyAssetError,
+    asset_sha256,
+    load_asset,
+    load_asset_bytes,
+    render_asset,
+)
 from .profile import (
     DEFAULT_BOOTSTRAP_PROFILE_ID,
     ChocolateyBootstrapProfile,
@@ -16,5 +22,6 @@ __all__ = [
     "asset_sha256",
     "get_bootstrap_profile",
     "load_asset",
+    "load_asset_bytes",
     "render_asset",
 ]
