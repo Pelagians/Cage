@@ -198,6 +198,7 @@ class ChocolateyDiagnosticTierTests(unittest.TestCase):
         self.assertIn('"failedChecks"', verify)
         self.assertIn('"returnCodes"', verify)
         self.assertIn('"chocoVersion": int(choco_version_rc)', verify)
+        self.assertIn('CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-45s', verify)
         self.assertIn("required_passed", verify)
         self.assertIn("cage_chocolatey_collect_failure_diagnostics", verify)
         helper = load_asset("failure-diagnostics.sh")

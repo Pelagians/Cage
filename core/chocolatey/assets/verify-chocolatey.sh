@@ -58,9 +58,9 @@ test -f "$app_local_clr"; app_local_clr_rc="$?"
 test -f "$app_local_clrjit"; app_local_clrjit_rc="$?"
 test -f "$app_local_ucrtbase"; app_local_ucrtbase_rc="$?"
 test -f "$app_local_vcruntime"; app_local_vcruntime_rc="$?"
-timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe_win" --version > "$probe_dir/choco-version.log" 2>&1; choco_version_rc="$?"
-timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine cmd /c 'C:\ProgramData\chocolatey\bin\choco.exe --version' > "$probe_dir/choco-version-cmd.log" 2>&1; choco_version_cmd_rc="$?"
-timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe_win" source list > "$probe_dir/choco-source-list.log" 2>&1; choco_source_rc="$?"
+timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-45s}" wine "$choco_exe_win" --version > "$probe_dir/choco-version.log" 2>&1; choco_version_rc="$?"
+timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-45s}" wine cmd /c 'C:\ProgramData\chocolatey\bin\choco.exe --version' > "$probe_dir/choco-version-cmd.log" 2>&1; choco_version_cmd_rc="$?"
+timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-45s}" wine "$choco_exe_win" source list > "$probe_dir/choco-source-list.log" 2>&1; choco_source_rc="$?"
 set -e
 
 python3 - "$diagnostic_json" "$choco_exe" "$raw_choco_exe" "$canonical_choco_dir" "$native_mscoree" "$native_mscoreei" "$native_clr" "$native_clrjit" "$native_wow64_mscoree" "$native_wow64_mscoreei" "$native_wow64_clr" "$native_ucrtbase" "$native_vcruntime" "$app_local_mscoree" "$app_local_mscoreei" "$app_local_clr" "$app_local_clrjit" "$app_local_ucrtbase" "$app_local_vcruntime" "$canonical_choco_rc" "$canonical_root_rc" "$canonical_match_rc" "$raw_choco_rc" "$redirect_rc" "$winepath_rc" "$cmd_dir_rc" "$cmd_echo_rc" "$registry_install_rc" "$registry_tools_rc" "$wine_dll_mscoree_rc" "$wine_dll_mscoree_policy_rc" "$dotnet_release_rc" "$native_mscoree_rc" "$native_mscoreei_rc" "$native_clr_rc" "$native_clrjit_rc" "$native_wow64_mscoree_rc" "$native_wow64_mscoreei_rc" "$native_wow64_clr_rc" "$native_ucrtbase_rc" "$native_vcruntime_rc" "$app_local_mscoree_rc" "$app_local_mscoreei_rc" "$app_local_clr_rc" "$app_local_clrjit_rc" "$app_local_ucrtbase_rc" "$app_local_vcruntime_rc" "$choco_version_rc" "$choco_version_cmd_rc" "$choco_source_rc" <<'PY'

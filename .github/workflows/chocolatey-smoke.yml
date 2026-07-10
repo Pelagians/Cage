@@ -85,6 +85,10 @@ jobs:
                   grep -Eai '(^|:)(err|fatal):|error|exception|failed|missing|cannot|status c[0-9a-f]+' "$log" | tail -25 || true
                 fi
               done
+              echo '--- loader tail ---'
+              tail -50 "$bundle/logs/chocolatey-diagnostics/choco-mscoree-loader.log" 2>/dev/null || true
+              echo '--- process tree ---'
+              tail -80 "$bundle/logs/chocolatey-diagnostics/process-tree.log" 2>/dev/null || true
               echo '--- build tail ---'
               tail -30 /tmp/cage-chocolatey-smoke.log || true
             } > /tmp/cage-chocolatey-summary.log
