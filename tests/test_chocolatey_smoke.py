@@ -205,6 +205,8 @@ class ChocolateyDiagnosticTierTests(unittest.TestCase):
         self.assertIn("CAGE_CHOCOLATEY_FAILURE_INVENTORY_TIMEOUT", helper)
         self.assertIn("CAGE_CHOCOLATEY_FAILURE_INVENTORY_LIMIT", helper)
         self.assertIn("/proc", helper)
+        self.assertIn("choco-live-process-tree.log", helper)
+        self.assertIn("CAGE_CHOCOLATEY_LIVE_SNAPSHOT_DELAY", helper)
         self.assertNotIn("ps -eo", helper)
         self.assertNotIn("ps -ef", helper)
         self.assertIn("failureTrigger", helper)
