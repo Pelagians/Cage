@@ -237,6 +237,8 @@ class ChocolateyDiagnosticTierTests(unittest.TestCase):
         self.assertIn("{{POWERSHELL_HOST_POLICY}}", policy)
         self.assertIn("{{ALLOW_GLOBAL_CONFIRMATION_POLICY}}", policy)
         self.assertIn("feature-list.log", policy)
+        self.assertIn("^{{POWERSHELL_HOST_FEATURE}}\\|(disabled|false)", policy)
+        self.assertIn("^allowGlobalConfirmation\\|(disabled|false)", policy)
         self.assertIn("disable-powershellHost.log", policy)
         self.assertIn("cage_chocolatey_collect_failure_diagnostics", policy)
         self.assertIn("allowGlobalConfirmation", policy)

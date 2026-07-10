@@ -5,12 +5,18 @@ from dataclasses import asdict, dataclass
 from typing import Any
 import re
 
+from core.powershell_wrapper_assets import (
+    POWERSHELL_WRAPPER_BASE_URL,
+    POWERSHELL_WRAPPER_SHA256,
+    POWERSHELL_WRAPPER_VERSION,
+)
+
 
 class ChocolateyProfileError(ValueError):
     """Raised when a Chocolatey bootstrap profile is invalid or unknown."""
 
 
-DEFAULT_BOOTSTRAP_PROFILE_ID = "cfw-v0.5c.755-choco-2.6.0-dotnet481-r4"
+DEFAULT_BOOTSTRAP_PROFILE_ID = "cfw-v0.5c.755-choco-2.6.0-dotnet481-wrapper-r5"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -43,6 +49,11 @@ class ChocolateyBootstrapProfile:
     allow_global_confirmation: str = "disabled"
     mscoree_update_url: str = "https://catalog.s.download.windowsupdate.com/msdownload/update/software/crup/2010/06/windows6.1-kb958488-v6001-x64_a137e4f328f01146dfa75d7b5a576090dee948dc.msu"
     mscoree_update_sha256: str = "a5f4243ce8b07c9222284fd8ff6f7e742d934c57c89de9cab5d88c74402264e3"
+    powershell_wrapper_version: str = POWERSHELL_WRAPPER_VERSION
+    powershell_wrapper_base_url: str = POWERSHELL_WRAPPER_BASE_URL
+    powershell_wrapper64_sha256: str = POWERSHELL_WRAPPER_SHA256["powershell64.exe"]
+    powershell_wrapper32_sha256: str = POWERSHELL_WRAPPER_SHA256["powershell32.exe"]
+    powershell_wrapper_profile_sha256: str = POWERSHELL_WRAPPER_SHA256["profile.ps1"]
 
     def validate(self) -> None:
         if not self.id or not self.dotnet_profile or not self.revision:
@@ -76,6 +87,11 @@ class ChocolateyBootstrapProfile:
             "dotnetInstallerSha256": self.dotnet_installer_sha256,
             "mscoreeUpdateUrl": self.mscoree_update_url,
             "mscoreeUpdateSha256": self.mscoree_update_sha256,
+            "powershellWrapperVersion": self.powershell_wrapper_version,
+            "powershellWrapperBaseUrl": self.powershell_wrapper_base_url,
+            "powershellWrapper64Sha256": self.powershell_wrapper64_sha256,
+            "powershellWrapper32Sha256": self.powershell_wrapper32_sha256,
+            "powershellWrapperProfileSha256": self.powershell_wrapper_profile_sha256,
             "features": {
                 "powershellHostFeature": self.powershell_host_feature,
                 "powershellHost": self.powershell_host,
@@ -107,6 +123,11 @@ class ChocolateyBootstrapProfile:
             "DOTNET_INSTALLER_SHA256": self.dotnet_installer_sha256,
             "MSCOREE_UPDATE_URL": self.mscoree_update_url,
             "MSCOREE_UPDATE_SHA256": self.mscoree_update_sha256,
+            "POWERSHELL_WRAPPER_VERSION": self.powershell_wrapper_version,
+            "POWERSHELL_WRAPPER_BASE_URL": self.powershell_wrapper_base_url,
+            "POWERSHELL_WRAPPER64_SHA256": self.powershell_wrapper64_sha256,
+            "POWERSHELL_WRAPPER32_SHA256": self.powershell_wrapper32_sha256,
+            "POWERSHELL_WRAPPER_PROFILE_SHA256": self.powershell_wrapper_profile_sha256,
             "POWERSHELL_HOST_FEATURE": self.powershell_host_feature,
             "POWERSHELL_HOST_POLICY": self.powershell_host,
             "ALLOW_GLOBAL_CONFIRMATION_POLICY": self.allow_global_confirmation,
@@ -134,7 +155,7 @@ _BUILTIN_PROFILES = {
         dotnet_installer_sha256="859b556ee19a33353626682b8b6f7e9ce97cd325b0d8f24c7770dc31f688d3c1",
         upstream_project="PietJankbal/Chocolatey-for-wine",
         upstream_tag="v0.5c.755",
-        revision="r4",
+        revision="r5",
     ),
 }
 

@@ -11,14 +11,15 @@ from typing import Any
 
 from .base import ModuleBase
 from .powershell_engine import powershell_engine_steps
+from ..powershell_wrapper_assets import (
+    POWERSHELL_WRAPPER_BASE_URL,
+    POWERSHELL_WRAPPER_SHA256,
+    POWERSHELL_WRAPPER_VERSION,
+)
 from ..build_step import BuildStep
 
-DEFAULT_WRAPPER_VERSION = "v4.2.0"
-DEFAULT_WRAPPER_SHA256 = {
-    "powershell64.exe": "b1d594bd44abc01007b9dd2adea5248f09906fa8d4c6cea7f36a4279e2de91e0",
-    "powershell32.exe": "ca76d774273ffa37053545f8e4ad63c8914461828f1d1eef7a1915c9656fed4c",
-    "profile.ps1": "f2ae629da40bbd60f66554dc87f3145bb6ca9b2adc6eda3be515438c8bee2e24",
-}
+DEFAULT_WRAPPER_VERSION = POWERSHELL_WRAPPER_VERSION
+DEFAULT_WRAPPER_SHA256 = POWERSHELL_WRAPPER_SHA256
 
 
 @dataclass
@@ -41,8 +42,12 @@ class PowerShellWrapperModule(ModuleBase):
         """Generate build steps for the PowerShell wrapper installation."""
         wine_prefix = "${WINEPREFIX:-$HOME/.wine}"
         wrapper_base_url = (
-            "https://codeberg.org/Synchro/powershell-wrapper-for-wine/releases/download/"
-            f"{self.wrapper_version}"
+            POWERSHELL_WRAPPER_BASE_URL
+            if self.wrapper_version == DEFAULT_WRAPPER_VERSION
+            else (
+                "https://codeberg.org/Synchro/powershell-wrapper-for-wine/releases/download/"
+                f"{self.wrapper_version}"
+            )
         )
         hashes = DEFAULT_WRAPPER_SHA256 if self.wrapper_version == DEFAULT_WRAPPER_VERSION else {
             "powershell64.exe": "",

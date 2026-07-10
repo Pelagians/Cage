@@ -21,9 +21,9 @@ timeout "${CAGE_CHOCOLATEY_FEATURE_TIMEOUT:-120s}" wine "$choco_exe_win" feature
 powershell_host_disable_rc="$?"
 timeout "${CAGE_CHOCOLATEY_FEATURE_TIMEOUT:-120s}" wine "$choco_exe_win" feature list --limit-output > "$feature_list_log" 2>&1
 feature_list_rc="$?"
-grep -Eiq '^{{POWERSHELL_HOST_FEATURE}}\|false(\||$)' "$feature_list_log"
+grep -Eiq '^{{POWERSHELL_HOST_FEATURE}}\|(disabled|false)(\||$)' "$feature_list_log"
 powershell_host_disabled_rc="$?"
-grep -Eiq '^allowGlobalConfirmation\|false(\||$)' "$feature_list_log"
+grep -Eiq '^allowGlobalConfirmation\|(disabled|false)(\||$)' "$feature_list_log"
 global_confirmation_disabled_rc="$?"
 set -e
 

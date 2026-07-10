@@ -91,6 +91,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             "Install native .NET loader",
             "Install frozen dotnet481 profile",
             "Prepare Wine registry for Chocolatey",
+            "Install Chocolatey PowerShell wrapper",
             "Promote Chocolatey natively",
             "Diagnose Chocolatey readiness",
             "Apply Chocolatey feature policy",

@@ -46,7 +46,7 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
         self.assertTrue(dataclasses.is_dataclass(profile))
         with self.assertRaises(dataclasses.FrozenInstanceError):
             profile.id = "mutated"  # type: ignore[misc]
-        self.assertEqual(profile.id, "cfw-v0.5c.755-choco-2.6.0-dotnet481-r4")
+        self.assertEqual(profile.id, "cfw-v0.5c.755-choco-2.6.0-dotnet481-wrapper-r5")
         self.assertEqual(profile.dotnet_profile, "dotnet481-cfw-r1")
         self.assertEqual(profile.chocolatey_for_wine_version, "v0.5c.755")
         self.assertEqual(profile.chocolatey_version, "2.6.0")
@@ -54,7 +54,7 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
         self.assertEqual(profile.powershell_host_feature, "powershellHost")
         self.assertEqual(profile.powershell_host, "disabled")
         self.assertEqual(profile.allow_global_confirmation, "disabled")
-        self.assertEqual(profile.revision, "r4")
+        self.assertEqual(profile.revision, "r5")
         for name, value in profile.to_dict().items():
             if name.endswith("Sha256"):
                 self.assertRegex(value, r"^[0-9a-f]{64}$", name)
@@ -117,6 +117,51 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
             descriptions.index("Install frozen dotnet481 profile"),
         )
 
+    def test_chocolatey_profile_freezes_powershell_wrapper_assets(self):
+        profile = get_bootstrap_profile()
+
+        self.assertEqual(profile.powershell_wrapper_version, "v4.2.0")
+        self.assertRegex(profile.powershell_wrapper64_sha256, r"^[0-9a-f]{64}$")
+        self.assertRegex(profile.powershell_wrapper32_sha256, r"^[0-9a-f]{64}$")
+        self.assertRegex(profile.powershell_wrapper_profile_sha256, r"^[0-9a-f]{64}$")
+        self.assertTrue(profile.powershell_wrapper_base_url.startswith("https://"))
+        payload = profile.to_dict()
+        self.assertEqual(payload["powershellWrapperVersion"], "v4.2.0")
+        self.assertEqual(
+            payload["powershellWrapper64Sha256"],
+            profile.powershell_wrapper64_sha256,
+        )
+
+    def test_chocolatey_installs_and_verifies_wrapper_before_readiness(self):
+        profile = get_bootstrap_profile()
+        steps = _manifest(install={"packages": []}).modules[0].build()
+        descriptions = [step.description for step in steps]
+        wrapper_description = "Install Chocolatey PowerShell wrapper"
+
+        self.assertIn(wrapper_description, descriptions)
+        self.assertLess(
+            descriptions.index("Prepare Wine registry for Chocolatey"),
+            descriptions.index(wrapper_description),
+        )
+        self.assertLess(
+            descriptions.index(wrapper_description),
+            descriptions.index("Diagnose Chocolatey readiness"),
+        )
+        wrapper = "\n".join(
+            next(step for step in steps if step.description == wrapper_description).commands
+        )
+        self.assertIn("cage_fetch_verified", wrapper)
+        self.assertIn(profile.powershell_wrapper64_sha256, wrapper)
+        self.assertIn(profile.powershell_wrapper32_sha256, wrapper)
+        self.assertIn(profile.powershell_wrapper_profile_sha256, wrapper)
+        self.assertIn("WindowsPowerShell/v1.0/powershell.exe", wrapper)
+        self.assertIn("windows/syswow64/WindowsPowerShell/v1.0/powershell.exe", wrapper)
+        self.assertIn("chocolatey-powershell-wrapper.json", wrapper)
+        self.assertIn("wrapper64-sentinel.txt", wrapper)
+        self.assertIn("wrapper32-sentinel.txt", wrapper)
+        self.assertIn("CAGE-POWERSHELL-WRAPPER-64", wrapper)
+        self.assertIn("CAGE-POWERSHELL-WRAPPER-32", wrapper)
+
 
 class ChocolateyAssetContractTests(unittest.TestCase):
     def test_all_step_assets_are_versioned_and_hashable(self):
@@ -127,6 +172,7 @@ class ChocolateyAssetContractTests(unittest.TestCase):
             "prepare-data.sh",
             "install-mscoree.sh",
             "install-dotnet481.sh",
+            "install-powershell-wrapper.sh",
             "prepare-registry.sh",
             "promote-chocolatey.sh",
             "verify-chocolatey.sh",

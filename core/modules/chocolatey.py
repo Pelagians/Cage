@@ -28,6 +28,7 @@ _DOWNLOAD_ASSETS = {
     "prepare-data.sh",
     "install-mscoree.sh",
     "install-dotnet481.sh",
+    "install-powershell-wrapper.sh",
 }
 _FAILURE_DIAGNOSTIC_ASSETS = {
     "verify-chocolatey.sh",
@@ -40,6 +41,7 @@ _STEP_SPECS = (
     ("install-mscoree.sh", "Install native .NET loader", "extract", 600),
     ("install-dotnet481.sh", "Install frozen dotnet481 profile", "extract", 1800),
     ("prepare-registry.sh", "Prepare Wine registry for Chocolatey", "wine-reg", 120),
+    ("install-powershell-wrapper.sh", "Install Chocolatey PowerShell wrapper", "raw-shell", None),
     ("promote-chocolatey.sh", "Promote Chocolatey natively", "raw-shell", None),
     ("verify-chocolatey.sh", "Diagnose Chocolatey readiness", "wine-run", 600),
     ("feature-policy.sh", "Apply Chocolatey feature policy", "wine-run", 360),
