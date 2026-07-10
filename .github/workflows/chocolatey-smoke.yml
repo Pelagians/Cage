@@ -117,6 +117,8 @@ jobs:
               echo '--- installer non-stage tail ---'
               if [ -f "$installer_log" ]; then
                 grep -av '^\[cfw\] stage=' "$installer_log" | tail -40 || true
+                echo '--- focused finalizer output ---'
+                grep -Eai 'finalizer-script-entry|pwsh|powershell|choc_install|not recognized|parameter|cannot find|error' "$installer_log" | tail -60 || true
               else
                 echo 'installer log unavailable'
               fi
