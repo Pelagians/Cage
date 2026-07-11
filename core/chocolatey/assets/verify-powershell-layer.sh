@@ -53,6 +53,8 @@ probe_ps1_win="$(winepath -w "$probe_ps1")"
 
 x64_log="$(mktemp)"
 x86_log="$(mktemp)"
+x64_normalized="$x64_log.normalized"
+x86_normalized="$x86_log.normalized"
 set +e
 POWERSHELL_TELEMETRY_OPTOUT=1 timeout --kill-after=10s 180s \
   wine "$wrapper64" -NoLogo -NonInteractive -File "$probe_ps1_win" >"$x64_log" 2>&1
@@ -66,11 +68,13 @@ POWERSHELL_TELEMETRY_OPTOUT=1 timeout --kill-after=10s 120s \
 exit_rc="$?"
 set -e
 
-tr -d '\r' < "$x64_log"
-tr -d '\r' < "$x86_log"
-grep -Fqx '[cage] composed-powershell-layer-ok' "$x64_log"
-grep -Fqx '[cage] synchro-x86-composed-ok' "$x86_log"
-rm -f "$x64_log" "$x86_log"
+tr -d '\r' < "$x64_log" > "$x64_normalized"
+tr -d '\r' < "$x86_log" > "$x86_normalized"
+cat "$x64_normalized"
+cat "$x86_normalized"
+grep -Fqx '[cage] composed-powershell-layer-ok' "$x64_normalized"
+grep -Fqx '[cage] synchro-x86-composed-ok' "$x86_normalized"
+rm -f "$x64_log" "$x86_log" "$x64_normalized" "$x86_normalized"
 test -s "$probe_json"
 
 if [ "$x64_rc" -ne 0 ] || [ "$x86_rc" -ne 0 ] || [ "$exit_rc" -ne 37 ]; then
