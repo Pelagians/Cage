@@ -13,19 +13,20 @@ permissions:
 jobs:
   runtime:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: wine-10.0
-            image: ghcr.io/pelagians/cage-wine:10.0
-          - name: wine-11.0
-            image: ghcr.io/pelagians/cage-wine:11.0
-          - name: staging-11.0
-            image: ghcr.io/pelagians/cage-wine-staging:11.0
-          - name: staging-11.10
-            image: ghcr.io/pelagians/cage-wine-staging:11.10
+        version:
+          - '6.2.7'
+          - '7.0.13'
+          - '7.1.7'
+          - '7.2.24'
+          - '7.3.12'
+          - '7.4.11'
+          - '7.5.5'
+    env:
+      CAGE_RUNTIME_IMAGE: ghcr.io/pelagians/cage-wine:11.0
     steps:
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -35,30 +36,105 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull runtime
-        run: docker pull '${{ matrix.image }}'
+        run: docker pull "$CAGE_RUNTIME_IMAGE"
 
-      - name: Run existing PowerShell proof
-        id: proof
+      - name: Prove PowerShell ${{ matrix.version }}
         shell: bash
         run: |
           set +e
-          mkdir -p '/tmp/pwsh-${{ matrix.name }}'
+          evidence='/tmp/pwsh-${{ matrix.version }}'
+          mkdir -p "$evidence"
           docker run --rm --pull never --shm-size 2g \
-            -e CAGE_GITHUB_ANNOTATIONS=0 \
-            '${{ matrix.image }}' \
-            cage-powershell-runtime-smoke \
-            > '/tmp/pwsh-${{ matrix.name }}/smoke.log' 2>&1
+            -e POWERSHELL_VERSION='${{ matrix.version }}' \
+            -v "$evidence:/out" \
+            "$CAGE_RUNTIME_IMAGE" \
+            bash -lc '
+              set -u
+              version="$POWERSHELL_VERSION"
+              export WINEPREFIX="/tmp/pwsh-$version"
+              export WINEARCH=win64
+              export WINEDEBUG=-all
+              export WINEDLLOVERRIDES="mscoree,mshtml="
+              archive="/tmp/PowerShell-$version-win-x64.zip"
+              url="https://github.com/PowerShell/PowerShell/releases/download/v$version/PowerShell-$version-win-x64.zip"
+              pwsh_dir="$WINEPREFIX/drive_c/Program Files/PowerShell/7"
+              pwsh="$pwsh_dir/pwsh.exe"
+              marker="$WINEPREFIX/drive_c/pwsh-$version-ok.txt"
+              script="$WINEPREFIX/drive_c/pwsh-$version-probe.ps1"
+
+              wineboot -u > /out/wineboot.log 2>&1 || exit $?
+              wineserver -w >> /out/wineboot.log 2>&1 || true
+              unset WINEDLLOVERRIDES
+              winecfg /v win10 > /out/winecfg.log 2>&1 || exit $?
+              wineserver -w >> /out/winecfg.log 2>&1 || true
+              policy_key="HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides"
+              wine reg add "$policy_key" /v amsi /d "" /f > /out/policy.log 2>&1 || exit $?
+              wine reg add "$policy_key" /v dwmapi /d "" /f >> /out/policy.log 2>&1 || exit $?
+              wine reg add "$policy_key" /v rpcrt4 /d native,builtin /f >> /out/policy.log 2>&1 || exit $?
+              wineserver -w >> /out/policy.log 2>&1 || true
+
+              curl -fL --retry 3 -o "$archive" "$url" > /out/download.log 2>&1
+              download_rc=$?
+              echo "$download_rc" > /out/download.rc
+              [ "$download_rc" -eq 0 ] || exit "$download_rc"
+              sha256sum "$archive" > /out/archive.sha256
+              rm -rf "$pwsh_dir"
+              mkdir -p "$pwsh_dir"
+              unzip -q "$archive" -d "$pwsh_dir" > /out/unzip.log 2>&1 || exit $?
+              chmod +x "$pwsh"
+
+              cat > "$script" <<PS1
+param([string]\$Marker)
+\$ErrorActionPreference = "Stop"
+\$version = \$PSVersionTable.PSVersion.ToString()
+[System.IO.File]::WriteAllText(\$Marker, \$version)
+[Console]::Out.WriteLine("[diag] version=" + \$version)
+PS1
+              script_win="$(winepath -w "$script")"
+              marker_win="$(winepath -w "$marker")"
+              set +e
+              timeout --kill-after=10s 180s wine "$pwsh" -NoLogo -NoProfile -NonInteractive \
+                -ExecutionPolicy Bypass -File "$script_win" "$marker_win" \
+                > /out/direct.log 2>&1
+              direct_rc=$?
+              timeout --kill-after=10s 60s wineserver -w >> /out/direct.log 2>&1
+              settle_rc=$?
+              set -e
+              echo "$direct_rc" > /out/direct.rc
+              echo "$settle_rc" > /out/settle.rc
+              if [ -f "$marker" ]; then
+                cp "$marker" /out/marker.txt
+              fi
+              if [ "$direct_rc" -eq 0 ] && [ "$settle_rc" -eq 0 ] && \
+                 grep -Fqx "[diag] version=$version" /out/direct.log && \
+                 [ -f "$marker" ] && [ "$(tr -d "\r\n" < "$marker")" = "$version" ]; then
+                echo passed > /out/result.txt
+                exit 0
+              fi
+
+              set +e
+              WINEDEBUG=+loaddll,+seh,+unwind timeout --kill-after=10s 180s \
+                wine "$pwsh" -NoLogo -NoProfile -NonInteractive -Command \
+                "[Console]::Out.WriteLine(\"[diag] winedebug=$version\")" \
+                > /out/winedebug.stdout 2> /out/winedebug.stderr
+              debug_rc=$?
+              set -e
+              echo "$debug_rc" > /out/winedebug.rc
+              tail -240 /out/winedebug.stderr > /out/winedebug.tail
+              echo failed > /out/result.txt
+              exit 99
+            '
           rc=$?
           set -e
-          printf '%s\n' "$rc" > '/tmp/pwsh-${{ matrix.name }}/smoke.rc'
-          tail -240 '/tmp/pwsh-${{ matrix.name }}/smoke.log'
+          printf '%s\n' "$rc" > "$evidence/container.rc"
+          find "$evidence" -maxdepth 1 -type f -print -exec sh -c 'echo "--- $1"; tail -120 "$1"' _ {} \;
           exit "$rc"
 
       - name: Upload diagnostic evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: powershell-matrix-${{ matrix.name }}-${{ github.sha }}
+          name: powershell-version-${{ matrix.version }}-${{ github.sha }}
           if-no-files-found: error
           retention-days: 1
-          path: /tmp/pwsh-${{ matrix.name }}/**
+          path: /tmp/pwsh-${{ matrix.version }}/**
