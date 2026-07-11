@@ -13,39 +13,37 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Extract CFW manifest installer
+      - name: Inspect WMF 5.1 payload structure
         shell: bash
         run: |
           set -euo pipefail
-          root=/tmp/cfw-inspect
-          mkdir -p "$root"
-          curl -fsSL --retry 3 \
-            -o "$root/winetricks.ps1" \
-            https://raw.githubusercontent.com/noahgiroux/Chocolatey-for-wine/9d635ecdba9b10103c202fea51dbaba70aec4d83/winetricks.ps1
-          python3 - "$root/winetricks.ps1" <<'PY'
-          import re
-          import sys
-          from pathlib import Path
-
-          lines = Path(sys.argv[1]).read_text(encoding="utf-8-sig").splitlines()
-          for target in ("install_from_manifest", "func_expand"):
-              start = next(
-                  index for index, line in enumerate(lines)
-                  if re.match(rf"\s*function\s+{re.escape(target)}\b", line, re.I)
-              )
-              depth = 0
-              seen_open = False
-              end = len(lines)
-              for index in range(start, len(lines)):
-                  stripped = re.sub(r"<#[\s\S]*?#>", "", lines[index])
-                  depth += stripped.count("{")
-                  if stripped.count("{"):
-                      seen_open = True
-                  depth -= stripped.count("}")
-                  if seen_open and depth <= 0 and index > start:
-                      end = index + 1
-                      break
-              print(f"=== {target} {start + 1}-{end} ===")
-              for index in range(start, end):
-                  print(f"{index + 1:04d}: {lines[index]}")
-          PY
+          root=/tmp/wmf51
+          mkdir -p "$root/zip" "$root/msu" "$root/cab"
+          url=https://download.microsoft.com/download/6/F/5/6F5FF66C-6775-42B0-86C4-47D41F2DA187/Win7AndW2K8R2-KB3191566-x64.zip
+          curl -fsSL --retry 3 -o "$root/wmf51.zip" "$url"
+          echo '=== ZIP SHA256 ==='
+          sha256sum "$root/wmf51.zip"
+          7z x -y "$root/wmf51.zip" -o"$root/zip" >/dev/null
+          msu="$(find "$root/zip" -iname 'Win7AndW2K8R2-KB3191566-x64.msu' -type f -print -quit)"
+          test -n "$msu"
+          echo '=== MSU SHA256 ==='
+          sha256sum "$msu"
+          7z x -y "$msu" -o"$root/msu" >/dev/null
+          cab="$(find "$root/msu" -iname 'Windows6.1-KB3191566-x64.cab' -type f -print -quit)"
+          test -n "$cab"
+          echo '=== CAB SHA256 ==='
+          sha256sum "$cab"
+          7z x -y "$cab" -o"$root/cab" >/dev/null
+          echo '=== SELECTED MANIFEST PATHS ==='
+          find "$root/cab" -type f \( \
+            -iname 'msil_system.management.automation_*.manifest' -o \
+            -iname 'msil_microsoft.powershell.consolehost_*.manifest' -o \
+            -iname 'amd64_microsoft-windows-powershell-exe_*.manifest' -o \
+            -iname 'wow64_microsoft-windows-powershell-exe_*.manifest' \
+          \) -printf '%P\n' | sort
+          echo '=== POWERSHELL EXECUTABLE PATHS ==='
+          find "$root/cab" -type f -iname 'powershell.exe' -printf '%P\n' | sort
+          echo '=== AUTOMATION ASSEMBLY PATHS ==='
+          find "$root/cab" -type f -iname 'System.Management.Automation.dll' -printf '%P\n' | sort
+          echo '=== TOP-LEVEL SAMPLE ==='
+          find "$root/cab" -maxdepth 2 -type f -printf '%P\n' | sort | grep -Eai 'powershell|automation|manifest' | head -120
