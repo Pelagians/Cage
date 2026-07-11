@@ -13,31 +13,43 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Print pinned CFW PowerShell inventory
+      - name: Print CFW PS5.1 implementation
         shell: bash
         run: |
           set -euo pipefail
           root=/tmp/cfw-inspect
-          mkdir -p "$root/release" "$root/cdrive"
+          mkdir -p "$root"
           curl -fsSL --retry 3 \
-            -o "$root/Chocolatey-for-wine.7z" \
-            https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.6/Chocolatey-for-wine.7z
-          7z x -y "$root/Chocolatey-for-wine.7z" -o"$root/release" >/dev/null
-          cdrive="$(find "$root/release" -iname c_drive.7z -type f -print -quit)"
-          test -n "$cdrive"
-          7z x -y "$cdrive" -o"$root/cdrive" >/dev/null
-          find "$root/cdrive" -type f -printf '%P\n' | sort > "$root/c-drive-files.txt"
-          grep -Eai 'powershell|ps51|pwsh|system\.management\.automation|microsoft\.powershell' \
-            "$root/c-drive-files.txt" > "$root/powershell-files.txt" || true
+            -o "$root/winetricks.ps1" \
+            https://raw.githubusercontent.com/noahgiroux/Chocolatey-for-wine/9d635ecdba9b10103c202fea51dbaba70aec4d83/winetricks.ps1
+          sha256sum "$root/winetricks.ps1"
+          python3 - "$root/winetricks.ps1" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
 
-          echo '=== RELEASE ==='
-          sha256sum "$root/Chocolatey-for-wine.7z"
-          echo '=== C_DRIVE ==='
-          sha256sum "$cdrive"
-          echo '=== POWERSHELL FILES ==='
-          cat "$root/powershell-files.txt"
-          echo '=== POWERSHELL FILE HASHES ==='
-          while IFS= read -r relative; do
-            [ -n "$relative" ] || continue
-            sha256sum "$root/cdrive/$relative"
-          done < "$root/powershell-files.txt"
+          path = Path(sys.argv[1])
+          lines = path.read_text(encoding="utf-8-sig").splitlines()
+          targets = ("func_ps51", "func_ps51_ise")
+          for target in targets:
+              start = next(
+                  (index for index, line in enumerate(lines)
+                   if re.match(rf"\s*function\s+{re.escape(target)}\b", line, re.I)),
+                  None,
+              )
+              print(f"=== {target} ===")
+              if start is None:
+                  print("NOT FOUND")
+                  continue
+              end = len(lines)
+              for index in range(start + 1, len(lines)):
+                  if re.match(r"\s*function\s+func_[A-Za-z0-9_]+\b", lines[index], re.I):
+                      end = index
+                      break
+              for index in range(start, end):
+                  print(f"{index + 1:04d}: {lines[index]}")
+          print("=== ALL PS51 REFERENCES ===")
+          for index, line in enumerate(lines, start=1):
+              if "ps51" in line.lower():
+                  print(f"{index:04d}: {line}")
+          PY
