@@ -1,0 +1,58 @@
+name: CFW Archive Diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/cfw-archive-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install archive tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full
+
+      - name: Download and inspect pinned CFW release
+        shell: bash
+        run: |
+          set -euxo pipefail
+          root=/tmp/cfw-inspect
+          mkdir -p "$root/release" "$root/cdrive"
+          curl -fL --retry 3 \
+            -o "$root/Chocolatey-for-wine.7z" \
+            https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.6/Chocolatey-for-wine.7z
+          sha256sum "$root/Chocolatey-for-wine.7z" | tee "$root/release.sha256"
+          7z l -slt "$root/Chocolatey-for-wine.7z" > "$root/release-listing.txt"
+          7z x -y "$root/Chocolatey-for-wine.7z" -o"$root/release"
+          find "$root/release" -type f -printf '%P\n' | sort > "$root/release-files.txt"
+          cdrive="$(find "$root/release" -iname c_drive.7z -type f -print -quit)"
+          test -n "$cdrive"
+          sha256sum "$cdrive" | tee "$root/c-drive.sha256"
+          7z l -slt "$cdrive" > "$root/c-drive-listing.txt"
+          7z x -y "$cdrive" -o"$root/cdrive"
+          find "$root/cdrive" -type f -printf '%P\n' | sort > "$root/c-drive-files.txt"
+          find "$root/cdrive" -type f \
+            \( -iname '*powershell*' -o -iname '*ps51*' -o -iname '*pwsh*' \) \
+            -printf '%P\n' | sort > "$root/powershell-files.txt"
+          while IFS= read -r relative; do
+            file="$root/cdrive/$relative"
+            printf '%s  %s\n' "$(sha256sum "$file" | cut -d ' ' -f1)" "$relative"
+          done < "$root/powershell-files.txt" > "$root/powershell-files.sha256"
+
+      - name: Upload inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfw-archive-inspection
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            /tmp/cfw-inspect/*.txt
+            /tmp/cfw-inspect/*.sha256
+            /tmp/cfw-inspect/release/**
+            /tmp/cfw-inspect/cdrive/**
