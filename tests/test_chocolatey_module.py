@@ -60,7 +60,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
     def test_chocolatey_module_claims_layered_capabilities(self):
         capabilities = _manifest().modules[0].capabilities()
 
-        self.assertEqual(capabilities["engine"], "powershell-zip-7.4.11")
+        self.assertEqual(capabilities["engine"], "windows-powershell-5.1-cfw")
         self.assertEqual(capabilities["winps-shim"], "synchro-v4.2.0")
         self.assertEqual(capabilities["package-manager"], "chocolatey-2.6.0")
         self.assertEqual(capabilities["compatibility-pack"], "chocolatey-for-wine-v1")
@@ -88,8 +88,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertEqual(descriptions, [
             "Record layered Chocolatey bootstrap profile",
             "Bootstrap CFW prerequisites and Chocolatey",
-            "Install canonical PowerShell 7 engine",
-            "Install canonical Synchro PowerShell layer (v4.2.0)",
+            "Install Windows PowerShell 5.1 backend",
+            "Install Synchro PowerShell layer (v4.2.0)",
             "Install CFW compatibility profile fragments",
             "Prove composed PowerShell compatibility layer",
             "Diagnose Chocolatey readiness",
@@ -99,7 +99,11 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         ])
         self.assertIn("Bootstrap pinned Chocolatey-for-Wine fork", script)
         self.assertIn("ChoCinstaller_", script)
-        self.assertIn("powershell-zip-7.4.11", script)
+        self.assertIn("windows-powershell-5.1-cfw", script)
+        self.assertIn("Win7AndW2K8R2-KB3191566-x64.zip", script)
+        self.assertIn("f383c34aa65332662a17d95409a2ddedadceda74427e35d05024cd0a6a2fa647", script)
+        self.assertIn("PWSH_PATH", script)
+        self.assertIn("ps51.exe", script)
         self.assertIn("synchro-v4.2.0", script)
         self.assertIn("10-synchro.ps1", script)
         self.assertIn("20-chocolatey.ps1", script)
@@ -107,10 +111,26 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("40-cfw-command-adapters.ps1", script)
         self.assertIn("c3b4923d0f63188843bd2a15be64bca8f4a9902b", script)
         self.assertIn("composed-powershell-layer-ok", script)
-        self.assertLess(descriptions.index("Bootstrap CFW prerequisites and Chocolatey"), descriptions.index("Install canonical PowerShell 7 engine"))
-        self.assertLess(descriptions.index("Install canonical Synchro PowerShell layer (v4.2.0)"), descriptions.index("Install CFW compatibility profile fragments"))
-        self.assertLess(descriptions.index("Prove composed PowerShell compatibility layer"), descriptions.index("Diagnose Chocolatey readiness"))
-        self.assertLess(descriptions.index("Prove Chocolatey local package lifecycle"), descriptions.index("Install Chocolatey packages: 7zip notepadplusplus"))
+        self.assertLess(
+            descriptions.index("Bootstrap CFW prerequisites and Chocolatey"),
+            descriptions.index("Install Windows PowerShell 5.1 backend"),
+        )
+        self.assertLess(
+            descriptions.index("Install Windows PowerShell 5.1 backend"),
+            descriptions.index("Install Synchro PowerShell layer (v4.2.0)"),
+        )
+        self.assertLess(
+            descriptions.index("Install Synchro PowerShell layer (v4.2.0)"),
+            descriptions.index("Install CFW compatibility profile fragments"),
+        )
+        self.assertLess(
+            descriptions.index("Prove composed PowerShell compatibility layer"),
+            descriptions.index("Diagnose Chocolatey readiness"),
+        )
+        self.assertLess(
+            descriptions.index("Prove Chocolatey local package lifecycle"),
+            descriptions.index("Install Chocolatey packages: 7zip notepadplusplus"),
+        )
 
     def test_fork_bootstrap_is_transitional_and_strict(self):
         steps = _manifest().modules[0].build()
@@ -129,23 +149,40 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn('Chocolatey-for-Wine bootstrap failed', bootstrap)
         self.assertIn("PowerShell-7.5.5-win-x64.msi", bootstrap)
 
-        engine_index = [step.description for step in steps].index("Install canonical PowerShell 7 engine")
-        bootstrap_index = [step.description for step in steps].index("Bootstrap CFW prerequisites and Chocolatey")
+        descriptions = [step.description for step in steps]
+        bootstrap_index = descriptions.index("Bootstrap CFW prerequisites and Chocolatey")
+        engine_index = descriptions.index("Install Windows PowerShell 5.1 backend")
         self.assertGreater(engine_index, bootstrap_index)
+
+    def test_windows_powershell_backend_is_verified_and_does_not_use_native_expand(self):
+        steps = _manifest().modules[0].build()
+        engine = _commands_for(steps, "Install Windows PowerShell 5.1 backend")
+
+        self.assertIn("Win7AndW2K8R2-KB3191566-x64.zip", engine)
+        self.assertIn("wmf-cab-extract.log", engine)
+        self.assertIn('7z x -y "$cab"', engine)
+        self.assertNotIn("system32/expnd/expand.exe", engine)
+        self.assertIn("engine-version=", engine)
+        self.assertIn("fileSentinel", engine)
+        self.assertIn("wineserverSettle", engine)
 
     def test_profile_fragment_install_requires_cage_loader_and_synchro(self):
         steps = _manifest().modules[0].build()
         profile = _commands_for(steps, "Install CFW compatibility profile fragments")
         verify = _commands_for(steps, "Prove composed PowerShell compatibility layer")
 
-        self.assertIn("Cage/PowerShell/profile.d", profile)
-        self.assertIn('test -s "$profile"', profile)
+        self.assertIn('profile_root="$wine_prefix/drive_c/ProgramData/Cage/PowerShell"', profile)
+        self.assertIn('fragment_dir="$profile_root/profile.d"', profile)
+        self.assertIn('test -s "$profile64"', profile)
+        self.assertIn('test -s "$profile32"', profile)
         self.assertIn('test -s "$synchro_fragment"', profile)
         self.assertIn("powershell-profile-composition.json", profile)
+        self.assertIn("windows-powershell-5.1-cfw", profile)
         self.assertIn("Update-SessionEnvironment", verify)
         self.assertIn("Get-Alias -Name winetricks", verify)
         self.assertIn("exit 37", verify)
         self.assertIn("powershell-layer.json", verify)
+        self.assertIn("ps51.exe", verify)
 
     def test_chocolatey_package_install_uses_canonical_choco_only(self):
         steps = _manifest(["7zip", "notepadplusplus"]).modules[0].build()
@@ -176,7 +213,10 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("sourceList", diagnostic)
         self.assertIn('wine "$choco_exe_win" --version', diagnostic)
         self.assertIn("cage_chocolatey_collect_failure_diagnostics", diagnostic)
-        self.assertLess(_all_commands(steps).index("Diagnose Chocolatey readiness"), _all_commands(steps).index("Install Chocolatey packages"))
+        self.assertLess(
+            _all_commands(steps).index("Diagnose Chocolatey readiness"),
+            _all_commands(steps).index("Install Chocolatey packages"),
+        )
         self.assertIn("choco_diag_status", package)
 
     def test_chocolatey_module_rejects_non_string_package_names(self):
