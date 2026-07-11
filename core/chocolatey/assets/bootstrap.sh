@@ -61,6 +61,7 @@ cfw_cache_win="$(winepath -w "$cfw_work")"
 cfw_installer_win="$(winepath -w "$cfw_installer")"
 export CFW_CACHE="$cfw_cache_win"
 export CFW_OFFLINE=1
+export CFW_CONTAINER_BUILDER=1
 set +e
 timeout "${CAGE_CHOCOLATEY_UPSTREAM_TIMEOUT:-3600s}" wine "$cfw_installer_win" /s /q 2>&1 | tee "$logs_dir/installer.log" | grep -a --line-buffered '^\[cfw\] stage='
 installer_rc="${PIPESTATUS[0]}"

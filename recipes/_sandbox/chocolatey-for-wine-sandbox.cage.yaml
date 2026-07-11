@@ -13,8 +13,8 @@ sources:
   - id: chocolatey-for-wine
     type: archive
     policy: redistributable
-    url: https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.5/Chocolatey-for-wine.7z
-    sha256: 580f31fa4829a8a5f5cfcd9389126c9efc0f778c0f8074b7bf1c40c0da5991c7
+    url: https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.6/Chocolatey-for-wine.7z
+    sha256: 25c2e3cd544c7f83e9c196a5b8b0f98e020b4f5e24f19de30ea6ceec585d0792
     description: Noah's deterministic Chocolatey-for-Wine fork release, executed by the Chocolatey module and independently verified by Cage.
   - id: chocolatey
     type: archive
@@ -25,7 +25,7 @@ sources:
 
 modules:
   - type: chocolatey
-    bootstrap: cfw-v0.5c.755-noah.5-choco-2.6.0-fork-r11
+    bootstrap: cfw-v0.5c.755-noah.6-choco-2.6.0-fork-r12
     install:
       packages:
         - 7zip.install
@@ -82,8 +82,8 @@ exports:
 
 provenance:
   sources:
-    - uri: https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.5/Chocolatey-for-wine.7z
-      sha256: 580f31fa4829a8a5f5cfcd9389126c9efc0f778c0f8074b7bf1c40c0da5991c7
+    - uri: https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.6/Chocolatey-for-wine.7z
+      sha256: 25c2e3cd544c7f83e9c196a5b8b0f98e020b4f5e24f19de30ea6ceec585d0792
       note: Patched fork release serializes finalization and propagates installer failures; Cage independently proves readiness and lifecycle.
     - uri: https://community.chocolatey.org/api/v2/package/chocolatey/2.6.0
       sha256: f13a2af9cd4ec2c9b58d81861bc95ad7151e3a871d8f758dffa72a996a3792d8

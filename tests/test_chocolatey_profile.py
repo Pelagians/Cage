@@ -46,27 +46,32 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
         self.assertTrue(dataclasses.is_dataclass(profile))
         with self.assertRaises(dataclasses.FrozenInstanceError):
             profile.id = "mutated"  # type: ignore[misc]
-        self.assertEqual(profile.id, "cfw-v0.5c.755-noah.5-choco-2.6.0-fork-r11")
+        self.assertEqual(profile.id, "cfw-v0.5c.755-noah.6-choco-2.6.0-fork-r12")
         self.assertEqual(profile.dotnet_profile, "dotnet48-cfw-r1")
         self.assertEqual(profile.dotnet_installer_sha256, "95889d6de3f2070c07790ad6cf2000d33d9a1bdfc6a381725ab82ab1c314fd53")
-        self.assertEqual(profile.chocolatey_for_wine_version, "v0.5c.755-noah.5")
+        self.assertEqual(profile.chocolatey_for_wine_version, "v0.5c.755-noah.6")
         self.assertEqual(profile.chocolatey_for_wine_installer_version, "0.5c.755")
         self.assertEqual(
             profile.chocolatey_for_wine_url,
-            "https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.5/Chocolatey-for-wine.7z",
+            "https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.6/Chocolatey-for-wine.7z",
         )
         self.assertEqual(
             profile.chocolatey_for_wine_sha256,
-            "580f31fa4829a8a5f5cfcd9389126c9efc0f778c0f8074b7bf1c40c0da5991c7",
+            "25c2e3cd544c7f83e9c196a5b8b0f98e020b4f5e24f19de30ea6ceec585d0792",
         )
         self.assertEqual(profile.upstream_project, "noahgiroux/Chocolatey-for-wine")
+        self.assertEqual(profile.upstream_tag, "v0.5c.755-noah.6")
+        self.assertEqual(
+            profile.winetricks_ps1_url,
+            "https://raw.githubusercontent.com/noahgiroux/Chocolatey-for-wine/9d635ecdba9b10103c202fea51dbaba70aec4d83/winetricks.ps1",
+        )
         self.assertEqual(profile.chocolatey_version, "2.6.0")
         self.assertEqual(profile.powershell_version, "7.5.5")
         self.assertEqual(profile.powershell_host_feature, "powershellHost")
         self.assertEqual(profile.powershell_host, "disabled")
         self.assertEqual(profile.allow_global_confirmation, "disabled")
         self.assertFalse(any(key.startswith("powershellWrapper") for key in profile.to_dict()))
-        self.assertEqual(profile.revision, "r11")
+        self.assertEqual(profile.revision, "r12")
         for name, value in profile.to_dict().items():
             if name.endswith("Sha256"):
                 self.assertRegex(value, r"^[0-9a-f]{64}$", name)

@@ -111,7 +111,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         bootstrap = "\n".join(bootstrap_step.commands)
 
         self.assertEqual(bootstrap_step.timeout, 4200)
-        self.assertIn('cfw_work="$wine_prefix/.cage/chocolatey-bootstrap/cfw-v0.5c.755-noah.5-choco-2.6.0-fork-r11"', bootstrap)
+        self.assertIn('cfw_work="$wine_prefix/.cage/chocolatey-bootstrap/cfw-v0.5c.755-noah.6-choco-2.6.0-fork-r12"', bootstrap)
         self.assertIn('rm -rf "$cfw_work"', bootstrap)
         self.assertIn('cfw_payload_cache="$cfw_work/choc_install_files"', bootstrap)
         self.assertIn('cfw_installer="$cfw_extract/ChoCinstaller_0.5c.755.exe"', bootstrap)
@@ -139,6 +139,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn('wine "$cfw_installer_win" /s /q', bootstrap)
         self.assertIn('export CFW_CACHE="$cfw_cache_win"', bootstrap)
         self.assertIn('export CFW_OFFLINE=1', bootstrap)
+        self.assertIn('export CFW_CONTAINER_BUILDER=1', bootstrap)
         self.assertIn('installer_rc == 0 and settle_rc == 0 and canonical_rc == 0', bootstrap)
         self.assertIn('[ "$installer_rc" -ne 0 ] || [ "$settle_rc" -ne 0 ] || [ "$canonical_rc" -ne 0 ]', bootstrap)
         self.assertIn('ProgramData/chocolatey/bin/choco.exe', bootstrap)
