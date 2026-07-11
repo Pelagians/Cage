@@ -64,8 +64,9 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
         self.assertEqual(profile.upstream_project, "noahgiroux/Chocolatey-for-wine")
         self.assertEqual(profile.upstream_tag, "v0.5c.755-noah.6")
         self.assertEqual(profile.chocolatey_version, "2.6.0")
-        # This remains the transitional bootstrap MSI. Cage replaces it with
-        # the canonical 7.4.11 ZIP engine immediately after bootstrap.
+        # The released CFW bootstrap still installs this MSI internally. Cage
+        # does not advertise it as the engine and replaces the command surface
+        # with a verified Windows PowerShell 5.1 backend plus Synchro.
         self.assertEqual(profile.powershell_version, "7.5.5")
         self.assertEqual(profile.powershell_host_feature, "powershellHost")
         self.assertEqual(profile.powershell_host, "disabled")
@@ -98,7 +99,7 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
         self.assertEqual(record.description, "Record layered Chocolatey bootstrap profile")
         self.assertIn("metadata/chocolatey-bootstrap.json", command)
         self.assertIn(asset_sha256("fetch-verified.sh"), command)
-        self.assertIn("powershell-zip-7.4.11", command)
+        self.assertIn("windows-powershell-5.1-cfw", command)
         self.assertIn("synchro-v4.2.0", command)
         self.assertIn("c3b4923d0f63188843bd2a15be64bca8f4a9902b", command)
         for step in steps:
@@ -126,6 +127,7 @@ class ChocolateyAssetContractTests(unittest.TestCase):
             "fetch-verified.sh",
             "failure-diagnostics.sh",
             "bootstrap.sh",
+            "install-powershell51.sh",
             "install-profile-fragments.sh",
             "verify-powershell-layer.sh",
             "verify-chocolatey.sh",
@@ -164,6 +166,18 @@ class ChocolateyAssetContractTests(unittest.TestCase):
             self.assertNotIn("Out-File $PROFILE", text)
             self.assertNotIn("New-Item -Path $PROFILE", text)
             self.assertNotIn("WindowsPowerShell\\v1.0\\powershell.exe", text)
+
+    def test_windows_powershell_asset_pins_outer_source_and_strict_proof(self):
+        script = load_asset("install-powershell51.sh")
+
+        self.assertIn("Win7AndW2K8R2-KB3191566-x64.zip", script)
+        self.assertIn("f383c34aa65332662a17d95409a2ddedadceda74427e35d05024cd0a6a2fa647", script)
+        self.assertIn("wmf-nested-hashes.log", script)
+        self.assertIn("wmf-cab-extract.log", script)
+        self.assertIn("fileSentinel", script)
+        self.assertIn("stdoutMarker", script)
+        self.assertIn("wineserverSettle", script)
+        self.assertNotIn("system32/expnd/expand.exe", script)
 
     def test_verified_fetch_uses_content_addressing_locking_and_atomic_promotion(self):
         helper = load_asset("fetch-verified.sh")
