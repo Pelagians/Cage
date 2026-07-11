@@ -1,0 +1,64 @@
+name: PowerShell Runtime Matrix Diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/powershell-runtime-matrix-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: wine-10.0
+            image: ghcr.io/pelagians/cage-wine:10.0
+          - name: wine-11.0
+            image: ghcr.io/pelagians/cage-wine:11.0
+          - name: staging-11.0
+            image: ghcr.io/pelagians/cage-wine-staging:11.0
+          - name: staging-11.10
+            image: ghcr.io/pelagians/cage-wine-staging:11.10
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull runtime
+        run: docker pull '${{ matrix.image }}'
+
+      - name: Run existing PowerShell proof
+        id: proof
+        shell: bash
+        run: |
+          set +e
+          mkdir -p '/tmp/pwsh-${{ matrix.name }}'
+          docker run --rm --pull never --shm-size 2g \
+            -e CAGE_GITHUB_ANNOTATIONS=0 \
+            '${{ matrix.image }}' \
+            cage-powershell-runtime-smoke \
+            > '/tmp/pwsh-${{ matrix.name }}/smoke.log' 2>&1
+          rc=$?
+          set -e
+          printf '%s\n' "$rc" > '/tmp/pwsh-${{ matrix.name }}/smoke.rc'
+          tail -240 '/tmp/pwsh-${{ matrix.name }}/smoke.log'
+          exit "$rc"
+
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: powershell-matrix-${{ matrix.name }}-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 1
+          path: /tmp/pwsh-${{ matrix.name }}/**
