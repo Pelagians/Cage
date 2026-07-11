@@ -3,6 +3,14 @@
 #
 # Produces the cage/umu-proton-ge:<tag> image — GloriousEggroll's
 # GE-Proton runner stack, built from community releases and launched through the UMU capability contract.
+#
+# Build:
+#   docker build \
+#     --build-arg GE_PROTON_TAG=GE-Proton9-27 \
+#     --build-arg GE_PROTON_SHA256=replace-with-actual-sha256 \
+#     --build-arg UMU_LAUNCHER_REF=1.4.0 \
+#     -t cage/umu-proton-ge:GE-Proton9-27 \
+#     -f container/providers/umu-proton-ge/Dockerfile .
 
 ARG GE_PROTON_TAG=GE-Proton9-27
 ARG GE_PROTON_URL=https://github.com/GloriousEggroll/proton-ge-custom/releases/download/${GE_PROTON_TAG}/${GE_PROTON_TAG}.tar.gz
@@ -15,7 +23,7 @@ RUN set -eux; \
     dpkg --add-architecture i386; \
     apt-get update -qq; \
     apt-get install -y -qq --no-install-recommends \
-        ca-certificates curl gosu \
+        ca-certificates curl \
         xvfb x11-utils xauth x11vnc websockify novnc \
         cabextract p7zip-full unzip bzip2 xz-utils \
         python3 \
@@ -56,25 +64,15 @@ FROM ge-download AS final
 COPY --from=umu-build /opt/umu /opt/umu
 RUN set -eux; \
     ln -s /opt/umu/bin/umu-run /usr/local/bin/umu-run; \
-    /usr/local/bin/umu-run --help >/tmp/umu-run-help.txt; \
-    groupadd --gid 1000 cage; \
-    useradd --uid 1000 --gid cage --create-home --home-dir /home/cage --shell /bin/bash cage; \
-    mkdir -p /opt/cage /home/cage/.cache /home/cage/.local/share; \
-    chown -R cage:cage /opt/cage /home/cage
-ENV CAGE_ROOT=/opt/cage \
-    CAGE_RUNTIME_UID=1000 \
-    CAGE_RUNTIME_GID=1000 \
-    CAGE_RUNTIME_HOME=/opt/cage/.runtime-home \
-    HOME=/opt/cage/.runtime-home \
-    WINEPREFIX=/opt/cage/prefix \
+    /usr/local/bin/umu-run --help >/tmp/umu-run-help.txt
+ENV CAGE_ROOT=/opt/cage WINEPREFIX=/opt/cage/prefix \
     STEAM_COMPAT_DATA_PATH=/opt/cage/prefix \
     STEAM_COMPAT_CLIENT_INSTALL_PATH=/opt/cage \
     PROTONPATH=/opt/proton-ge \
     PATH=/opt/umu/bin:$PATH \
     WINEDEBUG=-all DISPLAY=:99
 COPY container/common/xvfb-entrypoint.sh /usr/local/bin/xvfb-entrypoint.sh
-COPY container/common/umu-xvfb-entrypoint.sh /usr/local/bin/umu-xvfb-entrypoint.sh
-RUN chmod +x /usr/local/bin/xvfb-entrypoint.sh /usr/local/bin/umu-xvfb-entrypoint.sh
+RUN chmod +x /usr/local/bin/xvfb-entrypoint.sh
 WORKDIR /opt/cage
-ENTRYPOINT ["/usr/local/bin/umu-xvfb-entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/xvfb-entrypoint.sh"]
 CMD ["/bin/bash"]
