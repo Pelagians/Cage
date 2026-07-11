@@ -60,10 +60,9 @@ def powershell_wrapper_steps(
         ". $synchroProfile\n"
         "Remove-Variable synchroProfile -ErrorAction SilentlyContinue\n"
     )
-    wine_prefix_value = wine_prefix
     script = f'''set -eu
 unset WINEDLLOVERRIDES
-wine_prefix="{wine_prefix_value}"
+wine_prefix="{wine_prefix}"
 module_cache="${{CAGE_MODULE_CACHE_DIR:-/tmp/cage-module-cache}}"
 wrapper_cache="$module_cache/powershell-wrapper/{wrapper_version}"
 wrapper_base_url="{POWERSHELL_WRAPPER_BASE_URL}"
@@ -130,6 +129,8 @@ done
 echo "[cage] Verifying Synchro PowerShell compatibility layer..."
 x64_log="$(mktemp)"
 x86_log="$(mktemp)"
+x64_normalized="$x64_log.normalized"
+x86_normalized="$x86_log.normalized"
 set +e
 POWERSHELL_TELEMETRY_OPTOUT=1 timeout --kill-after=10s 120s \
   wine "$wrapper64" -NoLogo -NonInteractive -Command \
@@ -143,11 +144,13 @@ POWERSHELL_TELEMETRY_OPTOUT=1 timeout --kill-after=10s 120s \
   wine "$wrapper64" -NoLogo -NonInteractive -Command 'exit 37' >/dev/null 2>&1
 exit_rc="$?"
 set -e
-tr -d '\r' < "$x64_log"
-tr -d '\r' < "$x86_log"
-grep -Fqx '[cage] synchro-x64-ok' "$x64_log"
-grep -Fqx '[cage] synchro-x86-ok' "$x86_log"
-rm -f "$x64_log" "$x86_log"
+tr -d '\r' < "$x64_log" > "$x64_normalized"
+tr -d '\r' < "$x86_log" > "$x86_normalized"
+cat "$x64_normalized"
+cat "$x86_normalized"
+grep -Fqx '[cage] synchro-x64-ok' "$x64_normalized"
+grep -Fqx '[cage] synchro-x86-ok' "$x86_normalized"
+rm -f "$x64_log" "$x86_log" "$x64_normalized" "$x86_normalized"
 if [ "$x64_rc" -ne 0 ] || [ "$x86_rc" -ne 0 ] || [ "$exit_rc" -ne 37 ]; then
   echo "[cage] ERROR: Synchro wrapper verification failed (x64=$x64_rc x86=$x86_rc exit=$exit_rc)" >&2
   exit 70
