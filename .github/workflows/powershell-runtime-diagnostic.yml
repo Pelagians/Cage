@@ -1,0 +1,121 @@
+name: PowerShell Runtime Diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/powershell-runtime-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CAGE_RUNTIME_IMAGE: ghcr.io/pelagians/cage-wine:11.0
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull Wine runtime
+        run: docker pull "$CAGE_RUNTIME_IMAGE"
+
+      - name: Test Winetricks PowerShell path
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/powershell-diagnostic
+          mkdir -p /tmp/powershell-diagnostic
+          docker run --rm \
+            -v /tmp/powershell-diagnostic:/out \
+            "$CAGE_RUNTIME_IMAGE" \
+            bash -lc '
+              set -u
+              export WINEPREFIX=/tmp/powershell-prefix
+              export WINEARCH=win64
+              export WINEDEBUG=-all
+              mkdir -p /out
+              command -v wine > /out/tool-paths.log
+              command -v winetricks >> /out/tool-paths.log
+              wine --version > /out/wine-version.log 2>&1
+              winetricks --version > /out/winetricks-version.log 2>&1
+              wineboot -u > /out/wineboot.log 2>&1
+              winetricks list-all > /out/winetricks-list-all.log 2>&1
+
+              if grep -Eq "(^|[[:space:]])powershell([[:space:]]|$)" /out/winetricks-list-all.log; then
+                verb=powershell
+              elif grep -Eq "(^|[[:space:]])powershell_core([[:space:]]|$)" /out/winetricks-list-all.log; then
+                verb=powershell_core
+              else
+                echo no-supported-powershell-verb > /out/result.txt
+                exit 65
+              fi
+              echo "$verb" > /out/selected-verb.txt
+
+              set +e
+              timeout --kill-after=30s 3600s winetricks -q "$verb" > /out/winetricks-install.log 2>&1
+              install_rc=$?
+              set -e
+              echo "$install_rc" > /out/winetricks-install.rc
+              find "$WINEPREFIX/drive_c" -iname "pwsh.exe" -o -path "*/WindowsPowerShell/v1.0/powershell.exe" \
+                | sort > /out/powershell-files.log
+              [ "$install_rc" -eq 0 ] || exit "$install_rc"
+
+              pwsh="$(find "$WINEPREFIX/drive_c/Program Files/PowerShell" -iname pwsh.exe -type f | sort | head -1)"
+              wrapper64="$WINEPREFIX/drive_c/windows/system32/WindowsPowerShell/v1.0/powershell.exe"
+              [ -f "$pwsh" ]
+              [ -f "$wrapper64" ]
+
+              direct_marker="$WINEPREFIX/drive_c/pwsh-direct-marker.txt"
+              wrapper_marker="$WINEPREFIX/drive_c/pwsh-wrapper-marker.txt"
+              direct_marker_win="$(winepath -w "$direct_marker")"
+              wrapper_marker_win="$(winepath -w "$wrapper_marker")"
+
+              set +e
+              timeout --kill-after=10s 180s wine "$pwsh" -NoLogo -NoProfile -NonInteractive -Command \
+                "Set-Content -LiteralPath \"$direct_marker_win\" -Value direct; Write-Output \"[diag] direct-ok\"" \
+                > /out/direct.log 2>&1
+              direct_rc=$?
+              timeout --kill-after=10s 180s wine "$wrapper64" -NoLogo -NonInteractive -Command \
+                "Set-Content -LiteralPath \"$wrapper_marker_win\" -Value wrapper; Write-Output \"[diag] wrapper-ok\"" \
+                > /out/wrapper.log 2>&1
+              wrapper_rc=$?
+              timeout --kill-after=10s 180s wine "$wrapper64" -NoLogo -NonInteractive -Command "exit 37" \
+                > /out/wrapper-exit.log 2>&1
+              wrapper_exit_rc=$?
+              set -e
+
+              printf "%s\n" "$direct_rc" > /out/direct.rc
+              printf "%s\n" "$wrapper_rc" > /out/wrapper.rc
+              printf "%s\n" "$wrapper_exit_rc" > /out/wrapper-exit.rc
+              test -s "$direct_marker"
+              test -s "$wrapper_marker"
+              tr -d "\r" < /out/direct.log | grep -Fqx "[diag] direct-ok"
+              tr -d "\r" < /out/wrapper.log | grep -Fqx "[diag] wrapper-ok"
+              [ "$direct_rc" -eq 0 ]
+              [ "$wrapper_rc" -eq 0 ]
+              [ "$wrapper_exit_rc" -eq 37 ]
+              echo passed > /out/result.txt
+            '
+
+      - name: Print result
+        if: always()
+        shell: bash
+        run: |
+          find /tmp/powershell-diagnostic -maxdepth 1 -type f -print -exec sh -c 'echo "--- $1"; tail -120 "$1"' _ {} \;
+
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: powershell-runtime-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 1
+          path: /tmp/powershell-diagnostic/**
