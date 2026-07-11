@@ -10,7 +10,7 @@
 #     --build-arg GE_PROTON_SHA256=replace-with-actual-sha256 \
 #     --build-arg UMU_LAUNCHER_REF=1.4.0 \
 #     -t cage/umu-proton-ge:GE-Proton9-27 \
-#     -f container/providers/umu-proton-ge/Dockerfile .
+#     -f container/runtimes/umu-proton-ge/Dockerfile .
 
 ARG GE_PROTON_TAG=GE-Proton9-27
 ARG GE_PROTON_URL=https://github.com/GloriousEggroll/proton-ge-custom/releases/download/${GE_PROTON_TAG}/${GE_PROTON_TAG}.tar.gz
@@ -64,8 +64,14 @@ FROM ge-download AS final
 COPY --from=umu-build /opt/umu /opt/umu
 RUN set -eux; \
     ln -s /opt/umu/bin/umu-run /usr/local/bin/umu-run; \
-    /usr/local/bin/umu-run --help >/tmp/umu-run-help.txt
-ENV CAGE_ROOT=/opt/cage WINEPREFIX=/opt/cage/prefix \
+    /usr/local/bin/umu-run --help >/tmp/umu-run-help.txt; \
+    groupadd --gid 1000 cage; \
+    useradd --uid 1000 --gid cage --create-home --home-dir /home/cage --shell /bin/bash cage; \
+    mkdir -p /opt/cage /home/cage/.cache /home/cage/.local/share; \
+    chown -R cage:cage /opt/cage /home/cage
+ENV CAGE_ROOT=/opt/cage \
+    HOME=/home/cage \
+    WINEPREFIX=/opt/cage/prefix \
     STEAM_COMPAT_DATA_PATH=/opt/cage/prefix \
     STEAM_COMPAT_CLIENT_INSTALL_PATH=/opt/cage \
     PROTONPATH=/opt/proton-ge \
@@ -73,6 +79,7 @@ ENV CAGE_ROOT=/opt/cage WINEPREFIX=/opt/cage/prefix \
     WINEDEBUG=-all DISPLAY=:99
 COPY container/common/xvfb-entrypoint.sh /usr/local/bin/xvfb-entrypoint.sh
 RUN chmod +x /usr/local/bin/xvfb-entrypoint.sh
+USER cage
 WORKDIR /opt/cage
 ENTRYPOINT ["/usr/local/bin/xvfb-entrypoint.sh"]
 CMD ["/bin/bash"]
