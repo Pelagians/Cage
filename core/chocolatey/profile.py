@@ -10,7 +10,7 @@ class ChocolateyProfileError(ValueError):
     """Raised when a Chocolatey bootstrap profile is invalid or unknown."""
 
 
-DEFAULT_BOOTSTRAP_PROFILE_ID = "cfw-v0.5c.755-noah.6-choco-2.6.0-fork-r12"
+DEFAULT_BOOTSTRAP_PROFILE_ID = "cfw-v0.5c.755-noah.6-choco-2.6.0-synchro-r13"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _INSTALLER_VERSION_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -171,7 +171,7 @@ _BUILTIN_PROFILES = {
         dotnet_installer_sha256="95889d6de3f2070c07790ad6cf2000d33d9a1bdfc6a381725ab82ab1c314fd53",
         upstream_project="noahgiroux/Chocolatey-for-wine",
         upstream_tag="v0.5c.755-noah.6",
-        revision="r12",
+        revision="r13",
         d3dcompiler47_url="https://github.com/mozilla/fxc2/raw/master/dll/d3dcompiler_47.dll",
         d3dcompiler47_sha256="4432bbd1a390874f3f0a503d45cc48d346abc3a8c0213c289f4b615bf0ee84f3",
         d3dcompiler47_x86_url="https://github.com/mozilla/fxc2/raw/master/dll/d3dcompiler_47_32.dll",
