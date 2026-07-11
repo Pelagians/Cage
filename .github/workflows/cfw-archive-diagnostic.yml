@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euxo pipefail
           root=/tmp/cfw-inspect
-          mkdir -p "$root/release" "$root/cdrive"
+          mkdir -p "$root/release" "$root/cdrive" "$root/selected"
           curl -fL --retry 3 \
             -o "$root/Chocolatey-for-wine.7z" \
             https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.6/Chocolatey-for-wine.7z
@@ -41,9 +41,13 @@ jobs:
             \( -iname '*powershell*' -o -iname '*ps51*' -o -iname '*pwsh*' \) \
             -printf '%P\n' | sort > "$root/powershell-files.txt"
           while IFS= read -r relative; do
+            [ -n "$relative" ] || continue
             file="$root/cdrive/$relative"
             printf '%s  %s\n' "$(sha256sum "$file" | cut -d ' ' -f1)" "$relative"
+            mkdir -p "$root/selected/$(dirname "$relative")"
+            cp -a "$file" "$root/selected/$relative"
           done < "$root/powershell-files.txt" > "$root/powershell-files.sha256"
+          find "$root/selected" -type f -printf '%P\n' | sort > "$root/selected-files.txt"
 
       - name: Upload inspection
         uses: actions/upload-artifact@v4
@@ -54,5 +58,4 @@ jobs:
           path: |
             /tmp/cfw-inspect/*.txt
             /tmp/cfw-inspect/*.sha256
-            /tmp/cfw-inspect/release/**
-            /tmp/cfw-inspect/cdrive/**
+            /tmp/cfw-inspect/selected/**
