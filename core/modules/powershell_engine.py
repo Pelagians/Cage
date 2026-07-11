@@ -38,6 +38,7 @@ verify_engine() {{
   [ -f "$pwsh_exe" ] || return 1
   chmod +x "$pwsh_exe"
   engine_log="$(mktemp)"
+  normalized_log="$engine_log.normalized"
   set +e
   POWERSHELL_TELEMETRY_OPTOUT=1 timeout --kill-after=10s 120s \
     wine "$pwsh_exe" -NoLogo -NoProfile -NonInteractive -Command \
@@ -45,10 +46,11 @@ verify_engine() {{
     >"$engine_log" 2>&1
   engine_rc="$?"
   set -e
-  tr -d '\r' < "$engine_log"
-  grep -Fqx "[cage] engine-version=$expected_version" "$engine_log"
+  tr -d '\r' < "$engine_log" > "$normalized_log"
+  cat "$normalized_log"
+  grep -Fqx "[cage] engine-version=$expected_version" "$normalized_log"
   marker_rc="$?"
-  rm -f "$engine_log"
+  rm -f "$engine_log" "$normalized_log"
   [ "$engine_rc" -eq 0 ] && [ "$marker_rc" -eq 0 ]
 }}
 
