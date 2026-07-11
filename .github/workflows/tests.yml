@@ -5,16 +5,12 @@ on:
     branches: [main]
     paths:
       - 'core/**'
-      - 'container/common/umu-xvfb-entrypoint.sh'
-      - 'container/runtimes/umu-proton-ge/**'
       - 'tests/**'
       - 'pyproject.toml'
       - '.github/workflows/tests.yml'
   pull_request:
     paths:
       - 'core/**'
-      - 'container/common/umu-xvfb-entrypoint.sh'
-      - 'container/runtimes/umu-proton-ge/**'
       - 'tests/**'
       - 'pyproject.toml'
       - '.github/workflows/tests.yml'
@@ -53,53 +49,3 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: /tmp/cage-pytest.log
-
-  powershell-proton-diagnostic:
-    runs-on: ubuntu-latest
-    timeout-minutes: 50
-    continue-on-error: true
-    env:
-      TEST_IMAGE: cage-umu-proton-ge:pr-test
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build branch GE-Proton runtime
-        run: |
-          docker build \
-            --build-arg GE_PROTON_TAG=GE-Proton11-1 \
-            -t "$TEST_IMAGE" \
-            -f container/runtimes/umu-proton-ge/Dockerfile .
-
-      - name: Probe PowerShell through UMU and GE-Proton
-        shell: bash
-        run: |
-          set +e
-          evidence=/tmp/powershell-proton
-          mkdir -p "$evidence/home" "$evidence/prefix"
-          docker run --rm --pull never --shm-size 2g \
-            -e CAGE_RUNTIME_UID="$(id -u)" \
-            -e CAGE_RUNTIME_GID="$(id -g)" \
-            -e CAGE_RUNTIME_HOME=/out/home \
-            -e HOME=/out/home \
-            -e WINEPREFIX=/out/prefix \
-            -e STEAM_COMPAT_DATA_PATH=/out/prefix \
-            -e STEAM_COMPAT_CLIENT_INSTALL_PATH=/out \
-            -e POWERSHELL_VERSION=7.4.11 \
-            -v "$PWD/tests/scripts:/probe:ro" \
-            -v "$evidence:/out" \
-            "$TEST_IMAGE" \
-            bash /probe/powershell-proton-probe.sh
-          rc=$?
-          set -e
-          printf '%s\n' "$rc" > "$evidence/container.rc"
-          find "$evidence" -maxdepth 1 -type f -print -exec sh -c 'echo "--- $1"; tail -180 "$1"' _ {} \;
-          exit "$rc"
-
-      - name: Upload Proton evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: powershell-proton-${{ github.sha }}
-          if-no-files-found: error
-          retention-days: 1
-          path: /tmp/powershell-proton/**
