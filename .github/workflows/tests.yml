@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'core/**'
+      - 'container/common/umu-xvfb-entrypoint.sh'
       - 'container/runtimes/umu-proton-ge/**'
       - 'tests/**'
       - 'pyproject.toml'
@@ -12,6 +13,7 @@ on:
   pull_request:
     paths:
       - 'core/**'
+      - 'container/common/umu-xvfb-entrypoint.sh'
       - 'container/runtimes/umu-proton-ge/**'
       - 'tests/**'
       - 'pyproject.toml'
@@ -75,7 +77,9 @@ jobs:
           evidence=/tmp/powershell-proton
           mkdir -p "$evidence/home" "$evidence/prefix"
           docker run --rm --pull never --shm-size 2g \
-            --user "$(id -u):$(id -g)" \
+            -e CAGE_RUNTIME_UID="$(id -u)" \
+            -e CAGE_RUNTIME_GID="$(id -g)" \
+            -e CAGE_RUNTIME_HOME=/out/home \
             -e HOME=/out/home \
             -e WINEPREFIX=/out/prefix \
             -e STEAM_COMPAT_DATA_PATH=/out/prefix \
