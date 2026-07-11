@@ -1,4 +1,4 @@
-"""Deterministic, profile-backed Chocolatey module for Wine."""
+"""Deterministic Chocolatey module composed behind Cage's Synchro layer."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -20,17 +20,29 @@ from core.chocolatey import (
 )
 
 from .base import ModuleBase, ModuleError
+from .powershell_engine import POWERSHELL_VERSION
+from .powershell_wrapper import (
+    DEFAULT_WRAPPER_VERSION,
+    powershell_wrapper_steps,
+)
 from ..build_step import BuildStep
 
 _PACKAGE_RE = re.compile(r"^[A-Za-z0-9._+\-]+$")
+CFW_CONTRACT_COMMIT = "c3b4923d0f63188843bd2a15be64bca8f4a9902b"
+_PROFILE_ASSETS = (
+    "profile-20-chocolatey.ps1",
+    "profile-30-cfw-winetricks.ps1",
+    "profile-40-cfw-command-adapters.ps1",
+)
 _DOWNLOAD_ASSETS = {"bootstrap.sh"}
 _FAILURE_DIAGNOSTIC_ASSETS = {
     "verify-chocolatey.sh",
     "feature-policy.sh",
     "smoke-lifecycle.sh",
 }
-_STEP_SPECS = (
-    ("bootstrap.sh", "Bootstrap Chocolatey-for-Wine fork", "wine-run", 4200),
+_POST_LAYER_STEP_SPECS = (
+    ("install-profile-fragments.sh", "Install CFW compatibility profile fragments", "wine-run", 120),
+    ("verify-powershell-layer.sh", "Prove composed PowerShell compatibility layer", "wine-run", 600),
     ("verify-chocolatey.sh", "Diagnose Chocolatey readiness", "wine-run", 600),
     ("feature-policy.sh", "Apply Chocolatey feature policy", "wine-run", 360),
     ("smoke-lifecycle.sh", "Prove Chocolatey local package lifecycle", "wine-run", 1800),
@@ -40,9 +52,14 @@ _STEP_SPECS = (
 
 def _profile_record_command(profile_payload: dict[str, Any], asset_hashes: dict[str, str]) -> str:
     payload = {
-        "schemaVersion": "cage.chocolatey-bootstrap/v0",
+        "schemaVersion": "cage.chocolatey-bootstrap/v1",
         "profile": profile_payload,
         "assets": asset_hashes,
+        "layers": {
+            "engine": f"powershell-zip-{POWERSHELL_VERSION}",
+            "windowsPowerShellShim": f"synchro-{DEFAULT_WRAPPER_VERSION}",
+            "cfwContractCommit": CFW_CONTRACT_COMMIT,
+        },
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return (
@@ -56,7 +73,7 @@ def _profile_record_command(profile_payload: dict[str, Any], asset_hashes: dict[
 
 @dataclass
 class ChocolateyModule(ModuleBase):
-    """Install Chocolatey packages using one immutable compatibility profile."""
+    """Install Chocolatey packages using explicit, independently owned layers."""
 
     type: str = "chocolatey"
     install: dict[str, Any] | None = None
@@ -65,9 +82,10 @@ class ChocolateyModule(ModuleBase):
 
     def capabilities(self) -> dict[str, str]:
         return {
-            "engine": "chocolatey-powershell-msi",
-            "winps-shim": "chocolatey-native",
-            "shim-library": "chocolatey-for-wine",
+            "engine": f"powershell-zip-{POWERSHELL_VERSION}",
+            "winps-shim": f"synchro-{DEFAULT_WRAPPER_VERSION}",
+            "package-manager": "chocolatey-2.6.0",
+            "compatibility-pack": "chocolatey-for-wine-v1",
         }
 
     def _packages(self) -> list[str]:
@@ -95,6 +113,7 @@ class ChocolateyModule(ModuleBase):
             profile = get_bootstrap_profile(self.bootstrap)
         except (ChocolateyAssetError, ChocolateyProfileError) as exc:
             raise ModuleError(str(exc)) from exc
+
         values = profile.template_values()
         values.update({
             "PACKAGE_ARGS": " ".join(shlex.quote(package) for package in packages),
@@ -108,23 +127,35 @@ class ChocolateyModule(ModuleBase):
             "SMOKE_NUPKG_SHA256": asset_sha256(
                 "cage-chocolatey-smoke.0.1.0.nupkg"
             ),
+            "CFW_CONTRACT_COMMIT": CFW_CONTRACT_COMMIT,
+            "PROFILE_20_B64": base64.b64encode(load_asset_bytes(_PROFILE_ASSETS[0])).decode("ascii"),
+            "PROFILE_30_B64": base64.b64encode(load_asset_bytes(_PROFILE_ASSETS[1])).decode("ascii"),
+            "PROFILE_40_B64": base64.b64encode(load_asset_bytes(_PROFILE_ASSETS[2])).decode("ascii"),
         })
-        asset_hashes = {
-            name: asset_sha256(name)
-            for name in (
-                "fetch-verified.sh",
-                "failure-diagnostics.sh",
-                "cage-chocolatey-smoke.0.1.0.nupkg",
-                *(spec[0] for spec in _STEP_SPECS),
-            )
-        }
+        asset_names = (
+            "fetch-verified.sh",
+            "failure-diagnostics.sh",
+            "bootstrap.sh",
+            "install-profile-fragments.sh",
+            "verify-powershell-layer.sh",
+            "verify-chocolatey.sh",
+            "feature-policy.sh",
+            "smoke-lifecycle.sh",
+            "install-package.sh",
+            "cage-chocolatey-smoke.0.1.0.nupkg",
+            *_PROFILE_ASSETS,
+        )
+        asset_hashes = {name: asset_sha256(name) for name in asset_names}
         common_metadata = {
             "bootstrapProfile": profile.id,
             "bootstrapRevision": profile.revision,
+            "cfwContractCommit": CFW_CONTRACT_COMMIT,
+            "powershellEngine": POWERSHELL_VERSION,
+            "synchroWrapper": DEFAULT_WRAPPER_VERSION,
         }
-        steps = [BuildStep(
+        steps: list[BuildStep] = [BuildStep(
             commands=[_profile_record_command(profile.to_dict(), asset_hashes)],
-            description="Record Chocolatey bootstrap profile",
+            description="Record layered Chocolatey bootstrap profile",
             kind="metadata",
             metadata={
                 **common_metadata,
@@ -133,8 +164,28 @@ class ChocolateyModule(ModuleBase):
         )]
 
         fetch_helper = load_asset("fetch-verified.sh").rstrip()
+        bootstrap_script = render_asset("bootstrap.sh", values)
+        bootstrap_script = fetch_helper + "\n\n" + bootstrap_script
+        steps.append(BuildStep(
+            commands=[bootstrap_script],
+            description="Bootstrap CFW prerequisites and Chocolatey",
+            kind="wine-run",
+            timeout=4200,
+            metadata={
+                **common_metadata,
+                "scriptAsset": "core/chocolatey/assets/bootstrap.sh",
+                "scriptSha256": asset_hashes["bootstrap.sh"],
+                "transitionalBootstrap": True,
+            },
+        ))
+
+        # The upstream-derived CFW bootstrap currently establishes .NET and the
+        # raw Chocolatey layout. Cage then replaces any PowerShell result with
+        # its canonical pinned engine and Synchro compatibility provider.
+        steps.extend(powershell_wrapper_steps(include_engine=True))
+
         failure_helper = load_asset("failure-diagnostics.sh").rstrip()
-        for asset_name, description, kind, timeout in _STEP_SPECS:
+        for asset_name, description, kind, timeout in _POST_LAYER_STEP_SPECS:
             if asset_name == "install-package.sh" and not packages:
                 continue
             script = render_asset(asset_name, values)
@@ -147,6 +198,8 @@ class ChocolateyModule(ModuleBase):
                 "scriptAsset": f"core/chocolatey/assets/{asset_name}",
                 "scriptSha256": asset_hashes[asset_name],
             }
+            if asset_name == "verify-powershell-layer.sh":
+                metadata["powerShellEvidence"] = "metadata/powershell-layer.json"
             if asset_name == "verify-chocolatey.sh":
                 metadata["diagnostic"] = "metadata/chocolatey-diagnostic.json"
             if asset_name == "smoke-lifecycle.sh":
