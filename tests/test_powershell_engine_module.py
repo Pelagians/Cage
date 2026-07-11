@@ -12,7 +12,7 @@ class PowerShellEngineModuleTests(unittest.TestCase):
         step = steps[0]
         script = "\n".join(step.commands)
 
-        self.assertIn("Install PowerShell 7 engine", step.description)
+        self.assertEqual(step.description, "Install canonical PowerShell 7 engine")
         self.assertIn("CAGE_MODULE_CACHE_DIR", script)
         self.assertIn("PowerShell-7.4.11-win-x64.zip", script)
         self.assertIn("558c4115cc6b96cc6a67d74bee40012cf8d38767537f8d2857dc3fa30a63cc63", script)
@@ -20,6 +20,9 @@ class PowerShellEngineModuleTests(unittest.TestCase):
         self.assertIn("Program Files/PowerShell/7", script)
         self.assertIn("pwsh.exe", script)
         self.assertIn("actual_pwsh_zip_sha", script)
+        self.assertIn("engine-version=", script)
+        self.assertIn("expected_version=\"7.4.11\"", script)
+        self.assertIn("direct PowerShell engine verification failed", script)
         self.assertNotIn("msiexec", script)
         self.assertNotIn("winetricks --unattended powershell_core", script)
 
