@@ -107,3 +107,54 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           path: /tmp/pwsh-${{ matrix.version }}/**
+
+  powershell-proton-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - 'ghcr.io/pelagians/cage-umu-proton-ge:GE-Proton11-1'
+          - 'ghcr.io/pelagians/cage-umu-proton-ge:GE-Proton10-34'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull runtime
+        run: docker pull '${{ matrix.image }}'
+
+      - name: Probe PowerShell through GE-Proton
+        shell: bash
+        run: |
+          set +e
+          slug="$(printf '%s' '${{ matrix.image }}' | tr '/:' '--')"
+          evidence="/tmp/$slug"
+          mkdir -p "$evidence"
+          docker run --rm --pull never --shm-size 2g \
+            -e POWERSHELL_VERSION=7.4.11 \
+            -v "$PWD/tests/scripts:/probe:ro" \
+            -v "$evidence:/out" \
+            '${{ matrix.image }}' \
+            bash /probe/powershell-proton-probe.sh
+          rc=$?
+          set -e
+          printf '%s\n' "$rc" > "$evidence/container.rc"
+          find "$evidence" -maxdepth 1 -type f -print -exec sh -c 'echo "--- $1"; tail -160 "$1"' _ {} \;
+          exit "$rc"
+
+      - name: Upload Proton evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: powershell-proton-${{ strategy.job-index }}-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 1
+          path: /tmp/ghcr.io-pelagians-cage-umu-proton-ge-*/**
