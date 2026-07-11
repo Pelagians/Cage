@@ -1,5 +1,7 @@
-"""Shared deterministic PowerShell 7 engine installation for Cage modules."""
+"""Deterministic PowerShell engine providers for Cage modules."""
 from __future__ import annotations
+
+from core.chocolatey import asset_sha256, load_asset
 
 from ..build_step import BuildStep
 
@@ -10,15 +12,36 @@ POWERSHELL_ZIP_URL = (
     f"v{POWERSHELL_VERSION}/{POWERSHELL_ZIP_NAME}"
 )
 POWERSHELL_ZIP_SHA256 = "558c4115cc6b96cc6a67d74bee40012cf8d38767537f8d2857dc3fa30a63cc63"
+WINDOWS_POWERSHELL_PROVIDER = "windows-powershell-5.1-cfw"
+
+
+def windows_powershell51_steps() -> list[BuildStep]:
+    """Install the CFW-derived Windows PowerShell 5.1 backend.
+
+    This provider requires the .NET Framework and native expansion support
+    established by the CFW prerequisite bootstrap. It is therefore used by the
+    Chocolatey module after that bootstrap, not as a standalone first step.
+    """
+    asset_name = "install-powershell51.sh"
+    return [BuildStep(
+        commands=[load_asset(asset_name)],
+        description="Install Windows PowerShell 5.1 backend",
+        kind="wine-run",
+        timeout=3600,
+        metadata={
+            "engine": WINDOWS_POWERSHELL_PROVIDER,
+            "scriptAsset": f"core/chocolatey/assets/{asset_name}",
+            "scriptSha256": asset_sha256(asset_name),
+            "evidence": "metadata/powershell-engine.json",
+        },
+    )]
 
 
 def powershell_engine_steps(*, wine_prefix: str = "${WINEPREFIX:-$HOME/.wine}", version_slot: str = "7") -> list[BuildStep]:
-    """Return build steps for one pinned, directly verified PowerShell engine.
+    """Return the legacy PowerShell Core experiment with strict verification.
 
-    Existing installations are reused only when the executable proves the exact
-    pinned version. The provider also owns the Wine policy required by pwsh.exe:
-    Windows 10 mode plus the per-application DLL overrides already established by
-    Cage's standalone PowerShell runtime proof.
+    Current Cage Wine runners do not pass this proof, so Chocolatey does not use
+    this provider. It remains available only for focused runtime experiments.
     """
     pwsh_dir = f"{wine_prefix}/drive_c/Program Files/PowerShell/{version_slot}"
     pwsh_exe = f"{pwsh_dir}/pwsh.exe"
@@ -46,19 +69,19 @@ mkdir -p "$pwsh_cache" "$engine_logs" "$probe_root" "$(dirname "$engine_metadata
 prepare_pwsh_policy() {{
   policy_log="$engine_logs/wine-policy.log"
   : > "$policy_log"
-  echo "[cage] Configuring Wine policy for pwsh.exe" | tee -a "$policy_log"
   timeout --kill-after=10s 120s winecfg /v win10 >>"$policy_log" 2>&1
   timeout --kill-after=10s 120s wineserver -w >>"$policy_log" 2>&1 || true
   for override in 'amsi=' 'dwmapi=' 'rpcrt4=native,builtin'; do
     name="${{override%%=*}}"
     value="${{override#*=}}"
-    timeout --kill-after=10s 120s wine reg add "$policy_key" /v "$name" /d "$value" /f \
-      >>"$policy_log" 2>&1
+    timeout --kill-after=10s 120s wine reg add "$policy_key" /v "$name" /d "$value" /f >>"$policy_log" 2>&1
   done
   timeout --kill-after=10s 120s wineserver -w >>"$policy_log" 2>&1 || true
 }}
 
-write_probe_script() {{
+verify_engine() {{
+  [ -f "$pwsh_exe" ] || return 1
+  chmod +x "$pwsh_exe"
   cat > "$probe_script.part" <<'PS1'
 param([Parameter(Mandatory = $true)][string]$MarkerPath)
 $ErrorActionPreference = 'Stop'
@@ -67,105 +90,51 @@ $version = $PSVersionTable.PSVersion.ToString()
 [Console]::Out.WriteLine('[cage] engine-version=' + $version)
 PS1
   mv -f "$probe_script.part" "$probe_script"
-}}
-
-verify_engine() {{
-  [ -f "$pwsh_exe" ] || return 1
-  chmod +x "$pwsh_exe"
-  write_probe_script
   rm -f "$probe_marker"
   probe_script_win="$(winepath -w "$probe_script")"
   probe_marker_win="$(winepath -w "$probe_marker")"
   engine_log="$engine_logs/direct-probe.log"
   normalized_log="$engine_logs/direct-probe.normalized.log"
-
   set +e
-  POWERSHELL_TELEMETRY_OPTOUT=1 timeout --kill-after=10s 180s \
-    wine "$pwsh_exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass \
-      -File "$probe_script_win" "$probe_marker_win" \
-    >"$engine_log" 2>&1
+  POWERSHELL_TELEMETRY_OPTOUT=1 timeout --kill-after=10s 180s wine "$pwsh_exe" \
+    -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass \
+    -File "$probe_script_win" "$probe_marker_win" >"$engine_log" 2>&1
   engine_rc="$?"
   timeout --kill-after=10s 60s wineserver -w >>"$engine_log" 2>&1
   settle_rc="$?"
   tr -d '\r' < "$engine_log" > "$normalized_log"
   grep -Fqx "[cage] engine-version=$expected_version" "$normalized_log"
   stdout_rc="$?"
-  if [ -f "$probe_marker" ] && [ "$(tr -d '\r\n' < "$probe_marker")" = "$expected_version" ]; then
-    sentinel_rc=0
-  else
-    sentinel_rc=1
-  fi
+  if [ -f "$probe_marker" ] && [ "$(tr -d '\r\n' < "$probe_marker")" = "$expected_version" ]; then sentinel_rc=0; else sentinel_rc=1; fi
   set -e
-
   cat "$normalized_log"
-  python3 - "$engine_metadata" "$expected_version" "$engine_rc" "$settle_rc" "$stdout_rc" "$sentinel_rc" <<'PY'
-import json
-import sys
-from pathlib import Path
-output = Path(sys.argv[1])
-record = {{
-    "schemaVersion": "cage.powershell-engine/v1",
-    "expectedVersion": sys.argv[2],
-    "returnCodes": {{
-        "process": int(sys.argv[3]),
-        "wineserverSettle": int(sys.argv[4]),
-        "stdoutMarker": int(sys.argv[5]),
-        "fileSentinel": int(sys.argv[6]),
-    }},
-    "status": "passed" if all(int(value) == 0 for value in sys.argv[3:]) else "failed",
-    "logs": {{"directProbe": "logs/powershell-engine/direct-probe.log"}},
-}}
-temporary = output.with_suffix(output.suffix + ".part")
-temporary.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-temporary.replace(output)
-PY
   [ "$engine_rc" -eq 0 ] && [ "$settle_rc" -eq 0 ] && [ "$stdout_rc" -eq 0 ] && [ "$sentinel_rc" -eq 0 ]
 }}
 
 prepare_pwsh_policy
-if verify_engine; then
-  echo "[cage] Reusing verified PowerShell $expected_version engine"
-  exit 0
-fi
-
-if [ ! -f "$pwsh_zip" ]; then
-  echo "[cage] Downloading PowerShell {POWERSHELL_VERSION} ZIP..."
-  curl -fL --retry 3 -o "$pwsh_zip" "$pwsh_zip_url"
-fi
-actual_pwsh_zip_sha="$(sha256sum "$pwsh_zip" | cut -d ' ' -f 1)"
-if [ "$actual_pwsh_zip_sha" != "$pwsh_zip_sha256" ]; then
-  echo "[cage] ERROR: PowerShell ZIP checksum mismatch" >&2
-  echo "[cage]   expected: $pwsh_zip_sha256" >&2
-  echo "[cage]   actual:   $actual_pwsh_zip_sha" >&2
-  exit 1
-fi
-
-echo "[cage] Installing canonical PowerShell {POWERSHELL_VERSION} engine..."
+if verify_engine; then exit 0; fi
+mkdir -p "$pwsh_cache"
+if [ ! -f "$pwsh_zip" ]; then curl -fL --retry 3 -o "$pwsh_zip" "$pwsh_zip_url"; fi
+actual="$(sha256sum "$pwsh_zip" | cut -d ' ' -f 1)"
+[ "$actual" = "$pwsh_zip_sha256" ] || exit 1
 rm -rf "$pwsh_dir"
 mkdir -p "$pwsh_dir"
 python3 - "$pwsh_zip" "$pwsh_dir" <<'PY'
-import sys
-import zipfile
-archive, dest = sys.argv[1], sys.argv[2]
-with zipfile.ZipFile(archive) as zf:
-    zf.extractall(dest)
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as archive:
+    archive.extractall(sys.argv[2])
 PY
-test -f "$pwsh_exe"
 chmod +x "$pwsh_exe"
 prepare_pwsh_policy
-verify_engine || {{
-  echo "[cage] ERROR: direct PowerShell engine verification failed" >&2
-  exit 70
-}}
-echo "[cage] PowerShell $expected_version engine verified"'''
+verify_engine || exit 70'''
     return [BuildStep(
         commands=[script],
-        description="Install canonical PowerShell 7 engine",
+        description="Probe experimental PowerShell 7 engine",
         kind="wine-run",
         timeout=1200,
         metadata={
             "engine": f"powershell-zip-{POWERSHELL_VERSION}",
-            "evidence": "metadata/powershell-engine.json",
+            "experimental": True,
         },
     )]
 
@@ -175,5 +144,7 @@ __all__ = [
     "POWERSHELL_ZIP_NAME",
     "POWERSHELL_ZIP_URL",
     "POWERSHELL_ZIP_SHA256",
+    "WINDOWS_POWERSHELL_PROVIDER",
+    "windows_powershell51_steps",
     "powershell_engine_steps",
 ]
