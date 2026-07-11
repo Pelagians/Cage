@@ -15,6 +15,19 @@ on:
       - 'tests/test_chocolatey_*.py'
       - 'pyproject.toml'
       - '.github/workflows/chocolatey-smoke.yml'
+  pull_request:
+    paths:
+      - 'artifact/**'
+      - 'builder/**'
+      - 'cage/**'
+      - 'core/chocolatey/**'
+      - 'core/modules/**'
+      - 'runtime/**'
+      - 'tests/fixtures/chocolatey-bootstrap-smoke.cage.yaml'
+      - 'tests/fixtures/chocolatey-feed/**'
+      - 'tests/test_chocolatey_*.py'
+      - 'pyproject.toml'
+      - '.github/workflows/chocolatey-smoke.yml'
   workflow_dispatch:
 
 permissions:
@@ -68,6 +81,8 @@ jobs:
             bundle="$(find dist -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
             diagnostic="$bundle/metadata/chocolatey-diagnostic.json"
             bootstrap_metadata="$bundle/metadata/chocolatey-upstream-bootstrap.json"
+            powershell_metadata="$bundle/metadata/powershell-layer.json"
+            profile_composition="$bundle/metadata/powershell-profile-composition.json"
             installer_log="$bundle/logs/chocolatey-upstream/installer.log"
             pwsh_direct_log="$bundle/logs/chocolatey-upstream/pwsh-direct-probe.log"
             path_inventory="$bundle/logs/chocolatey-upstream/chocolatey-path-inventory.log"
@@ -83,6 +98,18 @@ jobs:
                 python3 -c 'import json,sys; from pathlib import Path; p=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); print(json.dumps({"status":p.get("status"),"returnCodes":p.get("returnCodes", {}),"checks":p.get("checks", {}),"offline":p.get("offline")}, sort_keys=True))' "$bootstrap_metadata"
               else
                 echo 'bootstrap metadata unavailable'
+              fi
+              echo '--- composed PowerShell layer ---'
+              if [ -f "$powershell_metadata" ]; then
+                cat "$powershell_metadata"
+              else
+                echo 'PowerShell layer metadata unavailable'
+              fi
+              echo '--- profile composition ---'
+              if [ -f "$profile_composition" ]; then
+                cat "$profile_composition"
+              else
+                echo 'profile composition metadata unavailable'
               fi
               echo '--- Chocolatey path inventory ---'
               if [ -f "$path_inventory" ]; then
@@ -130,7 +157,7 @@ jobs:
                 echo 'direct pwsh probe unavailable'
               fi
             } > /tmp/cage-chocolatey-summary.log
-            summary="$(tail -160 /tmp/cage-chocolatey-summary.log)"
+            summary="$(tail -200 /tmp/cage-chocolatey-summary.log)"
             if [ -f "$path_inventory" ]; then
               summary="${summary}"$'\n--- Chocolatey path inventory ---\n'"$(cat "$path_inventory")"
             else
