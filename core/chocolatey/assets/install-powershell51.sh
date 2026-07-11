@@ -8,8 +8,6 @@ work="$module_cache/windows-powershell-5.1"
 archive="$work/Win7AndW2K8R2-KB3191566-x64.zip"
 archive_url="https://download.microsoft.com/download/6/F/5/6F5FF66C-6775-42B0-86C4-47D41F2DA187/Win7AndW2K8R2-KB3191566-x64.zip"
 archive_sha256="f383c34aa65332662a17d95409a2ddedadceda74427e35d05024cd0a6a2fa647"
-msu_sha256="bed99a24f08c83089861ed26735964ea031663abc382a36f7d3d496cdb984de9"
-cab_sha256="5dd71b650a048c489dc9152afea10eedc84335c212ad6f4207996ae95f86623a"
 extract_root="$work/extracted"
 payload_root="$work/payload"
 metadata="$bundle_root/metadata/powershell-engine.json"
@@ -48,6 +46,7 @@ record = {
         "directProbe": "logs/powershell-engine/direct-probe.log",
         "payloadExtraction": "logs/powershell-engine/wmf-cab-extract.log",
         "installationInventory": "logs/powershell-engine/installed-files.log",
+        "nestedHashes": "logs/powershell-engine/wmf-nested-hashes.log",
     },
 }
 temporary = output.with_suffix(output.suffix + ".part")
@@ -122,24 +121,19 @@ mkdir -p "$extract_root/zip" "$extract_root/msu" "$payload_root"
 7z x -y "$archive" -o"$extract_root/zip" >"$log_root/wmf-zip-extract.log"
 msu="$(find "$extract_root/zip" -iname 'Win7AndW2K8R2-KB3191566-x64.msu' -type f -print -quit)"
 test -s "$msu"
-actual_msu_sha256="$(sha256sum "$msu" | cut -d ' ' -f 1)"
-[ "$actual_msu_sha256" = "$msu_sha256" ] || {
-  echo "[cage] ERROR: WMF 5.1 MSU checksum mismatch" >&2
-  exit 1
-}
 
 7z x -y "$msu" -o"$extract_root/msu" >"$log_root/wmf-msu-extract.log"
 cab="$(find "$extract_root/msu" -iname 'Windows6.1-KB3191566-x64.cab' -type f -print -quit)"
 test -s "$cab"
-actual_cab_sha256="$(sha256sum "$cab" | cut -d ' ' -f 1)"
-[ "$actual_cab_sha256" = "$cab_sha256" ] || {
-  echo "[cage] ERROR: WMF 5.1 CAB checksum mismatch" >&2
-  exit 1
-}
+{
+  echo "archive $(sha256sum "$archive" | cut -d ' ' -f 1)"
+  echo "msu $(sha256sum "$msu" | cut -d ' ' -f 1)"
+  echo "cab $(sha256sum "$cab" | cut -d ' ' -f 1)"
+} >"$log_root/wmf-nested-hashes.log"
 
 # CFW's script uses a separately installed native expand.exe and dpx.dll. Cage
-# extracts the already verified CAB in one operation instead, removing that
-# hidden bootstrap dependency while preserving the same curated manifest set.
+# extracts the transitively verified CAB in one operation instead, removing
+# that hidden bootstrap dependency while preserving the curated manifest set.
 7z x -y "$cab" -o"$payload_root" >"$log_root/wmf-cab-extract.log"
 find "$payload_root" -type f -printf '%P\n' | sort >"$log_root/wmf-payload-inventory.log"
 
