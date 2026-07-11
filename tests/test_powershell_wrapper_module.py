@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from core.manifest import Manifest, ManifestError, resolve_module_capabilities
+from core.manifest import Manifest, ManifestError
 from core.modules import ModuleError, PowerShellWrapperModule
 
 
@@ -33,19 +33,19 @@ class PowerShellWrapperModuleTests(unittest.TestCase):
 
         self.assertIn("powershell-wrapper", str(ctx.exception))
 
-    def test_powershell_wrapper_and_chocolatey_share_canonical_providers(self):
-        manifest = Manifest.from_dict(_base_manifest([
-            {"type": "powershell-wrapper", "version": "7"},
-            {"type": "chocolatey", "install": {"packages": ["7zip"]}},
-        ]))
+    def test_experimental_core_module_conflicts_with_verified_chocolatey_engine(self):
+        with self.assertRaises(ManifestError) as ctx:
+            Manifest.from_dict(_base_manifest([
+                {"type": "powershell-wrapper", "version": "7"},
+                {"type": "chocolatey", "install": {"packages": ["7zip"]}},
+            ]))
 
-        resolved = resolve_module_capabilities(manifest.modules)
-        self.assertEqual(resolved["engine"]["provider"], "powershell-zip-7.4.11")
-        self.assertEqual(resolved["winps-shim"]["provider"], "synchro-v4.2.0")
-        self.assertEqual(resolved["package-manager"]["provider"], "chocolatey-2.6.0")
-        self.assertEqual(resolved["compatibility-pack"]["provider"], "chocolatey-for-wine-v1")
+        message = str(ctx.exception)
+        self.assertIn("slot 'engine'", message)
+        self.assertIn("powershell-zip-7.4.11", message)
+        self.assertIn("windows-powershell-5.1-cfw", message)
 
-    def test_powershell_wrapper_uses_shared_engine_loader_and_checksummed_assets(self):
+    def test_standalone_module_is_only_a_strict_core_runtime_probe(self):
         manifest = Manifest.from_dict(_base_manifest([
             {"type": "powershell-wrapper", "version": "7"},
         ]))
@@ -53,24 +53,14 @@ class PowerShellWrapperModuleTests(unittest.TestCase):
         descriptions = [step.description for step in steps]
         script = "\n".join("\n".join(step.commands) for step in steps)
 
-        self.assertEqual(descriptions, [
-            "Install canonical PowerShell 7 engine",
-            "Install canonical Synchro PowerShell layer (v4.2.0)",
-        ])
+        self.assertEqual(descriptions, ["Probe experimental PowerShell 7 engine"])
+        self.assertTrue(steps[0].metadata["experimental"])
         self.assertIn("CAGE_MODULE_CACHE_DIR", script)
-        self.assertIn("b1d594bd44abc01007b9dd2adea5248f09906fa8d4c6cea7f36a4279e2de91e0", script)
-        self.assertIn("ca76d774273ffa37053545f8e4ad63c8914461828f1d1eef7a1915c9656fed4c", script)
-        self.assertIn("f2ae629da40bbd60f66554dc87f3145bb6ca9b2adc6eda3be515438c8bee2e24", script)
-        self.assertIn('profile_root="$wine_prefix/drive_c/ProgramData/Cage/PowerShell"', script)
-        self.assertIn('fragment_dir="$profile_root/profile.d"', script)
-        self.assertIn("10-synchro.ps1", script)
-        self.assertIn("upstream/synchro-v4.2.0", script)
-        self.assertIn("profile_loader_b64", script)
-        self.assertIn("synchro-x64-ok", script)
-        self.assertIn("synchro-x86-ok", script)
-        self.assertIn("exit 37", script)
-        self.assertNotIn("winetricks --unattended powershell_core", script)
-        self.assertNotIn('export WINEDLLOVERRIDES=""', script)
+        self.assertIn("PowerShell-7.4.11-win-x64.zip", script)
+        self.assertIn("558c4115cc6b96cc6a67d74bee40012cf8d38767537f8d2857dc3fa30a63cc63", script)
+        self.assertIn("engine-version=", script)
+        self.assertNotIn("powershell64.exe", script)
+        self.assertNotIn("10-synchro.ps1", script)
 
     def test_unpinned_wrapper_version_is_rejected(self):
         manifest = Manifest.from_dict(_base_manifest([
