@@ -13,7 +13,7 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Summarize CFW PS5.1 implementation
+      - name: Extract CFW manifest installer
         shell: bash
         run: |
           set -euo pipefail
@@ -22,41 +22,30 @@ jobs:
           curl -fsSL --retry 3 \
             -o "$root/winetricks.ps1" \
             https://raw.githubusercontent.com/noahgiroux/Chocolatey-for-wine/9d635ecdba9b10103c202fea51dbaba70aec4d83/winetricks.ps1
-          sha256sum "$root/winetricks.ps1"
           python3 - "$root/winetricks.ps1" <<'PY'
           import re
           import sys
           from pathlib import Path
 
           lines = Path(sys.argv[1]).read_text(encoding="utf-8-sig").splitlines()
-          target = "func_ps51"
-          start = next(
-              index for index, line in enumerate(lines)
-              if re.match(rf"\s*function\s+{target}\b", line, re.I)
-          )
-          end = next(
-              (index for index in range(start + 1, len(lines))
-               if re.match(r"\s*function\s+func_[A-Za-z0-9_]+\b", lines[index], re.I)),
-              len(lines),
-          )
-          block = lines[start:end]
-          keywords = re.compile(
-              r"https?://|w_download|7z\b|expand|install_from_manifest|"
-              r"powershell(?:\.exe)?|ps51|system\.management\.automation|"
-              r"copy-item|move-item|new-item|set-item|reg(?:\.exe)?\b|"
-              r"environment|destinationpath|sourcefile|cachedir|temp|cab\b|url\b|"
-              r"write-host|test-path|remove-item|start-process|exit",
-              re.I,
-          )
-          print(f"=== RANGE {start + 1}-{end} ===")
-          print("=== URLS ===")
-          urls = []
-          for line in block:
-              urls.extend(re.findall(r"https?://[^\s\"']+", line))
-          for url in dict.fromkeys(urls):
-              print(url)
-          print("=== FILTERED IMPLEMENTATION ===")
-          for offset, line in enumerate(block, start=start + 1):
-              if keywords.search(line):
-                  print(f"{offset:04d}: {line}")
+          for target in ("install_from_manifest", "func_expand"):
+              start = next(
+                  index for index, line in enumerate(lines)
+                  if re.match(rf"\s*function\s+{re.escape(target)}\b", line, re.I)
+              )
+              depth = 0
+              seen_open = False
+              end = len(lines)
+              for index in range(start, len(lines)):
+                  stripped = re.sub(r"<#[\s\S]*?#>", "", lines[index])
+                  depth += stripped.count("{")
+                  if stripped.count("{"):
+                      seen_open = True
+                  depth -= stripped.count("}")
+                  if seen_open and depth <= 0 and index > start:
+                      end = index + 1
+                      break
+              print(f"=== {target} {start + 1}-{end} ===")
+              for index in range(start, end):
+                  print(f"{index + 1:04d}: {lines[index]}")
           PY
