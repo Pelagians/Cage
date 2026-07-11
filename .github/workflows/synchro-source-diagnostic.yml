@@ -1,0 +1,33 @@
+name: Synchro Source Diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/synchro-source-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download tagged Synchro source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/synchro
+          curl -fL --retry 3 \
+            -o /tmp/synchro/powershell-wrapper-for-wine-v4.2.0.zip \
+            https://codeberg.org/Synchro/powershell-wrapper-for-wine/archive/v4.2.0.zip
+          unzip -q /tmp/synchro/powershell-wrapper-for-wine-v4.2.0.zip -d /tmp/synchro/source
+          find /tmp/synchro/source -maxdepth 4 -type f -print | sort
+
+      - name: Upload tagged source
+        uses: actions/upload-artifact@v4
+        with:
+          name: synchro-source-v4.2.0
+          if-no-files-found: error
+          retention-days: 1
+          path: /tmp/synchro/**
