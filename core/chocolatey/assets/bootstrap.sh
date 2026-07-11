@@ -107,14 +107,31 @@ PY
 cat "$path_inventory"
 test -f "$canonical_choco"
 canonical_rc="$?"
+
+pwsh_direct_log="$logs_dir/pwsh-direct-probe.log"
+if [ "$installer_rc" -ne 0 ] || [ "$canonical_rc" -ne 0 ]; then
+  pwsh_exe="$wine_prefix/drive_c/Program Files/PowerShell/7/pwsh.exe"
+  if [ -f "$pwsh_exe" ]; then
+    pwsh_win="$(winepath -w "$pwsh_exe")"
+    POWERSHELL_TELEMETRY_OPTOUT=1 timeout --kill-after=10s "${CAGE_CHOCOLATEY_PWSH_PROBE_TIMEOUT:-120s}" wine "$pwsh_win" -NoLogo -NoProfile -NonInteractive -Command "Write-Output '[cfw] stage=direct-pwsh-alive'" > "$pwsh_direct_log" 2>&1
+    pwsh_direct_rc="$?"
+    tr -d '\r' < "$pwsh_direct_log" | grep -a '^\[cfw\] stage=direct-pwsh-alive$' || true
+  else
+    pwsh_direct_rc=2
+    echo '[cage] direct pwsh probe: executable missing' > "$pwsh_direct_log"
+  fi
+else
+  pwsh_direct_rc=0
+  echo '[cage] direct pwsh probe: skipped after successful bootstrap' > "$pwsh_direct_log"
+fi
 set -e
 
-python3 - "$metadata" "$installer_rc" "$settle_rc" "$canonical_rc" <<'PY'
+python3 - "$metadata" "$installer_rc" "$settle_rc" "$canonical_rc" "$pwsh_direct_rc" <<'PY'
 import json
 import sys
 from pathlib import Path
 path = Path(sys.argv[1])
-installer_rc, settle_rc, canonical_rc = map(int, sys.argv[2:])
+installer_rc, settle_rc, canonical_rc, pwsh_direct_rc = map(int, sys.argv[2:])
 passed = installer_rc == 0 and settle_rc == 0 and canonical_rc == 0
 record = {
     "schemaVersion": "cage.chocolatey-upstream-bootstrap/v0",
@@ -122,10 +139,11 @@ record = {
     "upstreamInstaller": "ChoCinstaller_{{CHOCOLATEY_FOR_WINE_INSTALLER_VERSION}}.exe",
     "arguments": ["/s", "/q"],
     "offline": True,
-    "returnCodes": {"installer": installer_rc, "wineserverSettle": settle_rc},
+    "returnCodes": {"installer": installer_rc, "wineserverSettle": settle_rc, "directPwsh": pwsh_direct_rc},
     "checks": {"canonicalChocoExists": canonical_rc == 0},
     "logs": {
         "installer": "logs/chocolatey-upstream/installer.log",
+        "directPwsh": "logs/chocolatey-upstream/pwsh-direct-probe.log",
         "wineserverSettle": "logs/chocolatey-upstream/wineserver-settle.log",
     },
 }

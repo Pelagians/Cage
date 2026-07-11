@@ -106,8 +106,11 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
 
 
     def test_fork_bootstrap_uses_private_verified_workdir_and_strict_success_boundary(self):
-        bootstrap = _commands_for(_manifest().modules[0].build(), "Bootstrap Chocolatey-for-Wine fork")
+        steps = _manifest().modules[0].build()
+        bootstrap_step = next(step for step in steps if step.description == "Bootstrap Chocolatey-for-Wine fork")
+        bootstrap = "\n".join(bootstrap_step.commands)
 
+        self.assertEqual(bootstrap_step.timeout, 4200)
         self.assertIn('cfw_work="$wine_prefix/.cage/chocolatey-bootstrap/cfw-v0.5c.755-noah.5-choco-2.6.0-fork-r11"', bootstrap)
         self.assertIn('rm -rf "$cfw_work"', bootstrap)
         self.assertIn('cfw_payload_cache="$cfw_work/choc_install_files"', bootstrap)
@@ -122,6 +125,16 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn('canonicalBin', bootstrap)
         self.assertIn('nestedRoot', bootstrap)
         self.assertIn('discoveredChoco', bootstrap)
+        self.assertIn('pwsh-direct-probe.log', bootstrap)
+        self.assertIn('direct-pwsh-alive', bootstrap)
+        self.assertIn('directPwsh', bootstrap)
+        self.assertIn('-NoProfile', bootstrap)
+        self.assertIn('POWERSHELL_TELEMETRY_OPTOUT=1', bootstrap)
+        self.assertIn('timeout --kill-after=10s', bootstrap)
+        self.assertIn('if [ "$installer_rc" -ne 0 ] || [ "$canonical_rc" -ne 0 ]; then', bootstrap)
+        self.assertIn('direct pwsh probe: skipped after successful bootstrap', bootstrap)
+        self.assertLess(bootstrap.index('canonical_rc="$?"'), bootstrap.index('pwsh_direct_log='))
+        self.assertNotIn('direct_rc == 0', bootstrap)
         self.assertIn("path.name.lower() == 'choco.exe'", bootstrap)
         self.assertIn('wine "$cfw_installer_win" /s /q', bootstrap)
         self.assertIn('export CFW_CACHE="$cfw_cache_win"', bootstrap)

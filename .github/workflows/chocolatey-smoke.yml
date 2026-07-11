@@ -69,6 +69,7 @@ jobs:
             diagnostic="$bundle/metadata/chocolatey-diagnostic.json"
             bootstrap_metadata="$bundle/metadata/chocolatey-upstream-bootstrap.json"
             installer_log="$bundle/logs/chocolatey-upstream/installer.log"
+            pwsh_direct_log="$bundle/logs/chocolatey-upstream/pwsh-direct-probe.log"
             path_inventory="$bundle/logs/chocolatey-upstream/chocolatey-path-inventory.log"
             {
               echo '--- Chocolatey-for-Wine stages ---'
@@ -121,6 +122,12 @@ jobs:
                 grep -Eai 'finalizer-script-entry|pwsh|powershell|choc_install|not recognized|parameter|cannot find|error' "$installer_log" | tail -60 || true
               else
                 echo 'installer log unavailable'
+              fi
+              echo '--- direct pwsh probe ---'
+              if [ -f "$pwsh_direct_log" ]; then
+                tr -d '\r' < "$pwsh_direct_log" | grep -a '^\[cfw\] stage=direct-pwsh-alive$' || echo 'direct pwsh marker absent'
+              else
+                echo 'direct pwsh probe unavailable'
               fi
             } > /tmp/cage-chocolatey-summary.log
             summary="$(tail -160 /tmp/cage-chocolatey-summary.log)"

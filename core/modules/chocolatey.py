@@ -30,7 +30,7 @@ _FAILURE_DIAGNOSTIC_ASSETS = {
     "smoke-lifecycle.sh",
 }
 _STEP_SPECS = (
-    ("bootstrap.sh", "Bootstrap Chocolatey-for-Wine fork", "wine-run", 3900),
+    ("bootstrap.sh", "Bootstrap Chocolatey-for-Wine fork", "wine-run", 4200),
     ("verify-chocolatey.sh", "Diagnose Chocolatey readiness", "wine-run", 600),
     ("feature-policy.sh", "Apply Chocolatey feature policy", "wine-run", 360),
     ("smoke-lifecycle.sh", "Prove Chocolatey local package lifecycle", "wine-run", 1800),

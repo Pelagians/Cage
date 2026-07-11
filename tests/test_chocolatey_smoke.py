@@ -177,6 +177,8 @@ class ChocolateySmokePackageTests(unittest.TestCase):
         self.assertIn("Chocolatey-for-Wine stages", workflow)
         self.assertIn("installer non-stage tail", workflow)
         self.assertIn("focused finalizer output", workflow)
+        self.assertIn("direct pwsh probe", workflow)
+        self.assertIn("pwsh-direct-probe.log", workflow)
         self.assertIn("finalizer-script-entry|pwsh|powershell|choc_install", workflow)
         self.assertIn("grep -av '^\\[cfw\\] stage='", workflow)
         self.assertIn("grep -a", workflow)
