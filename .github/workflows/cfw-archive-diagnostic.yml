@@ -13,46 +13,31 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Install archive tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y p7zip-full
-
-      - name: Download and inspect pinned CFW release
+      - name: Print pinned CFW PowerShell inventory
         shell: bash
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           root=/tmp/cfw-inspect
           mkdir -p "$root/release" "$root/cdrive"
-          curl -fL --retry 3 \
+          curl -fsSL --retry 3 \
             -o "$root/Chocolatey-for-wine.7z" \
             https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.6/Chocolatey-for-wine.7z
-          sha256sum "$root/Chocolatey-for-wine.7z" | tee "$root/release.sha256"
           7z x -y "$root/Chocolatey-for-wine.7z" -o"$root/release" >/dev/null
-          find "$root/release" -type f -printf '%P\n' | sort > "$root/release-files.txt"
           cdrive="$(find "$root/release" -iname c_drive.7z -type f -print -quit)"
           test -n "$cdrive"
-          sha256sum "$cdrive" | tee "$root/c-drive.sha256"
           7z x -y "$cdrive" -o"$root/cdrive" >/dev/null
           find "$root/cdrive" -type f -printf '%P\n' | sort > "$root/c-drive-files.txt"
           grep -Eai 'powershell|ps51|pwsh|system\.management\.automation|microsoft\.powershell' \
             "$root/c-drive-files.txt" > "$root/powershell-files.txt" || true
-          while IFS= read -r relative; do
-            [ -n "$relative" ] || continue
-            file="$root/cdrive/$relative"
-            printf '%s  %s\n' "$(sha256sum "$file" | cut -d ' ' -f1)" "$relative"
-          done < "$root/powershell-files.txt" > "$root/powershell-files.sha256"
 
-          echo '=== RELEASE SHA256 ==='
-          cat "$root/release.sha256"
-          echo '=== RELEASE FILES ==='
-          cat "$root/release-files.txt"
-          echo '=== C_DRIVE SHA256 ==='
-          cat "$root/c-drive.sha256"
+          echo '=== RELEASE ==='
+          sha256sum "$root/Chocolatey-for-wine.7z"
+          echo '=== C_DRIVE ==='
+          sha256sum "$cdrive"
           echo '=== POWERSHELL FILES ==='
           cat "$root/powershell-files.txt"
           echo '=== POWERSHELL FILE HASHES ==='
-          cat "$root/powershell-files.sha256"
-          echo '=== C_DRIVE FILTERED CONTEXT ==='
-          grep -Eai 'powershell|ps51|pwsh|automation|system32|syswow64' \
-            "$root/c-drive-files.txt" | head -500 || true
+          while IFS= read -r relative; do
+            [ -n "$relative" ] || continue
+            sha256sum "$root/cdrive/$relative"
+          done < "$root/powershell-files.txt"
