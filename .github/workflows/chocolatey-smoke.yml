@@ -157,7 +157,7 @@ jobs:
                 echo 'direct pwsh probe unavailable'
               fi
             } > /tmp/cage-chocolatey-summary.log
-            summary="$(tail -200 /tmp/cage-chocolatey-summary.log)"
+            summary="$(tail -160 /tmp/cage-chocolatey-summary.log)"
             if [ -f "$path_inventory" ]; then
               summary="${summary}"$'\n--- Chocolatey path inventory ---\n'"$(cat "$path_inventory")"
             else
