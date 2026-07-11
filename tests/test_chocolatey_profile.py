@@ -1,12 +1,9 @@
-"""Tests for the immutable Chocolatey bootstrap profile boundary."""
+"""Tests for the immutable layered Chocolatey bootstrap boundary."""
 from __future__ import annotations
 
 import dataclasses
 import hashlib
-import json
-import re
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,7 +11,6 @@ from pathlib import Path
 from core.chocolatey.assets import asset_sha256, load_asset
 from core.chocolatey.profile import (
     DEFAULT_BOOTSTRAP_PROFILE_ID,
-    ChocolateyProfileError,
     get_bootstrap_profile,
 )
 from core.manifest import Manifest, ManifestError
@@ -40,15 +36,21 @@ def _manifest(**module_overrides):
 
 
 class ChocolateyBootstrapProfileTests(unittest.TestCase):
-    def test_builtin_profile_is_frozen_complete_and_compatibility_set_named(self):
+    def test_builtin_profile_is_frozen_complete_and_layer_named(self):
         profile = get_bootstrap_profile(DEFAULT_BOOTSTRAP_PROFILE_ID)
 
         self.assertTrue(dataclasses.is_dataclass(profile))
         with self.assertRaises(dataclasses.FrozenInstanceError):
             profile.id = "mutated"  # type: ignore[misc]
-        self.assertEqual(profile.id, "cfw-v0.5c.755-noah.6-choco-2.6.0-fork-r12")
+        self.assertEqual(
+            profile.id,
+            "cfw-v0.5c.755-noah.6-choco-2.6.0-synchro-r13",
+        )
         self.assertEqual(profile.dotnet_profile, "dotnet48-cfw-r1")
-        self.assertEqual(profile.dotnet_installer_sha256, "95889d6de3f2070c07790ad6cf2000d33d9a1bdfc6a381725ab82ab1c314fd53")
+        self.assertEqual(
+            profile.dotnet_installer_sha256,
+            "95889d6de3f2070c07790ad6cf2000d33d9a1bdfc6a381725ab82ab1c314fd53",
+        )
         self.assertEqual(profile.chocolatey_for_wine_version, "v0.5c.755-noah.6")
         self.assertEqual(profile.chocolatey_for_wine_installer_version, "0.5c.755")
         self.assertEqual(
@@ -61,17 +63,14 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
         )
         self.assertEqual(profile.upstream_project, "noahgiroux/Chocolatey-for-wine")
         self.assertEqual(profile.upstream_tag, "v0.5c.755-noah.6")
-        self.assertEqual(
-            profile.winetricks_ps1_url,
-            "https://raw.githubusercontent.com/noahgiroux/Chocolatey-for-wine/9d635ecdba9b10103c202fea51dbaba70aec4d83/winetricks.ps1",
-        )
         self.assertEqual(profile.chocolatey_version, "2.6.0")
+        # This remains the transitional bootstrap MSI. Cage replaces it with
+        # the canonical 7.4.11 ZIP engine immediately after bootstrap.
         self.assertEqual(profile.powershell_version, "7.5.5")
         self.assertEqual(profile.powershell_host_feature, "powershellHost")
         self.assertEqual(profile.powershell_host, "disabled")
         self.assertEqual(profile.allow_global_confirmation, "disabled")
-        self.assertFalse(any(key.startswith("powershellWrapper") for key in profile.to_dict()))
-        self.assertEqual(profile.revision, "r12")
+        self.assertEqual(profile.revision, "r13")
         for name, value in profile.to_dict().items():
             if name.endswith("Sha256"):
                 self.assertRegex(value, r"^[0-9a-f]{64}$", name)
@@ -89,46 +88,53 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
                     _manifest(**{field: value})
                 self.assertIn("unknown module field", str(ctx.exception))
 
-    def test_module_steps_record_profile_and_versioned_asset_hashes(self):
+    def test_module_records_profile_assets_and_layer_provenance(self):
         module = _manifest().modules[0]
         steps = module.build()
+        record = steps[0]
+        command = "\n".join(record.commands)
 
         self.assertEqual(module.bootstrap, DEFAULT_BOOTSTRAP_PROFILE_ID)
-        self.assertEqual(steps[0].description, "Record Chocolatey bootstrap profile")
-        self.assertIn("metadata/chocolatey-bootstrap.json", "\n".join(steps[0].commands))
-        self.assertIn(asset_sha256("fetch-verified.sh"), "\n".join(steps[0].commands))
+        self.assertEqual(record.description, "Record layered Chocolatey bootstrap profile")
+        self.assertIn("metadata/chocolatey-bootstrap.json", command)
+        self.assertIn(asset_sha256("fetch-verified.sh"), command)
+        self.assertIn("powershell-zip-7.4.11", command)
+        self.assertIn("synchro-v4.2.0", command)
+        self.assertIn("c3b4923d0f63188843bd2a15be64bca8f4a9902b", command)
         for step in steps:
-            self.assertEqual(step.metadata["bootstrapProfile"], DEFAULT_BOOTSTRAP_PROFILE_ID)
             if "scriptAsset" in step.metadata:
                 self.assertRegex(step.metadata["scriptSha256"], r"^[0-9a-f]{64}$")
 
-    def test_module_uses_packaged_assets_instead_of_python_heredocs(self):
+    def test_module_uses_packaged_assets_instead_of_python_shell_templates(self):
         module_source = (ROOT / "core/modules/chocolatey.py").read_text(encoding="utf-8")
         base_source = (ROOT / "core/modules/base.py").read_text(encoding="utf-8")
 
         self.assertNotIn("cfw-v0.5c.755-noah", base_source)
         self.assertIn("DEFAULT_BOOTSTRAP_PROFILE_ID", base_source)
         self.assertNotIn("<<'PY'", module_source)
-        self.assertNotIn('f\'\'\'set -eu', module_source)
+        self.assertNotIn("f'''set -eu", module_source)
         self.assertLess(len(module_source.splitlines()), 300)
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('"core.chocolatey.assets"', pyproject)
         self.assertIn('"*.sh"', pyproject)
-
-
-
+        self.assertIn('"*.ps1"', pyproject)
 
 
 class ChocolateyAssetContractTests(unittest.TestCase):
-    def test_all_step_assets_are_versioned_and_hashable(self):
+    def test_all_layer_assets_are_versioned_and_hashable(self):
         names = [
             "fetch-verified.sh",
             "failure-diagnostics.sh",
             "bootstrap.sh",
+            "install-profile-fragments.sh",
+            "verify-powershell-layer.sh",
             "verify-chocolatey.sh",
             "feature-policy.sh",
             "smoke-lifecycle.sh",
             "install-package.sh",
+            "profile-20-chocolatey.ps1",
+            "profile-30-cfw-winetricks.ps1",
+            "profile-40-cfw-command-adapters.ps1",
         ]
         for name in names:
             with self.subTest(name=name):
@@ -148,6 +154,17 @@ class ChocolateyAssetContractTests(unittest.TestCase):
         assets_dir = ROOT / "core/chocolatey/assets"
         self.assertFalse(legacy & {path.name for path in assets_dir.glob("*.sh")})
 
+    def test_profile_fragments_are_additive(self):
+        for name in (
+            "profile-20-chocolatey.ps1",
+            "profile-30-cfw-winetricks.ps1",
+            "profile-40-cfw-command-adapters.ps1",
+        ):
+            text = load_asset(name)
+            self.assertNotIn("Out-File $PROFILE", text)
+            self.assertNotIn("New-Item -Path $PROFILE", text)
+            self.assertNotIn("WindowsPowerShell\\v1.0\\powershell.exe", text)
+
     def test_verified_fetch_uses_content_addressing_locking_and_atomic_promotion(self):
         helper = load_asset("fetch-verified.sh")
 
@@ -157,8 +174,8 @@ class ChocolateyAssetContractTests(unittest.TestCase):
         self.assertIn("sha256sum", helper)
         self.assertIn("--connect-timeout", helper)
         self.assertIn("--max-time", helper)
-        self.assertIn("mv \"$part\" \"$blob\"", helper)
-        self.assertIn("rm -f \"$blob\"", helper)
+        self.assertIn('mv "$part" "$blob"', helper)
+        self.assertIn('rm -f "$blob"', helper)
         self.assertIn("destination_actual", helper)
         self.assertIn("profile_lock", helper)
 
@@ -203,8 +220,6 @@ class ChocolateyAssetContractTests(unittest.TestCase):
             subprocess.run([str(runner)], env=environment, check=True)
             self.assertEqual(blob.read_bytes(), payload)
             self.assertEqual((root / "output.bin").read_bytes(), payload)
-
-
 
 
 if __name__ == "__main__":
