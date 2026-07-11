@@ -20,11 +20,8 @@ from core.chocolatey import (
 )
 
 from .base import ModuleBase, ModuleError
-from .powershell_engine import POWERSHELL_VERSION
-from .powershell_wrapper import (
-    DEFAULT_WRAPPER_VERSION,
-    powershell_wrapper_steps,
-)
+from .powershell_engine import WINDOWS_POWERSHELL_PROVIDER, windows_powershell51_steps
+from .powershell_wrapper import DEFAULT_WRAPPER_VERSION, windows_powershell_wrapper_steps
 from ..build_step import BuildStep
 
 _PACKAGE_RE = re.compile(r"^[A-Za-z0-9._+\-]+$")
@@ -34,7 +31,6 @@ _PROFILE_ASSETS = (
     "profile-30-cfw-winetricks.ps1",
     "profile-40-cfw-command-adapters.ps1",
 )
-_DOWNLOAD_ASSETS = {"bootstrap.sh"}
 _FAILURE_DIAGNOSTIC_ASSETS = {
     "verify-chocolatey.sh",
     "feature-policy.sh",
@@ -56,7 +52,7 @@ def _profile_record_command(profile_payload: dict[str, Any], asset_hashes: dict[
         "profile": profile_payload,
         "assets": asset_hashes,
         "layers": {
-            "engine": f"powershell-zip-{POWERSHELL_VERSION}",
+            "engine": WINDOWS_POWERSHELL_PROVIDER,
             "windowsPowerShellShim": f"synchro-{DEFAULT_WRAPPER_VERSION}",
             "cfwContractCommit": CFW_CONTRACT_COMMIT,
         },
@@ -82,7 +78,7 @@ class ChocolateyModule(ModuleBase):
 
     def capabilities(self) -> dict[str, str]:
         return {
-            "engine": f"powershell-zip-{POWERSHELL_VERSION}",
+            "engine": WINDOWS_POWERSHELL_PROVIDER,
             "winps-shim": f"synchro-{DEFAULT_WRAPPER_VERSION}",
             "package-manager": "chocolatey-2.6.0",
             "compatibility-pack": "chocolatey-for-wine-v1",
@@ -124,9 +120,7 @@ class ChocolateyModule(ModuleBase):
             "SMOKE_NUPKG_BASE64": base64.b64encode(
                 load_asset_bytes("cage-chocolatey-smoke.0.1.0.nupkg")
             ).decode("ascii"),
-            "SMOKE_NUPKG_SHA256": asset_sha256(
-                "cage-chocolatey-smoke.0.1.0.nupkg"
-            ),
+            "SMOKE_NUPKG_SHA256": asset_sha256("cage-chocolatey-smoke.0.1.0.nupkg"),
             "CFW_CONTRACT_COMMIT": CFW_CONTRACT_COMMIT,
             "PROFILE_20_B64": base64.b64encode(load_asset_bytes(_PROFILE_ASSETS[0])).decode("ascii"),
             "PROFILE_30_B64": base64.b64encode(load_asset_bytes(_PROFILE_ASSETS[1])).decode("ascii"),
@@ -136,6 +130,7 @@ class ChocolateyModule(ModuleBase):
             "fetch-verified.sh",
             "failure-diagnostics.sh",
             "bootstrap.sh",
+            "install-powershell51.sh",
             "install-profile-fragments.sh",
             "verify-powershell-layer.sh",
             "verify-chocolatey.sh",
@@ -150,22 +145,18 @@ class ChocolateyModule(ModuleBase):
             "bootstrapProfile": profile.id,
             "bootstrapRevision": profile.revision,
             "cfwContractCommit": CFW_CONTRACT_COMMIT,
-            "powershellEngine": POWERSHELL_VERSION,
+            "powershellEngine": WINDOWS_POWERSHELL_PROVIDER,
             "synchroWrapper": DEFAULT_WRAPPER_VERSION,
         }
         steps: list[BuildStep] = [BuildStep(
             commands=[_profile_record_command(profile.to_dict(), asset_hashes)],
             description="Record layered Chocolatey bootstrap profile",
             kind="metadata",
-            metadata={
-                **common_metadata,
-                "output": "metadata/chocolatey-bootstrap.json",
-            },
+            metadata={**common_metadata, "output": "metadata/chocolatey-bootstrap.json"},
         )]
 
         fetch_helper = load_asset("fetch-verified.sh").rstrip()
-        bootstrap_script = render_asset("bootstrap.sh", values)
-        bootstrap_script = fetch_helper + "\n\n" + bootstrap_script
+        bootstrap_script = fetch_helper + "\n\n" + render_asset("bootstrap.sh", values)
         steps.append(BuildStep(
             commands=[bootstrap_script],
             description="Bootstrap CFW prerequisites and Chocolatey",
@@ -179,18 +170,17 @@ class ChocolateyModule(ModuleBase):
             },
         ))
 
-        # The upstream-derived CFW bootstrap currently establishes .NET and the
-        # raw Chocolatey layout. Cage then replaces any PowerShell result with
-        # its canonical pinned engine and Synchro compatibility provider.
-        steps.extend(powershell_wrapper_steps(include_engine=True))
+        # CFW establishes .NET Framework and native expansion support. Cage then
+        # builds the real Windows PowerShell 5.1 backend and installs Synchro as
+        # the only public powershell.exe surface.
+        steps.extend(windows_powershell51_steps())
+        steps.extend(windows_powershell_wrapper_steps())
 
         failure_helper = load_asset("failure-diagnostics.sh").rstrip()
         for asset_name, description, kind, timeout in _POST_LAYER_STEP_SPECS:
             if asset_name == "install-package.sh" and not packages:
                 continue
             script = render_asset(asset_name, values)
-            if asset_name in _DOWNLOAD_ASSETS:
-                script = fetch_helper + "\n\n" + script
             if asset_name in _FAILURE_DIAGNOSTIC_ASSETS:
                 script = failure_helper + "\n\n" + script
             metadata: dict[str, Any] = {
