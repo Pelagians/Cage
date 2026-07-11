@@ -1,16 +1,17 @@
 set -eu
 unset WINEDLLOVERRIDES
 wine_prefix="${WINEPREFIX:-$HOME/.wine}"
-# Stable Windows destination: C:/ProgramData/Cage/PowerShell/profile.d
 profile_root="$wine_prefix/drive_c/ProgramData/Cage/PowerShell"
 fragment_dir="$profile_root/profile.d"
 cfw_root="$wine_prefix/drive_c/ProgramData/Chocolatey-for-wine"
 metadata_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/metadata"
 contract_commit="{{CFW_CONTRACT_COMMIT}}"
-
-profile="$wine_prefix/drive_c/Program Files/PowerShell/7/profile.ps1"
+profile64="$wine_prefix/drive_c/windows/system32/WindowsPowerShell/v1.0/profile.ps1"
+profile32="$wine_prefix/drive_c/windows/syswow64/WindowsPowerShell/v1.0/profile.ps1"
 synchro_fragment="$fragment_dir/10-synchro.ps1"
-test -s "$profile"
+
+test -s "$profile64"
+test -s "$profile32"
 test -s "$synchro_fragment"
 mkdir -p "$fragment_dir" "$cfw_root/command-adapters" "$metadata_dir"
 
@@ -31,14 +32,17 @@ python3 - "$metadata_dir/powershell-profile-composition.json" "$contract_commit"
 import json
 import sys
 from pathlib import Path
-
 output = Path(sys.argv[1])
-commit = sys.argv[2]
 record = {
     "schemaVersion": "cage.powershell-profile-composition/v1",
     "owner": "cage",
+    "engine": "windows-powershell-5.1-cfw",
     "synchroProvider": "v4.2.0",
-    "cfwContractCommit": commit,
+    "cfwContractCommit": sys.argv[2],
+    "profiles": [
+        "C:/Windows/System32/WindowsPowerShell/v1.0/profile.ps1",
+        "C:/Windows/SysWOW64/WindowsPowerShell/v1.0/profile.ps1",
+    ],
     "orderedFragments": [
         "10-synchro.ps1",
         "20-chocolatey.ps1",
@@ -60,4 +64,4 @@ for fragment in \
   sha256sum "$fragment"
 done
 
-echo "[cage] Installed ordered Synchro and CFW PowerShell profile fragments"
+echo "[cage] Installed ordered Synchro and CFW Windows PowerShell profiles"
