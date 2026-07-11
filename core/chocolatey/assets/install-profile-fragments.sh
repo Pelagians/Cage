@@ -1,6 +1,7 @@
 set -eu
 unset WINEDLLOVERRIDES
 wine_prefix="${WINEPREFIX:-$HOME/.wine}"
+# Stable Windows destination: C:/ProgramData/Cage/PowerShell/profile.d
 profile_root="$wine_prefix/drive_c/ProgramData/Cage/PowerShell"
 fragment_dir="$profile_root/profile.d"
 cfw_root="$wine_prefix/drive_c/ProgramData/Chocolatey-for-wine"
@@ -27,15 +28,12 @@ write_fragment "$fragment_dir/30-cfw-winetricks.ps1" "{{PROFILE_30_B64}}"
 write_fragment "$fragment_dir/40-cfw-command-adapters.ps1" "{{PROFILE_40_B64}}"
 
 python3 - "$metadata_dir/powershell-profile-composition.json" "$contract_commit" <<'PY'
-import hashlib
 import json
 import sys
 from pathlib import Path
 
 output = Path(sys.argv[1])
 commit = sys.argv[2]
-root = Path.home() / ".wine" / "drive_c" / "ProgramData" / "Cage" / "PowerShell" / "profile.d"
-# WINEPREFIX may differ from HOME/.wine; the shell records exact hashes below.
 record = {
     "schemaVersion": "cage.powershell-profile-composition/v1",
     "owner": "cage",
