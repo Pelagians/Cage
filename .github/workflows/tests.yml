@@ -73,8 +73,13 @@ jobs:
         run: |
           set +e
           evidence=/tmp/powershell-proton
-          mkdir -p "$evidence"
+          mkdir -p "$evidence/home" "$evidence/prefix"
           docker run --rm --pull never --shm-size 2g \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/out/home \
+            -e WINEPREFIX=/out/prefix \
+            -e STEAM_COMPAT_DATA_PATH=/out/prefix \
+            -e STEAM_COMPAT_CLIENT_INSTALL_PATH=/out \
             -e POWERSHELL_VERSION=7.4.11 \
             -v "$PWD/tests/scripts:/probe:ro" \
             -v "$evidence:/out" \
