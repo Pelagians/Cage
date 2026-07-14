@@ -14,6 +14,8 @@ metadata="$bundle_root/metadata/powershell-engine.json"
 log_root="$bundle_root/logs/powershell-engine"
 backend64="$wine_prefix/drive_c/windows/system32/WindowsPowerShell/v1.0/ps51.exe"
 backend32="$wine_prefix/drive_c/windows/syswow64/WindowsPowerShell/v1.0/ps51.exe"
+expand_exe="$wine_prefix/drive_c/windows/system32/expnd/expand.exe"
+dpx_dll="$wine_prefix/drive_c/windows/system32/dpx.dll"
 probe_root="$wine_prefix/drive_c/ProgramData/Cage/PowerShell"
 probe_script="$probe_root/engine-probe.ps1"
 probe_marker="$probe_root/engine-probe-ok.txt"
@@ -29,6 +31,7 @@ write_engine_metadata() {
 import json
 import sys
 from pathlib import Path
+
 output = Path(sys.argv[1])
 return_codes = {
     "process": int(sys.argv[2]),
@@ -44,8 +47,10 @@ record = {
     "status": "passed" if all(value == 0 for value in return_codes.values()) else "failed",
     "logs": {
         "directProbe": "logs/powershell-engine/direct-probe.log",
-        "payloadExtraction": "logs/powershell-engine/wmf-cab-extract.log",
+        "payloadExtraction": "logs/powershell-engine/wmf-dpx-extract.log",
+        "payloadInventory": "logs/powershell-engine/wmf-payload-inventory.log",
         "installationInventory": "logs/powershell-engine/installed-files.log",
+        "skippedPayloads": "logs/powershell-engine/skipped-files.log",
         "nestedHashes": "logs/powershell-engine/wmf-nested-hashes.log",
     },
 }
@@ -104,6 +109,12 @@ if verify_backend; then
   exit 0
 fi
 
+if [ ! -s "$expand_exe" ] || [ ! -s "$dpx_dll" ]; then
+  echo "[cage] ERROR: CFW DPX extraction helper is not installed" >&2
+  echo "[cage] expected expand=$expand_exe dpx=$dpx_dll" >&2
+  exit 68
+fi
+
 echo "[cage] Installing Windows PowerShell 5.1 backend from WMF 5.1..."
 if [ ! -f "$archive" ]; then
   curl -fL --retry 3 --connect-timeout 30 --max-time 1800 -o "$archive.part" "$archive_url"
@@ -121,7 +132,6 @@ mkdir -p "$extract_root/zip" "$extract_root/msu" "$payload_root"
 7z x -y "$archive" -o"$extract_root/zip" >"$log_root/wmf-zip-extract.log"
 msu="$(find "$extract_root/zip" -iname 'Win7AndW2K8R2-KB3191566-x64.msu' -type f -print -quit)"
 test -s "$msu"
-
 7z x -y "$msu" -o"$extract_root/msu" >"$log_root/wmf-msu-extract.log"
 cab="$(find "$extract_root/msu" -iname 'Windows6.1-KB3191566-x64.cab' -type f -print -quit)"
 test -s "$cab"
@@ -131,13 +141,93 @@ test -s "$cab"
   echo "cab $(sha256sum "$cab" | cut -d ' ' -f 1)"
 } >"$log_root/wmf-nested-hashes.log"
 
-# CFW's script uses a separately installed native expand.exe and dpx.dll. Cage
-# extracts the transitively verified CAB in one operation instead, removing
-# that hidden bootstrap dependency while preserving the curated manifest set.
-7z x -y "$cab" -o"$payload_root" >"$log_root/wmf-cab-extract.log"
+# Ordinary 7z extraction exposes the XML manifests but not the DPX-compressed
+# component payloads. Select only the PowerShell/PackageManagement manifests;
+# the CFW native expander below materializes their files by component.
+7z x -y "$cab" -o"$payload_root" '*.manifest' >"$log_root/wmf-manifest-extract.log"
+python3 - "$payload_root" "$work/manifests.txt" <<'PY'
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+output = Path(sys.argv[2])
+tokens = (
+    "microsoft.powershell.",
+    "system.management.automation_",
+    "microsoft.windows.powershell.v3.common_",
+    "microsoft-windows-powershell-exe_",
+    "microsoft.packagemanagement",
+    "microsoft.management.infrastructure_",
+    "microsoft.wsman.",
+)
+selected = []
+for path in sorted(root.glob("*.manifest")):
+    name = path.name.lower()
+    if "_7.3.7601.16384_" not in name or "languagepack" in name:
+        continue
+    if any(token in name for token in tokens):
+        selected.append(path.name)
+if not selected:
+    raise SystemExit("no WMF 5.1 PowerShell manifests selected")
+output.write_text("\n".join(selected) + "\n", encoding="utf-8")
+PY
+
+cab_win="$(winepath -w "$cab")"
+payload_win="$(winepath -w "$payload_root")"
+: > "$log_root/wmf-dpx-extract.log"
+while IFS= read -r manifest; do
+  [ -n "$manifest" ] || continue
+  timeout --kill-after=10s 180s wine "$expand_exe" "$cab_win" "-f:$manifest" "$payload_win" \
+    >>"$log_root/wmf-dpx-extract.log" 2>&1
+  test -s "$payload_root/$manifest"
+done < "$work/manifests.txt"
+
+python3 - "$payload_root" "$work/manifests.txt" "$work/payload-plan.txt" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+root = Path(sys.argv[1])
+manifest_list = Path(sys.argv[2])
+output = Path(sys.argv[3])
+
+def local(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+def attr(element, name: str):
+    for key, value in element.attrib.items():
+        if key.lower() == name.lower():
+            return value
+    return None
+
+names = []
+for manifest_name in manifest_list.read_text(encoding="utf-8").splitlines():
+    if not manifest_name:
+        continue
+    tree = ET.parse(root / manifest_name)
+    for element in tree.iter():
+        if local(element.tag) != "file":
+            continue
+        for candidate in (attr(element, "name"), attr(element, "sourceName")):
+            if candidate and candidate.lower() not in {value.lower() for value in names}:
+                names.append(candidate)
+output.write_text("\n".join(names) + "\n", encoding="utf-8")
+PY
+
+while IFS= read -r filename; do
+  [ -n "$filename" ] || continue
+  set +e
+  timeout --kill-after=10s 180s wine "$expand_exe" "$cab_win" "-f:$filename" "$payload_win" \
+    >>"$log_root/wmf-dpx-extract.log" 2>&1
+  extract_rc="$?"
+  set -e
+  if [ "$extract_rc" -ne 0 ]; then
+    printf 'extract rc=%s file=%s\n' "$extract_rc" "$filename" >>"$log_root/wmf-dpx-extract.log"
+  fi
+done < "$work/payload-plan.txt"
 find "$payload_root" -type f -printf '%P\n' | sort >"$log_root/wmf-payload-inventory.log"
 
-python3 - "$payload_root" "$wine_prefix" "$log_root/installed-files.log" <<'PY'
+python3 - "$payload_root" "$work/manifests.txt" "$wine_prefix" "$log_root/installed-files.log" "$log_root/skipped-files.log" <<'PY'
 import re
 import shutil
 import sys
@@ -145,8 +235,10 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 payload = Path(sys.argv[1])
-prefix = Path(sys.argv[2])
-inventory = Path(sys.argv[3])
+manifest_list = Path(sys.argv[2])
+prefix = Path(sys.argv[3])
+inventory = Path(sys.argv[4])
+skipped_log = Path(sys.argv[5])
 drive_c = prefix / "drive_c"
 system32 = drive_c / "windows" / "system32"
 syswow64 = drive_c / "windows" / "syswow64"
@@ -159,42 +251,17 @@ local32 = syswow64 / "WindowsPowerShell" / "v1.0"
 local64.mkdir(parents=True, exist_ok=True)
 local32.mkdir(parents=True, exist_ok=True)
 
-manifest_names = [
-    "wow64_microsoft.powershell.packagemanagement_31bf3856ad364e35_7.3.7601.16384_none_be98c8f8cfb32e06.manifest",
-    "amd64_microsoft.powershell.packagemanagement_31bf3856ad364e35_7.3.7601.16384_none_b4441ea69b526c0b.manifest",
-    "msil_microsoft.powershell.consolehost_31bf3856ad364e35_7.3.7601.16384_none_8634e813855724c9.manifest",
-    "amd64_microsoft.managemen..frastructure.native_31bf3856ad364e35_7.3.7601.16384_none_8ab57567838da803.manifest",
-    "x86_microsoft.managemen..frastructure.native_31bf3856ad364e35_7.3.7601.16384_none_d262ac3e9809d109.manifest",
-    "amd64_microsoft.powershell.archive_31bf3856ad364e35_7.3.7601.16384_none_f7ab4242f320bef0.manifest",
-    "msil_microsoft.powershell.security_31bf3856ad364e35_7.3.7601.16384_none_64c18e3e0eafee92.manifest",
-    "amd64_microsoft.packagemanagement.common_31bf3856ad364e35_7.3.7601.16384_none_ee66270965c165ab.manifest",
-    "wow64_microsoft.packagemanagement.common_31bf3856ad364e35_7.3.7601.16384_none_f8bad15b9a2227a6.manifest",
-    "amd64_microsoft.packagemanagement_31bf3856ad364e35_7.3.7601.16384_none_f23f0a687ff51c88.manifest",
-    "wow64_microsoft.packagemanagement_31bf3856ad364e35_7.3.7601.16384_none_fc93b4bab455de83.manifest",
-    "msil_system.management.automation_31bf3856ad364e35_7.3.7601.16384_none_85266a48f56bfafc.manifest",
-    "msil_microsoft.powershel..ommands.diagnostics_31bf3856ad364e35_7.3.7601.16384_none_3cbfce2c3881d318.manifest",
-    "msil_microsoft.wsman.management_31bf3856ad364e35_7.3.7601.16384_none_60964e40b40fafee.manifest",
-    "msil_microsoft.powershell.commands.management_31bf3856ad364e35_7.3.7601.16384_none_c1a0335546714b23.manifest",
-    "msil_microsoft.powershell.commands.utility_31bf3856ad364e35_7.3.7601.16384_none_d96091fd5568ce18.manifest",
-    "msil_microsoft.management.infrastructure_31bf3856ad364e35_7.3.7601.16384_none_8310156aa31a52f1.manifest",
-    "msil_microsoft.wsman.runtime_31bf3856ad364e35_7.3.7601.16384_none_a19b148df40272fb.manifest",
-    "msil_microsoft.powershell.graphicalhost_31bf3856ad364e35_7.3.7601.16384_none_c32121af2a1808d4.manifest",
-    "amd64_microsoft.powershell.psget_31bf3856ad364e35_7.3.7601.16384_none_c9db05c823f10f09.manifest",
-    "wow64_microsoft.powershell.psget_31bf3856ad364e35_7.3.7601.16384_none_d42fb01a5851d104.manifest",
-    "msil_policy.1.0.system.management.automation_31bf3856ad364e35_7.3.7601.16384_none_79a60ff187b4c325.manifest",
-    "wow64_microsoft.windows.powershell.v3.common_31bf3856ad364e35_7.3.7601.16384_none_8187c53a975bb9ea.manifest",
-    "amd64_microsoft.windows.powershell.v3.common_31bf3856ad364e35_7.3.7601.16384_none_77331ae862faf7ef.manifest",
-    "wow64_microsoft.packagema..provider.powershell_31bf3856ad364e35_7.3.7601.16384_none_f50f549afdaf3c10.manifest",
-    "amd64_microsoft.packagema..provider.powershell_31bf3856ad364e35_7.3.7601.16384_none_eabaaa48c94e7a15.manifest",
-    "wow64_microsoft.packagema..ement.coreproviders_31bf3856ad364e35_7.3.7601.16384_none_f05cb06fdbbd6e3c.manifest",
-    "amd64_microsoft.packagema..ement.coreproviders_31bf3856ad364e35_7.3.7601.16384_none_e608061da75cac41.manifest",
-    "amd64_microsoft.packagema..t.archiverproviders_31bf3856ad364e35_7.3.7601.16384_none_a98e3ebb18648eb6.manifest",
-    "wow64_microsoft.packagema..t.archiverproviders_31bf3856ad364e35_7.3.7601.16384_none_b3e2e90d4cc550b1.manifest",
-    "amd64_microsoft.packagemanagement.msiprovider_31bf3856ad364e35_7.3.7601.16384_none_ae42a045a84e072e.manifest",
-    "wow64_microsoft.packagemanagement.msiprovider_31bf3856ad364e35_7.3.7601.16384_none_b8974a97dcaec929.manifest",
-    "amd64_microsoft-windows-powershell-exe_31bf3856ad364e35_7.3.7601.16384_none_48be7e79e188387e.manifest",
-    "wow64_microsoft-windows-powershell-exe_31bf3856ad364e35_7.3.7601.16384_none_531328cc15e8fa79.manifest",
-]
+required_components = {
+    "msil_system.management.automation_31bf3856ad364e35_7.3.7601.16384_none_85266a48f56bfafc",
+    "msil_microsoft.powershell.consolehost_31bf3856ad364e35_7.3.7601.16384_none_8634e813855724c9",
+    "msil_microsoft.powershell.security_31bf3856ad364e35_7.3.7601.16384_none_64c18e3e0eafee92",
+    "msil_microsoft.powershell.commands.management_31bf3856ad364e35_7.3.7601.16384_none_c1a0335546714b23",
+    "msil_microsoft.powershell.commands.utility_31bf3856ad364e35_7.3.7601.16384_none_d96091fd5568ce18",
+    "amd64_microsoft.windows.powershell.v3.common_31bf3856ad364e35_7.3.7601.16384_none_77331ae862faf7ef",
+    "wow64_microsoft.windows.powershell.v3.common_31bf3856ad364e35_7.3.7601.16384_none_8187c53a975bb9ea",
+    "amd64_microsoft-windows-powershell-exe_31bf3856ad364e35_7.3.7601.16384_none_48be7e79e188387e",
+    "wow64_microsoft-windows-powershell-exe_31bf3856ad364e35_7.3.7601.16384_none_531328cc15e8fa79",
+}
 
 def local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
@@ -228,39 +295,54 @@ def map_destination(value: str, arch: str) -> Path:
 def find_case_insensitive(root: Path, relative: str) -> Path | None:
     current = root
     for part in Path(relative.replace("\\", "/")).parts:
+        if not current.is_dir():
+            return None
         match = next((entry for entry in current.iterdir() if entry.name.lower() == part.lower()), None)
         if match is None:
             return None
         current = match
     return current
 
-def source_for(manifest: Path, filename: str) -> Path:
+def source_for(manifest: Path, destination_name: str, source_name: str | None) -> Path | None:
     component = manifest.name[:-len(".manifest")]
-    direct = find_case_insensitive(payload, f"{component}/{filename}")
-    if direct and direct.is_file():
-        return direct
-    matches = [path for path in payload.rglob("*") if path.is_file() and path.name.lower() == filename.lower()]
-    component_matches = [path for path in matches if path.parent.name.lower() == component.lower()]
-    if component_matches:
-        return component_matches[0]
-    if matches:
-        return matches[0]
-    raise FileNotFoundError(f"{manifest.name}: missing extracted payload {filename}")
+    names = []
+    for candidate in (destination_name, source_name):
+        if candidate and candidate.lower() not in {name.lower() for name in names}:
+            names.append(candidate)
+    for name in names:
+        direct = find_case_insensitive(payload, f"{component}/{name}")
+        if direct and direct.is_file():
+            return direct
+    for name in names:
+        matches = [
+            path for path in payload.rglob("*")
+            if path.is_file() and path.name.lower() == name.lower()
+            and path.parent.name.lower() == component.lower()
+        ]
+        if matches:
+            return matches[0]
+    for name in names:
+        matches = [path for path in payload.rglob("*") if path.is_file() and path.name.lower() == name.lower()]
+        if len(matches) == 1:
+            return matches[0]
+    return None
 
 def copy_file(source: Path, destination: Path, installed: list[str]) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, destination)
     installed.append(str(destination.relative_to(prefix)))
 
-installed: list[str] = []
-selected_manifests: list[Path] = []
-for name in manifest_names:
-    manifest = find_case_insensitive(payload, name)
-    if manifest is None or not manifest.is_file():
-        raise FileNotFoundError(f"missing selected WMF manifest: {name}")
-    selected_manifests.append(manifest)
+selected_names = [line.strip() for line in manifest_list.read_text(encoding="utf-8").splitlines() if line.strip()]
+selected_manifests = [payload / name for name in selected_names]
+missing_manifests = [str(path) for path in selected_manifests if not path.is_file()]
+if missing_manifests:
+    raise FileNotFoundError("missing selected WMF manifests: " + ", ".join(missing_manifests))
 
+installed = []
+skipped = []
 for manifest in selected_manifests:
+    component = manifest.name[:-len(".manifest")]
+    required = component.lower() in required_components
     tree = ET.parse(manifest)
     identity = next(element for element in tree.iter() if local(element.tag) == "assemblyIdentity")
     arch = attr(identity, "processorArchitecture") or "msil"
@@ -272,31 +354,28 @@ for manifest in selected_manifests:
         if local(element.tag) != "file":
             continue
         filename = attr(element, "name")
+        source_name = attr(element, "sourceName")
         if not filename:
             continue
-        source = source_for(manifest, filename)
+        source = source_for(manifest, filename, source_name)
+        if source is None:
+            message = f"{manifest.name}: missing payload name={filename} sourceName={source_name or '-'}"
+            if required:
+                raise FileNotFoundError(message)
+            skipped.append(message)
+            continue
+
         destination_path = attr(element, "destinationPath")
-        copied = False
         if destination_path:
             copy_file(source, map_destination(destination_path, arch) / filename, installed)
-            copied = True
         for child in element:
             if local(child.tag) != "link":
                 continue
             destination = attr(child, "destination")
             if destination:
-                final_path = map_destination(destination, arch)
-                copy_file(source_for(manifest, final_path.name), final_path, installed)
-                copied = True
-
-        # CFW normally places some managed assemblies in the GAC. A CLR probes
-        # the executable directory first, so Cage also colocates every selected
-        # component with the matching PS5.1 host. This keeps bootstrap fully
-        # deterministic without requiring a separate managed metadata reader.
+                copy_file(source, map_destination(destination, arch), installed)
         for target_dir in target_dirs:
             copy_file(source, target_dir / filename, installed)
-        if not copied and not target_dirs:
-            raise RuntimeError(f"no destination selected for {manifest.name}:{filename}")
 
 for component, destination in (
     ("amd64_microsoft-windows-powershell-exe_31bf3856ad364e35_7.3.7601.16384_none_48be7e79e188387e", local64 / "ps51.exe"),
@@ -304,10 +383,23 @@ for component, destination in (
 ):
     source = find_case_insensitive(payload, f"{component}/powershell.exe")
     if source is None or not source.is_file():
-        raise FileNotFoundError(f"missing {component}/powershell.exe")
+        raise FileNotFoundError(f"missing required {component}/powershell.exe")
     copy_file(source, destination, installed)
 
+required_outputs = [
+    local64 / "ps51.exe",
+    local32 / "ps51.exe",
+    local64 / "System.Management.Automation.dll",
+    local64 / "Microsoft.PowerShell.ConsoleHost.dll",
+    local64 / "Microsoft.PowerShell.Commands.Management.dll",
+    local64 / "Microsoft.PowerShell.Commands.Utility.dll",
+]
+missing_outputs = [str(path) for path in required_outputs if not path.is_file()]
+if missing_outputs:
+    raise FileNotFoundError("missing required PS5.1 outputs: " + ", ".join(missing_outputs))
+
 inventory.write_text("\n".join(sorted(set(installed))) + "\n", encoding="utf-8")
+skipped_log.write_text("\n".join(skipped) + ("\n" if skipped else ""), encoding="utf-8")
 PY
 
 cat > "$work/powershell51.reg" <<'REG'
