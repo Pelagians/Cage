@@ -130,7 +130,10 @@ class ChocolateyModule(ModuleBase):
             "fetch-verified.sh",
             "failure-diagnostics.sh",
             "bootstrap.sh",
+            "install-dpx-helper.sh",
+            "install-native-mscoree.sh",
             "install-powershell51.sh",
+            "assembly_inventory.py",
             "install-profile-fragments.sh",
             "verify-powershell-layer.sh",
             "verify-chocolatey.sh",
@@ -170,10 +173,14 @@ class ChocolateyModule(ModuleBase):
             },
         ))
 
-        # CFW establishes .NET Framework and native expansion support. Cage then
-        # builds the real Windows PowerShell 5.1 backend and installs Synchro as
-        # the only public powershell.exe surface.
-        steps.extend(windows_powershell51_steps())
+        # CFW establishes .NET Framework and Chocolatey data. Cage then restores
+        # the native MSCoree loader skipped by the container finalizer, builds the
+        # real Windows PowerShell 5.1 backend, and installs Synchro as the only
+        # public powershell.exe surface.
+        steps.extend(windows_powershell51_steps(
+            mscoree_update_url=profile.mscoree_update_url,
+            mscoree_update_sha256=profile.mscoree_update_sha256,
+        ))
         steps.extend(windows_powershell_wrapper_steps())
 
         failure_helper = load_asset("failure-diagnostics.sh").rstrip()
