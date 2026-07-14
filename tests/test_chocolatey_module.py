@@ -85,6 +85,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             "Record layered Chocolatey bootstrap profile",
             "Bootstrap CFW prerequisites and Chocolatey",
             "Install CFW native DPX extraction helper",
+            "Install native .NET MSCoree loader",
             "Install Windows PowerShell 5.1 backend",
             "Install Synchro PowerShell layer (v4.2.0)",
             "Install CFW compatibility profile fragments",
@@ -101,6 +102,10 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn('range_start="640526336"', script)
         self.assertIn('range_end="1086964920"', script)
         self.assertIn("b8db22bef35f091b6b63d223118c55f833856be0d535465ce5a06a51ff38fa27", script)
+        self.assertIn("cfw-native-mscoree-kb958488", script)
+        self.assertIn("a5f4243ce8b07c9222284fd8ff6f7e742d934c57c89de9cab5d88c74402264e3", script)
+        self.assertIn("758e5ba89665c574456a2a826ef5a7dc2487c8379893010eb57bc40127ac918f", script)
+        self.assertIn("46e9715f3cd09f32fbeaa5379991e9e7daccbd2407c2d061fda3a04f05108133", script)
         self.assertNotIn("powershell2.7z", script)
         self.assertNotIn("retained-cfw-component", script)
         self.assertIn("windows-powershell-5.1-cfw", script)
@@ -116,7 +121,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("c3b4923d0f63188843bd2a15be64bca8f4a9902b", script)
         self.assertIn("composed-powershell-layer-ok", script)
         self.assertLess(descriptions.index("Bootstrap CFW prerequisites and Chocolatey"), descriptions.index("Install CFW native DPX extraction helper"))
-        self.assertLess(descriptions.index("Install CFW native DPX extraction helper"), descriptions.index("Install Windows PowerShell 5.1 backend"))
+        self.assertLess(descriptions.index("Install CFW native DPX extraction helper"), descriptions.index("Install native .NET MSCoree loader"))
+        self.assertLess(descriptions.index("Install native .NET MSCoree loader"), descriptions.index("Install Windows PowerShell 5.1 backend"))
         self.assertLess(descriptions.index("Install Windows PowerShell 5.1 backend"), descriptions.index("Install Synchro PowerShell layer (v4.2.0)"))
         self.assertLess(descriptions.index("Install Synchro PowerShell layer (v4.2.0)"), descriptions.index("Install CFW compatibility profile fragments"))
         self.assertLess(descriptions.index("Prove composed PowerShell compatibility layer"), descriptions.index("Diagnose Chocolatey readiness"))
@@ -142,13 +148,16 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         descriptions = [step.description for step in steps]
         bootstrap_index = descriptions.index("Bootstrap CFW prerequisites and Chocolatey")
         helper_index = descriptions.index("Install CFW native DPX extraction helper")
+        loader_index = descriptions.index("Install native .NET MSCoree loader")
         engine_index = descriptions.index("Install Windows PowerShell 5.1 backend")
         self.assertGreater(helper_index, bootstrap_index)
-        self.assertGreater(engine_index, helper_index)
+        self.assertGreater(loader_index, helper_index)
+        self.assertGreater(engine_index, loader_index)
 
-    def test_windows_powershell_backend_uses_verified_native_dpx(self):
+    def test_windows_powershell_backend_uses_verified_native_prerequisites(self):
         steps = _manifest().modules[0].build()
         helper = _commands_for(steps, "Install CFW native DPX extraction helper")
+        loader = _commands_for(steps, "Install native .NET MSCoree loader")
         engine = _commands_for(steps, "Install Windows PowerShell 5.1 backend")
 
         self.assertIn("cfw-dpx-helper-aik-winpe", helper)
@@ -161,6 +170,14 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("cabinet.dll", helper)
         self.assertIn("dpx.dll", helper)
         self.assertIn("msdelta.dll", helper)
+
+        self.assertIn("cfw-native-mscoree-kb958488", loader)
+        self.assertIn("Windows6.1-KB958488-x64.cab", loader)
+        self.assertIn("System32/mscoree.dll", loader)
+        self.assertIn("SysWOW64/mscoree.dll", loader)
+        self.assertIn("/v mscoree /d native /f", loader)
+        self.assertIn("native-mscoree.json", loader)
+
         self.assertIn("Win7AndW2K8R2-KB3191566-x64.zip", engine)
         self.assertIn("wmf-dpx-extract.log", engine)
         self.assertIn('wine "$expand_exe"', engine)
