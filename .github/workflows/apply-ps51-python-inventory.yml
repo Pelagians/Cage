@@ -1,0 +1,50 @@
+name: Apply PS5.1 Python Inventory
+
+on:
+  push:
+    branches: [agent/synchro-cfw-layering]
+    paths:
+      - '.github/workflows/apply-ps51-python-inventory.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/synchro-cfw-layering
+          fetch-depth: 0
+
+      - name: Patch PowerShell assembly inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/apply-ps51-python-inventory.py
+          bash -n core/chocolatey/assets/install-powershell51.sh
+          python -m py_compile \
+            core/chocolatey/assets/assembly_inventory.py \
+            core/modules/powershell_engine.py
+
+          python - <<'PY'
+          from core.chocolatey.assets.assembly_inventory import read_assembly_identity
+          identity = read_assembly_identity('core/chocolatey/assets/assembly-inventory.exe')
+          assert identity.name == 'assembly-inventory', identity
+          assert identity.version == '0.0.0.0', identity
+          PY
+          git diff --check
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            core/chocolatey/assets/install-powershell51.sh \
+            core/modules/powershell_engine.py \
+            pyproject.toml
+          git commit -m 'fix: inspect PS5.1 assemblies without Wine CLR'
+          git push origin HEAD:agent/synchro-cfw-layering
