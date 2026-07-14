@@ -15,7 +15,7 @@ class PowerShell51AssemblyInventoryContractTests(unittest.TestCase):
     def test_assembly_inventory_uses_hash_pinned_native_python(self):
         template = load_asset("install-powershell51.sh")
         helper_sha256 = asset_sha256("assembly_inventory.py")
-        engine_step = windows_powershell51_steps()[1]
+        engine_step = windows_powershell51_steps()[2]
         rendered = "\n".join(engine_step.commands)
 
         self.assertRegex(helper_sha256, r"^[0-9a-f]{64}$")
