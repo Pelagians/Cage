@@ -5,6 +5,7 @@ import base64
 
 from core.chocolatey import (
     asset_sha256,
+    get_bootstrap_profile,
     load_asset,
     load_asset_bytes,
     render_asset,
@@ -21,19 +22,41 @@ POWERSHELL_ZIP_URL = (
 POWERSHELL_ZIP_SHA256 = "558c4115cc6b96cc6a67d74bee40012cf8d38767537f8d2857dc3fa30a63cc63"
 WINDOWS_POWERSHELL_PROVIDER = "windows-powershell-5.1-cfw"
 CFW_DPX_PROVIDER = "cfw-dpx-helper-aik-winpe"
+CFW_MSCOREE_PROVIDER = "cfw-native-mscoree-kb958488"
 
 
-def windows_powershell51_steps() -> list[BuildStep]:
+def windows_powershell51_steps(
+    *,
+    mscoree_update_url: str | None = None,
+    mscoree_update_sha256: str | None = None,
+) -> list[BuildStep]:
     """Install the CFW-derived Windows PowerShell 5.1 backend.
 
-    Microsoft servicing CABs do not expose component payloads through ordinary
-    7z extraction. Cage installs the same native Windows 7 AIK DPX helper used
-    by CFW, sourced from a pinned byte range of the official AIK image.
+    Microsoft servicing CABs do not expose every component payload through
+    ordinary 7z extraction. Cage first installs CFW's native AIK DPX helper,
+    then restores the native .NET loader that CFW's container finalizer skips,
+    and finally materializes the pinned WMF 5.1 components.
     """
+    if (mscoree_update_url is None) != (mscoree_update_sha256 is None):
+        raise ValueError("native MSCoree URL and sha256 must be supplied together")
+    if mscoree_update_url is None or mscoree_update_sha256 is None:
+        profile = get_bootstrap_profile()
+        mscoree_update_url = profile.mscoree_update_url
+        mscoree_update_sha256 = profile.mscoree_update_sha256
+
     helper_name = "install-dpx-helper.sh"
+    loader_name = "install-native-mscoree.sh"
     engine_name = "install-powershell51.sh"
     assembly_name = "assembly_inventory.py"
     assembly_bytes = load_asset_bytes(assembly_name)
+    fetch_helper = load_asset("fetch-verified.sh").rstrip()
+    loader_command = fetch_helper + "\n\n" + render_asset(
+        loader_name,
+        {
+            "MSCOREE_UPDATE_URL": mscoree_update_url,
+            "MSCOREE_UPDATE_SHA256": mscoree_update_sha256,
+        },
+    )
     engine_command = render_asset(
         engine_name,
         {
@@ -55,13 +78,26 @@ def windows_powershell51_steps() -> list[BuildStep]:
             },
         ),
         BuildStep(
+            commands=[loader_command],
+            description="Install native .NET MSCoree loader",
+            kind="wine-run",
+            timeout=900,
+            metadata={
+                "provider": CFW_MSCOREE_PROVIDER,
+                "source": "Windows6.1-KB958488-x64",
+                "scriptAsset": f"core/chocolatey/assets/{loader_name}",
+                "scriptSha256": asset_sha256(loader_name),
+                "evidence": "metadata/native-mscoree.json",
+            },
+        ),
+        BuildStep(
             commands=[engine_command],
             description="Install Windows PowerShell 5.1 backend",
             kind="wine-run",
             timeout=3600,
             metadata={
                 "engine": WINDOWS_POWERSHELL_PROVIDER,
-                "requires": CFW_DPX_PROVIDER,
+                "requires": [CFW_DPX_PROVIDER, CFW_MSCOREE_PROVIDER],
                 "scriptAsset": f"core/chocolatey/assets/{engine_name}",
                 "scriptSha256": asset_sha256(engine_name),
                 "assemblyInventoryAsset": f"core/chocolatey/assets/{assembly_name}",
@@ -181,6 +217,7 @@ __all__ = [
     "POWERSHELL_ZIP_SHA256",
     "WINDOWS_POWERSHELL_PROVIDER",
     "CFW_DPX_PROVIDER",
+    "CFW_MSCOREE_PROVIDER",
     "windows_powershell51_steps",
     "powershell_engine_steps",
 ]
