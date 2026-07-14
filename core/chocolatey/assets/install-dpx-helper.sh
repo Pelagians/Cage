@@ -21,13 +21,63 @@ metadata="$bundle_root/metadata/cfw-dpx-helper.json"
 
 mkdir -p "$work" "$extract_root" "$expand_dir" "$log_root" "$(dirname "$metadata")"
 
+diagnose_upstream_assets() {
+  python3 - <<'PY'
+import json
+import urllib.request
+
+repos = (
+    ("PietJankbal", "powershell-wrapper-for-wine", "master"),
+    ("PietJankbal", "Chocolatey-for-wine", "main"),
+    ("noahgiroux", "Chocolatey-for-wine", "main"),
+)
+headers = {"Accept": "application/vnd.github+json", "User-Agent": "Cage-DPX-source-diagnostic"}
+for owner, repo, branch in repos:
+    print(f"[cage] upstream-scan repo={owner}/{repo}")
+    for endpoint in (
+        f"https://api.github.com/repos/{owner}/{repo}/releases?per_page=100",
+        f"https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1",
+    ):
+        try:
+            request = urllib.request.Request(endpoint, headers=headers)
+            with urllib.request.urlopen(request, timeout=60) as response:
+                data = json.load(response)
+        except Exception as exc:
+            print(f"[cage] upstream-scan error={type(exc).__name__}:{exc}")
+            continue
+        if isinstance(data, list):
+            for release in data:
+                for asset in release.get("assets", []):
+                    name = asset.get("name", "")
+                    if any(token in name.lower() for token in ("powershell2", "dpx", "expand", "msdelta")):
+                        print(
+                            "[cage] upstream-release "
+                            f"tag={release.get('tag_name')} name={name} "
+                            f"url={asset.get('browser_download_url')}"
+                        )
+        elif isinstance(data, dict):
+            for entry in data.get("tree", []):
+                path = entry.get("path", "")
+                if any(token in path.lower() for token in ("powershell2", "dpx", "expand", "msdelta")):
+                    print(
+                        "[cage] upstream-tree "
+                        f"path={path} type={entry.get('type')} sha={entry.get('sha')}"
+                    )
+PY
+}
+
 echo "[cage] Preparing $provider"
 if [ -s "$expand_exe" ] && [ -s "$dpx_dll" ] && [ -s "$msdelta_dll" ]; then
   echo "[cage] Reusing CFW native DPX extraction helper"
 else
   if [ ! -f "$archive" ]; then
-    curl -fL --retry 3 --connect-timeout 30 --max-time 1200 \
-      -o "$archive.part" "$archive_url"
+    if ! curl -fL --retry 3 --connect-timeout 30 --max-time 1200 \
+      -o "$archive.part" "$archive_url"; then
+      rm -f "$archive.part"
+      echo "[cage] ERROR: pinned CFW DPX helper source is unavailable" >&2
+      diagnose_upstream_assets
+      exit 67
+    fi
     mv -f "$archive.part" "$archive"
   fi
   actual_sha512="$(sha512sum "$archive" | cut -d ' ' -f 1)"
