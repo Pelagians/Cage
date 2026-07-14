@@ -88,6 +88,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertEqual(descriptions, [
             "Record layered Chocolatey bootstrap profile",
             "Bootstrap CFW prerequisites and Chocolatey",
+            "Install CFW native DPX extraction helper",
             "Install Windows PowerShell 5.1 backend",
             "Install Synchro PowerShell layer (v4.2.0)",
             "Install CFW compatibility profile fragments",
@@ -99,6 +100,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         ])
         self.assertIn("Bootstrap pinned Chocolatey-for-Wine fork", script)
         self.assertIn("ChoCinstaller_", script)
+        self.assertIn("cfw-dpx-helper-0.5a", script)
+        self.assertIn("powershell2.7z", script)
         self.assertIn("windows-powershell-5.1-cfw", script)
         self.assertIn("Win7AndW2K8R2-KB3191566-x64.zip", script)
         self.assertIn("f383c34aa65332662a17d95409a2ddedadceda74427e35d05024cd0a6a2fa647", script)
@@ -113,6 +116,10 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("composed-powershell-layer-ok", script)
         self.assertLess(
             descriptions.index("Bootstrap CFW prerequisites and Chocolatey"),
+            descriptions.index("Install CFW native DPX extraction helper"),
+        )
+        self.assertLess(
+            descriptions.index("Install CFW native DPX extraction helper"),
             descriptions.index("Install Windows PowerShell 5.1 backend"),
         )
         self.assertLess(
@@ -151,17 +158,25 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
 
         descriptions = [step.description for step in steps]
         bootstrap_index = descriptions.index("Bootstrap CFW prerequisites and Chocolatey")
+        helper_index = descriptions.index("Install CFW native DPX extraction helper")
         engine_index = descriptions.index("Install Windows PowerShell 5.1 backend")
-        self.assertGreater(engine_index, bootstrap_index)
+        self.assertGreater(helper_index, bootstrap_index)
+        self.assertGreater(engine_index, helper_index)
 
-    def test_windows_powershell_backend_is_verified_and_does_not_use_native_expand(self):
+    def test_windows_powershell_backend_uses_verified_native_dpx(self):
         steps = _manifest().modules[0].build()
+        helper = _commands_for(steps, "Install CFW native DPX extraction helper")
         engine = _commands_for(steps, "Install Windows PowerShell 5.1 backend")
 
+        self.assertIn("powershell2.7z", helper)
+        self.assertIn("system32/expnd", helper)
+        self.assertIn("dpx.dll", helper)
+        self.assertIn("msdelta.dll", helper)
         self.assertIn("Win7AndW2K8R2-KB3191566-x64.zip", engine)
-        self.assertIn("wmf-cab-extract.log", engine)
-        self.assertIn('7z x -y "$cab"', engine)
-        self.assertNotIn("system32/expnd/expand.exe", engine)
+        self.assertIn("wmf-dpx-extract.log", engine)
+        self.assertIn('wine "$expand_exe"', engine)
+        self.assertIn("sourceName", engine)
+        self.assertIn("skipped-files.log", engine)
         self.assertIn("engine-version=", engine)
         self.assertIn("fileSentinel", engine)
         self.assertIn("wineserverSettle", engine)
