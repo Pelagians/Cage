@@ -77,16 +77,32 @@ jobs:
             --build-timeout 7200 2>&1 | tee /tmp/cage-chocolatey-smoke.log
           rc=${PIPESTATUS[0]}
           set -e
+          bundle="$(find dist -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
+          if [ -n "$bundle" ]; then
+            find "$bundle" -type f -printf '%P bytes=%s\n' | sort > /tmp/cage-lifecycle-files.txt || true
+          else
+            : > /tmp/cage-lifecycle-files.txt
+          fi
           if [ "$rc" -ne 0 ]; then
-            bundle="$(find dist -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
             diagnostic="$bundle/metadata/chocolatey-diagnostic.json"
             bootstrap_metadata="$bundle/metadata/chocolatey-upstream-bootstrap.json"
+            engine_metadata="$bundle/metadata/powershell-engine.json"
+            dpx_metadata="$bundle/metadata/cfw-dpx-helper.json"
+            wrapper_metadata="$bundle/metadata/powershell-wrapper.json"
             powershell_metadata="$bundle/metadata/powershell-layer.json"
             profile_composition="$bundle/metadata/powershell-profile-composition.json"
             installer_log="$bundle/logs/chocolatey-upstream/installer.log"
             pwsh_direct_log="$bundle/logs/chocolatey-upstream/pwsh-direct-probe.log"
+            engine_direct_log="$bundle/logs/powershell-engine/direct-probe.log"
+            engine_normalized_log="$bundle/logs/powershell-engine/direct-probe.normalized.log"
+            engine_dpx_log="$bundle/logs/powershell-engine/wmf-dpx-extract.log"
+            engine_installed="$bundle/logs/powershell-engine/installed-files.log"
+            engine_skipped="$bundle/logs/powershell-engine/skipped-files.log"
+            engine_inventory="$bundle/logs/powershell-engine/wmf-payload-inventory.log"
             path_inventory="$bundle/logs/chocolatey-upstream/chocolatey-path-inventory.log"
             {
+              echo '--- evidence file inventory ---'
+              cat /tmp/cage-lifecycle-files.txt || true
               echo '--- Chocolatey-for-Wine stages ---'
               if [ -f "$installer_log" ]; then
                 grep -a '^\[cfw\] stage=' "$installer_log" || true
@@ -94,35 +110,33 @@ jobs:
                 grep -a '^\[cfw\] stage=' /tmp/cage-chocolatey-smoke.log || true
               fi
               echo '--- bootstrap result ---'
-              if [ -f "$bootstrap_metadata" ]; then
-                python3 -c 'import json,sys; from pathlib import Path; p=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); print(json.dumps({"status":p.get("status"),"returnCodes":p.get("returnCodes", {}),"checks":p.get("checks", {}),"offline":p.get("offline")}, sort_keys=True))' "$bootstrap_metadata"
-              else
-                echo 'bootstrap metadata unavailable'
-              fi
+              if [ -f "$bootstrap_metadata" ]; then cat "$bootstrap_metadata"; else echo 'bootstrap metadata unavailable'; fi
+              echo '--- DPX helper metadata ---'
+              if [ -f "$dpx_metadata" ]; then cat "$dpx_metadata"; else echo 'DPX helper metadata unavailable'; fi
+              echo '--- PowerShell engine metadata ---'
+              if [ -f "$engine_metadata" ]; then cat "$engine_metadata"; else echo 'PowerShell engine metadata unavailable'; fi
+              echo '--- PowerShell direct probe ---'
+              if [ -f "$engine_direct_log" ]; then cat "$engine_direct_log"; else echo 'engine direct probe unavailable'; fi
+              echo '--- PowerShell normalized probe ---'
+              if [ -f "$engine_normalized_log" ]; then cat "$engine_normalized_log"; else echo 'engine normalized probe unavailable'; fi
+              echo '--- PowerShell installed files ---'
+              if [ -f "$engine_installed" ]; then cat "$engine_installed"; else echo 'installed-file inventory unavailable'; fi
+              echo '--- PowerShell skipped payloads ---'
+              if [ -f "$engine_skipped" ]; then cat "$engine_skipped"; else echo 'skipped-payload inventory unavailable'; fi
+              echo '--- PowerShell DPX extraction tail ---'
+              tail -120 "$engine_dpx_log" 2>/dev/null || true
+              echo '--- PowerShell payload inventory tail ---'
+              tail -120 "$engine_inventory" 2>/dev/null || true
+              echo '--- Synchro wrapper metadata ---'
+              if [ -f "$wrapper_metadata" ]; then cat "$wrapper_metadata"; else echo 'Synchro wrapper metadata unavailable'; fi
               echo '--- composed PowerShell layer ---'
-              if [ -f "$powershell_metadata" ]; then
-                cat "$powershell_metadata"
-              else
-                echo 'PowerShell layer metadata unavailable'
-              fi
+              if [ -f "$powershell_metadata" ]; then cat "$powershell_metadata"; else echo 'PowerShell layer metadata unavailable'; fi
               echo '--- profile composition ---'
-              if [ -f "$profile_composition" ]; then
-                cat "$profile_composition"
-              else
-                echo 'profile composition metadata unavailable'
-              fi
+              if [ -f "$profile_composition" ]; then cat "$profile_composition"; else echo 'profile composition metadata unavailable'; fi
               echo '--- Chocolatey path inventory ---'
-              if [ -f "$path_inventory" ]; then
-                cat "$path_inventory"
-              else
-                echo 'path inventory unavailable'
-              fi
+              if [ -f "$path_inventory" ]; then cat "$path_inventory"; else echo 'path inventory unavailable'; fi
               echo '--- chocolatey diagnostic ---'
-              if [ -f "$diagnostic" ]; then
-                python3 -c 'import json,sys; from pathlib import Path; p=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); s=p.get("fileSizes", {}); f=p.get("tiers", {}).get("failureOnly", {}); print(json.dumps({"status":p.get("status"),"failedChecks":p.get("failedChecks", []),"returnCodes":p.get("returnCodes", {}),"failureTrigger":f.get("failureTrigger"),"criticalFileSizes":{n:s.get(n) for n in ("canonicalChoco","nativeMscoree","appLocalMscoree","nativeClr","appLocalClr")}}, sort_keys=True))' "$diagnostic"
-              else
-                echo 'diagnostic unavailable'
-              fi
+              if [ -f "$diagnostic" ]; then cat "$diagnostic"; else echo 'diagnostic unavailable'; fi
               echo '--- focused Chocolatey errors ---'
               for log in \
                 "$bundle/logs/chocolatey-diagnostics/choco-version.log" \
@@ -134,35 +148,18 @@ jobs:
                   grep -Eai '(^|:)(err|fatal):|error|exception|failed|missing|cannot|status c[0-9a-f]+' "$log" | tail -25 || true
                 fi
               done
-              echo '--- loader tail ---'
-              tail -25 "$bundle/logs/chocolatey-diagnostics/choco-mscoree-loader.log" 2>/dev/null || true
-              echo '--- live Chocolatey process tree ---'
-              tail -80 "$bundle/logs/chocolatey-diagnostics/choco-live-process-tree.log" 2>/dev/null || true
-              echo '--- process tree ---'
-              tail -80 "$bundle/logs/chocolatey-diagnostics/process-tree.log" 2>/dev/null || true
               echo '--- build tail ---'
-              tail -30 /tmp/cage-chocolatey-smoke.log || true
+              tail -80 /tmp/cage-chocolatey-smoke.log || true
               echo '--- installer non-stage tail ---'
               if [ -f "$installer_log" ]; then
-                grep -av '^\[cfw\] stage=' "$installer_log" | tail -40 || true
-                echo '--- focused finalizer output ---'
-                grep -Eai 'finalizer-script-entry|pwsh|powershell|choc_install|not recognized|parameter|cannot find|error' "$installer_log" | tail -60 || true
+                grep -av '^\[cfw\] stage=' "$installer_log" | tail -80 || true
               else
                 echo 'installer log unavailable'
               fi
-              echo '--- direct pwsh probe ---'
-              if [ -f "$pwsh_direct_log" ]; then
-                tr -d '\r' < "$pwsh_direct_log" | grep -a '^\[cfw\] stage=direct-pwsh-alive$' || echo 'direct pwsh marker absent'
-              else
-                echo 'direct pwsh probe unavailable'
-              fi
+              echo '--- direct CFW pwsh probe ---'
+              if [ -f "$pwsh_direct_log" ]; then cat "$pwsh_direct_log"; else echo 'direct CFW pwsh probe unavailable'; fi
             } > /tmp/cage-chocolatey-summary.log
-            summary="$(tail -160 /tmp/cage-chocolatey-summary.log)"
-            if [ -f "$path_inventory" ]; then
-              summary="${summary}"$'\n--- Chocolatey path inventory ---\n'"$(cat "$path_inventory")"
-            else
-              summary="${summary}"$'\n--- Chocolatey path inventory ---\npath inventory unavailable'
-            fi
+            summary="$(tail -400 /tmp/cage-chocolatey-summary.log)"
             summary="${summary//'%'/'%25'}"
             summary="${summary//$'\n'/'%0A'}"
             summary="${summary//$'\r'/'%0D'}"
@@ -180,7 +177,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
           path: |
-            dist/**/metadata/*.json
-            dist/**/logs/**
-            dist/**/build/run.sh
+            dist
             /tmp/cage-chocolatey-smoke.log
+            /tmp/cage-chocolatey-summary.log
+            /tmp/cage-lifecycle-files.txt
