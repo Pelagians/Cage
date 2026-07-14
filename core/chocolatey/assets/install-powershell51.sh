@@ -22,12 +22,12 @@ probe_marker="$probe_root/engine-probe-ok.txt"
 policy_key='HKCU\Software\Wine\AppDefaults\ps51.exe\DllOverrides'
 policy_log="$log_root/powershell51-wine-policy.log"
 failure_trace="$log_root/direct-probe-winedebug.log"
-assembly_source="$work/assembly-inventory.cs"
 assembly_exe="$work/assembly-inventory.exe"
 assembly_map="$work/assembly-inventory.tsv"
-assembly_compile_log="$log_root/assembly-inventory-compile.log"
+assembly_asset_log="$log_root/assembly-inventory-asset.log"
 assembly_run_log="$log_root/assembly-inventory-run.log"
 gac_log="$log_root/gac-installs.log"
+assembly_exe_sha256="{{ASSEMBLY_INVENTORY_EXE_SHA256}}"
 
 mkdir -p "$work" "$extract_root" "$payload_root" "$log_root" "$probe_root" "$(dirname "$metadata")"
 
@@ -44,88 +44,27 @@ prepare_ps51_policy() {
   timeout --kill-after=10s 90s wineserver -w >>"$policy_log" 2>&1
 }
 
-write_assembly_inventory_helper() {
-  cat > "$assembly_source.part" <<'CS'
-using System;
-using System.IO;
-using System.Reflection;
-using System.Text;
-
-internal static class CageAssemblyInventory
-{
-    private static string Hex(byte[] bytes)
-    {
-        if (bytes == null || bytes.Length == 0) return string.Empty;
-        StringBuilder builder = new StringBuilder(bytes.Length * 2);
-        foreach (byte value in bytes) builder.Append(value.ToString("x2"));
-        return builder.ToString();
-    }
-
-    public static int Main(string[] args)
-    {
-        if (args.Length != 2) return 64;
-        string root = Path.GetFullPath(args[0]);
-        using (StreamWriter writer = new StreamWriter(args[1], false, new UTF8Encoding(false)))
-        {
-            foreach (string file in Directory.GetFiles(root, "*.dll", SearchOption.AllDirectories))
-            {
-                try
-                {
-                    AssemblyName assembly = AssemblyName.GetAssemblyName(file);
-                    string relative = file.Substring(root.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Replace('\\', '/');
-                    writer.Write(relative);
-                    writer.Write('\t');
-                    writer.Write(assembly.Name);
-                    writer.Write('\t');
-                    writer.Write(assembly.Version == null ? string.Empty : assembly.Version.ToString());
-                    writer.Write('\t');
-                    writer.WriteLine(Hex(assembly.GetPublicKeyToken()));
-                }
-                catch (BadImageFormatException) { }
-                catch (FileLoadException) { }
-            }
-        }
-        return 0;
-    }
-}
-CS
-  mv -f "$assembly_source.part" "$assembly_source"
-}
-
-build_assembly_inventory() {
-  csc_exe=""
-  framework_dir=""
-  for candidate in \
-    "$wine_prefix/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe" \
-    "$wine_prefix/drive_c/windows/Microsoft.NET/Framework/v4.0.30319/csc.exe"; do
-    if [ -s "$candidate" ]; then
-      csc_exe="$candidate"
-      framework_dir="$(dirname "$candidate")"
-      break
-    fi
-  done
-  if [ -z "$csc_exe" ]; then
-    echo "[cage] ERROR: .NET Framework C# compiler is unavailable" >&2
+materialize_assembly_inventory() {
+  rm -f "$assembly_exe" "$assembly_exe.part" "$assembly_map"
+  base64 -d > "$assembly_exe.part" <<'B64'
+{{ASSEMBLY_INVENTORY_EXE_BASE64}}
+B64
+  actual_sha256="$(sha256sum "$assembly_exe.part" | cut -d ' ' -f 1)"
+  {
+    echo "expected=$assembly_exe_sha256"
+    echo "actual=$actual_sha256"
+  } > "$assembly_asset_log"
+  if [ "$actual_sha256" != "$assembly_exe_sha256" ]; then
+    echo "[cage] ERROR: assembly inventory helper checksum mismatch" >&2
     exit 69
   fi
-  mscorlib="$framework_dir/mscorlib.dll"
-  if [ ! -s "$mscorlib" ]; then
-    echo "[cage] ERROR: matching .NET Framework mscorlib.dll is unavailable" >&2
-    exit 69
-  fi
-  write_assembly_inventory_helper
-  source_win="$(winepath -w "$assembly_source")"
-  exe_win="$(winepath -w "$assembly_exe")"
-  mscorlib_win="$(winepath -w "$mscorlib")"
+  chmod 0755 "$assembly_exe.part"
+  mv -f "$assembly_exe.part" "$assembly_exe"
+
   payload_win_for_inventory="$(winepath -w "$payload_root")"
   map_win="$(winepath -w "$assembly_map")"
-  rm -f "$assembly_exe" "$assembly_map"
-  timeout --kill-after=10s 180s wine "$csc_exe" \
-    /nologo /noconfig /nostdlib+ /target:exe "/reference:$mscorlib_win" \
-    "/out:$exe_win" "$source_win" >"$assembly_compile_log" 2>&1
-  test -s "$assembly_exe"
   timeout --kill-after=10s 240s wine "$assembly_exe" "$payload_win_for_inventory" "$map_win" \
-    >"$assembly_run_log" 2>&1
+    > "$assembly_run_log" 2>&1
   test -s "$assembly_map"
 }
 
@@ -161,7 +100,7 @@ record = {
         "nestedHashes": "logs/powershell-engine/wmf-nested-hashes.log",
         "winePolicy": "logs/powershell-engine/powershell51-wine-policy.log",
         "failureTrace": "logs/powershell-engine/direct-probe-winedebug.log",
-        "assemblyInventoryCompile": "logs/powershell-engine/assembly-inventory-compile.log",
+        "assemblyInventoryAsset": "logs/powershell-engine/assembly-inventory-asset.log",
         "assemblyInventoryRun": "logs/powershell-engine/assembly-inventory-run.log",
         "gacInstalls": "logs/powershell-engine/gac-installs.log",
     },
@@ -348,7 +287,7 @@ while IFS= read -r filename; do
   fi
 done < "$work/payload-plan.txt"
 find "$payload_root" -type f -printf '%P\n' | sort >"$log_root/wmf-payload-inventory.log"
-build_assembly_inventory
+materialize_assembly_inventory
 : > "$gac_log"
 
 python3 - "$payload_root" "$work/manifests.txt" "$wine_prefix" "$log_root/installed-files.log" "$log_root/skipped-files.log" "$assembly_map" "$gac_log" <<'PY'

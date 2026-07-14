@@ -1,7 +1,14 @@
 """Deterministic PowerShell engine providers for Cage modules."""
 from __future__ import annotations
 
-from core.chocolatey import asset_sha256, load_asset
+import base64
+
+from core.chocolatey import (
+    asset_sha256,
+    load_asset,
+    load_asset_bytes,
+    render_asset,
+)
 
 from ..build_step import BuildStep
 
@@ -25,6 +32,15 @@ def windows_powershell51_steps() -> list[BuildStep]:
     """
     helper_name = "install-dpx-helper.sh"
     engine_name = "install-powershell51.sh"
+    assembly_name = "assembly-inventory.exe"
+    assembly_bytes = load_asset_bytes(assembly_name)
+    engine_command = render_asset(
+        engine_name,
+        {
+            "ASSEMBLY_INVENTORY_EXE_BASE64": base64.b64encode(assembly_bytes).decode("ascii"),
+            "ASSEMBLY_INVENTORY_EXE_SHA256": asset_sha256(assembly_name),
+        },
+    )
     return [
         BuildStep(
             commands=[load_asset(helper_name)],
@@ -39,7 +55,7 @@ def windows_powershell51_steps() -> list[BuildStep]:
             },
         ),
         BuildStep(
-            commands=[load_asset(engine_name)],
+            commands=[engine_command],
             description="Install Windows PowerShell 5.1 backend",
             kind="wine-run",
             timeout=3600,
@@ -48,6 +64,8 @@ def windows_powershell51_steps() -> list[BuildStep]:
                 "requires": CFW_DPX_PROVIDER,
                 "scriptAsset": f"core/chocolatey/assets/{engine_name}",
                 "scriptSha256": asset_sha256(engine_name),
+                "assemblyInventoryAsset": f"core/chocolatey/assets/{assembly_name}",
+                "assemblyInventorySha256": asset_sha256(assembly_name),
                 "evidence": "metadata/powershell-engine.json",
             },
         ),
