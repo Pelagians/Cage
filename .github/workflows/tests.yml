@@ -68,3 +68,52 @@ jobs:
           if-no-files-found: warn
           retention-days: 1
           path: /tmp/aik-expand/report.txt
+
+  mscoree-update-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Inspect pinned KB958488 payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=/tmp/mscoree-update
+          mkdir -p "$root/msu" "$root/manifests"
+          url='https://catalog.s.download.windowsupdate.com/msdownload/update/software/crup/2010/06/windows6.1-kb958488-v6001-x64_a137e4f328f01146dfa75d7b5a576090dee948dc.msu'
+          expected='a5f4243ce8b07c9222284fd8ff6f7e742d934c57c89de9cab5d88c74402264e3'
+          curl -fsSL --retry 3 --connect-timeout 30 --max-time 600 -o "$root/update.msu" "$url"
+          actual="$(sha256sum "$root/update.msu" | cut -d ' ' -f 1)"
+          test "$actual" = "$expected"
+          {
+            echo "msu_sha256=$actual"
+            echo '=== MSU listing ==='
+            7z l "$root/update.msu"
+          } > "$root/report.txt"
+          7z x -y "$root/update.msu" -o"$root/msu" >/dev/null
+          find "$root/msu" -type f -printf '%P bytes=%s\n' | sort >> "$root/report.txt"
+          main_cab="$(find "$root/msu" -maxdepth 1 -type f -iname 'Windows6.1-KB958488*.cab' -print -quit)"
+          test -s "$main_cab"
+          {
+            echo '=== Main CAB hash ==='
+            sha256sum "$main_cab"
+            echo '=== Main CAB listing ==='
+            7z l "$main_cab"
+          } >> "$root/report.txt"
+          7z x -y "$main_cab" '*.manifest' '*.mum' '*.cat' -o"$root/manifests" >/dev/null
+          {
+            echo '=== Extracted servicing metadata ==='
+            find "$root/manifests" -type f -printf '%P bytes=%s\n' | sort
+            echo '=== MSCoree manifest references ==='
+            grep -RaiEn 'mscoree|mscoreei|clr\.dll|clrjit|destinationPath|sourceName' "$root/manifests" || true
+          } >> "$root/report.txt"
+
+      - name: Upload inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mscoree-update-inspection-${{ github.sha }}
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            /tmp/mscoree-update/report.txt
+            /tmp/mscoree-update/manifests/**
