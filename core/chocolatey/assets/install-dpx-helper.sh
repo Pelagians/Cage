@@ -13,12 +13,14 @@ system32="$wine_prefix/drive_c/windows/system32"
 expand_dir="$system32/expnd"
 expand_exe="$expand_dir/expand.exe"
 dpx_dll="$system32/dpx.dll"
+msdelta_dll="$system32/msdelta.dll"
+expand_msdelta="$expand_dir/msdelta.dll"
 log_root="$bundle_root/logs/powershell-engine"
 metadata="$bundle_root/metadata/cfw-dpx-helper.json"
 
 mkdir -p "$work" "$extract_root" "$expand_dir" "$log_root" "$(dirname "$metadata")"
 
-if [ -s "$expand_exe" ] && [ -s "$dpx_dll" ]; then
+if [ -s "$expand_exe" ] && [ -s "$dpx_dll" ] && [ -s "$msdelta_dll" ]; then
   echo "[cage] Reusing CFW native DPX extraction helper"
 else
   if [ ! -f "$archive" ]; then
@@ -44,11 +46,15 @@ else
 
   install -m 0644 "$extract_root/dpx.dll" "$dpx_dll.part"
   mv -f "$dpx_dll.part" "$dpx_dll"
+  install -m 0644 "$extract_root/msdelta.dll" "$msdelta_dll.part"
+  mv -f "$msdelta_dll.part" "$msdelta_dll"
+  install -m 0644 "$extract_root/msdelta.dll" "$expand_msdelta.part"
+  mv -f "$expand_msdelta.part" "$expand_msdelta"
   install -m 0755 "$extract_root/expand.exe" "$expand_exe.part"
   mv -f "$expand_exe.part" "$expand_exe"
 fi
 
-python3 - "$metadata" "$archive_sha512" "$dpx_dll" "$expand_exe" <<'PY'
+python3 - "$metadata" "$archive_sha512" "$dpx_dll" "$msdelta_dll" "$expand_exe" <<'PY'
 import hashlib
 import json
 import sys
@@ -57,7 +63,8 @@ from pathlib import Path
 output = Path(sys.argv[1])
 archive_sha512 = sys.argv[2]
 dpx = Path(sys.argv[3])
-expand = Path(sys.argv[4])
+msdelta = Path(sys.argv[4])
+expand = Path(sys.argv[5])
 
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -74,6 +81,7 @@ record = {
     },
     "files": {
         "dpx.dll": {"path": "C:/Windows/System32/dpx.dll", "sha256": sha256(dpx)},
+        "msdelta.dll": {"path": "C:/Windows/System32/msdelta.dll", "sha256": sha256(msdelta)},
         "expand.exe": {"path": "C:/Windows/System32/expnd/expand.exe", "sha256": sha256(expand)},
     },
     "status": "passed",
@@ -85,4 +93,5 @@ PY
 
 test -s "$expand_exe"
 test -s "$dpx_dll"
+test -s "$msdelta_dll"
 echo "[cage] CFW native DPX extraction helper verified"
