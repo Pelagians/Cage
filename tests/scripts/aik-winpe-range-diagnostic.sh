@@ -76,14 +76,30 @@ for index, descriptor in enumerate(record.alloc_descs):
         name for name in dir(descriptor) if not name.startswith('_')
     ))
 
-for attr_name in sorted(name for name in dir(iso) if 'udf' in name.lower() or 'part' in name.lower()):
+sequence = iso.udf_main_descs
+print('udf_main_descs_attrs=' + ','.join(
+    name for name in dir(sequence) if not name.startswith('_')
+))
+for attr_name in sorted(name for name in dir(sequence) if not name.startswith('_')):
     try:
-        value = getattr(iso, attr_name)
+        value = getattr(sequence, attr_name)
     except Exception as exc:
         value = f'<error {exc}>'
     if callable(value):
         continue
-    print(f'iso_attr.{attr_name}={value!r}')
+    print(f'udf_main_descs.{attr_name}={value!r}')
+    if isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            print(f'udf_main_descs.{attr_name}[{index}]_type={type(item).__module__}.{type(item).__name__}')
+            for child_name in sorted(name for name in dir(item) if not name.startswith('_')):
+                try:
+                    child_value = getattr(item, child_name)
+                except Exception:
+                    continue
+                if callable(child_value):
+                    continue
+                if isinstance(child_value, (int, str, bytes)):
+                    print(f'udf_main_descs.{attr_name}[{index}].{child_name}={child_value!r}')
 
 iso.close()
 raise SystemExit('allocation descriptor diagnostic complete')
