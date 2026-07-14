@@ -1,14 +1,11 @@
 set -eu
 unset WINEDLLOVERRIDES
 
-provider="cfw-dpx-helper-0.5a"
+provider="cfw-dpx-helper-from-c-drive"
 wine_prefix="${WINEPREFIX:-$HOME/.wine}"
 module_cache="${CAGE_MODULE_CACHE_DIR:-/tmp/cage-module-cache}"
 bundle_root="${CAGE_BUNDLE_MOUNT:-/opt/cage}"
 work="$module_cache/cfw-dpx-helper"
-archive="$work/powershell2.7z"
-archive_url="https://github.com/PietJankbal/powershell-wrapper-for-wine/releases/download/0.5a/powershell2.7z"
-archive_sha512="1dbd829b097706a24866aa4e4c0a7de876d91f189567d7d8dfc3448319d2e97438e1d013ab61b57d77653598784258ccef8cff646081f2c6937985910fdee9c1"
 extract_root="$work/extracted"
 system32="$wine_prefix/drive_c/windows/system32"
 expand_dir="$system32/expnd"
@@ -18,83 +15,45 @@ msdelta_dll="$system32/msdelta.dll"
 expand_msdelta="$expand_dir/msdelta.dll"
 log_root="$bundle_root/logs/powershell-engine"
 metadata="$bundle_root/metadata/cfw-dpx-helper.json"
+archive_inventory="$log_root/cfw-c-drive-inventory.log"
 
 mkdir -p "$work" "$extract_root" "$expand_dir" "$log_root" "$(dirname "$metadata")"
 
-diagnose_upstream_assets() {
-  python3 - <<'PY'
-import json
-import urllib.request
-
-repos = (
-    ("PietJankbal", "powershell-wrapper-for-wine", "master"),
-    ("PietJankbal", "Chocolatey-for-wine", "main"),
-    ("noahgiroux", "Chocolatey-for-wine", "main"),
-)
-headers = {"Accept": "application/vnd.github+json", "User-Agent": "Cage-DPX-source-diagnostic"}
-for owner, repo, branch in repos:
-    print(f"[cage] upstream-scan repo={owner}/{repo}")
-    for endpoint in (
-        f"https://api.github.com/repos/{owner}/{repo}/releases?per_page=100",
-        f"https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1",
-    ):
-        try:
-            request = urllib.request.Request(endpoint, headers=headers)
-            with urllib.request.urlopen(request, timeout=60) as response:
-                data = json.load(response)
-        except Exception as exc:
-            print(f"[cage] upstream-scan error={type(exc).__name__}:{exc}")
-            continue
-        if isinstance(data, list):
-            for release in data:
-                for asset in release.get("assets", []):
-                    name = asset.get("name", "")
-                    if any(token in name.lower() for token in ("powershell2", "dpx", "expand", "msdelta")):
-                        print(
-                            "[cage] upstream-release "
-                            f"tag={release.get('tag_name')} name={name} "
-                            f"url={asset.get('browser_download_url')}"
-                        )
-        elif isinstance(data, dict):
-            for entry in data.get("tree", []):
-                path = entry.get("path", "")
-                if any(token in path.lower() for token in ("powershell2", "dpx", "expand", "msdelta")):
-                    print(
-                        "[cage] upstream-tree "
-                        f"path={path} type={entry.get('type')} sha={entry.get('sha')}"
-                    )
-PY
-}
-
 echo "[cage] Preparing $provider"
+source_archive=""
+source_sha256=""
+source_relative=""
+
 if [ -s "$expand_exe" ] && [ -s "$dpx_dll" ] && [ -s "$msdelta_dll" ]; then
   echo "[cage] Reusing CFW native DPX extraction helper"
 else
-  if [ ! -f "$archive" ]; then
-    if ! curl -fL --retry 3 --connect-timeout 30 --max-time 1200 \
-      -o "$archive.part" "$archive_url"; then
-      rm -f "$archive.part"
-      echo "[cage] ERROR: pinned CFW DPX helper source is unavailable" >&2
-      diagnose_upstream_assets
-      exit 67
-    fi
-    mv -f "$archive.part" "$archive"
+  source_archive="$(find "$module_cache/cfw-bootstrap" -type f -name 'c_drive.7z' -print -quit 2>/dev/null || true)"
+  if [ -z "$source_archive" ] || [ ! -s "$source_archive" ]; then
+    echo "[cage] ERROR: retained CFW c_drive.7z is unavailable" >&2
+    exit 67
   fi
-  actual_sha512="$(sha512sum "$archive" | cut -d ' ' -f 1)"
-  if [ "$actual_sha512" != "$archive_sha512" ]; then
-    echo "[cage] ERROR: CFW DPX helper archive checksum mismatch" >&2
-    echo "[cage] expected=$archive_sha512 actual=$actual_sha512" >&2
-    exit 1
-  fi
+
+  source_sha256="$(sha256sum "$source_archive" | cut -d ' ' -f 1)"
+  source_relative="${source_archive#"$module_cache"/}"
+  7z l "$source_archive" > "$archive_inventory"
 
   rm -rf "$extract_root"
   mkdir -p "$extract_root"
-  7z e -y "$archive" \
+  set +e
+  7z e -y "$source_archive" \
     '-ir!dpx.dll' '-ir!expand.exe' '-ir!msdelta.dll' \
-    -o"$extract_root" >"$log_root/dpx-helper-extract.log"
-  test -s "$extract_root/dpx.dll"
-  test -s "$extract_root/expand.exe"
-  test -s "$extract_root/msdelta.dll"
+    -o"$extract_root" >"$log_root/dpx-helper-extract.log" 2>&1
+  extract_rc="$?"
+  set -e
+
+  if [ "$extract_rc" -ne 0 ] || \
+     [ ! -s "$extract_root/dpx.dll" ] || \
+     [ ! -s "$extract_root/expand.exe" ] || \
+     [ ! -s "$extract_root/msdelta.dll" ]; then
+    echo "[cage] ERROR: CFW c_drive.7z does not contain the complete DPX helper set" >&2
+    grep -Eai '(^|[/\\])(dpx\.dll|expand\.exe|msdelta\.dll)$' "$archive_inventory" || true
+    exit 68
+  fi
 
   install -m 0644 "$extract_root/dpx.dll" "$dpx_dll.part"
   mv -f "$dpx_dll.part" "$dpx_dll"
@@ -106,7 +65,7 @@ else
   mv -f "$expand_exe.part" "$expand_exe"
 fi
 
-python3 - "$metadata" "$provider" "$archive_sha512" "$dpx_dll" "$msdelta_dll" "$expand_exe" <<'PY'
+python3 - "$metadata" "$provider" "$source_relative" "$source_sha256" "$dpx_dll" "$msdelta_dll" "$expand_exe" <<'PY'
 import hashlib
 import json
 import sys
@@ -114,10 +73,11 @@ from pathlib import Path
 
 output = Path(sys.argv[1])
 provider = sys.argv[2]
-archive_sha512 = sys.argv[3]
-dpx = Path(sys.argv[4])
-msdelta = Path(sys.argv[5])
-expand = Path(sys.argv[6])
+source_relative = sys.argv[3]
+source_sha256 = sys.argv[4]
+dpx = Path(sys.argv[5])
+msdelta = Path(sys.argv[6])
+expand = Path(sys.argv[7])
 
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -130,14 +90,16 @@ record = {
     "schemaVersion": "cage.cfw-dpx-helper/v1",
     "provider": provider,
     "source": {
-        "url": "https://github.com/PietJankbal/powershell-wrapper-for-wine/releases/download/0.5a/powershell2.7z",
-        "sha512": archive_sha512,
+        "kind": "retained-cfw-component",
+        "path": source_relative,
+        "sha256": source_sha256,
     },
     "files": {
         "dpx.dll": {"path": "C:/Windows/System32/dpx.dll", "sha256": sha256(dpx)},
         "msdelta.dll": {"path": "C:/Windows/System32/msdelta.dll", "sha256": sha256(msdelta)},
         "expand.exe": {"path": "C:/Windows/System32/expnd/expand.exe", "sha256": sha256(expand)},
     },
+    "logs": {"archiveInventory": "logs/powershell-engine/cfw-c-drive-inventory.log"},
     "status": "passed",
 }
 temporary = output.with_suffix(output.suffix + ".part")
@@ -148,4 +110,4 @@ PY
 test -s "$expand_exe"
 test -s "$dpx_dll"
 test -s "$msdelta_dll"
-echo "[cage] CFW native DPX extraction helper verified"
+echo "[cage] CFW native DPX extraction helper verified from retained c_drive.7z"
