@@ -59,7 +59,6 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
 
     def test_chocolatey_module_claims_layered_capabilities(self):
         capabilities = _manifest().modules[0].capabilities()
-
         self.assertEqual(capabilities["engine"], "windows-powershell-5.1-cfw")
         self.assertEqual(capabilities["winps-shim"], "synchro-v4.2.0")
         self.assertEqual(capabilities["package-manager"], "chocolatey-2.6.0")
@@ -67,15 +66,12 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
 
     def test_chocolatey_module_rejects_shell_like_package_names(self):
         manifest = _manifest(["7zip; rm -rf /"])
-
         with self.assertRaises(Exception) as ctx:
             manifest.modules[0].build()
-
         self.assertIn("must use letters, numbers", str(ctx.exception))
 
     def test_chocolatey_module_accepts_custom_source_url(self):
         manifest = _manifest(source="https://custom.choco.source/")
-
         self.assertEqual(manifest.modules[0].source, "https://custom.choco.source/")
         script = _all_commands(manifest.modules[0].build())
         self.assertIn(" -s 'https://custom.choco.source/'", script)
@@ -100,10 +96,13 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         ])
         self.assertIn("Bootstrap pinned Chocolatey-for-Wine fork", script)
         self.assertIn("ChoCinstaller_", script)
-        self.assertIn("cfw-dpx-helper-from-c-drive", script)
-        self.assertIn("c_drive.7z", script)
-        self.assertIn("retained-cfw-component", script)
+        self.assertIn("cfw-dpx-helper-aik-winpe", script)
+        self.assertIn("KB3AIK_EN.iso", script)
+        self.assertIn('range_start="640526336"', script)
+        self.assertIn('range_end="1086964920"', script)
+        self.assertIn("b8db22bef35f091b6b63d223118c55f833856be0d535465ce5a06a51ff38fa27", script)
         self.assertNotIn("powershell2.7z", script)
+        self.assertNotIn("retained-cfw-component", script)
         self.assertIn("windows-powershell-5.1-cfw", script)
         self.assertIn("Win7AndW2K8R2-KB3191566-x64.zip", script)
         self.assertIn("f383c34aa65332662a17d95409a2ddedadceda74427e35d05024cd0a6a2fa647", script)
@@ -116,30 +115,12 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("40-cfw-command-adapters.ps1", script)
         self.assertIn("c3b4923d0f63188843bd2a15be64bca8f4a9902b", script)
         self.assertIn("composed-powershell-layer-ok", script)
-        self.assertLess(
-            descriptions.index("Bootstrap CFW prerequisites and Chocolatey"),
-            descriptions.index("Install CFW native DPX extraction helper"),
-        )
-        self.assertLess(
-            descriptions.index("Install CFW native DPX extraction helper"),
-            descriptions.index("Install Windows PowerShell 5.1 backend"),
-        )
-        self.assertLess(
-            descriptions.index("Install Windows PowerShell 5.1 backend"),
-            descriptions.index("Install Synchro PowerShell layer (v4.2.0)"),
-        )
-        self.assertLess(
-            descriptions.index("Install Synchro PowerShell layer (v4.2.0)"),
-            descriptions.index("Install CFW compatibility profile fragments"),
-        )
-        self.assertLess(
-            descriptions.index("Prove composed PowerShell compatibility layer"),
-            descriptions.index("Diagnose Chocolatey readiness"),
-        )
-        self.assertLess(
-            descriptions.index("Prove Chocolatey local package lifecycle"),
-            descriptions.index("Install Chocolatey packages: 7zip notepadplusplus"),
-        )
+        self.assertLess(descriptions.index("Bootstrap CFW prerequisites and Chocolatey"), descriptions.index("Install CFW native DPX extraction helper"))
+        self.assertLess(descriptions.index("Install CFW native DPX extraction helper"), descriptions.index("Install Windows PowerShell 5.1 backend"))
+        self.assertLess(descriptions.index("Install Windows PowerShell 5.1 backend"), descriptions.index("Install Synchro PowerShell layer (v4.2.0)"))
+        self.assertLess(descriptions.index("Install Synchro PowerShell layer (v4.2.0)"), descriptions.index("Install CFW compatibility profile fragments"))
+        self.assertLess(descriptions.index("Prove composed PowerShell compatibility layer"), descriptions.index("Diagnose Chocolatey readiness"))
+        self.assertLess(descriptions.index("Prove Chocolatey local package lifecycle"), descriptions.index("Install Chocolatey packages: 7zip notepadplusplus"))
 
     def test_fork_bootstrap_is_transitional_and_strict(self):
         steps = _manifest().modules[0].build()
@@ -150,10 +131,6 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertTrue(bootstrap_step.metadata["transitionalBootstrap"])
         self.assertIn("cfw-v0.5c.755-noah.6-choco-2.6.0-synchro-r13", bootstrap)
         self.assertIn('cfw_payload_cache="$cfw_work/choc_install_files"', bootstrap)
-        self.assertIn('cfw_component_cache="$module_cache/cfw-bootstrap/', bootstrap)
-        self.assertIn('cp -f "$cfw_extract/c_drive.7z"', bootstrap)
-        self.assertIn("cfw_c_drive_sha256", bootstrap)
-        self.assertIn("retainedComponents", bootstrap)
         self.assertIn('cfw_installer="$cfw_extract/ChoCinstaller_0.5c.755.exe"', bootstrap)
         self.assertIn('wine "$cfw_installer_win" /s /q', bootstrap)
         self.assertIn('export CFW_OFFLINE=1', bootstrap)
@@ -174,12 +151,14 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         helper = _commands_for(steps, "Install CFW native DPX extraction helper")
         engine = _commands_for(steps, "Install Windows PowerShell 5.1 backend")
 
-        self.assertIn("cfw-dpx-helper-from-c-drive", helper)
-        self.assertIn("c_drive.7z", helper)
-        self.assertIn("retained-cfw-component", helper)
-        self.assertIn("cfw-c-drive-inventory.log", helper)
-        self.assertNotIn("powershell2.7z", helper)
+        self.assertIn("cfw-dpx-helper-aik-winpe", helper)
+        self.assertIn("KB3AIK_EN.iso", helper)
+        self.assertIn('range_start="640526336"', helper)
+        self.assertIn('range_end="1086964920"', helper)
+        self.assertIn("b8db22bef35f091b6b63d223118c55f833856be0d535465ce5a06a51ff38fa27", helper)
+        self.assertIn("fdfd889f5131898d9a3e68e39c24d8d6ad1f53765522f0280899e54620be47ff", helper)
         self.assertIn("system32/expnd", helper)
+        self.assertIn("cabinet.dll", helper)
         self.assertIn("dpx.dll", helper)
         self.assertIn("msdelta.dll", helper)
         self.assertIn("Win7AndW2K8R2-KB3191566-x64.zip", engine)
@@ -238,18 +217,13 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("sourceList", diagnostic)
         self.assertIn('wine "$choco_exe_win" --version', diagnostic)
         self.assertIn("cage_chocolatey_collect_failure_diagnostics", diagnostic)
-        self.assertLess(
-            _all_commands(steps).index("Diagnose Chocolatey readiness"),
-            _all_commands(steps).index("Install Chocolatey packages"),
-        )
+        self.assertLess(_all_commands(steps).index("Diagnose Chocolatey readiness"), _all_commands(steps).index("Install Chocolatey packages"))
         self.assertIn("choco_diag_status", package)
 
     def test_chocolatey_module_rejects_non_string_package_names(self):
         manifest = _manifest(["7zip", 42])
-
         with self.assertRaises(Exception) as ctx:
             manifest.modules[0].build()
-
         self.assertIn("install.packages", str(ctx.exception))
 
     def test_direct_script_module_still_accepts_arbitrary_commands(self):
@@ -261,7 +235,6 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             "modules": [{"type": "script", "command": "choco install 7zip; rm -rf /"}],
             "launch": {"entrypoint": "C:/Program Files/App/App.exe"},
         })
-
         self.assertEqual(len(manifest.modules), 1)
         self.assertTrue(manifest.modules[0].build()[0].unsafe)
 
