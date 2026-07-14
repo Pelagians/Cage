@@ -23,8 +23,15 @@ x64_destination="$system32/mscoree.dll"
 x86_destination="$syswow64/mscoree.dll"
 framework64="$wine_prefix/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319"
 framework32="$wine_prefix/drive_c/windows/Microsoft.NET/Framework/v4.0.30319"
+ps64_root="$system32/WindowsPowerShell/v1.0"
+ps32_root="$syswow64/WindowsPowerShell/v1.0"
+ps64_config="$ps64_root/ps51.exe.config"
+ps32_config="$ps32_root/ps51.exe.config"
+powershell64_config="$ps64_root/powershell.exe.config"
+powershell32_config="$ps32_root/powershell.exe.config"
 
-mkdir -p "$work" "$extract_root" "$log_root" "$(dirname "$metadata")" "$system32" "$syswow64"
+mkdir -p "$work" "$extract_root" "$log_root" "$(dirname "$metadata")" \
+  "$system32" "$syswow64" "$ps64_root" "$ps32_root"
 
 echo "[cage] Preparing $provider"
 
@@ -44,8 +51,31 @@ verify_file() {
   fi
 }
 
+file_matches() {
+  path="$1"
+  expected="$2"
+  [ -s "$path" ] || return 1
+  [ "$(sha256sum "$path" | cut -d ' ' -f 1)" = "$expected" ]
+}
+
+write_runtime_config() {
+  destination="$1"
+  cat > "$destination.part" <<'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <startup useLegacyV2RuntimeActivationPolicy="true">
+    <supportedRuntime version="v4.0" sku=".NETFramework,Version=v4.0" />
+    <requiredRuntime version="v4.0" />
+  </startup>
+</configuration>
+XML
+  chmod 0644 "$destination.part"
+  mv -f "$destination.part" "$destination"
+}
+
 write_metadata() {
-  python3 - "$metadata" "$provider" "$msu_sha256" "$main_cab_sha256" "$x64_destination" "$x86_destination" <<'PY'
+  python3 - "$metadata" "$provider" "$msu_sha256" "$main_cab_sha256" \
+    "$x64_destination" "$x86_destination" "$ps64_config" "$ps32_config" <<'PY'
 import hashlib
 import json
 import sys
@@ -57,6 +87,8 @@ msu_sha256 = sys.argv[3]
 cab_sha256 = sys.argv[4]
 x64 = Path(sys.argv[5])
 x86 = Path(sys.argv[6])
+config64 = Path(sys.argv[7])
+config32 = Path(sys.argv[8])
 
 def digest(path: Path) -> str:
     value = hashlib.sha256()
@@ -84,8 +116,22 @@ record = {
             "bytes": x86.stat().st_size,
             "sha256": digest(x86),
         },
+        "ps51Config64": {
+            "path": "C:/Windows/System32/WindowsPowerShell/v1.0/ps51.exe.config",
+            "bytes": config64.stat().st_size,
+            "sha256": digest(config64),
+        },
+        "ps51Config32": {
+            "path": "C:/Windows/SysWOW64/WindowsPowerShell/v1.0/ps51.exe.config",
+            "bytes": config32.stat().st_size,
+            "sha256": digest(config32),
+        },
     },
-    "policy": {"mscoree": "native"},
+    "policy": {
+        "mscoree": "native",
+        "runtime": "v4.0",
+        "useLegacyV2RuntimeActivationPolicy": True,
+    },
     "logs": {
         "msuExtraction": "logs/native-mscoree/msu-extract.log",
         "cabExtraction": "logs/native-mscoree/cab-extract.log",
@@ -100,8 +146,8 @@ temporary.replace(output)
 PY
 }
 
-if verify_file "$x64_destination" "$x64_sha256" "native x64 mscoree.dll" && \
-   verify_file "$x86_destination" "$x86_sha256" "native x86 mscoree.dll"; then
+if file_matches "$x64_destination" "$x64_sha256" && \
+   file_matches "$x86_destination" "$x86_sha256"; then
   echo "[cage] Reusing verified native MSCoree loader"
 else
   cage_fetch_verified "$msu_url" "$msu_sha256" "$msu" "$provider"
@@ -109,15 +155,15 @@ else
   mkdir -p "$extract_root/msu" "$extract_root/cab"
   7z x -y "$msu" -o"$extract_root/msu" > "$log_root/msu-extract.log"
   main_cab="$extract_root/msu/Windows6.1-KB958488-x64.cab"
-  verify_file "$main_cab" "$main_cab_sha256" "KB958488 servicing CAB"
+  verify_file "$main_cab" "$main_cab_sha256" "KB958488 servicing CAB" || exit 69
   7z x -y "$main_cab" \
     "$x64_component/mscoree.dll" \
     "$x86_component/mscoree.dll" \
     -o"$extract_root/cab" > "$log_root/cab-extract.log"
   x64_source="$extract_root/cab/$x64_component/mscoree.dll"
   x86_source="$extract_root/cab/$x86_component/mscoree.dll"
-  verify_file "$x64_source" "$x64_sha256" "KB958488 x64 mscoree.dll"
-  verify_file "$x86_source" "$x86_sha256" "KB958488 x86 mscoree.dll"
+  verify_file "$x64_source" "$x64_sha256" "KB958488 x64 mscoree.dll" || exit 69
+  verify_file "$x86_source" "$x86_sha256" "KB958488 x86 mscoree.dll" || exit 69
 
   timeout --kill-after=10s 90s wineserver -w >/dev/null 2>&1 || true
   install -m 0644 "$x64_source" "$x64_destination.part"
@@ -126,8 +172,8 @@ else
   mv -f "$x86_destination.part" "$x86_destination"
 fi
 
-verify_file "$x64_destination" "$x64_sha256" "installed x64 mscoree.dll"
-verify_file "$x86_destination" "$x86_sha256" "installed x86 mscoree.dll"
+verify_file "$x64_destination" "$x64_sha256" "installed x64 mscoree.dll" || exit 69
+verify_file "$x86_destination" "$x86_sha256" "installed x86 mscoree.dll" || exit 69
 for path in \
   "$framework64/mscoreei.dll" \
   "$framework64/clr.dll" \
@@ -138,6 +184,13 @@ for path in \
     exit 69
   }
 done
+
+write_runtime_config "$ps64_config"
+write_runtime_config "$ps32_config"
+cp -f "$ps64_config" "$powershell64_config.part"
+mv -f "$powershell64_config.part" "$powershell64_config"
+cp -f "$ps32_config" "$powershell32_config.part"
+mv -f "$powershell32_config.part" "$powershell32_config"
 
 : > "$log_root/registry.log"
 timeout --kill-after=10s 120s wine reg add 'HKCU\Software\Wine\DllOverrides' \
@@ -157,7 +210,7 @@ timeout --kill-after=10s 120s wine reg add 'HKLM\Software\Microsoft\.NETFramewor
 timeout --kill-after=10s 90s wineserver -w >> "$log_root/registry.log" 2>&1
 
 {
-  sha256sum "$x64_destination" "$x86_destination"
+  sha256sum "$x64_destination" "$x86_destination" "$ps64_config" "$ps32_config"
   for path in \
     "$framework64/mscoreei.dll" \
     "$framework64/clr.dll" \
@@ -169,4 +222,4 @@ timeout --kill-after=10s 90s wineserver -w >> "$log_root/registry.log" 2>&1
 } > "$log_root/inventory.log"
 
 write_metadata
-echo "[cage] Native MSCoree loader verified from pinned KB958488"
+echo "[cage] Native MSCoree loader and PS5.1 CLR activation verified from pinned KB958488"
