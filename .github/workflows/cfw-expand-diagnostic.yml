@@ -1,0 +1,61 @@
+name: CFW Expand Diagnostic
+
+on:
+  push:
+    branches: [agent/synchro-cfw-layering]
+    paths:
+      - '.github/workflows/cfw-expand-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract pinned CFW expand bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 \
+            -o /tmp/winetricks.ps1 \
+            https://raw.githubusercontent.com/PietJankbal/Chocolatey-for-wine/f8c5339c6fd9f2c37ca0b6621b9c51884b7bae7d/winetricks.ps1
+          python3 - /tmp/winetricks.ps1 <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          lines = Path(sys.argv[1]).read_text(encoding='utf-8-sig').splitlines()
+
+          def function_block(name: str):
+              start = next(
+                  i for i, line in enumerate(lines)
+                  if re.match(rf'\s*function\s+{re.escape(name)}\b', line, re.I)
+              )
+              depth = 0
+              opened = False
+              for i in range(start, len(lines)):
+                  cleaned = re.sub(r'<#.*?#>', '', lines[i])
+                  opens = cleaned.count('{')
+                  closes = cleaned.count('}')
+                  if opens:
+                      opened = True
+                  depth += opens - closes
+                  if opened and depth <= 0 and i > start:
+                      return start, i + 1
+              raise RuntimeError(f'unclosed function {name}')
+
+          for target in ('func_expand', 'func_msdelta'):
+              start, end = function_block(target)
+              print(f'=== {target} lines {start + 1}-{end} ===')
+              for index in range(start, end):
+                  print(f'{index + 1:04d}: {lines[index]}')
+
+          print('=== expand-related URLs and hashes ===')
+          for index, line in enumerate(lines, start=1):
+              lowered = line.lower()
+              if any(token in lowered for token in ('func_expand', 'expand.exe', 'dpx.dll', 'msdelta.dll')):
+                  if 'http' in lowered or 'hash' in lowered or 'download' in lowered:
+                      print(f'{index:04d}: {line}')
+          PY
