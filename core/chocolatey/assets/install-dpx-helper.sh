@@ -1,6 +1,7 @@
 set -eu
 unset WINEDLLOVERRIDES
 
+provider="cfw-dpx-helper-0.5a"
 wine_prefix="${WINEPREFIX:-$HOME/.wine}"
 module_cache="${CAGE_MODULE_CACHE_DIR:-/tmp/cage-module-cache}"
 bundle_root="${CAGE_BUNDLE_MOUNT:-/opt/cage}"
@@ -20,6 +21,7 @@ metadata="$bundle_root/metadata/cfw-dpx-helper.json"
 
 mkdir -p "$work" "$extract_root" "$expand_dir" "$log_root" "$(dirname "$metadata")"
 
+echo "[cage] Preparing $provider"
 if [ -s "$expand_exe" ] && [ -s "$dpx_dll" ] && [ -s "$msdelta_dll" ]; then
   echo "[cage] Reusing CFW native DPX extraction helper"
 else
@@ -54,17 +56,18 @@ else
   mv -f "$expand_exe.part" "$expand_exe"
 fi
 
-python3 - "$metadata" "$archive_sha512" "$dpx_dll" "$msdelta_dll" "$expand_exe" <<'PY'
+python3 - "$metadata" "$provider" "$archive_sha512" "$dpx_dll" "$msdelta_dll" "$expand_exe" <<'PY'
 import hashlib
 import json
 import sys
 from pathlib import Path
 
 output = Path(sys.argv[1])
-archive_sha512 = sys.argv[2]
-dpx = Path(sys.argv[3])
-msdelta = Path(sys.argv[4])
-expand = Path(sys.argv[5])
+provider = sys.argv[2]
+archive_sha512 = sys.argv[3]
+dpx = Path(sys.argv[4])
+msdelta = Path(sys.argv[5])
+expand = Path(sys.argv[6])
 
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -75,6 +78,7 @@ def sha256(path: Path) -> str:
 
 record = {
     "schemaVersion": "cage.cfw-dpx-helper/v1",
+    "provider": provider,
     "source": {
         "url": "https://github.com/PietJankbal/powershell-wrapper-for-wine/releases/download/0.5a/powershell2.7z",
         "sha512": archive_sha512,
