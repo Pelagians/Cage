@@ -3,30 +3,31 @@ set -euo pipefail
 
 root=/tmp/aik-expand
 report="$root/report.txt"
-mkdir -p "$root/iso-extract" "$root/winpe" "$root/helper"
+mkdir -p "$root/winpe" "$root/helper"
 : > "$report"
 exec > >(tee -a "$report") 2>&1
 trap 'rc=$?; echo "diagnostic_exit=$rc"; exit "$rc"' EXIT
 
 url=https://download.microsoft.com/download/8/E/9/8E9BBC64-E6F8-457C-9B8D-F6C9A16E6D6A/KB3AIK_EN.iso
+head_end=16777215
 
-echo '=== partial ISO download ==='
-curl -fsSL --retry 3 --connect-timeout 30 --max-time 2400 \
-  -H 'Range: bytes=0-1099999999' \
+echo '=== ISO filesystem metadata range ==='
+curl -fsSL --retry 3 --connect-timeout 30 --max-time 600 \
+  -H "Range: bytes=0-$head_end" \
   -D "$root/headers.txt" \
-  -o "$root/KB3AIK_EN.partial.iso" "$url"
+  -o "$root/KB3AIK_EN.head.bin" "$url"
 cat "$root/headers.txt"
-stat -c 'partial_iso_bytes=%s' "$root/KB3AIK_EN.partial.iso"
-printf 'partial_iso_sha256='; sha256sum "$root/KB3AIK_EN.partial.iso" | cut -d ' ' -f 1
+stat -c 'head_bytes=%s' "$root/KB3AIK_EN.head.bin"
+printf 'head_sha256='; sha256sum "$root/KB3AIK_EN.head.bin" | cut -d ' ' -f 1
 
-echo '=== extract WinPE.cab ==='
-7z x -y "$root/KB3AIK_EN.partial.iso" WinPE.cab -o"$root/iso-extract" >/dev/null
-test -s "$root/iso-extract/WinPE.cab"
-stat -c 'winpe_cab_bytes=%s' "$root/iso-extract/WinPE.cab"
-printf 'winpe_cab_sha256='; sha256sum "$root/iso-extract/WinPE.cab" | cut -d ' ' -f 1
+total_size="$(sed -nE 's/^content-range: bytes [0-9]+-[0-9]+\/([0-9]+)\r?$/\1/ip' "$root/headers.txt" | tail -1)"
+test -n "$total_size"
+truncate -s "$total_size" "$root/KB3AIK_EN.sparse.iso"
+dd if="$root/KB3AIK_EN.head.bin" of="$root/KB3AIK_EN.sparse.iso" conv=notrunc status=none
+stat -c 'sparse_iso_bytes=%s' "$root/KB3AIK_EN.sparse.iso"
 
 python3 -m pip install --quiet pycdlib
-python3 - "$root/KB3AIK_EN.partial.iso" "$root/winpe-range.txt" <<'PY'
+python3 - "$root/KB3AIK_EN.sparse.iso" "$root/winpe-range.txt" <<'PY'
 import sys
 from pathlib import Path
 import pycdlib
@@ -72,7 +73,6 @@ curl -fsSL --retry 3 --connect-timeout 30 --max-time 1200 \
 cat "$root/range-headers.txt"
 stat -c 'range_bytes=%s' "$root/WinPE.range.cab"
 test "$(stat -c %s "$root/WinPE.range.cab")" = "$size"
-cmp "$root/iso-extract/WinPE.cab" "$root/WinPE.range.cab"
 printf 'range_sha256='; sha256sum "$root/WinPE.range.cab" | cut -d ' ' -f 1
 
 echo '=== F3_WINPE.WIM ==='
