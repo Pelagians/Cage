@@ -13,16 +13,15 @@ POWERSHELL_ZIP_URL = (
 )
 POWERSHELL_ZIP_SHA256 = "558c4115cc6b96cc6a67d74bee40012cf8d38767537f8d2857dc3fa30a63cc63"
 WINDOWS_POWERSHELL_PROVIDER = "windows-powershell-5.1-cfw"
-CFW_DPX_PROVIDER = "cfw-dpx-helper-from-c-drive"
+CFW_DPX_PROVIDER = "cfw-dpx-helper-aik-winpe"
 
 
 def windows_powershell51_steps() -> list[BuildStep]:
     """Install the CFW-derived Windows PowerShell 5.1 backend.
 
-    The CFW native DPX expander is an explicit prerequisite because Microsoft
-    servicing CABs do not expose their component payloads through ordinary 7z
-    extraction. Cage sources that helper from the retained, verified c_drive.7z
-    component of the pinned CFW release.
+    Microsoft servicing CABs do not expose component payloads through ordinary
+    7z extraction. Cage installs the same native Windows 7 AIK DPX helper used
+    by CFW, sourced from a pinned byte range of the official AIK image.
     """
     helper_name = "install-dpx-helper.sh"
     engine_name = "install-powershell51.sh"
@@ -31,7 +30,7 @@ def windows_powershell51_steps() -> list[BuildStep]:
             commands=[load_asset(helper_name)],
             description="Install CFW native DPX extraction helper",
             kind="wine-run",
-            timeout=1800,
+            timeout=2400,
             metadata={
                 "provider": CFW_DPX_PROVIDER,
                 "scriptAsset": f"core/chocolatey/assets/{helper_name}",
