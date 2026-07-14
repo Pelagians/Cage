@@ -18,23 +18,40 @@ WINDOWS_POWERSHELL_PROVIDER = "windows-powershell-5.1-cfw"
 def windows_powershell51_steps() -> list[BuildStep]:
     """Install the CFW-derived Windows PowerShell 5.1 backend.
 
-    This provider requires the .NET Framework and native expansion support
-    established by the CFW prerequisite bootstrap. It is therefore used by the
-    Chocolatey module after that bootstrap, not as a standalone first step.
+    The CFW native DPX expander is an explicit prerequisite because Microsoft
+    servicing CABs do not expose their component payloads through ordinary 7z
+    extraction. Keeping it as a separate verified step makes the dependency
+    visible in the build graph and in bundle metadata.
     """
-    asset_name = "install-powershell51.sh"
-    return [BuildStep(
-        commands=[load_asset(asset_name)],
-        description="Install Windows PowerShell 5.1 backend",
-        kind="wine-run",
-        timeout=3600,
-        metadata={
-            "engine": WINDOWS_POWERSHELL_PROVIDER,
-            "scriptAsset": f"core/chocolatey/assets/{asset_name}",
-            "scriptSha256": asset_sha256(asset_name),
-            "evidence": "metadata/powershell-engine.json",
-        },
-    )]
+    helper_name = "install-dpx-helper.sh"
+    engine_name = "install-powershell51.sh"
+    return [
+        BuildStep(
+            commands=[load_asset(helper_name)],
+            description="Install CFW native DPX extraction helper",
+            kind="wine-run",
+            timeout=1800,
+            metadata={
+                "provider": "cfw-dpx-helper-0.5a",
+                "scriptAsset": f"core/chocolatey/assets/{helper_name}",
+                "scriptSha256": asset_sha256(helper_name),
+                "evidence": "metadata/cfw-dpx-helper.json",
+            },
+        ),
+        BuildStep(
+            commands=[load_asset(engine_name)],
+            description="Install Windows PowerShell 5.1 backend",
+            kind="wine-run",
+            timeout=3600,
+            metadata={
+                "engine": WINDOWS_POWERSHELL_PROVIDER,
+                "requires": "cfw-dpx-helper-0.5a",
+                "scriptAsset": f"core/chocolatey/assets/{engine_name}",
+                "scriptSha256": asset_sha256(engine_name),
+                "evidence": "metadata/powershell-engine.json",
+            },
+        ),
+    ]
 
 
 def powershell_engine_steps(*, wine_prefix: str = "${WINEPREFIX:-$HOME/.wine}", version_slot: str = "7") -> list[BuildStep]:
