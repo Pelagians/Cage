@@ -22,12 +22,12 @@ probe_marker="$probe_root/engine-probe-ok.txt"
 policy_key='HKCU\Software\Wine\AppDefaults\ps51.exe\DllOverrides'
 policy_log="$log_root/powershell51-wine-policy.log"
 failure_trace="$log_root/direct-probe-winedebug.log"
-assembly_exe="$work/assembly-inventory.exe"
+assembly_script="$work/assembly_inventory.py"
 assembly_map="$work/assembly-inventory.tsv"
 assembly_asset_log="$log_root/assembly-inventory-asset.log"
 assembly_run_log="$log_root/assembly-inventory-run.log"
 gac_log="$log_root/gac-installs.log"
-assembly_exe_sha256="{{ASSEMBLY_INVENTORY_EXE_SHA256}}"
+assembly_script_sha256="{{ASSEMBLY_INVENTORY_PY_SHA256}}"
 
 mkdir -p "$work" "$extract_root" "$payload_root" "$log_root" "$probe_root" "$(dirname "$metadata")"
 
@@ -45,25 +45,23 @@ prepare_ps51_policy() {
 }
 
 materialize_assembly_inventory() {
-  rm -f "$assembly_exe" "$assembly_exe.part" "$assembly_map"
-  base64 -d > "$assembly_exe.part" <<'B64'
-{{ASSEMBLY_INVENTORY_EXE_BASE64}}
+  rm -f "$assembly_script" "$assembly_script.part" "$assembly_map"
+  base64 -d > "$assembly_script.part" <<'B64'
+{{ASSEMBLY_INVENTORY_PY_BASE64}}
 B64
-  actual_sha256="$(sha256sum "$assembly_exe.part" | cut -d ' ' -f 1)"
+  actual_sha256="$(sha256sum "$assembly_script.part" | cut -d ' ' -f 1)"
   {
-    echo "expected=$assembly_exe_sha256"
+    echo "expected=$assembly_script_sha256"
     echo "actual=$actual_sha256"
   } > "$assembly_asset_log"
-  if [ "$actual_sha256" != "$assembly_exe_sha256" ]; then
-    echo "[cage] ERROR: assembly inventory helper checksum mismatch" >&2
+  if [ "$actual_sha256" != "$assembly_script_sha256" ]; then
+    echo "[cage] ERROR: assembly inventory script checksum mismatch" >&2
     exit 69
   fi
-  chmod 0755 "$assembly_exe.part"
-  mv -f "$assembly_exe.part" "$assembly_exe"
+  chmod 0644 "$assembly_script.part"
+  mv -f "$assembly_script.part" "$assembly_script"
 
-  payload_win_for_inventory="$(winepath -w "$payload_root")"
-  map_win="$(winepath -w "$assembly_map")"
-  timeout --kill-after=10s 240s wine "$assembly_exe" "$payload_win_for_inventory" "$map_win" \
+  python3 "$assembly_script" "$payload_root" "$assembly_map" \
     > "$assembly_run_log" 2>&1
   test -s "$assembly_map"
 }

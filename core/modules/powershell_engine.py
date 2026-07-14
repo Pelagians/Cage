@@ -32,13 +32,13 @@ def windows_powershell51_steps() -> list[BuildStep]:
     """
     helper_name = "install-dpx-helper.sh"
     engine_name = "install-powershell51.sh"
-    assembly_name = "assembly-inventory.exe"
+    assembly_name = "assembly_inventory.py"
     assembly_bytes = load_asset_bytes(assembly_name)
     engine_command = render_asset(
         engine_name,
         {
-            "ASSEMBLY_INVENTORY_EXE_BASE64": base64.b64encode(assembly_bytes).decode("ascii"),
-            "ASSEMBLY_INVENTORY_EXE_SHA256": asset_sha256(assembly_name),
+            "ASSEMBLY_INVENTORY_PY_BASE64": base64.b64encode(assembly_bytes).decode("ascii"),
+            "ASSEMBLY_INVENTORY_PY_SHA256": asset_sha256(assembly_name),
         },
     )
     return [
