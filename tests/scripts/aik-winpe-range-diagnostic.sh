@@ -20,44 +20,72 @@ cat "$root/headers.txt"
 stat -c 'head_bytes=%s' "$root/KB3AIK_EN.head.bin"
 printf 'head_sha256='; sha256sum "$root/KB3AIK_EN.head.bin" | cut -d ' ' -f 1
 
-total_size="$(sed -nE 's/^content-range: bytes [0-9]+-[0-9]+\/([0-9]+)\r?$/\1/ip' "$root/headers.txt" | tail -1)"
-test -n "$total_size"
-truncate -s "$total_size" "$root/KB3AIK_EN.sparse.iso"
-dd if="$root/KB3AIK_EN.head.bin" of="$root/KB3AIK_EN.sparse.iso" conv=notrunc status=none
-stat -c 'sparse_iso_bytes=%s' "$root/KB3AIK_EN.sparse.iso"
-
-python3 -m pip install --quiet pycdlib
-python3 - "$root/KB3AIK_EN.sparse.iso" "$root/winpe-range.txt" <<'PY'
+python3 - "$root/KB3AIK_EN.head.bin" "$root/winpe-range.txt" <<'PY'
+import struct
 import sys
 from pathlib import Path
-import pycdlib
 
-source = sys.argv[1]
+source = Path(sys.argv[1]).read_bytes()
 output = Path(sys.argv[2])
-iso = pycdlib.PyCdlib()
-iso.open(source)
+sector = 2048
+pvd = source[16 * sector:17 * sector]
+if len(pvd) != sector or pvd[0] != 1 or pvd[1:6] != b'CD001':
+    raise SystemExit('ISO-9660 primary volume descriptor not found')
+root_record_length = pvd[156]
+root_record = pvd[156:156 + root_record_length]
+if len(root_record) < 34:
+    raise SystemExit('invalid ISO root directory record')
+root_extent = struct.unpack_from('<I', root_record, 2)[0]
+root_size = struct.unpack_from('<I', root_record, 10)[0]
+root_start = root_extent * sector
+root_end = root_start + root_size
+if root_end > len(source):
+    raise SystemExit(f'root directory is outside metadata range: end={root_end} bytes={len(source)}')
+
+directory = source[root_start:root_end]
+position = 0
 found = None
-for dirname, _, filelist in iso.walk(iso_path='/'):
-    for name in filelist:
-        if name.upper().removesuffix(';1') == 'WINPE.CAB':
-            path = (dirname.rstrip('/') + '/' + name).replace('//', '/')
-            record = iso.get_record(iso_path=path)
-            data_length = record.data_length
-            if callable(data_length):
-                data_length = data_length()
-            extent = record.extent_location()
-            found = (path, int(extent), int(data_length))
-            break
-    if found:
+while position < len(directory):
+    length = directory[position]
+    if length == 0:
+        position = ((position // sector) + 1) * sector
+        continue
+    record = directory[position:position + length]
+    if len(record) < 34:
         break
-iso.close()
+    extent = struct.unpack_from('<I', record, 2)[0]
+    size = struct.unpack_from('<I', record, 10)[0]
+    flags = record[25]
+    name_length = record[32]
+    raw_name = record[33:33 + name_length]
+    name = raw_name.decode('ascii', errors='replace')
+    normalized = name.upper().removesuffix(';1')
+    if not (flags & 0x02) and normalized == 'WINPE.CAB':
+        found = (name, extent, size)
+        break
+    position += length
+
 if not found:
-    raise SystemExit('WinPE.cab not found in ISO filesystem')
-path, extent, size = found
-offset = extent * 2048
+    entries = []
+    position = 0
+    while position < len(directory):
+        length = directory[position]
+        if length == 0:
+            position = ((position // sector) + 1) * sector
+            continue
+        record = directory[position:position + length]
+        if len(record) < 34:
+            break
+        name_length = record[32]
+        entries.append(record[33:33 + name_length].decode('ascii', errors='replace'))
+        position += length
+    raise SystemExit('WinPE.cab not found in ISO root; entries=' + ','.join(entries))
+
+name, extent, size = found
+offset = extent * sector
 end = offset + size - 1
-output.write_text(f'{offset} {end} {size} {path}\n', encoding='utf-8')
-print(f'iso_path={path}')
+output.write_text(f'{offset} {end} {size} {name}\n', encoding='utf-8')
+print(f'iso_name={name}')
 print(f'iso_extent={extent}')
 print(f'winpe_offset={offset}')
 print(f'winpe_end={end}')
