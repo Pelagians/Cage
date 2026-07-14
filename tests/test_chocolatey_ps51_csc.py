@@ -37,6 +37,15 @@ class PowerShell51AssemblyInventoryContractTests(unittest.TestCase):
         self.assertEqual(identity.version, "0.0.0.0")
         self.assertEqual(identity.public_key_token, "")
 
+    def test_ps51_uses_the_native_dotnet48_loader_not_wine_mono(self):
+        script = load_asset("install-powershell51.sh")
+
+        self.assertIn('native_mscoree64="$wine_prefix/drive_c/windows/system32/mscoree.dll"', script)
+        self.assertIn('native_clr64="$wine_prefix/drive_c/windows/Microsoft.NET/Framework64/v4.0.30319/clr.dll"', script)
+        self.assertIn('wine reg add "$policy_key" /v mscoree /d native /f', script)
+        self.assertIn("native .NET 4 loader closure is incomplete", script)
+        self.assertNotIn('/v mscoree /d native,builtin', script)
+
 
 if __name__ == "__main__":
     unittest.main()
