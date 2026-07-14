@@ -176,20 +176,24 @@ class ChocolateySmokePackageTests(unittest.TestCase):
         self.assertIn("chocolatey-upstream-bootstrap.json", workflow)
         self.assertIn("Chocolatey-for-Wine stages", workflow)
         self.assertIn("installer non-stage tail", workflow)
-        self.assertIn("focused finalizer output", workflow)
-        self.assertIn("direct pwsh probe", workflow)
-        self.assertIn("pwsh-direct-probe.log", workflow)
-        self.assertIn("finalizer-script-entry|pwsh|powershell|choc_install", workflow)
-        self.assertIn("grep -av '^\\[cfw\\] stage='", workflow)
-        self.assertIn("grep -a", workflow)
+        self.assertIn("PowerShell engine metadata", workflow)
+        self.assertIn("powershell-engine.json", workflow)
+        self.assertIn("PowerShell direct probe", workflow)
+        self.assertIn("direct-probe.log", workflow)
+        self.assertIn("PowerShell DPX extraction tail", workflow)
+        self.assertIn("wmf-dpx-extract.log", workflow)
+        self.assertIn("PowerShell skipped payloads", workflow)
+        self.assertIn("skipped-files.log", workflow)
+        self.assertIn("evidence file inventory", workflow)
+        self.assertIn("cage-lifecycle-files.txt", workflow)
         self.assertIn("installer.log", workflow)
         self.assertIn("Chocolatey path inventory", workflow)
         self.assertIn("chocolatey-path-inventory.log", workflow)
-        self.assertIn('tail -160 /tmp/cage-chocolatey-summary.log', workflow)
-        self.assertIn('summary="${summary}"$\'\\n--- Chocolatey path inventory ---\\n\'', workflow)
+        self.assertIn('tail -400 /tmp/cage-chocolatey-summary.log', workflow)
         self.assertIn("if: always()", workflow)
         self.assertIn("actions/upload-artifact@v4", workflow)
-        self.assertIn("choco-live-process-tree.log", workflow)
+        self.assertIn("/tmp/cage-chocolatey-summary.log", workflow)
+        self.assertIn("dist", workflow)
 
     def test_lifecycle_outer_timeouts_cover_cumulative_inner_probes(self):
         steps = {step.description: step for step in _steps()}
@@ -227,7 +231,6 @@ class ChocolateyDiagnosticTierTests(unittest.TestCase):
 
         self.assertIn('"status": "passed" if not failed else "failed"', verify)
         self.assertNotIn('"status": "passed" if all(checks.values()) else "failed"', verify)
-
 
     def test_package_policy_uses_command_confirmation_only(self):
         policy = load_asset("feature-policy.sh")
