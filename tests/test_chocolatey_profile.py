@@ -127,6 +127,7 @@ class ChocolateyAssetContractTests(unittest.TestCase):
             "fetch-verified.sh",
             "failure-diagnostics.sh",
             "bootstrap.sh",
+            "install-dpx-helper.sh",
             "install-powershell51.sh",
             "install-profile-fragments.sh",
             "verify-powershell-layer.sh",
@@ -167,17 +168,26 @@ class ChocolateyAssetContractTests(unittest.TestCase):
             self.assertNotIn("New-Item -Path $PROFILE", text)
             self.assertNotIn("WindowsPowerShell\\v1.0\\powershell.exe", text)
 
-    def test_windows_powershell_asset_pins_outer_source_and_strict_proof(self):
+    def test_windows_powershell_assets_pin_dpx_and_outer_wmf_sources(self):
+        helper = load_asset("install-dpx-helper.sh")
         script = load_asset("install-powershell51.sh")
+
+        self.assertIn("powershell2.7z", helper)
+        self.assertIn("1dbd829b097706a24866aa4e4c0a7de876d91f189567d7d8dfc3448319d2e97438e1d013ab61b57d77653598784258ccef8cff646081f2c6937985910fdee9c1", helper)
+        self.assertIn("system32/expnd", helper)
+        self.assertIn("dpx.dll", helper)
+        self.assertIn("msdelta.dll", helper)
 
         self.assertIn("Win7AndW2K8R2-KB3191566-x64.zip", script)
         self.assertIn("f383c34aa65332662a17d95409a2ddedadceda74427e35d05024cd0a6a2fa647", script)
         self.assertIn("wmf-nested-hashes.log", script)
-        self.assertIn("wmf-cab-extract.log", script)
+        self.assertIn("wmf-dpx-extract.log", script)
+        self.assertIn("system32/expnd/expand.exe", script)
+        self.assertIn("sourceName", script)
+        self.assertIn("skipped-files.log", script)
         self.assertIn("fileSentinel", script)
         self.assertIn("stdoutMarker", script)
         self.assertIn("wineserverSettle", script)
-        self.assertNotIn("system32/expnd/expand.exe", script)
 
     def test_verified_fetch_uses_content_addressing_locking_and_atomic_promotion(self):
         helper = load_asset("fetch-verified.sh")
