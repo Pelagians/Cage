@@ -47,30 +47,46 @@ source = sys.argv[1]
 output = Path(sys.argv[2])
 iso = pycdlib.PyCdlib()
 iso.open(source)
-found = None
+record = None
+path = None
 for dirname, _, filelist in iso.walk(udf_path='/'):
     for name in filelist:
         if name.upper() == 'WINPE.CAB':
             path = (dirname.rstrip('/') + '/' + name).replace('//', '/')
             record = iso.get_record(udf_path=path)
-            data_length = record.get_data_length()
-            extent = record.get_extent_location()
-            found = (path, int(extent), int(data_length))
             break
-    if found:
+    if record is not None:
         break
-iso.close()
-if not found:
+if record is None:
+    iso.close()
     raise SystemExit('WinPE.cab not found in UDF filesystem')
-path, extent, size = found
-offset = extent * 2048
-end = offset + size - 1
-output.write_text(f'{offset} {end} {size} {path}\n', encoding='utf-8')
+
 print(f'udf_path={path}')
-print(f'udf_extent={extent}')
-print(f'winpe_offset={offset}')
-print(f'winpe_end={end}')
-print(f'winpe_size={size}')
+print(f'record_type={type(record).__module__}.{type(record).__name__}')
+print(f'file_entry_extent={record.extent_location()}')
+print(f'data_length={record.get_data_length()}')
+print(f'icb_flags={record.icb_tag.flags}')
+print(f'alloc_desc_count={len(record.alloc_descs)}')
+for index, descriptor in enumerate(record.alloc_descs):
+    print(f'alloc_desc[{index}]_type={type(descriptor).__module__}.{type(descriptor).__name__}')
+    for name in ('log_block_num', 'extent_length', 'part_ref_num', 'partition_ref_num', 'extent_position'):
+        if hasattr(descriptor, name):
+            print(f'alloc_desc[{index}].{name}={getattr(descriptor, name)}')
+    print(f'alloc_desc[{index}]_attrs=' + ','.join(
+        name for name in dir(descriptor) if not name.startswith('_')
+    ))
+
+for attr_name in sorted(name for name in dir(iso) if 'udf' in name.lower() or 'part' in name.lower()):
+    try:
+        value = getattr(iso, attr_name)
+    except Exception as exc:
+        value = f'<error {exc}>'
+    if callable(value):
+        continue
+    print(f'iso_attr.{attr_name}={value!r}')
+
+iso.close()
+raise SystemExit('allocation descriptor diagnostic complete')
 PY
 
 read -r offset end size udf_path < "$root/winpe-range.txt"
