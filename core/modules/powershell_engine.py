@@ -13,6 +13,7 @@ POWERSHELL_ZIP_URL = (
 )
 POWERSHELL_ZIP_SHA256 = "558c4115cc6b96cc6a67d74bee40012cf8d38767537f8d2857dc3fa30a63cc63"
 WINDOWS_POWERSHELL_PROVIDER = "windows-powershell-5.1-cfw"
+CFW_DPX_PROVIDER = "cfw-dpx-helper-from-c-drive"
 
 
 def windows_powershell51_steps() -> list[BuildStep]:
@@ -20,8 +21,8 @@ def windows_powershell51_steps() -> list[BuildStep]:
 
     The CFW native DPX expander is an explicit prerequisite because Microsoft
     servicing CABs do not expose their component payloads through ordinary 7z
-    extraction. Keeping it as a separate verified step makes the dependency
-    visible in the build graph and in bundle metadata.
+    extraction. Cage sources that helper from the retained, verified c_drive.7z
+    component of the pinned CFW release.
     """
     helper_name = "install-dpx-helper.sh"
     engine_name = "install-powershell51.sh"
@@ -32,7 +33,7 @@ def windows_powershell51_steps() -> list[BuildStep]:
             kind="wine-run",
             timeout=1800,
             metadata={
-                "provider": "cfw-dpx-helper-0.5a",
+                "provider": CFW_DPX_PROVIDER,
                 "scriptAsset": f"core/chocolatey/assets/{helper_name}",
                 "scriptSha256": asset_sha256(helper_name),
                 "evidence": "metadata/cfw-dpx-helper.json",
@@ -45,7 +46,7 @@ def windows_powershell51_steps() -> list[BuildStep]:
             timeout=3600,
             metadata={
                 "engine": WINDOWS_POWERSHELL_PROVIDER,
-                "requires": "cfw-dpx-helper-0.5a",
+                "requires": CFW_DPX_PROVIDER,
                 "scriptAsset": f"core/chocolatey/assets/{engine_name}",
                 "scriptSha256": asset_sha256(engine_name),
                 "evidence": "metadata/powershell-engine.json",
@@ -162,6 +163,7 @@ __all__ = [
     "POWERSHELL_ZIP_URL",
     "POWERSHELL_ZIP_SHA256",
     "WINDOWS_POWERSHELL_PROVIDER",
+    "CFW_DPX_PROVIDER",
     "windows_powershell51_steps",
     "powershell_engine_steps",
 ]
