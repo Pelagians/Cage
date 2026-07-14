@@ -42,31 +42,16 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
         self.assertTrue(dataclasses.is_dataclass(profile))
         with self.assertRaises(dataclasses.FrozenInstanceError):
             profile.id = "mutated"  # type: ignore[misc]
-        self.assertEqual(
-            profile.id,
-            "cfw-v0.5c.755-noah.6-choco-2.6.0-synchro-r13",
-        )
+        self.assertEqual(profile.id, "cfw-v0.5c.755-noah.6-choco-2.6.0-synchro-r13")
         self.assertEqual(profile.dotnet_profile, "dotnet48-cfw-r1")
-        self.assertEqual(
-            profile.dotnet_installer_sha256,
-            "95889d6de3f2070c07790ad6cf2000d33d9a1bdfc6a381725ab82ab1c314fd53",
-        )
+        self.assertEqual(profile.dotnet_installer_sha256, "95889d6de3f2070c07790ad6cf2000d33d9a1bdfc6a381725ab82ab1c314fd53")
         self.assertEqual(profile.chocolatey_for_wine_version, "v0.5c.755-noah.6")
         self.assertEqual(profile.chocolatey_for_wine_installer_version, "0.5c.755")
-        self.assertEqual(
-            profile.chocolatey_for_wine_url,
-            "https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.6/Chocolatey-for-wine.7z",
-        )
-        self.assertEqual(
-            profile.chocolatey_for_wine_sha256,
-            "25c2e3cd544c7f83e9c196a5b8b0f98e020b4f5e24f19de30ea6ceec585d0792",
-        )
+        self.assertEqual(profile.chocolatey_for_wine_url, "https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.6/Chocolatey-for-wine.7z")
+        self.assertEqual(profile.chocolatey_for_wine_sha256, "25c2e3cd544c7f83e9c196a5b8b0f98e020b4f5e24f19de30ea6ceec585d0792")
         self.assertEqual(profile.upstream_project, "noahgiroux/Chocolatey-for-wine")
         self.assertEqual(profile.upstream_tag, "v0.5c.755-noah.6")
         self.assertEqual(profile.chocolatey_version, "2.6.0")
-        # The released CFW bootstrap still installs this MSI internally. Cage
-        # does not advertise it as the engine and replaces the command surface
-        # with a verified Windows PowerShell 5.1 backend plus Synchro.
         self.assertEqual(profile.powershell_version, "7.5.5")
         self.assertEqual(profile.powershell_host_feature, "powershellHost")
         self.assertEqual(profile.powershell_host, "disabled")
@@ -78,7 +63,6 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
 
     def test_unknown_or_incomplete_bootstrap_profiles_are_rejected(self):
         manifest = _manifest(bootstrap="missing-profile")
-
         with self.assertRaisesRegex(Exception, "unknown Chocolatey bootstrap profile"):
             manifest.modules[0].build()
 
@@ -168,24 +152,28 @@ class ChocolateyAssetContractTests(unittest.TestCase):
             self.assertNotIn("New-Item -Path $PROFILE", text)
             self.assertNotIn("WindowsPowerShell\\v1.0\\powershell.exe", text)
 
-    def test_windows_powershell_assets_reuse_cfw_component_and_pin_outer_wmf_source(self):
-        bootstrap = load_asset("bootstrap.sh")
+    def test_windows_powershell_assets_pin_aik_range_and_outer_wmf_source(self):
         helper = load_asset("install-dpx-helper.sh")
         script = load_asset("install-powershell51.sh")
 
-        self.assertIn("cfw_component_cache", bootstrap)
-        self.assertIn('cp -f "$cfw_extract/c_drive.7z"', bootstrap)
-        self.assertIn("cfw_c_drive_sha256", bootstrap)
-        self.assertIn("retainedComponents", bootstrap)
-
-        self.assertIn("cfw-dpx-helper-from-c-drive", helper)
-        self.assertIn("c_drive.7z", helper)
-        self.assertIn("retained-cfw-component", helper)
-        self.assertIn("cfw-c-drive-inventory.log", helper)
-        self.assertNotIn("powershell2.7z", helper)
+        self.assertIn("cfw-dpx-helper-aik-winpe", helper)
+        self.assertIn("KB3AIK_EN.iso", helper)
+        self.assertIn('range_start="640526336"', helper)
+        self.assertIn('range_end="1086964920"', helper)
+        self.assertIn('range_size="446438585"', helper)
+        self.assertIn("b8db22bef35f091b6b63d223118c55f833856be0d535465ce5a06a51ff38fa27", helper)
+        self.assertIn("fdfd889f5131898d9a3e68e39c24d8d6ad1f53765522f0280899e54620be47ff", helper)
+        self.assertIn("72cedaef15d65f2a88a19f1fff3e420a978b93b0e5bb9fd160fb26b7b9aca8cc", helper)
+        self.assertIn("5d66d94a347bc43d0d8157cc5a24abaf2f60b5dbeb2b1527c251452128e00ee2", helper)
+        self.assertIn("3e77ebc2f91887d69d53ec4cf83d84572d0d1c234ea7eed06e0e3020baa29794", helper)
+        self.assertIn("9b57d563ad6535adf6a83da33b3391bb80ac3266f5663077cff0cee43700ef47", helper)
+        self.assertIn("Content-Range", helper)
         self.assertIn("system32/expnd", helper)
+        self.assertIn("cabinet.dll", helper)
         self.assertIn("dpx.dll", helper)
         self.assertIn("msdelta.dll", helper)
+        self.assertNotIn("powershell2.7z", helper)
+        self.assertNotIn("retained-cfw-component", helper)
 
         self.assertIn("Win7AndW2K8R2-KB3191566-x64.zip", script)
         self.assertIn("f383c34aa65332662a17d95409a2ddedadceda74427e35d05024cd0a6a2fa647", script)
@@ -200,7 +188,6 @@ class ChocolateyAssetContractTests(unittest.TestCase):
 
     def test_verified_fetch_uses_content_addressing_locking_and_atomic_promotion(self):
         helper = load_asset("fetch-verified.sh")
-
         self.assertIn("blobs/sha256", helper)
         self.assertIn("flock", helper)
         self.assertIn(".part", helper)
