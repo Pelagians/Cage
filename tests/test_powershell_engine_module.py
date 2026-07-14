@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from core.modules.powershell_engine import (
+    CFW_DPX_PROVIDER,
     WINDOWS_POWERSHELL_PROVIDER,
     powershell_engine_steps,
     windows_powershell51_steps,
@@ -18,19 +19,23 @@ class PowerShellEngineModuleTests(unittest.TestCase):
         engine_script = "\n".join(engine.commands)
 
         self.assertEqual(WINDOWS_POWERSHELL_PROVIDER, "windows-powershell-5.1-cfw")
+        self.assertEqual(CFW_DPX_PROVIDER, "cfw-dpx-helper-from-c-drive")
         self.assertEqual(helper.description, "Install CFW native DPX extraction helper")
         self.assertEqual(helper.kind, "wine-run")
-        self.assertEqual(helper.metadata["provider"], "cfw-dpx-helper-0.5a")
+        self.assertEqual(helper.metadata["provider"], CFW_DPX_PROVIDER)
         self.assertRegex(helper.metadata["scriptSha256"], r"^[0-9a-f]{64}$")
-        self.assertIn("powershell2.7z", helper_script)
+        self.assertIn("c_drive.7z", helper_script)
+        self.assertIn("retained-cfw-component", helper_script)
+        self.assertIn("cfw-c-drive-inventory.log", helper_script)
         self.assertIn("system32/expnd", helper_script)
         self.assertIn("dpx.dll", helper_script)
         self.assertIn("msdelta.dll", helper_script)
+        self.assertNotIn("powershell2.7z", helper_script)
 
         self.assertEqual(engine.description, "Install Windows PowerShell 5.1 backend")
         self.assertEqual(engine.kind, "wine-run")
         self.assertEqual(engine.metadata["engine"], WINDOWS_POWERSHELL_PROVIDER)
-        self.assertEqual(engine.metadata["requires"], "cfw-dpx-helper-0.5a")
+        self.assertEqual(engine.metadata["requires"], CFW_DPX_PROVIDER)
         self.assertRegex(engine.metadata["scriptSha256"], r"^[0-9a-f]{64}$")
         self.assertIn("Win7AndW2K8R2-KB3191566-x64.zip", engine_script)
         self.assertIn("f383c34aa65332662a17d95409a2ddedadceda74427e35d05024cd0a6a2fa647", engine_script)
