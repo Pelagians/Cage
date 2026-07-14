@@ -52,42 +52,89 @@ jobs:
 
   cfw-expand-source-diagnostic:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
-      - name: Extract pinned CFW expand bootstrap
+      - name: Measure Windows AIK WinPE payload
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL --retry 3 \
-            -o /tmp/winetricks.ps1 \
-            https://raw.githubusercontent.com/PietJankbal/Chocolatey-for-wine/f8c5339c6fd9f2c37ca0b6621b9c51884b7bae7d/winetricks.ps1
-          python3 - /tmp/winetricks.ps1 <<'PY'
-          import re
+          root=/tmp/aik-expand
+          mkdir -p "$root/iso-extract" "$root/winpe" "$root/helper"
+          url=https://download.microsoft.com/download/8/E/9/8E9BBC64-E6F8-457C-9B8D-F6C9A16E6D6A/KB3AIK_EN.iso
+
+          curl -fL --retry 3 --connect-timeout 30 --max-time 2400 \
+            -H 'Range: bytes=0-1099999999' \
+            -D "$root/headers.txt" \
+            -o "$root/KB3AIK_EN.partial.iso" "$url"
+          echo '=== HTTP headers ==='
+          cat "$root/headers.txt"
+          echo '=== partial ISO ==='
+          stat -c 'bytes=%s' "$root/KB3AIK_EN.partial.iso"
+          sha256sum "$root/KB3AIK_EN.partial.iso"
+
+          7z x -y "$root/KB3AIK_EN.partial.iso" WinPE.cab -o"$root/iso-extract" >/dev/null
+          test -s "$root/iso-extract/WinPE.cab"
+          echo '=== extracted WinPE.cab ==='
+          stat -c 'bytes=%s' "$root/iso-extract/WinPE.cab"
+          sha256sum "$root/iso-extract/WinPE.cab"
+
+          python3 -m pip install --quiet pycdlib
+          python3 - "$root/KB3AIK_EN.partial.iso" "$root/winpe-range.txt" <<'PY'
           import sys
           from pathlib import Path
+          import pycdlib
 
-          lines = Path(sys.argv[1]).read_text(encoding='utf-8-sig').splitlines()
-
-          def function_block(name: str):
-              start = next(
-                  i for i, line in enumerate(lines)
-                  if re.match(rf'\s*function\s+{re.escape(name)}\b', line, re.I)
-              )
-              depth = 0
-              opened = False
-              for i in range(start, len(lines)):
-                  cleaned = re.sub(r'<#.*?#>', '', lines[i])
-                  opens = cleaned.count('{')
-                  closes = cleaned.count('}')
-                  if opens:
-                      opened = True
-                  depth += opens - closes
-                  if opened and depth <= 0 and i > start:
-                      return start, i + 1
-              raise RuntimeError(f'unclosed function {name}')
-
-          for target in ('func_expand', 'func_msdelta'):
-              start, end = function_block(target)
-              print(f'=== {target} lines {start + 1}-{end} ===')
-              for index in range(start, end):
-                  print(f'{index + 1:04d}: {lines[index]}')
+          source = sys.argv[1]
+          output = Path(sys.argv[2])
+          iso = pycdlib.PyCdlib()
+          iso.open(source)
+          found = None
+          for dirname, dirlist, filelist in iso.walk(iso_path='/'):
+              for name in filelist:
+                  if name.upper().rstrip(';1') == 'WINPE.CAB':
+                      path = (dirname.rstrip('/') + '/' + name).replace('//', '/')
+                      record = iso.get_record(iso_path=path)
+                      found = (path, record.extent_location(), record.data_length)
+                      break
+              if found:
+                  break
+          iso.close()
+          if not found:
+              raise SystemExit('WinPE.cab not found in ISO filesystem')
+          path, extent, size = found
+          offset = extent * 2048
+          end = offset + size - 1
+          output.write_text(f'{offset} {end} {size} {path}\n', encoding='utf-8')
+          print(f'path={path}')
+          print(f'extent={extent}')
+          print(f'offset={offset}')
+          print(f'end={end}')
+          print(f'size={size}')
           PY
+
+          read -r offset end size iso_path < "$root/winpe-range.txt"
+          curl -fL --retry 3 --connect-timeout 30 --max-time 1200 \
+            -H "Range: bytes=$offset-$end" \
+            -D "$root/range-headers.txt" \
+            -o "$root/WinPE.range.cab" "$url"
+          test "$(stat -c %s "$root/WinPE.range.cab")" = "$size"
+          cmp "$root/iso-extract/WinPE.cab" "$root/WinPE.range.cab"
+          echo '=== direct range WinPE.cab ==='
+          cat "$root/range-headers.txt"
+          sha256sum "$root/WinPE.range.cab"
+
+          7z x -y "$root/WinPE.range.cab" F3_WINPE.WIM -o"$root/winpe" >/dev/null
+          test -s "$root/winpe/F3_WINPE.WIM"
+          echo '=== F3_WINPE.WIM ==='
+          stat -c 'bytes=%s' "$root/winpe/F3_WINPE.WIM"
+          sha256sum "$root/winpe/F3_WINPE.WIM"
+
+          for item in \
+            'amd64_microsoft-windows-deltapackageexpander_31bf3856ad364e35_6.1.7600.16385_none_c5d387d64eb8e1f2/dpx.dll' \
+            'amd64_microsoft-windows-cabinet_31bf3856ad364e35_6.1.7600.16385_none_933442c3fb9cbaed/cabinet.dll' \
+            'amd64_microsoft-windows-deltacompressionengine_31bf3856ad364e35_6.1.7600.16385_none_9c2159bf9f702069/msdelta.dll' \
+            'amd64_microsoft-windows-basic-misc-tools_31bf3856ad364e35_6.1.7600.16385_none_7351a917d91c961e/expand.exe'; do
+            7z e -y "$root/winpe/F3_WINPE.WIM" "Windows/winsxs/$item" -o"$root/helper" >/dev/null
+          done
+          echo '=== base helper files ==='
+          sha256sum "$root/helper"/*
