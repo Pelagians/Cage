@@ -23,6 +23,8 @@ expand_exe="$expand_dir/expand.exe"
 cabinet_dll="$expand_dir/cabinet.dll"
 dpx_dll="$expand_dir/dpx.dll"
 msdelta_dll="$expand_dir/msdelta.dll"
+system_dpx="$system32/dpx.dll"
+system_msdelta="$system32/msdelta.dll"
 expand_sha256="72cedaef15d65f2a88a19f1fff3e420a978b93b0e5bb9fd160fb26b7b9aca8cc"
 cabinet_sha256="5d66d94a347bc43d0d8157cc5a24abaf2f60b5dbeb2b1527c251452128e00ee2"
 dpx_sha256="3e77ebc2f91887d69d53ec4cf83d84572d0d1c234ea7eed06e0e3020baa29794"
@@ -112,6 +114,13 @@ else
   done
 fi
 
+# CFW's PS5.1 bootstrap checks dpx.dll in System32 before invoking the helper.
+# Preserve the canonical co-located expnd set and provide compatibility copies.
+install -m 0644 "$dpx_dll" "$system_dpx.part"
+mv -f "$system_dpx.part" "$system_dpx"
+install -m 0644 "$msdelta_dll" "$system_msdelta.part"
+mv -f "$system_msdelta.part" "$system_msdelta"
+
 policy_key='HKCU\Software\Wine\AppDefaults\expand.exe\DllOverrides'
 timeout --kill-after=10s 120s wine reg add "$policy_key" /v cabinet /d native,builtin /f \
   >"$log_root/aik-expand-policy.log" 2>&1
@@ -120,8 +129,11 @@ timeout --kill-after=10s 120s wine reg add "$policy_key" /v msdelta /d native,bu
 timeout --kill-after=10s 90s wineserver -w >>"$log_root/aik-expand-policy.log" 2>&1
 
 verify_installed
+verify_sha256 "$system_dpx" "$dpx_sha256" System32/dpx.dll
+verify_sha256 "$system_msdelta" "$msdelta_sha256" System32/msdelta.dll
 python3 - "$metadata" "$provider" "$iso_url" "$range_start" "$range_end" "$range_size" \
-  "$winpe_cab_sha256" "$f3_wim_sha256" "$expand_exe" "$cabinet_dll" "$dpx_dll" "$msdelta_dll" <<'PY'
+  "$winpe_cab_sha256" "$f3_wim_sha256" "$expand_exe" "$cabinet_dll" "$dpx_dll" "$msdelta_dll" \
+  "$system_dpx" "$system_msdelta" <<'PY'
 import hashlib
 import json
 import sys
@@ -140,6 +152,10 @@ files = {
     "cabinet.dll": Path(sys.argv[10]),
     "dpx.dll": Path(sys.argv[11]),
     "msdelta.dll": Path(sys.argv[12]),
+}
+compatibility_files = {
+    "dpx.dll": Path(sys.argv[13]),
+    "msdelta.dll": Path(sys.argv[14]),
 }
 
 def sha256(path: Path) -> str:
@@ -165,6 +181,13 @@ record = {
             "sha256": sha256(path),
         }
         for name, path in files.items()
+    },
+    "compatibilityCopies": {
+        name: {
+            "path": "C:/Windows/System32/" + name,
+            "sha256": sha256(path),
+        }
+        for name, path in compatibility_files.items()
     },
     "winePolicy": {
         "application": "expand.exe",
