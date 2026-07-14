@@ -9,104 +9,14 @@ exec > >(tee -a "$report") 2>&1
 trap 'rc=$?; echo "diagnostic_exit=$rc"; exit "$rc"' EXIT
 
 url=https://download.microsoft.com/download/8/E/9/8E9BBC64-E6F8-457C-9B8D-F6C9A16E6D6A/KB3AIK_EN.iso
-head_end=16777215
+offset=640526336
+end=1086964920
+size=446438585
 
-echo '=== ISO/UDF metadata ranges ==='
-curl -fsSL --retry 3 --connect-timeout 30 --max-time 600 \
-  -H "Range: bytes=0-$head_end" \
-  -D "$root/headers.txt" \
-  -o "$root/KB3AIK_EN.head.bin" "$url"
-cat "$root/headers.txt"
-stat -c 'head_bytes=%s' "$root/KB3AIK_EN.head.bin"
-printf 'head_sha256='; sha256sum "$root/KB3AIK_EN.head.bin" | cut -d ' ' -f 1
-
-total_size="$(sed -nE 's/^content-range: bytes [0-9]+-[0-9]+\/([0-9]+)\r?$/\1/ip' "$root/headers.txt" | tail -1)"
-test -n "$total_size"
-tail_size=4194304
-tail_start=$((total_size - tail_size))
-tail_end=$((total_size - 1))
-curl -fsSL --retry 3 --connect-timeout 30 --max-time 600 \
-  -H "Range: bytes=$tail_start-$tail_end" \
-  -D "$root/tail-headers.txt" \
-  -o "$root/KB3AIK_EN.tail.bin" "$url"
-stat -c 'tail_bytes=%s' "$root/KB3AIK_EN.tail.bin"
-printf 'tail_sha256='; sha256sum "$root/KB3AIK_EN.tail.bin" | cut -d ' ' -f 1
-
-truncate -s "$total_size" "$root/KB3AIK_EN.sparse.iso"
-dd if="$root/KB3AIK_EN.head.bin" of="$root/KB3AIK_EN.sparse.iso" conv=notrunc status=none
-dd if="$root/KB3AIK_EN.tail.bin" of="$root/KB3AIK_EN.sparse.iso" bs=1 seek="$tail_start" conv=notrunc status=none
-stat -c 'sparse_iso_bytes=%s' "$root/KB3AIK_EN.sparse.iso"
-
-python3 -m pip install --quiet pycdlib
-python3 - "$root/KB3AIK_EN.sparse.iso" "$root/winpe-range.txt" <<'PY'
-import sys
-from pathlib import Path
-import pycdlib
-
-source = sys.argv[1]
-output = Path(sys.argv[2])
-iso = pycdlib.PyCdlib()
-iso.open(source)
-record = None
-path = None
-for dirname, _, filelist in iso.walk(udf_path='/'):
-    for name in filelist:
-        if name.upper() == 'WINPE.CAB':
-            path = (dirname.rstrip('/') + '/' + name).replace('//', '/')
-            record = iso.get_record(udf_path=path)
-            break
-    if record is not None:
-        break
-if record is None:
-    iso.close()
-    raise SystemExit('WinPE.cab not found in UDF filesystem')
-
-print(f'udf_path={path}')
-print(f'record_type={type(record).__module__}.{type(record).__name__}')
-print(f'file_entry_extent={record.extent_location()}')
-print(f'data_length={record.get_data_length()}')
-print(f'icb_flags={record.icb_tag.flags}')
-print(f'alloc_desc_count={len(record.alloc_descs)}')
-for index, descriptor in enumerate(record.alloc_descs):
-    print(f'alloc_desc[{index}]_type={type(descriptor).__module__}.{type(descriptor).__name__}')
-    for name in ('log_block_num', 'extent_length', 'part_ref_num', 'partition_ref_num', 'extent_position'):
-        if hasattr(descriptor, name):
-            print(f'alloc_desc[{index}].{name}={getattr(descriptor, name)}')
-    print(f'alloc_desc[{index}]_attrs=' + ','.join(
-        name for name in dir(descriptor) if not name.startswith('_')
-    ))
-
-sequence = iso.udf_main_descs
-print('udf_main_descs_attrs=' + ','.join(
-    name for name in dir(sequence) if not name.startswith('_')
-))
-for attr_name in sorted(name for name in dir(sequence) if not name.startswith('_')):
-    try:
-        value = getattr(sequence, attr_name)
-    except Exception as exc:
-        value = f'<error {exc}>'
-    if callable(value):
-        continue
-    print(f'udf_main_descs.{attr_name}={value!r}')
-    if isinstance(value, (list, tuple)):
-        for index, item in enumerate(value):
-            print(f'udf_main_descs.{attr_name}[{index}]_type={type(item).__module__}.{type(item).__name__}')
-            for child_name in sorted(name for name in dir(item) if not name.startswith('_')):
-                try:
-                    child_value = getattr(item, child_name)
-                except Exception:
-                    continue
-                if callable(child_value):
-                    continue
-                if isinstance(child_value, (int, str, bytes)):
-                    print(f'udf_main_descs.{attr_name}[{index}].{child_name}={child_value!r}')
-
-iso.close()
-raise SystemExit('allocation descriptor diagnostic complete')
-PY
-
-read -r offset end size udf_path < "$root/winpe-range.txt"
 echo '=== direct WinPE.cab range ==='
+echo "winpe_offset=$offset"
+echo "winpe_end=$end"
+echo "winpe_size=$size"
 curl -fsSL --retry 3 --connect-timeout 30 --max-time 1200 \
   -H "Range: bytes=$offset-$end" \
   -D "$root/range-headers.txt" \
