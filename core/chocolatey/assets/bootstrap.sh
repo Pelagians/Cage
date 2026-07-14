@@ -2,10 +2,12 @@ set -eu
 unset WINEDLLOVERRIDES
 echo "[cage] Bootstrap pinned Chocolatey-for-Wine fork"
 wine_prefix="${WINEPREFIX:-$HOME/.wine}"
+module_cache="${CAGE_MODULE_CACHE_DIR:-/tmp/cage-module-cache}"
 cfw_work="$wine_prefix/.cage/chocolatey-bootstrap/{{BOOTSTRAP_PROFILE_ID}}"
 cfw_archive="$cfw_work/Chocolatey-for-wine.7z"
 cfw_extract="$cfw_work/extracted/Chocolatey-for-wine"
 cfw_payload_cache="$cfw_work/choc_install_files"
+cfw_component_cache="$module_cache/cfw-bootstrap/{{BOOTSTRAP_PROFILE_ID}}"
 cfw_prefix_dir="$wine_prefix/drive_c/ProgramData/Chocolatey-for-wine"
 cfw_installer="$cfw_extract/ChoCinstaller_{{CHOCOLATEY_FOR_WINE_INSTALLER_VERSION}}.exe"
 canonical_choco="$wine_prefix/drive_c/ProgramData/chocolatey/bin/choco.exe"
@@ -35,7 +37,7 @@ fetch_payload() {
 }
 
 rm -rf "$cfw_work"
-mkdir -p "$cfw_payload_cache" "$cfw_prefix_dir" "$metadata_dir" "$logs_dir"
+mkdir -p "$cfw_payload_cache" "$cfw_component_cache" "$cfw_prefix_dir" "$metadata_dir" "$logs_dir"
 cage_fetch_verified "{{CHOCOLATEY_FOR_WINE_URL}}" "{{CHOCOLATEY_FOR_WINE_SHA256}}" "$cfw_archive" "{{BOOTSTRAP_PROFILE_ID}}"
 test "$(sha256sum "$cfw_archive" | cut -d ' ' -f 1)" = "{{CHOCOLATEY_FOR_WINE_SHA256}}"
 extract_7z_archive "$cfw_archive" "$cfw_work/extracted"
@@ -44,6 +46,13 @@ test -f "$cfw_extract/choc_install.ps1"
 test -f "$cfw_extract/7z.exe"
 test -f "$cfw_extract/7z.dll"
 test -f "$cfw_extract/c_drive.7z"
+
+# Preserve only the immutable CFW component archive needed by later layers.
+# The enclosing CFW release is already content-addressed by the bootstrap profile.
+cp -f "$cfw_extract/c_drive.7z" "$cfw_component_cache/c_drive.7z.part"
+mv -f "$cfw_component_cache/c_drive.7z.part" "$cfw_component_cache/c_drive.7z"
+cfw_c_drive_sha256="$(sha256sum "$cfw_component_cache/c_drive.7z" | cut -d ' ' -f 1)"
+printf 'c_drive.7z sha256=%s\n' "$cfw_c_drive_sha256" > "$logs_dir/cfw-component-cache.log"
 
 fetch_payload "chocolatey.{{CHOCOLATEY_VERSION}}.nupkg" "{{CHOCOLATEY_NUPKG_URL}}" "{{CHOCOLATEY_NUPKG_SHA256}}"
 fetch_payload "{{POWERSHELL_MSI_NAME}}" "{{POWERSHELL_MSI_URL}}" "{{POWERSHELL_MSI_SHA256}}"
@@ -127,12 +136,13 @@ else
 fi
 set -e
 
-python3 - "$metadata" "$installer_rc" "$settle_rc" "$canonical_rc" "$pwsh_direct_rc" <<'PY'
+python3 - "$metadata" "$installer_rc" "$settle_rc" "$canonical_rc" "$pwsh_direct_rc" "$cfw_c_drive_sha256" <<'PY'
 import json
 import sys
 from pathlib import Path
 path = Path(sys.argv[1])
-installer_rc, settle_rc, canonical_rc, pwsh_direct_rc = map(int, sys.argv[2:])
+installer_rc, settle_rc, canonical_rc, pwsh_direct_rc = map(int, sys.argv[2:6])
+c_drive_sha256 = sys.argv[6]
 passed = installer_rc == 0 and settle_rc == 0 and canonical_rc == 0
 record = {
     "schemaVersion": "cage.chocolatey-upstream-bootstrap/v0",
@@ -142,10 +152,17 @@ record = {
     "offline": True,
     "returnCodes": {"installer": installer_rc, "wineserverSettle": settle_rc, "directPwsh": pwsh_direct_rc},
     "checks": {"canonicalChocoExists": canonical_rc == 0},
+    "retainedComponents": {
+        "cDriveArchive": {
+            "path": "module-cache/cfw-bootstrap/{{BOOTSTRAP_PROFILE_ID}}/c_drive.7z",
+            "sha256": c_drive_sha256,
+        }
+    },
     "logs": {
         "installer": "logs/chocolatey-upstream/installer.log",
         "directPwsh": "logs/chocolatey-upstream/pwsh-direct-probe.log",
         "wineserverSettle": "logs/chocolatey-upstream/wineserver-settle.log",
+        "componentCache": "logs/chocolatey-upstream/cfw-component-cache.log",
     },
 }
 temporary = path.with_suffix(path.suffix + ".part")
