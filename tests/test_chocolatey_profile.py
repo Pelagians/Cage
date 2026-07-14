@@ -45,6 +45,7 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
         self.assertEqual(profile.id, "cfw-v0.5c.755-noah.6-choco-2.6.0-synchro-r13")
         self.assertEqual(profile.dotnet_profile, "dotnet48-cfw-r1")
         self.assertEqual(profile.dotnet_installer_sha256, "95889d6de3f2070c07790ad6cf2000d33d9a1bdfc6a381725ab82ab1c314fd53")
+        self.assertEqual(profile.mscoree_update_sha256, "a5f4243ce8b07c9222284fd8ff6f7e742d934c57c89de9cab5d88c74402264e3")
         self.assertEqual(profile.chocolatey_for_wine_version, "v0.5c.755-noah.6")
         self.assertEqual(profile.chocolatey_for_wine_installer_version, "0.5c.755")
         self.assertEqual(profile.chocolatey_for_wine_url, "https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.6/Chocolatey-for-wine.7z")
@@ -83,6 +84,8 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
         self.assertEqual(record.description, "Record layered Chocolatey bootstrap profile")
         self.assertIn("metadata/chocolatey-bootstrap.json", command)
         self.assertIn(asset_sha256("fetch-verified.sh"), command)
+        self.assertIn(asset_sha256("install-native-mscoree.sh"), command)
+        self.assertIn(asset_sha256("assembly_inventory.py"), command)
         self.assertIn("windows-powershell-5.1-cfw", command)
         self.assertIn("synchro-v4.2.0", command)
         self.assertIn("c3b4923d0f63188843bd2a15be64bca8f4a9902b", command)
@@ -103,6 +106,7 @@ class ChocolateyBootstrapProfileTests(unittest.TestCase):
         self.assertIn('"core.chocolatey.assets"', pyproject)
         self.assertIn('"*.sh"', pyproject)
         self.assertIn('"*.ps1"', pyproject)
+        self.assertIn('"*.py"', pyproject)
 
 
 class ChocolateyAssetContractTests(unittest.TestCase):
@@ -112,7 +116,9 @@ class ChocolateyAssetContractTests(unittest.TestCase):
             "failure-diagnostics.sh",
             "bootstrap.sh",
             "install-dpx-helper.sh",
+            "install-native-mscoree.sh",
             "install-powershell51.sh",
+            "assembly_inventory.py",
             "install-profile-fragments.sh",
             "verify-powershell-layer.sh",
             "verify-chocolatey.sh",
@@ -152,8 +158,9 @@ class ChocolateyAssetContractTests(unittest.TestCase):
             self.assertNotIn("New-Item -Path $PROFILE", text)
             self.assertNotIn("WindowsPowerShell\\v1.0\\powershell.exe", text)
 
-    def test_windows_powershell_assets_pin_aik_range_and_outer_wmf_source(self):
+    def test_windows_powershell_assets_pin_native_prerequisites_and_wmf_source(self):
         helper = load_asset("install-dpx-helper.sh")
+        loader = load_asset("install-native-mscoree.sh")
         script = load_asset("install-powershell51.sh")
 
         self.assertIn("cfw-dpx-helper-aik-winpe", helper)
@@ -174,6 +181,16 @@ class ChocolateyAssetContractTests(unittest.TestCase):
         self.assertIn("msdelta.dll", helper)
         self.assertNotIn("powershell2.7z", helper)
         self.assertNotIn("retained-cfw-component", helper)
+
+        self.assertIn("cfw-native-mscoree-kb958488", loader)
+        self.assertIn("{{MSCOREE_UPDATE_URL}}", loader)
+        self.assertIn("{{MSCOREE_UPDATE_SHA256}}", loader)
+        self.assertIn("81d3951c736cccb9578eed19ca9f1d7f68fc17dde1d87eadea72767adbe81734", loader)
+        self.assertIn("758e5ba89665c574456a2a826ef5a7dc2487c8379893010eb57bc40127ac918f", loader)
+        self.assertIn("46e9715f3cd09f32fbeaa5379991e9e7daccbd2407c2d061fda3a04f05108133", loader)
+        self.assertIn("system32/mscoree.dll", loader)
+        self.assertIn("syswow64/mscoree.dll", loader)
+        self.assertIn("native-mscoree.json", loader)
 
         self.assertIn("Win7AndW2K8R2-KB3191566-x64.zip", script)
         self.assertIn("f383c34aa65332662a17d95409a2ddedadceda74427e35d05024cd0a6a2fa647", script)
