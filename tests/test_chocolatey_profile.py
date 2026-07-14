@@ -168,12 +168,21 @@ class ChocolateyAssetContractTests(unittest.TestCase):
             self.assertNotIn("New-Item -Path $PROFILE", text)
             self.assertNotIn("WindowsPowerShell\\v1.0\\powershell.exe", text)
 
-    def test_windows_powershell_assets_pin_dpx_and_outer_wmf_sources(self):
+    def test_windows_powershell_assets_reuse_cfw_component_and_pin_outer_wmf_source(self):
+        bootstrap = load_asset("bootstrap.sh")
         helper = load_asset("install-dpx-helper.sh")
         script = load_asset("install-powershell51.sh")
 
-        self.assertIn("powershell2.7z", helper)
-        self.assertIn("1dbd829b097706a24866aa4e4c0a7de876d91f189567d7d8dfc3448319d2e97438e1d013ab61b57d77653598784258ccef8cff646081f2c6937985910fdee9c1", helper)
+        self.assertIn("cfw_component_cache", bootstrap)
+        self.assertIn('cp -f "$cfw_extract/c_drive.7z"', bootstrap)
+        self.assertIn("cfw_c_drive_sha256", bootstrap)
+        self.assertIn("retainedComponents", bootstrap)
+
+        self.assertIn("cfw-dpx-helper-from-c-drive", helper)
+        self.assertIn("c_drive.7z", helper)
+        self.assertIn("retained-cfw-component", helper)
+        self.assertIn("cfw-c-drive-inventory.log", helper)
+        self.assertNotIn("powershell2.7z", helper)
         self.assertIn("system32/expnd", helper)
         self.assertIn("dpx.dll", helper)
         self.assertIn("msdelta.dll", helper)
