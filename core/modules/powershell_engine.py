@@ -24,6 +24,101 @@ WINDOWS_POWERSHELL_PROVIDER = "windows-powershell-5.1-cfw"
 CFW_DPX_PROVIDER = "cfw-dpx-helper-aik-winpe"
 CFW_MSCOREE_PROVIDER = "cfw-native-mscoree-kb958488"
 
+# Exact component contract used by CFW's working func_ps51 implementation.
+# Microsoft shortens several servicing component names with "..", so token
+# matching silently omitted required native MI and PackageManagement providers.
+_CFW_PS51_MANIFESTS = (
+    "wow64_microsoft.powershell.packagemanagement_31bf3856ad364e35_7.3.7601.16384_none_be98c8f8cfb32e06.manifest",
+    "amd64_microsoft.powershell.packagemanagement_31bf3856ad364e35_7.3.7601.16384_none_b4441ea69b526c0b.manifest",
+    "msil_microsoft.powershell.consolehost_31bf3856ad364e35_7.3.7601.16384_none_8634e813855724c9.manifest",
+    "amd64_microsoft.managemen..frastructure.native_31bf3856ad364e35_7.3.7601.16384_none_8ab57567838da803.manifest",
+    "x86_microsoft.managemen..frastructure.native_31bf3856ad364e35_7.3.7601.16384_none_d262ac3e9809d109.manifest",
+    "amd64_microsoft.powershell.archive_31bf3856ad364e35_7.3.7601.16384_none_f7ab4242f320bef0.manifest",
+    "msil_microsoft.powershell.security_31bf3856ad364e35_7.3.7601.16384_none_64c18e3e0eafee92.manifest",
+    "amd64_microsoft.packagemanagement.common_31bf3856ad364e35_7.3.7601.16384_none_ee66270965c165ab.manifest",
+    "wow64_microsoft.packagemanagement.common_31bf3856ad364e35_7.3.7601.16384_none_f8bad15b9a2227a6.manifest",
+    "amd64_microsoft.packagemanagement_31bf3856ad364e35_7.3.7601.16384_none_f23f0a687ff51c88.manifest",
+    "wow64_microsoft.packagemanagement_31bf3856ad364e35_7.3.7601.16384_none_fc93b4bab455de83.manifest",
+    "msil_system.management.automation_31bf3856ad364e35_7.3.7601.16384_none_85266a48f56bfafc.manifest",
+    "msil_microsoft.powershel..ommands.diagnostics_31bf3856ad364e35_7.3.7601.16384_none_3cbfce2c3881d318.manifest",
+    "msil_microsoft.wsman.management_31bf3856ad364e35_7.3.7601.16384_none_60964e40b40fafee.manifest",
+    "msil_microsoft.powershell.commands.management_31bf3856ad364e35_7.3.7601.16384_none_c1a0335546714b23.manifest",
+    "msil_microsoft.powershell.commands.utility_31bf3856ad364e35_7.3.7601.16384_none_d96091fd5568ce18.manifest",
+    "msil_microsoft.management.infrastructure_31bf3856ad364e35_7.3.7601.16384_none_8310156aa31a52f1.manifest",
+    "msil_microsoft.wsman.runtime_31bf3856ad364e35_7.3.7601.16384_none_a19b148df40272fb.manifest",
+    "msil_microsoft.powershell.graphicalhost_31bf3856ad364e35_7.3.7601.16384_none_c32121af2a1808d4.manifest",
+    "amd64_microsoft.powershell.psget_31bf3856ad364e35_7.3.7601.16384_none_c9db05c823f10f09.manifest",
+    "wow64_microsoft.powershell.psget_31bf3856ad364e35_7.3.7601.16384_none_d42fb01a5851d104.manifest",
+    "msil_policy.1.0.system.management.automation_31bf3856ad364e35_7.3.7601.16384_none_79a60ff187b4c325.manifest",
+    "wow64_microsoft.windows.powershell.v3.common_31bf3856ad364e35_7.3.7601.16384_none_8187c53a975bb9ea.manifest",
+    "amd64_microsoft.windows.powershell.v3.common_31bf3856ad364e35_7.3.7601.16384_none_77331ae862faf7ef.manifest",
+    "wow64_microsoft.packagema..provider.powershell_31bf3856ad364e35_7.3.7601.16384_none_f50f549afdaf3c10.manifest",
+    "amd64_microsoft.packagema..provider.powershell_31bf3856ad364e35_7.3.7601.16384_none_eabaaa48c94e7a15.manifest",
+    "wow64_microsoft.packagema..ement.coreproviders_31bf3856ad364e35_7.3.7601.16384_none_f05cb06fdbbd6e3c.manifest",
+    "amd64_microsoft.packagema..ement.coreproviders_31bf3856ad364e35_7.3.7601.16384_none_e608061da75cac41.manifest",
+    "amd64_microsoft.packagema..t.archiverproviders_31bf3856ad364e35_7.3.7601.16384_none_a98e3ebb18648eb6.manifest",
+    "wow64_microsoft.packagema..t.archiverproviders_31bf3856ad364e35_7.3.7601.16384_none_b3e2e90d4cc550b1.manifest",
+    "amd64_microsoft.packagemanagement.msiprovider_31bf3856ad364e35_7.3.7601.16384_none_ae42a045a84e072e.manifest",
+    "wow64_microsoft.packagemanagement.msiprovider_31bf3856ad364e35_7.3.7601.16384_none_b8974a97dcaec929.manifest",
+    "amd64_microsoft-windows-powershell-exe_31bf3856ad364e35_7.3.7601.16384_none_48be7e79e188387e.manifest",
+    "wow64_microsoft-windows-powershell-exe_31bf3856ad364e35_7.3.7601.16384_none_531328cc15e8fa79.manifest",
+)
+
+
+def _apply_cfw_ps51_contract(engine_command: str) -> str:
+    """Replace broad WMF discovery with CFW's exact, required component set."""
+    selector = """python3 - "$payload_root" "$work/manifests.txt" <<'PY'
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+output = Path(sys.argv[2])
+tokens = (
+    "microsoft.powershell.",
+    "system.management.automation_",
+    "microsoft.windows.powershell.v3.common_",
+    "microsoft-windows-powershell-exe_",
+    "microsoft.packagemanagement",
+    "microsoft.management.infrastructure_",
+    "microsoft.wsman.",
+)
+selected = []
+for path in sorted(root.glob("*.manifest")):
+    name = path.name.lower()
+    if "_7.3.7601.16384_" not in name or "languagepack" in name:
+        continue
+    if any(token in name for token in tokens):
+        selected.append(path.name)
+if not selected:
+    raise SystemExit("no WMF 5.1 PowerShell manifests selected")
+output.write_text("\\n".join(selected) + "\\n", encoding="utf-8")
+PY"""
+    contract = (
+        'cat > "$work/manifests.txt" <<\'CFW_PS51_MANIFESTS\'\n'
+        + "\n".join(_CFW_PS51_MANIFESTS)
+        + "\nCFW_PS51_MANIFESTS"
+    )
+    if selector not in engine_command:
+        raise RuntimeError("Windows PowerShell 5.1 manifest selector changed unexpectedly")
+    engine_command = engine_command.replace(selector, contract, 1)
+
+    required_line = "    required = component.lower() in required_components"
+    if required_line not in engine_command:
+        raise RuntimeError("Windows PowerShell 5.1 required-component policy changed unexpectedly")
+    engine_command = engine_command.replace(required_line, "    required = True", 1)
+
+    engine_command = engine_command.replace(
+        'echo "[cage] native mscoree64 bytes=$(wc -c < \\"$native_mscoree64\\" 2>/dev/null || echo 0)"',
+        'echo "[cage] native mscoree64 bytes=$(wc -c < "$native_mscoree64" 2>/dev/null || echo 0)"',
+        1,
+    )
+    engine_command = engine_command.replace(
+        'echo "[cage] native clr64 bytes=$(wc -c < \\"$native_clr64\\" 2>/dev/null || echo 0)"',
+        'echo "[cage] native clr64 bytes=$(wc -c < "$native_clr64" 2>/dev/null || echo 0)"',
+        1,
+    )
+    return engine_command
+
 
 def windows_powershell51_steps(
     *,
@@ -64,6 +159,7 @@ def windows_powershell51_steps(
             "ASSEMBLY_INVENTORY_PY_SHA256": asset_sha256(assembly_name),
         },
     )
+    engine_command = _apply_cfw_ps51_contract(engine_command)
     return [
         BuildStep(
             commands=[load_asset(helper_name)],
@@ -102,6 +198,7 @@ def windows_powershell51_steps(
                 "scriptSha256": asset_sha256(engine_name),
                 "assemblyInventoryAsset": f"core/chocolatey/assets/{assembly_name}",
                 "assemblyInventorySha256": asset_sha256(assembly_name),
+                "cfwManifestCount": len(_CFW_PS51_MANIFESTS),
                 "evidence": "metadata/powershell-engine.json",
             },
         ),
@@ -116,7 +213,7 @@ def powershell_engine_steps(*, wine_prefix: str = "${WINEPREFIX:-$HOME/.wine}", 
     """
     pwsh_dir = f"{wine_prefix}/drive_c/Program Files/PowerShell/{version_slot}"
     pwsh_exe = f"{pwsh_dir}/pwsh.exe"
-    script = f'''set -eu
+    script = f"""set -eu
 unset WINEDLLOVERRIDES
 wine_prefix="{wine_prefix}"
 module_cache="${{CAGE_MODULE_CACHE_DIR:-/tmp/cage-module-cache}}"
@@ -197,7 +294,7 @@ with zipfile.ZipFile(sys.argv[1]) as archive:
 PY
 chmod +x "$pwsh_exe"
 prepare_pwsh_policy
-verify_engine || exit 70'''
+verify_engine || exit 70"""
     return [BuildStep(
         commands=[script],
         description="Probe experimental PowerShell 7 engine",
