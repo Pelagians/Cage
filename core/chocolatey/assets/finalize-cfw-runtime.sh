@@ -8,8 +8,10 @@ bundle_root="${CAGE_BUNDLE_MOUNT:-/opt/cage}"
 runtime_cache="$module_cache/cfw-runtime/{{BOOTSTRAP_PROFILE_ID}}"
 payload_cache="$runtime_cache/payloads"
 runtime_script="$runtime_cache/container-runtime.sh"
+runtime_evidence="$bundle_root/cfw-runtime/container-runtime.json"
+policy_evidence="$bundle_root/metadata/chocolatey-feature-policy.json"
 
-mkdir -p "$payload_cache" "$bundle_root/cfw-runtime"
+mkdir -p "$payload_cache" "$bundle_root/cfw-runtime" "$bundle_root/metadata"
 
 cage_fetch_verified \
   "{{CFW_CONTAINER_RUNTIME_URL}}" \
@@ -36,17 +38,40 @@ export CFW_CHOCO_TIMEOUT="${CAGE_CHOCOLATEY_FEATURE_TIMEOUT:-180s}"
 
 sh "$runtime_script"
 
-test -s "$bundle_root/cfw-runtime/container-runtime.json"
-python3 - "$bundle_root/cfw-runtime/container-runtime.json" <<'PY'
+test -s "$runtime_evidence"
+python3 - "$runtime_evidence" "$policy_evidence" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-record = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+runtime_path = Path(sys.argv[1])
+policy_path = Path(sys.argv[2])
+record = json.loads(runtime_path.read_text(encoding="utf-8"))
 if record.get("status") != "passed":
     raise SystemExit("CFW integrated runtime evidence did not pass")
 if record.get("provider") != "cfw-integrated-chocolatey-runtime":
     raise SystemExit("unexpected CFW runtime provider")
+checks = record.get("checks", {})
+if checks.get("powershellHostEnabled") is not True:
+    raise SystemExit("CFW runtime did not verify Chocolatey's in-process PowerShell host")
+
+policy = {
+    "schemaVersion": "cage.chocolatey-feature-policy/v1",
+    "status": "passed",
+    "owner": "cfw",
+    "sourceEvidence": "cfw-runtime/container-runtime.json",
+    "features": {
+        "powershellHost": "enabled",
+        "allowGlobalConfirmation": "unchanged",
+    },
+    "checks": {
+        "powershellHost": True,
+        "chocolateyVersion": checks.get("chocolateyVersion") is True,
+    },
+}
+temporary = policy_path.with_suffix(policy_path.suffix + ".part")
+temporary.write_text(json.dumps(policy, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+temporary.replace(policy_path)
 PY
 
 echo "[cage] CFW integrated Chocolatey runtime verified"
