@@ -28,7 +28,7 @@ CFW_CONTAINER_RUNTIME_URL = (
     "https://raw.githubusercontent.com/noahgiroux/Chocolatey-for-wine/"
     f"{CFW_CONTRACT_COMMIT}/compat/container-runtime.sh"
 )
-CFW_CONTAINER_RUNTIME_SHA256 = "5dc10b6d54bb221a5793842be0247da54e956d95d0eb56c2e1c164daf4b7fc11"
+CFW_CONTAINER_RUNTIME_SHA256 = "5ccae5e3d4cc988b4566373c49378fbd2d525cf5d82dd0febd52dc62fc930e6e"
 CFW_RUNTIME_PROVIDER = "cfw-integrated-chocolatey-runtime"
 
 _FAILURE_DIAGNOSTIC_ASSETS = {
