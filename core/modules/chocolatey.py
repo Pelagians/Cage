@@ -8,12 +8,7 @@ import re
 import shlex
 from typing import Any
 
-from core.chocolatey import (
-    asset_sha256,
-    load_asset,
-    load_asset_bytes,
-    render_asset,
-)
+from core.chocolatey import asset_sha256, load_asset, load_asset_bytes, render_asset
 
 from .base import ModuleBase, ModuleError
 from ..build_step import BuildStep
@@ -23,6 +18,8 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 DEFAULT_CFW_RUNTIME_PROFILE_ID = "cfw-runtime-v1"
 DEFAULT_CFW_RUNTIME_ARTIFACT: dict[str, Any] | None = None
 CFW_RUNTIME_PROVIDER = "cfw-chocolatey-runtime"
+CFW_RUNTIME_ENGINE = "powershell-7.5.5-cfw-runtime"
+CFW_RUNTIME_SHIM = "synchro-v4.2.0"
 
 _FAILURE_DIAGNOSTIC_ASSETS = {
     "verify-chocolatey.sh",
@@ -35,20 +32,14 @@ _POST_SEED_STEP_SPECS = (
     ("smoke-lifecycle.sh", "Prove Chocolatey local package lifecycle", "wine-run", 1800),
     ("install-package.sh", "Install Chocolatey packages", "wine-run", 1800),
 )
-_RUNTIME_FIELDS = {
-    "id",
-    "url",
-    "sha256",
-    "evidenceUrl",
-    "evidenceSha256",
-    "wineVersions",
-}
+_RUNTIME_FIELDS = {"id", "url", "sha256", "evidenceUrl", "evidenceSha256", "wineVersions"}
 
 
-def _record_command(runtime: dict[str, Any], asset_hashes: dict[str, str]) -> str:
+def _record_command(runtime: dict[str, Any] | None, asset_hashes: dict[str, str]) -> str:
     payload = {
         "schemaVersion": "cage.chocolatey-runtime/v1",
         "runtime": runtime,
+        "runtimeAvailable": runtime is not None,
         "assets": asset_hashes,
         "packageExecutionHost": "external-windows-powershell",
         "prefixFoundation": CFW_RUNTIME_PROVIDER,
@@ -74,6 +65,8 @@ class ChocolateyModule(ModuleBase):
 
     def capabilities(self) -> dict[str, str]:
         return {
+            "engine": CFW_RUNTIME_ENGINE,
+            "winps-shim": CFW_RUNTIME_SHIM,
             "package-manager": "chocolatey-2.6.0",
             "package-execution-host": "external-windows-powershell",
             "prefix-foundation": CFW_RUNTIME_PROVIDER,
@@ -95,17 +88,12 @@ class ChocolateyModule(ModuleBase):
                 )
         return packages
 
-    def _runtime_artifact(self) -> dict[str, Any]:
+    def _runtime_artifact(self) -> dict[str, Any] | None:
         if not isinstance(self.install, dict):
             raise ModuleError("chocolatey module requires 'install' object")
-        runtime = self.install.get("runtimeArtifact")
+        runtime = self.install.get("runtimeArtifact", DEFAULT_CFW_RUNTIME_ARTIFACT)
         if runtime is None:
-            runtime = DEFAULT_CFW_RUNTIME_ARTIFACT
-        if runtime is None:
-            raise ModuleError(
-                "no released CFW runtime is pinned yet; this draft requires "
-                "install.runtimeArtifact with immutable archive and evidence digests"
-            )
+            return None
         if not isinstance(runtime, dict):
             raise ModuleError("chocolatey install.runtimeArtifact must be an object")
         unknown = sorted(set(runtime) - _RUNTIME_FIELDS)
@@ -147,20 +135,12 @@ class ChocolateyModule(ModuleBase):
         values = {
             "PACKAGE_ARGS": " ".join(shlex.quote(package) for package in packages),
             "SOURCE_ARG": (
-                " -s '" + self.source.replace("'", "'\"'\"'") + "'"
-                if self.source else ""
+                " -s '" + self.source.replace("'", "'\"'\"'") + "'" if self.source else ""
             ),
             "SMOKE_NUPKG_BASE64": base64.b64encode(
                 load_asset_bytes("cage-chocolatey-smoke.0.1.0.nupkg")
             ).decode("ascii"),
             "SMOKE_NUPKG_SHA256": asset_sha256("cage-chocolatey-smoke.0.1.0.nupkg"),
-            "BOOTSTRAP_PROFILE_ID": runtime["id"],
-            "CFW_RUNTIME_ID": runtime["id"],
-            "CFW_RUNTIME_URL": runtime["url"],
-            "CFW_RUNTIME_SHA256": runtime["sha256"],
-            "CFW_RUNTIME_EVIDENCE_URL": runtime["evidenceUrl"],
-            "CFW_RUNTIME_EVIDENCE_SHA256": runtime["evidenceSha256"],
-            "CFW_RUNTIME_WINE_VERSIONS": ",".join(runtime["wineVersions"]),
             "POWERSHELL_HOST_FEATURE": "powershellHost",
             "POWERSHELL_HOST_POLICY": "disabled",
             "ALLOW_GLOBAL_CONFIRMATION_POLICY": "disabled",
@@ -176,25 +156,50 @@ class ChocolateyModule(ModuleBase):
             "cage-chocolatey-smoke.0.1.0.nupkg",
         )
         asset_hashes = {name: asset_sha256(name) for name in asset_names}
-        common_metadata = {
-            "runtimeId": runtime["id"],
-            "runtimeProvider": CFW_RUNTIME_PROVIDER,
-            "runtimeArchiveSha256": runtime["sha256"],
-            "runtimeEvidenceSha256": runtime["evidenceSha256"],
-            "wineVersions": runtime["wineVersions"],
-        }
 
-        fetch_helper = load_asset("fetch-verified.sh").rstrip()
-        seed_script = fetch_helper + "\n\n" + render_asset("seed-cfw-runtime.sh", values)
-        steps: list[BuildStep] = [
-            BuildStep(
-                commands=[_record_command(runtime, asset_hashes)],
-                description="Record CFW prepared runtime profile",
-                kind="metadata",
-                metadata={**common_metadata, "output": "metadata/chocolatey-runtime-profile.json"},
-            ),
-            BuildStep(
+        runtime_id = runtime["id"] if runtime else DEFAULT_CFW_RUNTIME_PROFILE_ID
+        common_metadata: dict[str, Any] = {
+            "runtimeId": runtime_id,
+            "runtimeProvider": CFW_RUNTIME_PROVIDER,
+            "runtimeAvailable": runtime is not None,
+        }
+        steps: list[BuildStep] = [BuildStep(
+            commands=[_record_command(runtime, asset_hashes)],
+            description="Record CFW prepared runtime profile",
+            kind="metadata",
+            metadata={**common_metadata, "output": "metadata/chocolatey-runtime-profile.json"},
+        )]
+
+        if runtime is None:
+            seed_script = (
+                "echo '[cage] ERROR: no released CFW prepared runtime is pinned' >&2\n"
+                "echo '[cage] Supply install.runtimeArtifact or use a Cage release with a built-in CFW runtime profile' >&2\n"
+                "exit 65"
+            )
+            steps.append(BuildStep(
                 commands=[seed_script],
+                description="Require released CFW prepared prefix",
+                kind="prefix-seed",
+                metadata={**common_metadata, "status": "unreleased"},
+            ))
+        else:
+            values.update({
+                "BOOTSTRAP_PROFILE_ID": runtime["id"],
+                "CFW_RUNTIME_ID": runtime["id"],
+                "CFW_RUNTIME_URL": runtime["url"],
+                "CFW_RUNTIME_SHA256": runtime["sha256"],
+                "CFW_RUNTIME_EVIDENCE_URL": runtime["evidenceUrl"],
+                "CFW_RUNTIME_EVIDENCE_SHA256": runtime["evidenceSha256"],
+                "CFW_RUNTIME_WINE_VERSIONS": ",".join(runtime["wineVersions"]),
+            })
+            common_metadata.update({
+                "runtimeArchiveSha256": runtime["sha256"],
+                "runtimeEvidenceSha256": runtime["evidenceSha256"],
+                "wineVersions": runtime["wineVersions"],
+            })
+            fetch_helper = load_asset("fetch-verified.sh").rstrip()
+            steps.append(BuildStep(
+                commands=[fetch_helper + "\n\n" + render_asset("seed-cfw-runtime.sh", values)],
                 description="Seed CFW prepared prefix",
                 kind="prefix-seed",
                 timeout=1800,
@@ -204,8 +209,7 @@ class ChocolateyModule(ModuleBase):
                     "scriptSha256": asset_hashes["seed-cfw-runtime.sh"],
                     "runtimeEvidence": "metadata/cfw-runtime.json",
                 },
-            ),
-        ]
+            ))
 
         failure_helper = load_asset("failure-diagnostics.sh").rstrip()
         for asset_name, description, kind, timeout in _POST_SEED_STEP_SPECS:
@@ -229,8 +233,7 @@ class ChocolateyModule(ModuleBase):
                 commands=[script],
                 description=(
                     f"Install Chocolatey packages: {' '.join(packages)}"
-                    if asset_name == "install-package.sh"
-                    else description
+                    if asset_name == "install-package.sh" else description
                 ),
                 kind=kind,
                 timeout=timeout,
@@ -254,4 +257,6 @@ __all__ = [
     "DEFAULT_CFW_RUNTIME_PROFILE_ID",
     "DEFAULT_CFW_RUNTIME_ARTIFACT",
     "CFW_RUNTIME_PROVIDER",
+    "CFW_RUNTIME_ENGINE",
+    "CFW_RUNTIME_SHIM",
 ]
