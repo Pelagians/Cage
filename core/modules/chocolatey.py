@@ -23,12 +23,12 @@ from .base import ModuleBase, ModuleError
 from ..build_step import BuildStep
 
 _PACKAGE_RE = re.compile(r"^[A-Za-z0-9._+\-]+$")
-CFW_CONTRACT_COMMIT = "76a0313d50e0833fd03989d72793db6d1de79cab"
+CFW_CONTRACT_COMMIT = "afeb4df45c09995f83153226e44350f26429afd0"
 CFW_CONTAINER_RUNTIME_URL = (
     "https://raw.githubusercontent.com/noahgiroux/Chocolatey-for-wine/"
     f"{CFW_CONTRACT_COMMIT}/compat/container-runtime.sh"
 )
-CFW_CONTAINER_RUNTIME_SHA256 = "fcc943a58569a57660ae2500ef18953ee7a2bc52c024cbc945148f9f61207e35"
+CFW_CONTAINER_RUNTIME_SHA256 = "5dc10b6d54bb221a5793842be0247da54e956d95d0eb56c2e1c164daf4b7fc11"
 CFW_RUNTIME_PROVIDER = "cfw-integrated-chocolatey-runtime"
 
 _FAILURE_DIAGNOSTIC_ASSETS = {
