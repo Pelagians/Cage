@@ -1,0 +1,18 @@
+schemaVersion: cage.app/v0
+name: indexed-demo
+version: "1.2.3"
+
+runtime:
+  provider: wine
+  version: latest
+
+modules: []
+
+launch:
+  entrypoint: C:/Program Files/IndexedDemo/demo.exe
+  workingDirectory: C:/Program Files/IndexedDemo
+
+exports: []
+
+provenance:
+  sources: []
