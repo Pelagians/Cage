@@ -21,7 +21,6 @@ class PowerShellWrapperModuleTests(unittest.TestCase):
         manifest = Manifest.from_dict(_base_manifest([
             {"type": "powershell-wrapper", "version": "7"},
         ]))
-
         self.assertEqual([m.type for m in manifest.modules], ["powershell-wrapper"])
         self.assertIsInstance(manifest.modules[0], PowerShellWrapperModule)
 
@@ -30,20 +29,18 @@ class PowerShellWrapperModuleTests(unittest.TestCase):
             Manifest.from_dict(_base_manifest([
                 {"type": "powershell", "version": "7"},
             ]))
-
         self.assertIn("powershell-wrapper", str(ctx.exception))
 
-    def test_experimental_core_module_conflicts_with_verified_chocolatey_engine(self):
+    def test_experimental_core_module_conflicts_with_cfw_runtime_engine(self):
         with self.assertRaises(ManifestError) as ctx:
             Manifest.from_dict(_base_manifest([
                 {"type": "powershell-wrapper", "version": "7"},
                 {"type": "chocolatey", "install": {"packages": ["7zip"]}},
             ]))
-
         message = str(ctx.exception)
         self.assertIn("slot 'engine'", message)
         self.assertIn("powershell-zip-7.4.11", message)
-        self.assertIn("windows-powershell-5.1-cfw", message)
+        self.assertIn("powershell-7.5.5-cfw-runtime", message)
 
     def test_standalone_module_is_only_a_strict_core_runtime_probe(self):
         manifest = Manifest.from_dict(_base_manifest([
@@ -66,10 +63,8 @@ class PowerShellWrapperModuleTests(unittest.TestCase):
         manifest = Manifest.from_dict(_base_manifest([
             {"type": "powershell-wrapper", "version": "7", "wrapperVersion": "v9.9.9"},
         ]))
-
         with self.assertRaises(ModuleError) as ctx:
             manifest.modules[0].build()
-
         self.assertIn("only the pinned, checksummed release v4.2.0", str(ctx.exception))
 
 
