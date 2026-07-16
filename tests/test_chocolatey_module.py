@@ -5,7 +5,6 @@ import unittest
 
 from core.manifest import Manifest
 
-
 _RUNTIME = {
     "id": "cfw-runtime-test",
     "url": "https://example.invalid/cfw-runtime-prefix.tar.gz",
@@ -16,8 +15,8 @@ _RUNTIME = {
 }
 
 
-def _manifest(packages=None, *, include_runtime=True, **module_overrides):
-    install = {"packages": packages or ["7zip"]}
+def _manifest(packages=None, *, include_runtime=True, provenance=None, **module_overrides):
+    install = {"packages": packages if packages is not None else ["7zip"]}
     if include_runtime:
         install["runtimeArtifact"] = dict(_RUNTIME)
     module = {"type": "chocolatey", "install": install}
@@ -29,6 +28,7 @@ def _manifest(packages=None, *, include_runtime=True, **module_overrides):
         "runtime": {"provider": "wine", "version": "9.0"},
         "modules": [module],
         "launch": {"entrypoint": "C:/Program Files/App/App.exe"},
+        "provenance": provenance or {},
     })
 
 
@@ -55,21 +55,23 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         })
         self.assertEqual(manifest.modules, [])
 
-    def test_chocolatey_module_preserves_package_intent_and_provenance(self):
-        manifest = _manifest(["7zip", "notepadplusplus"])
-        manifest.provenance = {"test": "value"}
+    def test_chocolatey_preserves_package_intent_and_provenance(self):
+        manifest = _manifest(
+            ["7zip", "notepadplusplus"],
+            provenance={"test": "value"},
+        )
         self.assertEqual(manifest.modules[0].install["packages"], ["7zip", "notepadplusplus"])
         self.assertEqual(manifest.provenance, {"test": "value"})
 
     def test_chocolatey_claims_prepared_runtime_capabilities(self):
         capabilities = _manifest().modules[0].capabilities()
         self.assertEqual(capabilities, {
+            "engine": "powershell-7.5.5-cfw-runtime",
+            "winps-shim": "synchro-v4.2.0",
             "package-manager": "chocolatey-2.6.0",
             "package-execution-host": "external-windows-powershell",
             "prefix-foundation": "cfw-chocolatey-runtime",
         })
-        self.assertNotIn("engine", capabilities)
-        self.assertNotIn("winps-shim", capabilities)
 
     def test_chocolatey_builds_one_prefix_seed_boundary(self):
         steps = _manifest(["7zip", "notepadplusplus"]).modules[0].build()
@@ -108,11 +110,14 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("synchroX86", seed)
         self.assertIn(".cage-prefix-seeded", seed)
 
-    def test_missing_released_runtime_fails_clearly(self):
-        manifest = _manifest(include_runtime=False)
-        with self.assertRaises(Exception) as ctx:
-            manifest.modules[0].build()
-        self.assertIn("no released CFW runtime is pinned yet", str(ctx.exception))
+    def test_unreleased_runtime_still_plans_but_real_build_fails_before_wineboot(self):
+        steps = _manifest(include_runtime=False).modules[0].build()
+        seed = next(step for step in steps if step.kind == "prefix-seed")
+        script = "\n".join(seed.commands)
+        self.assertEqual(seed.description, "Require released CFW prepared prefix")
+        self.assertIn("no released CFW prepared runtime is pinned", script)
+        self.assertIn("exit 65", script)
+        self.assertFalse(seed.metadata["runtimeAvailable"])
 
     def test_runtime_artifact_rejects_incomplete_hash(self):
         manifest = _manifest()
