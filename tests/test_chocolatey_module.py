@@ -52,17 +52,88 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             "launch": {"entrypoint": "C:/Program Files/App/App.exe"},
             "provenance": {"test": "value"},
         })
-
-        self.assertEqual(manifest.modules[0].type, "chocolatey")
         self.assertEqual(manifest.modules[0].install["packages"], ["7zip", "notepadplusplus"])
         self.assertEqual(manifest.provenance, {"test": "value"})
 
-    def test_chocolatey_module_claims_layered_capabilities(self):
+    def test_chocolatey_module_claims_integrated_runtime_capabilities(self):
         capabilities = _manifest().modules[0].capabilities()
-        self.assertEqual(capabilities["engine"], "windows-powershell-5.1-cfw")
-        self.assertEqual(capabilities["winps-shim"], "synchro-v4.2.0")
-        self.assertEqual(capabilities["package-manager"], "chocolatey-2.6.0")
-        self.assertEqual(capabilities["compatibility-pack"], "chocolatey-for-wine-v1")
+        self.assertEqual(capabilities, {
+            "package-manager": "chocolatey-2.6.0",
+            "package-execution-host": "chocolatey-in-process-powershell",
+            "compatibility-runtime": "cfw-integrated-chocolatey-runtime",
+        })
+        self.assertNotIn("engine", capabilities)
+        self.assertNotIn("winps-shim", capabilities)
+
+    def test_chocolatey_builds_one_cfw_runtime_boundary(self):
+        steps = _manifest(["7zip", "notepadplusplus"]).modules[0].build()
+        descriptions = [step.description for step in steps]
+        script = _all_commands(steps)
+        self.assertEqual(descriptions, [
+            "Record CFW integrated runtime profile",
+            "Bootstrap CFW prerequisites and canonical Chocolatey",
+            "Finalize CFW integrated Chocolatey runtime",
+            "Diagnose Chocolatey readiness",
+            "Prove Chocolatey local package lifecycle",
+            "Install Chocolatey packages: 7zip notepadplusplus",
+        ])
+        self.assertIn("cfw-integrated-chocolatey-runtime", script)
+        self.assertIn("compat/container-runtime.sh", script)
+        self.assertIn("CFW_PAYLOAD_CACHE_POSIX", script)
+        self.assertIn("cfw-runtime/container-runtime.json", script)
+        self.assertNotIn("KB3AIK_EN.iso", script)
+        self.assertNotIn("Win7AndW2K8R2-KB3191566-x64.zip", script)
+        self.assertNotIn("Install Synchro PowerShell layer", descriptions)
+        self.assertNotIn("Install Windows PowerShell 5.1 backend", descriptions)
+
+    def test_fork_bootstrap_is_strict_and_precedes_runtime_finalization(self):
+        steps = _manifest().modules[0].build()
+        bootstrap_step = next(
+            step for step in steps
+            if step.description == "Bootstrap CFW prerequisites and canonical Chocolatey"
+        )
+        finalizer_step = next(
+            step for step in steps
+            if step.description == "Finalize CFW integrated Chocolatey runtime"
+        )
+        bootstrap = "\n".join(bootstrap_step.commands)
+        finalizer = "\n".join(finalizer_step.commands)
+        self.assertEqual(bootstrap_step.timeout, 4200)
+        self.assertIn("ChoCinstaller_0.5c.755.exe", bootstrap)
+        self.assertIn("export CFW_OFFLINE=1", bootstrap)
+        self.assertIn("export CFW_CONTAINER_BUILDER=1", bootstrap)
+        self.assertIn("ProgramData/chocolatey/bin/choco.exe", bootstrap)
+        self.assertIn("cage_fetch_verified", finalizer)
+        self.assertIn("CFW_CONTAINER_RUNTIME_SHA256", finalizer)
+        self.assertIn("powershellHostEnabled", finalizer)
+        self.assertIn("chocolatey-feature-policy.json", finalizer)
+        self.assertLess(steps.index(bootstrap_step), steps.index(finalizer_step))
+
+    def test_package_install_uses_canonical_choco_and_cfw_policy_evidence(self):
+        steps = _manifest(["7zip", "notepadplusplus"]).modules[0].build()
+        package = _commands_for(steps, "Install Chocolatey packages: 7zip notepadplusplus")
+        finalizer = _commands_for(steps, "Finalize CFW integrated Chocolatey runtime")
+        self.assertIn("ProgramData/chocolatey/bin/choco.exe", package)
+        self.assertNotIn("ProgramData/tools/chocolateyInstall/choco.exe", package)
+        self.assertIn("wine \"$choco_exe_win\" install 7zip notepadplusplus -y", package)
+        self.assertIn("policy_status", package)
+        self.assertIn("owner\": \"cfw", finalizer)
+        self.assertIn("powershellHost\": \"enabled", finalizer)
+
+    def test_chocolatey_diagnostic_writes_json_before_package_install(self):
+        steps = _manifest(["7zip"]).modules[0].build()
+        diagnostic = _commands_for(steps, "Diagnose Chocolatey readiness")
+        package = _commands_for(steps, "Install Chocolatey packages: 7zip")
+        self.assertIn("metadata/chocolatey-diagnostic.json", diagnostic)
+        self.assertIn("canonicalChocoExists", diagnostic)
+        self.assertIn("chocoVersion", diagnostic)
+        self.assertIn("sourceList", diagnostic)
+        self.assertIn("cage_chocolatey_collect_failure_diagnostics", diagnostic)
+        self.assertLess(
+            _all_commands(steps).index("Diagnose Chocolatey readiness"),
+            _all_commands(steps).index("Install Chocolatey packages"),
+        )
+        self.assertIn("choco_diag_status", package)
 
     def test_chocolatey_module_rejects_shell_like_package_names(self):
         manifest = _manifest(["7zip; rm -rf /"])
@@ -70,178 +141,16 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             manifest.modules[0].build()
         self.assertIn("must use letters, numbers", str(ctx.exception))
 
-    def test_chocolatey_module_accepts_custom_source_url(self):
-        manifest = _manifest(source="https://custom.choco.source/")
-        self.assertEqual(manifest.modules[0].source, "https://custom.choco.source/")
-        script = _all_commands(manifest.modules[0].build())
-        self.assertIn(" -s 'https://custom.choco.source/'", script)
-
-    def test_chocolatey_builds_explicit_layers_in_order(self):
-        steps = _manifest(["7zip", "notepadplusplus"]).modules[0].build()
-        descriptions = [step.description for step in steps]
-        script = _all_commands(steps)
-
-        self.assertEqual(descriptions, [
-            "Record layered Chocolatey bootstrap profile",
-            "Bootstrap CFW prerequisites and Chocolatey",
-            "Install CFW native DPX extraction helper",
-            "Install native .NET MSCoree loader",
-            "Install Windows PowerShell 5.1 backend",
-            "Install Synchro PowerShell layer (v4.2.0)",
-            "Install CFW compatibility profile fragments",
-            "Prove composed PowerShell compatibility layer",
-            "Diagnose Chocolatey readiness",
-            "Apply Chocolatey feature policy",
-            "Prove Chocolatey local package lifecycle",
-            "Install Chocolatey packages: 7zip notepadplusplus",
-        ])
-        self.assertIn("Bootstrap pinned Chocolatey-for-Wine fork", script)
-        self.assertIn("ChoCinstaller_", script)
-        self.assertIn("cfw-dpx-helper-aik-winpe", script)
-        self.assertIn("KB3AIK_EN.iso", script)
-        self.assertIn('range_start="640526336"', script)
-        self.assertIn('range_end="1086964920"', script)
-        self.assertIn("b8db22bef35f091b6b63d223118c55f833856be0d535465ce5a06a51ff38fa27", script)
-        self.assertIn("cfw-native-mscoree-kb958488", script)
-        self.assertIn("a5f4243ce8b07c9222284fd8ff6f7e742d934c57c89de9cab5d88c74402264e3", script)
-        self.assertIn("758e5ba89665c574456a2a826ef5a7dc2487c8379893010eb57bc40127ac918f", script)
-        self.assertIn("46e9715f3cd09f32fbeaa5379991e9e7daccbd2407c2d061fda3a04f05108133", script)
-        self.assertNotIn("powershell2.7z", script)
-        self.assertNotIn("retained-cfw-component", script)
-        self.assertIn("windows-powershell-5.1-cfw", script)
-        self.assertIn("Win7AndW2K8R2-KB3191566-x64.zip", script)
-        self.assertIn("f383c34aa65332662a17d95409a2ddedadceda74427e35d05024cd0a6a2fa647", script)
-        self.assertIn("PWSH_PATH", script)
-        self.assertIn("ps51.exe", script)
-        self.assertIn("synchro-v4.2.0", script)
-        self.assertIn("10-synchro.ps1", script)
-        self.assertIn("20-chocolatey.ps1", script)
-        self.assertIn("30-cfw-winetricks.ps1", script)
-        self.assertIn("40-cfw-command-adapters.ps1", script)
-        self.assertIn("c3b4923d0f63188843bd2a15be64bca8f4a9902b", script)
-        self.assertIn("composed-powershell-layer-ok", script)
-        self.assertLess(descriptions.index("Bootstrap CFW prerequisites and Chocolatey"), descriptions.index("Install CFW native DPX extraction helper"))
-        self.assertLess(descriptions.index("Install CFW native DPX extraction helper"), descriptions.index("Install native .NET MSCoree loader"))
-        self.assertLess(descriptions.index("Install native .NET MSCoree loader"), descriptions.index("Install Windows PowerShell 5.1 backend"))
-        self.assertLess(descriptions.index("Install Windows PowerShell 5.1 backend"), descriptions.index("Install Synchro PowerShell layer (v4.2.0)"))
-        self.assertLess(descriptions.index("Install Synchro PowerShell layer (v4.2.0)"), descriptions.index("Install CFW compatibility profile fragments"))
-        self.assertLess(descriptions.index("Prove composed PowerShell compatibility layer"), descriptions.index("Diagnose Chocolatey readiness"))
-        self.assertLess(descriptions.index("Prove Chocolatey local package lifecycle"), descriptions.index("Install Chocolatey packages: 7zip notepadplusplus"))
-
-    def test_fork_bootstrap_is_transitional_and_strict(self):
-        steps = _manifest().modules[0].build()
-        bootstrap_step = next(step for step in steps if step.description == "Bootstrap CFW prerequisites and Chocolatey")
-        bootstrap = "\n".join(bootstrap_step.commands)
-
-        self.assertEqual(bootstrap_step.timeout, 4200)
-        self.assertTrue(bootstrap_step.metadata["transitionalBootstrap"])
-        self.assertIn("cfw-v0.5c.755-noah.6-choco-2.6.0-synchro-r13", bootstrap)
-        self.assertIn('cfw_payload_cache="$cfw_work/choc_install_files"', bootstrap)
-        self.assertIn('cfw_installer="$cfw_extract/ChoCinstaller_0.5c.755.exe"', bootstrap)
-        self.assertIn('wine "$cfw_installer_win" /s /q', bootstrap)
-        self.assertIn('export CFW_OFFLINE=1', bootstrap)
-        self.assertIn('export CFW_CONTAINER_BUILDER=1', bootstrap)
-        self.assertIn('ProgramData/chocolatey/bin/choco.exe', bootstrap)
-        self.assertIn('Chocolatey-for-Wine bootstrap failed', bootstrap)
-        self.assertIn("PowerShell-7.5.5-win-x64.msi", bootstrap)
-
-        descriptions = [step.description for step in steps]
-        bootstrap_index = descriptions.index("Bootstrap CFW prerequisites and Chocolatey")
-        helper_index = descriptions.index("Install CFW native DPX extraction helper")
-        loader_index = descriptions.index("Install native .NET MSCoree loader")
-        engine_index = descriptions.index("Install Windows PowerShell 5.1 backend")
-        self.assertGreater(helper_index, bootstrap_index)
-        self.assertGreater(loader_index, helper_index)
-        self.assertGreater(engine_index, loader_index)
-
-    def test_windows_powershell_backend_uses_verified_native_prerequisites(self):
-        steps = _manifest().modules[0].build()
-        helper = _commands_for(steps, "Install CFW native DPX extraction helper")
-        loader = _commands_for(steps, "Install native .NET MSCoree loader")
-        engine = _commands_for(steps, "Install Windows PowerShell 5.1 backend")
-
-        self.assertIn("cfw-dpx-helper-aik-winpe", helper)
-        self.assertIn("KB3AIK_EN.iso", helper)
-        self.assertIn('range_start="640526336"', helper)
-        self.assertIn('range_end="1086964920"', helper)
-        self.assertIn("b8db22bef35f091b6b63d223118c55f833856be0d535465ce5a06a51ff38fa27", helper)
-        self.assertIn("fdfd889f5131898d9a3e68e39c24d8d6ad1f53765522f0280899e54620be47ff", helper)
-        self.assertIn("system32/expnd", helper)
-        self.assertIn("cabinet.dll", helper)
-        self.assertIn("dpx.dll", helper)
-        self.assertIn("msdelta.dll", helper)
-
-        self.assertIn("cfw-native-mscoree-kb958488", loader)
-        self.assertIn("Windows6.1-KB958488-x64.cab", loader)
-        self.assertIn("System32/mscoree.dll", loader)
-        self.assertIn("SysWOW64/mscoree.dll", loader)
-        self.assertIn("/v mscoree /d native /f", loader)
-        self.assertIn("native-mscoree.json", loader)
-
-        self.assertIn("Win7AndW2K8R2-KB3191566-x64.zip", engine)
-        self.assertIn("wmf-dpx-extract.log", engine)
-        self.assertIn('wine "$expand_exe"', engine)
-        self.assertIn("sourceName", engine)
-        self.assertIn("skipped-files.log", engine)
-        self.assertIn("engine-version=", engine)
-        self.assertIn("fileSentinel", engine)
-        self.assertIn("wineserverSettle", engine)
-
-    def test_profile_fragment_install_requires_cage_loader_and_synchro(self):
-        steps = _manifest().modules[0].build()
-        profile = _commands_for(steps, "Install CFW compatibility profile fragments")
-        verify = _commands_for(steps, "Prove composed PowerShell compatibility layer")
-
-        self.assertIn('profile_root="$wine_prefix/drive_c/ProgramData/Cage/PowerShell"', profile)
-        self.assertIn('fragment_dir="$profile_root/profile.d"', profile)
-        self.assertIn('test -s "$profile64"', profile)
-        self.assertIn('test -s "$profile32"', profile)
-        self.assertIn('test -s "$synchro_fragment"', profile)
-        self.assertIn("powershell-profile-composition.json", profile)
-        self.assertIn("windows-powershell-5.1-cfw", profile)
-        self.assertIn("Update-SessionEnvironment", verify)
-        self.assertIn("Get-Alias -Name winetricks", verify)
-        self.assertIn("exit 37", verify)
-        self.assertIn("powershell-layer.json", verify)
-        self.assertIn("ps51.exe", verify)
-
-    def test_chocolatey_package_install_uses_canonical_choco_only(self):
-        steps = _manifest(["7zip", "notepadplusplus"]).modules[0].build()
-        policy = _commands_for(steps, "Apply Chocolatey feature policy")
-        package = _commands_for(steps, "Install Chocolatey packages: 7zip notepadplusplus")
-
-        self.assertIn("ProgramData/chocolatey/bin/choco.exe", package)
-        self.assertNotIn("ProgramData/tools/chocolateyInstall/choco.exe", package)
-        self.assertIn("CAGE_CHOCOLATEY_INSTALL_TIMEOUT", package)
-        self.assertIn("feature disable --name=powershellHost", policy)
-        self.assertNotIn("feature enable -n allowGlobalConfirmation", policy)
-        self.assertIn("wine \"$choco_exe_win\" install 7zip notepadplusplus -y", package)
-        self.assertIn("choco_diag_status", package)
-        self.assertIn("policy_status", package)
-        self.assertIn("export ChocolateyInstall=", package)
-        self.assertIn("export ChocolateyToolsLocation=", package)
-        self.assertIn("unset WINEDLLOVERRIDES", package)
-
-    def test_chocolatey_diagnostic_writes_json_before_package_install(self):
-        steps = _manifest(["7zip"]).modules[0].build()
-        diagnostic = _commands_for(steps, "Diagnose Chocolatey readiness")
-        package = _commands_for(steps, "Install Chocolatey packages: 7zip")
-
-        self.assertIn("metadata/chocolatey-diagnostic.json", diagnostic)
-        self.assertIn("cage.chocolatey-diagnostic/v0", diagnostic)
-        self.assertIn("canonicalChocoExists", diagnostic)
-        self.assertIn("chocoVersion", diagnostic)
-        self.assertIn("sourceList", diagnostic)
-        self.assertIn('wine "$choco_exe_win" --version', diagnostic)
-        self.assertIn("cage_chocolatey_collect_failure_diagnostics", diagnostic)
-        self.assertLess(_all_commands(steps).index("Diagnose Chocolatey readiness"), _all_commands(steps).index("Install Chocolatey packages"))
-        self.assertIn("choco_diag_status", package)
-
     def test_chocolatey_module_rejects_non_string_package_names(self):
         manifest = _manifest(["7zip", 42])
         with self.assertRaises(Exception) as ctx:
             manifest.modules[0].build()
         self.assertIn("install.packages", str(ctx.exception))
+
+    def test_chocolatey_module_accepts_custom_source_url(self):
+        manifest = _manifest(source="https://custom.choco.source/")
+        script = _all_commands(manifest.modules[0].build())
+        self.assertIn(" -s 'https://custom.choco.source/'", script)
 
     def test_direct_script_module_still_accepts_arbitrary_commands(self):
         manifest = Manifest.from_dict({
