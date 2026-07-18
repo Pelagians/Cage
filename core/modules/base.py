@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..build_step import BuildStep
-from core.chocolatey import DEFAULT_BOOTSTRAP_PROFILE_ID
+
 
 
 class ModuleError(Exception):
@@ -427,7 +427,7 @@ def parse_module(data: dict[str, Any], index: int = 0) -> ModuleBase:
     Raises:
         ModuleError: If module type is unknown or required fields are missing
     """
-    from .chocolatey import ChocolateyModule
+    from .chocolatey import ChocolateyModule, DEFAULT_CFW_RUNTIME_PROFILE_ID
     from .powershell_wrapper import PowerShellWrapperModule
     
     if not isinstance(data, dict):
@@ -459,7 +459,7 @@ def parse_module(data: dict[str, Any], index: int = 0) -> ModuleBase:
             defaults=defaults,
             install=merged_data.get("install"),
             source=merged_data.get("source"),
-            bootstrap=merged_data.get("bootstrap", DEFAULT_BOOTSTRAP_PROFILE_ID),
+            bootstrap=merged_data.get("bootstrap", DEFAULT_CFW_RUNTIME_PROFILE_ID),
         )
     elif module_type == "exe":
         return ExeModule(

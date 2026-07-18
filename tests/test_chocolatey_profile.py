@@ -67,6 +67,8 @@ class ChocolateyRuntimeProfileTests(unittest.TestCase):
         base_source = (ROOT / "core/modules/base.py").read_text(encoding="utf-8")
 
         self.assertNotIn("cfw-v0.5c.755-noah", base_source)
+        self.assertNotIn("DEFAULT_BOOTSTRAP_PROFILE_ID", base_source)
+        self.assertIn("DEFAULT_CFW_RUNTIME_PROFILE_ID", base_source)
         self.assertNotIn("get_bootstrap_profile", module_source)
         self.assertNotIn("choc_install.ps1", module_source)
         self.assertNotIn("install-powershell51", module_source)
@@ -95,16 +97,24 @@ class ChocolateyAssetContractTests(unittest.TestCase):
                 self.assertRegex(asset_sha256(name), r"^[0-9a-f]{64}$")
 
         module_source = (ROOT / "core/modules/chocolatey.py").read_text(encoding="utf-8")
+        assets_dir = ROOT / "core/chocolatey/assets"
         for removed in (
+            "assembly-inventory.cs",
+            "assembly-inventory.exe",
             "bootstrap.sh",
+            "finalize-cfw-runtime.sh",
             "install-dpx-helper.sh",
             "install-native-mscoree.sh",
             "install-powershell51.sh",
             "assembly_inventory.py",
             "install-profile-fragments.sh",
+            "profile-20-chocolatey.ps1",
+            "profile-30-cfw-winetricks.ps1",
+            "profile-40-cfw-command-adapters.ps1",
             "verify-powershell-layer.sh",
         ):
             self.assertNotIn(f'"{removed}"', module_source)
+            self.assertFalse((assets_dir / removed).exists(), removed)
 
     def test_seed_asset_verifies_archive_evidence_and_prefix_outputs(self):
         seed = load_asset("seed-cfw-runtime.sh")
