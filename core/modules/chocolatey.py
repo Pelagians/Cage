@@ -7,19 +7,25 @@ import json
 import re
 import shlex
 from typing import Any
+from urllib.parse import urlparse
 
 from core.chocolatey import asset_sha256, load_asset, load_asset_bytes, render_asset
 
 from .base import ModuleBase, ModuleError
 from ..build_step import BuildStep
 
-_PACKAGE_RE = re.compile(r"^[A-Za-z0-9._+\-]+$")
+_PACKAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+\-]*$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_HOSTNAME_RE = re.compile(
+    r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$"
+)
+_WINE_IMAGE_RE = re.compile(r"^ghcr\.io/pelagians/cage-wine@sha256:[0-9a-f]{64}$")
+_RUNTIME_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_WINE_VERSION_RE = re.compile(r"^wine-[0-9]+(?:\.[0-9]+){1,2}$")
+_UNSAFE_SOURCE_RE = re.compile(r"[\x00-\x1f\x7f$`;&|<>]")
 DEFAULT_CFW_RUNTIME_PROFILE_ID = "cfw-runtime-v1"
 DEFAULT_CFW_RUNTIME_ARTIFACT: dict[str, Any] | None = None
 CFW_RUNTIME_PROVIDER = "cfw-chocolatey-runtime"
-CFW_RUNTIME_ENGINE = "powershell-7.5.5-cfw-runtime"
-CFW_RUNTIME_SHIM = "synchro-v4.2.0"
 
 _FAILURE_DIAGNOSTIC_ASSETS = {
     "verify-chocolatey.sh",
@@ -32,7 +38,16 @@ _POST_SEED_STEP_SPECS = (
     ("smoke-lifecycle.sh", "Prove Chocolatey local package lifecycle", "wine-run", 1800),
     ("install-package.sh", "Install Chocolatey packages", "wine-run", 1800),
 )
-_RUNTIME_FIELDS = {"id", "url", "sha256", "evidenceUrl", "evidenceSha256", "wineVersions"}
+_RUNTIME_FIELDS = {
+    "id",
+    "url",
+    "evidenceUrl",
+    "manifestUrl",
+    "manifestSha256",
+    "wineImage",
+    "wineVersions",
+    "environment",
+}
 
 
 def _record_command(runtime: dict[str, Any] | None, asset_hashes: dict[str, str]) -> str:
@@ -41,7 +56,6 @@ def _record_command(runtime: dict[str, Any] | None, asset_hashes: dict[str, str]
         "runtime": runtime,
         "runtimeAvailable": runtime is not None,
         "assets": asset_hashes,
-        "packageExecutionHost": "external-windows-powershell",
         "prefixFoundation": CFW_RUNTIME_PROVIDER,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -60,16 +74,51 @@ class ChocolateyModule(ModuleBase):
 
     type: str = "chocolatey"
     install: dict[str, Any] | None = None
-    source: str | None = None
-    bootstrap: str = DEFAULT_CFW_RUNTIME_PROFILE_ID
+    package_source: str | None = None
+
+    @staticmethod
+    def _validate_runtime_source(field_name: str, value: str) -> None:
+        if _UNSAFE_SOURCE_RE.search(value):
+            raise ModuleError(f"chocolatey runtimeArtifact.{field_name} contains unsafe characters")
+        parsed = urlparse(value)
+        if parsed.scheme == "https":
+            if (
+                not parsed.hostname
+                or _HOSTNAME_RE.fullmatch(parsed.hostname) is None
+                or parsed.username
+                or parsed.password
+            ):
+                raise ModuleError(f"chocolatey runtimeArtifact.{field_name} must be a plain HTTPS URL")
+            return
+        if parsed.scheme == "file":
+            if parsed.netloc not in ("", "localhost") or not parsed.path.startswith("/"):
+                raise ModuleError(f"chocolatey runtimeArtifact.{field_name} must use an absolute file URL")
+            return
+        if not value.startswith("/"):
+            raise ModuleError(
+                f"chocolatey runtimeArtifact.{field_name} must use https://, file://, or an absolute path"
+            )
+
+    def validate(self) -> None:
+        self._packages()
+        self._runtime_artifact()
+        if self.package_source:
+            if _UNSAFE_SOURCE_RE.search(self.package_source):
+                raise ModuleError("chocolatey packageSource contains unsafe characters")
+            parsed = urlparse(self.package_source)
+            if (
+                parsed.scheme != "https"
+                or not parsed.hostname
+                or _HOSTNAME_RE.fullmatch(parsed.hostname) is None
+                or parsed.username
+                or parsed.password
+            ):
+                raise ModuleError("chocolatey packageSource must be a plain HTTPS URL")
 
     def capabilities(self) -> dict[str, str]:
         return {
-            "engine": CFW_RUNTIME_ENGINE,
-            "winps-shim": CFW_RUNTIME_SHIM,
-            "package-manager": "chocolatey-2.6.0",
-            "package-execution-host": "external-windows-powershell",
-            "prefix-foundation": CFW_RUNTIME_PROVIDER,
+            "package-manager": "chocolatey",
+            "prefix-foundation": "cfw-prepared-runtime",
         }
 
     def _packages(self) -> list[str]:
@@ -83,7 +132,8 @@ class ChocolateyModule(ModuleBase):
         for package in packages:
             if not _PACKAGE_RE.fullmatch(package):
                 raise ModuleError(
-                    "chocolatey package names must use letters, numbers, dots, underscores, plus, or dashes only: "
+                    "chocolatey package names must begin with a letter or number and use "
+                    "letters, numbers, dots, underscores, plus, or dashes only: "
                     f"{package}"
                 )
         return packages
@@ -99,43 +149,51 @@ class ChocolateyModule(ModuleBase):
         unknown = sorted(set(runtime) - _RUNTIME_FIELDS)
         if unknown:
             raise ModuleError(f"unknown Chocolatey runtimeArtifact field: {unknown[0]}")
-        for field_name in ("id", "url", "sha256", "evidenceUrl", "evidenceSha256"):
+        for field_name in ("id", "url", "evidenceUrl", "manifestUrl", "manifestSha256", "wineImage"):
             value = runtime.get(field_name)
             if not isinstance(value, str) or not value:
                 raise ModuleError(f"chocolatey runtimeArtifact.{field_name} must be a non-empty string")
-        for field_name in ("sha256", "evidenceSha256"):
+        if not _RUNTIME_ID_RE.fullmatch(runtime["id"]):
+            raise ModuleError("chocolatey runtimeArtifact.id must be a safe cache identifier")
+        for field_name in ("manifestSha256",):
             if not _SHA256_RE.fullmatch(runtime[field_name]):
                 raise ModuleError(f"chocolatey runtimeArtifact.{field_name} must be a complete lowercase sha256")
-        for field_name in ("url", "evidenceUrl"):
-            value = runtime[field_name]
-            if not (value.startswith("https://") or value.startswith("file://") or value.startswith("/")):
-                raise ModuleError(
-                    f"chocolatey runtimeArtifact.{field_name} must use https://, file://, or an absolute path"
-                )
+        if not _WINE_IMAGE_RE.fullmatch(runtime["wineImage"]):
+            raise ModuleError(
+                "chocolatey runtimeArtifact.wineImage must be a digest-pinned "
+                "ghcr.io/pelagians/cage-wine image"
+            )
+        for field_name in ("url", "evidenceUrl", "manifestUrl"):
+            self._validate_runtime_source(field_name, runtime[field_name])
         wine_versions = runtime.get("wineVersions")
-        if not isinstance(wine_versions, list) or not wine_versions or not all(
-            isinstance(version, str) and version for version in wine_versions
-        ):
-            raise ModuleError("chocolatey runtimeArtifact.wineVersions must be a non-empty string list")
+        if wine_versions != ["wine-11.0"]:
+            raise ModuleError("Chocolatey Phase 1 supports exactly Wine 11 (wine-11.0)")
+        environment = runtime.get("environment")
+        if environment != {"WINEDLLOVERRIDES": ""}:
+            raise ModuleError(
+                "chocolatey runtimeArtifact.environment must be exactly "
+                "{'WINEDLLOVERRIDES': ''} for Phase 1"
+            )
         return {
             "id": runtime["id"],
             "url": runtime["url"],
-            "sha256": runtime["sha256"],
             "evidenceUrl": runtime["evidenceUrl"],
-            "evidenceSha256": runtime["evidenceSha256"],
-            "wineVersions": list(wine_versions),
+            "manifestUrl": runtime["manifestUrl"],
+            "manifestSha256": runtime["manifestSha256"],
+            "wineImage": runtime["wineImage"],
+            "wineVersions": ["wine-11.0"],
+            "environment": {"WINEDLLOVERRIDES": ""},
         }
 
     def build(self) -> list[BuildStep]:
+        self.validate()
         packages = self._packages()
         runtime = self._runtime_artifact()
-        if self.source and not self.source.startswith("https://"):
-            raise ModuleError(f"Invalid chocolatey source URL: {self.source}")
 
         values = {
             "PACKAGE_ARGS": " ".join(shlex.quote(package) for package in packages),
             "SOURCE_ARG": (
-                " -s '" + self.source.replace("'", "'\"'\"'") + "'" if self.source else ""
+                " -s '" + self.package_source.replace("'", "'\"'\"'") + "'" if self.package_source else ""
             ),
             "SMOKE_NUPKG_BASE64": base64.b64encode(
                 load_asset_bytes("cage-chocolatey-smoke.0.1.0.nupkg")
@@ -149,6 +207,7 @@ class ChocolateyModule(ModuleBase):
             "fetch-verified.sh",
             "failure-diagnostics.sh",
             "seed-cfw-runtime.sh",
+            "runtime-artifact.py",
             "verify-chocolatey.sh",
             "feature-policy.sh",
             "smoke-lifecycle.sh",
@@ -183,18 +242,17 @@ class ChocolateyModule(ModuleBase):
                 metadata={**common_metadata, "status": "unreleased"},
             ))
         else:
+            profile_json = json.dumps(runtime, sort_keys=True, separators=(",", ":")).encode("utf-8")
             values.update({
-                "BOOTSTRAP_PROFILE_ID": runtime["id"],
-                "CFW_RUNTIME_ID": runtime["id"],
-                "CFW_RUNTIME_URL": runtime["url"],
-                "CFW_RUNTIME_SHA256": runtime["sha256"],
-                "CFW_RUNTIME_EVIDENCE_URL": runtime["evidenceUrl"],
-                "CFW_RUNTIME_EVIDENCE_SHA256": runtime["evidenceSha256"],
-                "CFW_RUNTIME_WINE_VERSIONS": ",".join(runtime["wineVersions"]),
+                "CFW_RUNTIME_PROFILE_BASE64": base64.b64encode(profile_json).decode("ascii"),
+                "CFW_RUNTIME_PROFILE_KEY": runtime["manifestSha256"],
+                "CFW_RUNTIME_HELPER_BASE64": base64.b64encode(
+                    load_asset_bytes("runtime-artifact.py")
+                ).decode("ascii"),
             })
             common_metadata.update({
-                "runtimeArchiveSha256": runtime["sha256"],
-                "runtimeEvidenceSha256": runtime["evidenceSha256"],
+                "runtimeManifestSha256": runtime["manifestSha256"],
+                "wineImage": runtime["wineImage"],
                 "wineVersions": runtime["wineVersions"],
             })
             fetch_helper = load_asset("fetch-verified.sh").rstrip()
@@ -208,6 +266,7 @@ class ChocolateyModule(ModuleBase):
                     "scriptAsset": "core/chocolatey/assets/seed-cfw-runtime.sh",
                     "scriptSha256": asset_hashes["seed-cfw-runtime.sh"],
                     "runtimeEvidence": "metadata/cfw-runtime.json",
+                    "runtimeManifest": "metadata/cfw-runtime-manifest.json",
                 },
             ))
 
@@ -244,11 +303,13 @@ class ChocolateyModule(ModuleBase):
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {"type": self.type}
         if self.install is not None:
-            result["install"] = self.install
-        if self.source is not None:
-            result["source"] = self.source
-        if self.bootstrap != DEFAULT_CFW_RUNTIME_PROFILE_ID:
-            result["bootstrap"] = self.bootstrap
+            install = dict(self.install)
+            runtime = self._runtime_artifact()
+            if runtime is not None:
+                install["runtimeArtifact"] = runtime
+            result["install"] = install
+        if self.package_source is not None:
+            result["packageSource"] = self.package_source
         return result
 
 
@@ -257,6 +318,4 @@ __all__ = [
     "DEFAULT_CFW_RUNTIME_PROFILE_ID",
     "DEFAULT_CFW_RUNTIME_ARTIFACT",
     "CFW_RUNTIME_PROVIDER",
-    "CFW_RUNTIME_ENGINE",
-    "CFW_RUNTIME_SHIM",
 ]

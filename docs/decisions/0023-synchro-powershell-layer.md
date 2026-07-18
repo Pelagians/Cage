@@ -1,7 +1,11 @@
 # ADR 0023: Synchro owns the Windows PowerShell compatibility layer
 
-- Status: Accepted
+- Status: Deprecated; superseded by [ADR 0024](0024-cfw-prepared-runtime-provider.md)
 - Date: 2026-07-10
+
+> Deprecated 2026-07-17: CFW now owns the complete prepared PowerShell,
+> Synchro, Chocolatey, and Wine-compatibility runtime. Cage no longer owns or
+> replaces these layers.
 
 ## Context
 

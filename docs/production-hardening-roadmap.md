@@ -55,11 +55,11 @@ The manifest field captures *intent*; the CLI flag allows the operator to *overr
 
 ---
 
-## Theme 2: Deterministic Chocolatey-for-Wine Integration
+## Theme 2: CFW Prepared-Runtime Consumption
 
 ### Status
 
-Architecture revised and accepted in [ADR 0022](decisions/0022-deterministic-chocolatey-fork.md). The active experiment uses Noah's narrowly patched fork because the unmodified installer could finalize before its prerequisite workers completed, while Cage's manual CLR reconstruction stalled at managed startup.
+Architecture revised in [ADR 0024](decisions/0024-cfw-prepared-runtime-provider.md). CFW owns Windows/Wine compatibility construction and must publish a passing immutable prepared-prefix release before Cage enables its consumer lifecycle.
 
 ### Accepted design: `modules[].type: chocolatey`
 
@@ -74,43 +74,42 @@ modules:
         - 7zip.install
 ```
 
-`core/modules/chocolatey.py` remains a small profile-backed step generator. It does not reimplement Wine, .NET, PowerShell, or Chocolatey installation. The generated container-builder pipeline:
+`core/modules/chocolatey.py` remains a small consumer step generator. The generated pipeline:
 
-1. loads one immutable compatibility profile;
-2. downloads and SHA-256 verifies the fork release plus every transitive installer payload into `CFW_CACHE/choc_install_files`;
-3. recreates a private per-prefix work directory and extracts the verified release fresh for each build;
-4. runs the patched fork with `CFW_OFFLINE=1`;
-5. requires successful installer exit, successful `wineserver` settlement, and canonical `C:/ProgramData/chocolatey/bin/choco.exe`;
-6. runs bounded readiness probes, applies feature policy, and proves a local install/uninstall lifecycle;
-7. installs requested packages only after those gates pass.
+1. validates the runtime profile and package names during manifest parsing;
+2. selects the exact digest-pinned CFW producer image and producer-declared environment before container execution;
+3. verifies the detached manifest before trusting archive or evidence digests;
+4. requires complete source, installer, input-lock, Wine-image, producer-declared environment/interface, and behavioral-proof bindings; CFW profile-loader internals remain opaque to Cage;
+5. safely extracts into a temporary directory and replacement-seeds only after archive-member validation;
+6. performs a bounded Wine update, readiness checks, and verification-only feature-policy checks;
+7. proves a local package install/uninstall lifecycle before requested packages;
+8. exports the resulting application artifact.
 
-The fork preserves upstream compatibility behavior but serializes finalization after prerequisite workers and propagates child failures. Cage still owns provenance, verified cache preparation, success criteria, diagnostics, and lifecycle evidence.
+Cage does not reconstruct CLR, GAC, PowerShell, Synchro, Chocolatey bootstrap, profiles, registry policy, or DLL compatibility. A separate downloaded `runtime.runner` is forbidden for a CFW artifact because it would invalidate the producer image’s Wine identity.
 
 ### Implementation boundaries
 
 | Area | Responsibility |
 |---|---|
-| `noahgiroux/Chocolatey-for-wine` | Wine compatibility bootstrap, deterministic worker sequencing, offline-cache enforcement, process failure propagation |
-| `core/chocolatey/profile.py` | Immutable release and transitive payload URLs/hashes |
-| `core/chocolatey/assets/bootstrap.sh` | Verified private staging, fresh release extraction, offline fork execution, and strict bootstrap evidence |
-| `core/modules/chocolatey.py` | Package validation and declaration-order build-step generation |
-| readiness/policy/lifecycle assets | Independent proof that canonical Chocolatey works before user packages |
+| `noahgiroux/Chocolatey-for-wine` | Compatibility construction, exact inputs, runtime proofs, prepared-prefix archive, evidence, and detached manifest |
+| `core/modules/chocolatey.py` | Strict recipe/profile validation and declaration-order consumer steps |
+| `core/chocolatey/assets/runtime-artifact.py` | Manifest/evidence verification and safe temporary extraction/promotion |
+| readiness/policy/lifecycle assets | Verification of imported behavior and requested package execution, without compatibility reconstruction |
 
 ### Acceptance criteria
 
-- `modules: - type: chocolatey` loads from strict YAML.
-- Every bootstrap payload is pinned, SHA-256 verified, and handed to the fork through its expected cache layout.
-- `CFW_OFFLINE=1` prevents network fallback inside the installer.
-- Installer, settlement, canonical-file, readiness, policy, and lifecycle failures all fail the build.
-- Package names are validated before build-script generation.
-- `--module-cache-dir` lets repeated builds reuse verified blobs.
-- Runtime containers remain network-isolated by default; Chocolatey is build-time only.
+- A real CFW Wine 11 producer run passes every required behavioral proof.
+- CFW publishes immutable archive, evidence, manifest, and checksum assets.
+- Cage pins the detached manifest digest and exact producer image.
+- Unsafe profile values and unsafe archive members are rejected before prefix replacement.
+- Missing producer assets fail the workflow rather than yielding a green skipped lifecycle.
+- Cage’s package lifecycle and requested package install pass against the exact released runtime.
 
 ### Parked work
 
-- PowerShell capability `requires`/`provides` resolver and graph/provenance recording — Phase 2.
-- Profile/shim layering for Chocolatey + WindowsPowerShell coexistence — not-now until a real recipe needs both Chocolatey packages and WinPS-dependent installers.
-- Pre-baked `cage-wine-choco` runtime/build image — proposed after the fork lifecycle passes and bootstrap time becomes the bottleneck.
+- Installer/component consumption instead of prepared-prefix replacement — revisit only if bounded prefix updates cannot preserve the released runtime.
+- Wine 9/10 expansion — after Wine 11 producer and consumer paths pass.
+- Additional PowerShell capability composition — only for a concrete application requirement not provided by CFW.
 
 ## Theme 3: End-to-End Production Architecture
 
@@ -120,13 +119,13 @@ Once Themes 1 and 2 are complete, Cage's architecture matches the Gemini-describ
 ┌─────────────────────────────────────────────────────────┐
 │ BUILD PHASE (default networking)                        │
 │                                                         │
-│  1. Pull base Wine image (or pre-baked choco image)     │
-│  2. Initialize Wine prefix                              │
-│  3. Run deterministic Chocolatey-for-wine setup         │
-│  4. Verify canonical choco.exe                          │
-│  5. choco install <packages>                            │
-│  6. Install application (exe/msi/portable)              │
-│  7. Freeze → OCI image                                  │
+│  1. Pull the exact digest-pinned CFW producer image     │
+│  2. Verify manifest, evidence, archive, and interfaces  │
+│  3. Replacement-seed the verified prepared prefix      │
+│  4. Run bounded prefix update and readiness checks      │
+│  5. Prove local package install/uninstall lifecycle     │
+│  6. choco install <requested packages>                  │
+│  7. Install application and freeze → OCI image          │
 └─────────────────────────────────────────────────────────┘
                           │
                           ▼
@@ -150,10 +149,10 @@ Once Themes 1 and 2 are complete, Cage's architecture matches the Gemini-describ
 | Order | Theme | Effort | Dependencies | Delivers |
 |---|---|---|---|---|
 | 1 | Runtime `--net none` default | Small (1–2 files + tests) | None | Implemented — immediate security hardening |
-| 2 | Deterministic Chocolatey MVP path | Medium/large (fork + verified cache + tests) | ADR 0022 | In progress — patched fork is pinned; lifecycle CI is the remaining proof |
+| 2 | Deterministic Chocolatey MVP path | Medium/large (CFW producer + verified consumer + tests) | ADR 0024 | In progress — static producer/consumer boundaries exist; immutable Wine 11 release and non-skipped lifecycle remain |
 | 3 | Network escape hatch (manifest field + CLI flag) | Small (manifest + launcher + kube) | Theme 1 (parallel ok) | Implemented — overridable isolation |
 | 4 | External module registry | Medium (module.yaml resolver) | Built-in Chocolatey module proves the pattern | Proposed — cleaner abstraction |
-| 5 | Pre-baked chocolatey runtime image | Medium (Dockerfile + CI + GHCR push) | Theme 2 | Proposed — faster builds |
+| 5 | Additional prepared-runtime producers | Medium (producer contract + CI + immutable release) | Theme 2 | Parked — only after Wine 11 CFW proof |
 
 ## Review triggers
 

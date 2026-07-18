@@ -65,7 +65,7 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str) -> dict[str, An
         base_image=base_image,
     )
     labels = _oci_labels(application, runtime, base_image)
-    containerfile = _containerfile(base_image, labels)
+    containerfile = _containerfile(base_image, labels, dict(runtime.get('environment') or {}))
 
     return {
         'schemaVersion': OCI_EXPORT_PLAN_SCHEMA_VERSION,
@@ -520,7 +520,7 @@ def _runtime_summary(runtime: dict[str, Any]) -> dict[str, Any]:
     keys = [
         'provider', 'version', 'requestedVersion', 'resolvedVersion',
         'family', 'runner', 'runnerVersion', 'packageVersion',
-        'launcher', 'launcherVersion', 'runtimeUsable',
+        'launcher', 'launcherVersion', 'runtimeUsable', 'environment',
     ]
     return {key: runtime[key] for key in keys if key in runtime and runtime[key] is not None}
 
@@ -542,15 +542,24 @@ def _oci_labels(application: dict[str, Any], runtime: dict[str, Any], base_image
     }
 
 
-def _containerfile(base_image: str, labels: dict[str, str]) -> str:
+def _containerfile(
+    base_image: str,
+    labels: dict[str, str],
+    environment: dict[str, str] | None = None,
+) -> str:
     label_lines = '\n'.join(
         f'LABEL {key}={_docker_quote(value)}' for key, value in labels.items()
+    )
+    environment_lines = ''.join(
+        f'ENV {key}={_docker_quote(value)}\n'
+        for key, value in sorted((environment or {}).items())
     )
     return (
         f'FROM {base_image}\n'
         '\n'
         f'{label_lines}\n'
         '\n'
+        f'{environment_lines}'
         f'ENV CAGE_BUNDLE={BUNDLE_ROOT} \\\n'
         f'    CAGE_STATE={STATE_ROOT} \\\n'
         f'    CAGE_EXPORTS={EXPORTS_ROOT} \\\n'

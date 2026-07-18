@@ -1,9 +1,13 @@
 # 0022. Deterministic Chocolatey-for-Wine fork
 
-Status: accepted
+Status: historical; superseded by [0024. CFW prepared runtime provider](0024-cfw-prepared-runtime-provider.md)
 Date: 2026-07-10
 Owner: Noah Giroux / CTO
 Supersedes: [0021. Upstream-first Chocolatey-for-Wine bootstrap](0021-upstream-first-chocolatey-bootstrap.md)
+
+> Update note (2026-07-17): the fork remains the producer source, but Cage no
+> longer runs its installer or owns compatibility finalization. CFW publishes a
+> behaviorally proven prepared-prefix runtime consumed through ADR 0024.
 
 ## Decision
 

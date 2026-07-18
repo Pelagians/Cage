@@ -6,7 +6,7 @@ from pathlib import Path
 from artifact.graph import build_execution_graph
 from builder.pipeline import build_plan
 from core.manifest import Manifest
-from runtime.providers import resolve_runtime
+from runtime.providers import resolve_manifest_runtime
 
 STATUS_SCHEMA_VERSION = "cage.bundle-status/v0"
 STEP_EVIDENCE_SCHEMA_VERSION = "cage.step-evidence/v0"
@@ -35,7 +35,7 @@ def create_bundle(manifest: Manifest, output_dir: Path, *,
                 "build", "logs"):
         (bundle_path / rel).mkdir(parents=True, exist_ok=False)
 
-    runtime = resolve_runtime(manifest.runtime)
+    runtime = resolve_manifest_runtime(manifest)
     _write_json(bundle_path / "manifest.cage.json",
                 manifest.to_dict())
     _write_json(bundle_path / "runtime/runtime.json",

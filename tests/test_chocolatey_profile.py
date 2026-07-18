@@ -14,10 +14,11 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = {
     "id": "cfw-runtime-test",
     "url": "https://example.invalid/cfw-runtime-prefix.tar.gz",
-    "sha256": "a" * 64,
     "evidenceUrl": "https://example.invalid/runtime.json",
-    "evidenceSha256": "b" * 64,
-    "wineVersions": ["wine-9.0"],
+    "manifestUrl": "https://example.invalid/cfw-runtime-manifest.json",
+    "manifestSha256": "c" * 64,
+    "wineImage": "ghcr.io/pelagians/cage-wine@sha256:" + "d" * 64,
+    "wineVersions": ["wine-11.0"], "environment": {"WINEDLLOVERRIDES": ""},
 }
 
 
@@ -31,7 +32,7 @@ def _manifest(**module_overrides):
         "schemaVersion": "cage.app/v0",
         "name": "profile-test",
         "version": "1.0.0",
-        "runtime": {"provider": "wine", "version": "9.0"},
+        "runtime": {"provider": "wine", "version": "11.0"},
         "modules": [module],
         "launch": {"entrypoint": "C:/Program Files/App/App.exe"},
     })
@@ -46,8 +47,9 @@ class ChocolateyRuntimeProfileTests(unittest.TestCase):
         self.assertEqual(record.description, "Record CFW prepared runtime profile")
         self.assertIn("metadata/chocolatey-runtime-profile.json", command)
         self.assertIn(RUNTIME["id"], command)
-        self.assertIn(RUNTIME["sha256"], command)
-        self.assertIn("external-windows-powershell", command)
+        self.assertIn(RUNTIME["manifestSha256"], command)
+        self.assertNotIn("external-windows-powershell", command)
+        self.assertNotIn("packageExecutionHost", command)
         self.assertNotIn("KB3AIK_EN.iso", command)
         self.assertNotIn("KB3191566", command)
         self.assertNotIn("KB958488", command)
@@ -68,13 +70,13 @@ class ChocolateyRuntimeProfileTests(unittest.TestCase):
 
         self.assertNotIn("cfw-v0.5c.755-noah", base_source)
         self.assertNotIn("DEFAULT_BOOTSTRAP_PROFILE_ID", base_source)
-        self.assertIn("DEFAULT_CFW_RUNTIME_PROFILE_ID", base_source)
+        self.assertNotIn("DEFAULT_CFW_RUNTIME_PROFILE_ID", base_source)
         self.assertNotIn("get_bootstrap_profile", module_source)
         self.assertNotIn("choc_install.ps1", module_source)
         self.assertNotIn("install-powershell51", module_source)
         self.assertNotIn("install-native-mscoree", module_source)
         self.assertNotIn("install-dpx-helper", module_source)
-        self.assertLess(len(module_source.splitlines()), 300)
+        self.assertLess(len(module_source.splitlines()), 325)
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('"core.chocolatey.assets"', pyproject)
         self.assertIn('"*.sh"', pyproject)
@@ -86,6 +88,7 @@ class ChocolateyAssetContractTests(unittest.TestCase):
             "fetch-verified.sh",
             "failure-diagnostics.sh",
             "seed-cfw-runtime.sh",
+            "runtime-artifact.py",
             "verify-chocolatey.sh",
             "feature-policy.sh",
             "smoke-lifecycle.sh",
@@ -118,13 +121,19 @@ class ChocolateyAssetContractTests(unittest.TestCase):
 
     def test_seed_asset_verifies_archive_evidence_and_prefix_outputs(self):
         seed = load_asset("seed-cfw-runtime.sh")
-        self.assertIn("CFW_RUNTIME_SHA256", seed)
-        self.assertIn("CFW_RUNTIME_EVIDENCE_SHA256", seed)
-        self.assertIn("runtime evidence status is not passed", seed)
-        self.assertIn("synchroX64", seed)
-        self.assertIn("synchroX86", seed)
-        self.assertIn("tar -xzf", seed)
-        self.assertIn("ProgramData/chocolatey/bin/choco.exe", seed)
+        helper = load_asset("runtime-artifact.py")
+        self.assertIn("CFW_RUNTIME_PROFILE_BASE64", seed)
+        self.assertIn("cfw.prepared-runtime-manifest/v1", helper)
+        self.assertIn("runtime archive does not match manifest", helper)
+        self.assertIn("runtime evidence does not match manifest", helper)
+        self.assertIn("runtime evidence status is not passed", helper)
+        self.assertIn("requiredProofs", helper)
+        self.assertIn("interfaces", helper)
+        self.assertNotIn('REQUIRED_CHECKS = {', helper)
+        self.assertIn("extract_prepared_prefix", helper)
+        self.assertNotIn("tar -xzf", seed)
+        self.assertIn("CFW_CHOCOLATEY_PREFIX_PATH", seed)
+        self.assertIn("CFW_CHOCOLATEY_WINDOWS_PATH", seed)
         self.assertIn(".cage-prefix-seeded", seed)
 
     def test_verified_fetch_uses_content_addressing_locking_and_atomic_promotion(self):

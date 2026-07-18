@@ -1,12 +1,16 @@
 """Tests for Cage execution graph generation."""
 from __future__ import annotations
+from contextlib import redirect_stdout
+import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from artifact.bundle import create_bundle
 from artifact.graph import build_execution_graph
+from cage.cli import cmd_inspect, cmd_plan
 from core.manifest import Manifest
 
 
@@ -30,6 +34,72 @@ VALID = {
 
 
 class ExecutionGraphTests(unittest.TestCase):
+
+    def test_cfw_graph_and_runtime_metadata_use_exact_producer_image(self):
+        image = "ghcr.io/pelagians/cage-wine@sha256:" + "d" * 64
+        data = {
+            "schemaVersion": "cage.app/v0",
+            "name": "cfw-graph",
+            "version": "1.0.0",
+            "runtime": {"provider": "wine", "version": "11.0"},
+            "modules": [{"type": "chocolatey", "install": {
+                "packages": [],
+                "runtimeArtifact": {
+                    "id": "cfw-runtime-test",
+                    "url": "https://example.invalid/runtime.tar.gz",
+                    "evidenceUrl": "https://example.invalid/runtime.json",
+                    "manifestUrl": "https://example.invalid/manifest.json",
+                    "manifestSha256": "c" * 64,
+                    "wineImage": image,
+                    "wineVersions": ["wine-11.0"], "environment": {"WINEDLLOVERRIDES": ""},
+                },
+            }}],
+        }
+        manifest = Manifest.from_dict(data)
+        graph = build_execution_graph(manifest)
+        self.assertEqual(graph["builderRuntime"]["image"], image)
+        self.assertEqual(graph["runnerRuntime"]["image"], image)
+        self.assertEqual(graph["builderRuntime"]["ociImage"], image)
+        self.assertEqual(graph["builderRuntime"]["environment"], {"WINEDLLOVERRIDES": ""})
+        self.assertEqual(graph["runnerRuntime"]["environment"], {"WINEDLLOVERRIDES": ""})
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = create_bundle(manifest, Path(tmp), dry_run=True)
+            runtime = json.loads((bundle / "runtime/runtime.json").read_text(encoding="utf-8"))
+        self.assertEqual(runtime["ociImage"], image)
+        self.assertEqual(runtime["environment"], {"WINEDLLOVERRIDES": ""})
+
+    def test_cfw_inspect_and_plan_use_exact_producer_image(self):
+        image = "ghcr.io/pelagians/cage-wine@sha256:" + "d" * 64
+        data = {
+            "schemaVersion": "cage.app/v0",
+            "name": "cfw-cli",
+            "version": "1.0.0",
+            "runtime": {"provider": "wine", "version": "11.0"},
+            "modules": [{"type": "chocolatey", "install": {
+                "packages": [],
+                "runtimeArtifact": {
+                    "id": "cfw-runtime-test",
+                    "url": "https://example.invalid/runtime.tar.gz",
+                    "evidenceUrl": "https://example.invalid/runtime.json",
+                    "manifestUrl": "https://example.invalid/manifest.json",
+                    "manifestSha256": "c" * 64,
+                    "wineImage": image,
+                    "wineVersions": ["wine-11.0"], "environment": {"WINEDLLOVERRIDES": ""},
+                },
+            }}],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "manifest.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            inspect_output = io.StringIO()
+            with redirect_stdout(inspect_output):
+                self.assertEqual(cmd_inspect(SimpleNamespace(manifest=str(path))), 0)
+            plan_output = io.StringIO()
+            with redirect_stdout(plan_output):
+                self.assertEqual(cmd_plan(SimpleNamespace(manifest=str(path))), 0)
+
+        self.assertEqual(json.loads(inspect_output.getvalue())["resolvedRuntime"]["ociImage"], image)
+        self.assertEqual(json.loads(plan_output.getvalue())["ociImage"], image)
 
     def test_graph_records_resolved_runtime_launch_graphics_and_compatibility(self):
         graph = build_execution_graph(Manifest.from_dict(VALID))

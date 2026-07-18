@@ -248,6 +248,56 @@ def _validate_module_combinations(modules: list[ModuleBase]) -> None:
     resolve_module_capabilities(modules)
 
 
+def _validate_cfw_boundary(
+    runtime: RuntimeSpec,
+    modules: list[ModuleBase],
+    launch: LaunchSpec | None,
+    compatibility: dict[str, Any],
+) -> None:
+    """Keep CFW prepared prefixes opaque to Cage compatibility machinery."""
+    chocolatey_modules = [module for module in modules if module.type == "chocolatey"]
+    if not chocolatey_modules:
+        return
+    if runtime.provider != "wine" or runtime.version != "11.0":
+        raise ManifestError("Chocolatey Phase 1 CFW prepared runtimes require Wine 11.0")
+    identities: set[tuple[str, str, str]] = set()
+    for module in chocolatey_modules:
+        resolver = getattr(module, "_runtime_artifact", None)
+        artifact = resolver() if callable(resolver) else None
+        if isinstance(artifact, dict):
+            identities.add((artifact["id"], artifact["manifestSha256"], artifact["wineImage"]))
+    if len(identities) > 1:
+        raise ManifestError("Chocolatey modules declare conflicting CFW prepared runtimes")
+    if len(chocolatey_modules) > 1:
+        raise ManifestError("CFW prepared runtimes require exactly one Chocolatey module")
+    producer_environment: dict[str, str] = {}
+    resolver = getattr(chocolatey_modules[0], "_runtime_artifact", None)
+    artifact = resolver() if callable(resolver) else None
+    if isinstance(artifact, dict):
+        producer_environment = dict(artifact.get("environment") or {})
+    launch_collisions = sorted(set(launch.env if launch else {}) & set(producer_environment))
+    if launch_collisions:
+        raise ManifestError(
+            "CFW launch.env cannot override producer-owned environment: "
+            + ", ".join(launch_collisions)
+        )
+    if runtime.runner is not None:
+        raise ManifestError(
+            "CFW prepared runtimes cannot use runtime.runner; the producer image owns Wine identity"
+        )
+    if compatibility:
+        raise ManifestError("CFW prepared runtimes cannot declare Cage compatibility policy")
+    mutating = sorted({
+        module.type for module in modules
+        if module.type in {"winetricks", "script", "containerfile"}
+    })
+    if mutating:
+        raise ManifestError(
+            "CFW prepared runtimes cannot combine with compatibility-mutating module: "
+            + ", ".join(mutating)
+        )
+
+
 @dataclass(frozen=True)
 class Manifest:
     """Simplified Manifest for module-first architecture.
@@ -338,6 +388,7 @@ class Manifest:
             )
         except CompatibilityPolicyError as exc:
             raise ManifestError(str(exc)) from exc
+        _validate_cfw_boundary(runtime, modules, launch, compatibility)
         
         # Parse provenance
         provenance = data.get("provenance", {}) or {}

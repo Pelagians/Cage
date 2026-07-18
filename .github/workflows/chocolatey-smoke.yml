@@ -35,11 +35,46 @@ permissions:
   packages: read
 
 jobs:
+  runtime-profile:
+    name: resolve immutable CFW runtime
+    runs-on: ubuntu-latest
+    outputs:
+      available: ${{ steps.runtime.outputs.available }}
+      image: ${{ steps.runtime.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Check for released CFW runtime
+        id: runtime
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          from core.modules.chocolatey import DEFAULT_CFW_RUNTIME_ARTIFACT
+          print(f"available={'true' if DEFAULT_CFW_RUNTIME_ARTIFACT else 'false'}")
+          print(f"image={DEFAULT_CFW_RUNTIME_ARTIFACT['wineImage'] if DEFAULT_CFW_RUNTIME_ARTIFACT else ''}")
+          PY
+
+      - name: Explain blocked consumer lifecycle
+        if: steps.runtime.outputs.available != 'true'
+        run: |
+          echo 'A CFW prepared-prefix runtime has not been released and pinned yet.'
+          echo 'The CFW repository owns runtime construction and proof.'
+          echo 'Failing this check so skipped lifecycle work cannot appear green.'
+          exit 78
+
   lifecycle:
+    name: prove CFW consumer lifecycle
+    needs: runtime-profile
+    if: needs.runtime-profile.outputs.available == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      CAGE_RUNTIME_IMAGE: ghcr.io/pelagians/cage-wine:11.0
+      CAGE_RUNTIME_IMAGE: ${{ needs.runtime-profile.outputs.image }}
     steps:
       - uses: actions/checkout@v4
 
@@ -53,24 +88,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e .
 
-      - name: Check for released CFW runtime
-        id: runtime
-        shell: bash
-        run: |
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          from core.modules.chocolatey import DEFAULT_CFW_RUNTIME_ARTIFACT
-          print(f"available={'true' if DEFAULT_CFW_RUNTIME_ARTIFACT else 'false'}")
-          PY
-
-      - name: Explain deferred consumer lifecycle
-        if: steps.runtime.outputs.available != 'true'
-        run: |
-          echo 'A CFW prepared-prefix runtime has not been released and pinned yet.'
-          echo 'The CFW repository owns runtime construction and proof.'
-          echo 'This consumer lifecycle will activate automatically after the immutable archive and evidence digests are pinned.'
-
       - name: Log in to GitHub Container Registry
-        if: steps.runtime.outputs.available == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -78,11 +96,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull Wine runtime
-        if: steps.runtime.outputs.available == 'true'
         run: docker pull "$CAGE_RUNTIME_IMAGE"
 
       - name: Run local Chocolatey package lifecycle
-        if: steps.runtime.outputs.available == 'true'
         id: smoke
         shell: bash
         run: |
@@ -104,6 +120,8 @@ jobs:
           fi
           if [ "$rc" -ne 0 ]; then
             {
+              echo '--- CFW runtime manifest ---'
+              cat "$bundle/metadata/cfw-runtime-manifest.json" 2>/dev/null || echo 'runtime manifest unavailable'
               echo '--- CFW runtime evidence ---'
               cat "$bundle/metadata/cfw-runtime.json" 2>/dev/null || echo 'runtime evidence unavailable'
               echo '--- Chocolatey readiness ---'
@@ -126,7 +144,7 @@ jobs:
           exit "$rc"
 
       - name: Upload lifecycle evidence
-        if: always() && steps.runtime.outputs.available == 'true'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: chocolatey-lifecycle-${{ github.sha }}

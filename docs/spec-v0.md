@@ -42,7 +42,7 @@ Strict YAML rules:
 
 `runtime.provider` must be one of `wine`, `staging`, or `umu-proton-ge`. `runtime.version` is required and may be either a pinned runtime image version or a catalog alias such as `latest`, `stable`, `previous`, `legacy`, or `baseline`. Provider/version are selected at build time and enforced at run time; changing providers should require rebuilding. For `umu-proton-ge`, the provider identifies the UMU-backed Proton-family stack while `runtime.version` selects or resolves to the GE-Proton runner tag. Resolved runtime metadata records both `requestedVersion` and `resolvedVersion`; future production artifacts should use the resolved image digest, not a mutable alias, as identity.
 
-`runtime.runner` is optional and selects a downloadable runner archive alias within the provider. Phase 6F adds `pol-8.2`, `pol-4.3`, and `pol-3.0.3` as Wine runner aliases backed by PlayOnLinux/Phoenicis-hosted upstream Wine x86 tarballs. These are not a separate PlayOnLinux provider; they are cacheable Wine runner archives with pinned URL/SHA-256 provenance. Resolved runtime metadata records `runner`, `runnerVersion`, `runnerSource`, `runnerUrl`, `runnerSha256`, and `runnerArch` when a recipe requests a downloadable runner.
+`runtime.runner` is optional and selects a downloadable runner archive alias within the provider. Phase 6F adds `pol-8.2`, `pol-4.3`, and `pol-3.0.3` as Wine runner aliases backed by PlayOnLinux/Phoenicis-hosted upstream Wine x86 tarballs. These are not a separate PlayOnLinux provider; they are cacheable Wine runner archives with pinned URL/SHA-256 provenance. Resolved runtime metadata records `runner`, `runnerVersion`, `runnerSource`, `runnerUrl`, `runnerSha256`, and `runnerArch` when a recipe requests a downloadable runner. A recipe consuming a CFW prepared runtime must not set `runtime.runner`: its Wine binary is bound to the exact producer image digest.
 
 `runtime.network` is optional and defaults to `none`. Supported values are `none`, `bridge`, and `host`. This field records runtime network intent for the sealed application artifact, not build-container networking: build containers keep default networking so installers, Winetricks verbs, Chocolatey, Git, and other build-time tooling can download dependencies. The resolved execution graph records network intent under `runnerRuntime.network`, and `cage run --network <mode>` can override it at operator run time.
 
@@ -61,7 +61,7 @@ modules:
         - 7zip.install
 ```
 
-The Chocolatey module is self-contained and profile-backed. Cage SHA-256 verifies Noah's pinned Chocolatey-for-Wine fork release and every transitive installer payload, materializes them in a private per-prefix work directory, and runs the fork with `CFW_OFFLINE=1`. The build fails unless the installer exits successfully, Wine settles, canonical `C:/ProgramData/chocolatey/bin/choco.exe` exists, bounded readiness probes pass, feature policy is applied, and a local package install/uninstall lifecycle succeeds. `chocolatey` and `powershell-wrapper` remain temporarily incompatible until the Phase 2 PowerShell capability resolver lands. Package names must be non-empty strings containing only letters, numbers, dot, underscore, plus, or dash.
+The Chocolatey module is a small consumer of one immutable CFW prepared-runtime release. Cage verifies the pinned detached manifest, evidence, prefix archive, source/installer/input provenance, and exact digest-pinned Wine producer image before safely replacement-seeding the prefix. CFW owns CLR, PowerShell, Synchro, Chocolatey bootstrap, profiles, and compatibility policy; Cage only verifies producer-declared proofs and interfaces, performs a bounded prefix update, proves a local package lifecycle, installs requested packages, and exports the application artifact. A missing released runtime fails the real lifecycle check rather than appearing green. Package names and runtime-profile fields are validated before build-script generation. `packageSource` may select an HTTPS Chocolatey package feed; the ambiguous legacy `source` and `bootstrap` fields are rejected.
 
 `dependencies` supports build-time dependency installation. Allowed kinds: `winetricks`, `font`, `directx`, `package`, `runtime-component`.
 
@@ -73,7 +73,7 @@ The Chocolatey module is self-contained and profile-backed. Cage SHA-256 verifie
 
 `registry` records build-time registry tweaks.
 
-`launch.entrypoint` is required and remains the default app entrypoint. `launch.args`, `launch.env`, and `launch.workingDirectory` are optional.
+`launch.entrypoint` is required and remains the default app entrypoint. `launch.args`, `launch.env`, and `launch.workingDirectory` are optional. For a CFW prepared runtime, `launch.env` cannot override producer-owned environment keys; the complete launch contract is bound across manifest, graph, and bundle verification.
 
 `entrypoints` optionally records named suite entrypoints such as `word`, `excel`, and `powerpoint`. `fileAssociations` maps extensions/MIME types to those named entrypoints. v0 records this metadata for artifacts/evidence, and `cage run <app> --entrypoint writer <file.docx>` routes host files as read-only `Z:` path arguments.
 

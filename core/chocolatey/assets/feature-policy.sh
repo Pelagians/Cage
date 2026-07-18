@@ -1,33 +1,36 @@
 set -eu
-echo "[cage] Apply Chocolatey feature policy"
-choco_exe_win='C:\ProgramData\chocolatey\bin\choco.exe'
+echo "[cage] Verify Chocolatey feature policy"
+choco_exe_win="${CFW_CHOCOLATEY_WINDOWS_PATH:?CFW Chocolatey interface is missing}"
 metadata_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/metadata"
 logs_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/chocolatey"
 policy_json="$metadata_dir/chocolatey-feature-policy.json"
 diagnostic_json="$metadata_dir/chocolatey-diagnostic.json"
 feature_list_log="$logs_dir/feature-list.log"
-powershell_host_log="$logs_dir/disable-powershellHost.log"
 powershell_host_policy='{{POWERSHELL_HOST_POLICY}}'
 allow_global_confirmation_policy='{{ALLOW_GLOBAL_CONFIRMATION_POLICY}}'
 mkdir -p "$metadata_dir" "$logs_dir"
-unset WINEDLLOVERRIDES
 if [ "$powershell_host_policy" != "disabled" ] || [ "$allow_global_confirmation_policy" != "disabled" ]; then
-  echo "[cage] ERROR: unsupported Chocolatey feature policy in bootstrap profile" >&2
+  echo "[cage] ERROR: unsupported Chocolatey feature policy in runtime profile" >&2
   exit 64
 fi
 
 set +e
-timeout "${CAGE_CHOCOLATEY_FEATURE_TIMEOUT:-120s}" wine "$choco_exe_win" feature disable --name={{POWERSHELL_HOST_FEATURE}} > "$powershell_host_log" 2>&1
-powershell_host_disable_rc="$?"
 timeout "${CAGE_CHOCOLATEY_FEATURE_TIMEOUT:-120s}" wine "$choco_exe_win" feature list --limit-output > "$feature_list_log" 2>&1
 feature_list_rc="$?"
+timeout "${CAGE_CHOCOLATEY_FEATURE_SETTLE_TIMEOUT:-120s}" wineserver -w >> "$feature_list_log" 2>&1
+feature_list_settle_rc="$?"
+set -e
+normalized_log="$feature_list_log.normalized"
+tr -d '\r' < "$feature_list_log" > "$normalized_log"
+mv -f "$normalized_log" "$feature_list_log"
+set +e
 grep -Eiq '^{{POWERSHELL_HOST_FEATURE}}\|(disabled|false)(\||$)' "$feature_list_log"
 powershell_host_disabled_rc="$?"
 grep -Eiq '^allowGlobalConfirmation\|(disabled|false)(\||$)' "$feature_list_log"
 global_confirmation_disabled_rc="$?"
 set -e
 
-python3 - "$policy_json" "$diagnostic_json" "$powershell_host_policy" "$allow_global_confirmation_policy" "$powershell_host_disable_rc" "$feature_list_rc" "$powershell_host_disabled_rc" "$global_confirmation_disabled_rc" <<'PY'
+python3 - "$policy_json" "$diagnostic_json" "$powershell_host_policy" "$allow_global_confirmation_policy" "$feature_list_rc" "$feature_list_settle_rc" "$powershell_host_disabled_rc" "$global_confirmation_disabled_rc" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -36,7 +39,7 @@ diagnostic_path = Path(sys.argv[2])
 powershell_host_policy = sys.argv[3]
 allow_global_confirmation_policy = sys.argv[4]
 values = [int(value) for value in sys.argv[5:]]
-passed = values[0] in {0, 2} and all(value == 0 for value in values[1:])
+passed = all(value == 0 for value in values)
 payload = {
     "schemaVersion": "cage.chocolatey-feature-policy/v0",
     "status": "passed" if passed else "failed",
@@ -46,11 +49,10 @@ payload = {
     },
     "persistentGlobalConfirmationModified": False,
     "returnCodes": {
-        "disablePowershellHost": values[0],
-        "featureList": values[1],
+        "featureList": values[0],
+        "featureListSettle": values[1],
     },
     "logs": {
-        "powershellHost": "logs/chocolatey/disable-powershellHost.log",
         "featureList": "logs/chocolatey/feature-list.log",
     },
 }
@@ -87,4 +89,4 @@ if [ "$policy_status" != "passed" ]; then
   exit 70
 fi
 
-echo "[cage] Chocolatey feature policy applied"
+echo "[cage] Chocolatey feature policy verified"

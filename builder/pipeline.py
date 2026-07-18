@@ -214,6 +214,10 @@ def generate_build_script(
         manifest.modules,
         exclude_kinds={PREFIX_SEED_KIND},
     )
+    if seed_script and manifest.runtime.runner is not None:
+        raise ValueError(
+            "CFW prepared runtimes cannot use runtime.runner; the producer image owns Wine identity"
+        )
 
     lines = [
         '#!/bin/bash',
@@ -237,6 +241,16 @@ def generate_build_script(
         '',
     ]
 
+    if manifest.runtime.runner is not None:
+        lines.extend([
+            'echo "[cage] Configuring runner environment"',
+            'export CAGE_RUNNER_BIN="${CAGE_RUNNER_BIN:-/opt/cage-runner/bin}"',
+            'export PATH="$CAGE_RUNNER_BIN:$PATH"',
+            'export WINE="$CAGE_RUNNER_BIN/wine"',
+            'echo "  Using cached Wine runner at $CAGE_RUNNER_BIN"',
+            '',
+        ])
+
     if seed_script:
         lines.extend([
             'echo "[cage] Phase 0: Seeding prepared prefix"',
@@ -250,23 +264,13 @@ def generate_build_script(
     lines.extend([
         'echo "[cage] Phase 1: Initializing Wine prefix"',
         'if [ -f "$WINEPREFIX/.cage-prefix-seeded" ]; then',
-        '  timeout 300s wineboot -u 2>&1 | while IFS= read -r line; do echo "  $line"; done',
+        '  timeout 300s wine wineboot -u 2>&1 | while IFS= read -r line; do echo "  $line"; done',
         'else',
         '  timeout 300s wine wineboot --init 2>&1 | while IFS= read -r line; do echo "  $line"; done',
         'fi',
         'echo "[cage]   Prefix initialized"',
         '',
     ])
-
-    if manifest.runtime.runner is not None:
-        lines.extend([
-            'echo "[cage] Configuring runner environment"',
-            'export CAGE_RUNNER_BIN="${CAGE_RUNNER_BIN:-/opt/cage-runner/bin}"',
-            'export PATH="$CAGE_RUNNER_BIN:$PATH"',
-            'export WINE="$CAGE_RUNNER_BIN/wine"',
-            'echo "  Using cached Wine runner at $CAGE_RUNNER_BIN"',
-            '',
-        ])
 
     lines.extend([
         'echo "[cage] Phase 2: Executing modules"',

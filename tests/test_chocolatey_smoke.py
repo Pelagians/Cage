@@ -19,10 +19,11 @@ SMOKE_NUPKG = "cage-chocolatey-smoke.0.1.0.nupkg"
 RUNTIME = {
     "id": "cfw-runtime-test",
     "url": "https://example.invalid/cfw-runtime-prefix.tar.gz",
-    "sha256": "a" * 64,
     "evidenceUrl": "https://example.invalid/runtime.json",
-    "evidenceSha256": "b" * 64,
-    "wineVersions": ["wine-9.0"],
+    "manifestUrl": "https://example.invalid/cfw-runtime-manifest.json",
+    "manifestSha256": "c" * 64,
+    "wineImage": "ghcr.io/pelagians/cage-wine@sha256:" + "d" * 64,
+    "wineVersions": ["wine-11.0"], "environment": {"WINEDLLOVERRIDES": ""},
 }
 
 
@@ -31,7 +32,7 @@ def _steps():
         "schemaVersion": "cage.app/v0",
         "name": "smoke-test",
         "version": "1.0.0",
-        "runtime": {"provider": "wine", "version": "9.0"},
+        "runtime": {"provider": "wine", "version": "11.0"},
         "modules": [{
             "type": "chocolatey",
             "install": {"packages": ["7zip"], "runtimeArtifact": dict(RUNTIME)},
@@ -153,6 +154,13 @@ class ChocolateySmokePackageTests(unittest.TestCase):
 
         workflow = (ROOT / ".github/workflows/chocolatey-smoke.yml").read_text(encoding="utf-8")
         self.assertIn("Check for released CFW runtime", workflow)
+        self.assertIn("runtime-profile:", workflow)
+        self.assertIn("image: ${{ steps.runtime.outputs.image }}", workflow)
+        self.assertIn("CAGE_RUNTIME_IMAGE: ${{ needs.runtime-profile.outputs.image }}", workflow)
+        self.assertIn("needs: runtime-profile", workflow)
+        self.assertIn("if: needs.runtime-profile.outputs.available == 'true'", workflow)
+        self.assertIn("exit 78", workflow)
+        self.assertNotIn("if: steps.runtime.outputs.available == 'true'", workflow)
         self.assertIn("DEFAULT_CFW_RUNTIME_ARTIFACT", workflow)
         self.assertIn("CFW runtime evidence", workflow)
         self.assertIn("chocolatey-diagnostic.json", workflow)
@@ -199,14 +207,14 @@ class ChocolateyDiagnosticTierTests(unittest.TestCase):
     def test_package_policy_uses_command_confirmation_only(self):
         policy = load_asset("feature-policy.sh")
         package = load_asset("install-package.sh")
-        self.assertIn("feature disable --name={{POWERSHELL_HOST_FEATURE}}", policy)
-        self.assertNotIn("feature enable -n allowGlobalConfirmation", policy)
+        self.assertNotIn("feature disable", policy)
+        self.assertNotIn("feature enable", policy)
         self.assertIn("{{POWERSHELL_HOST_POLICY}}", policy)
         self.assertIn("{{ALLOW_GLOBAL_CONFIRMATION_POLICY}}", policy)
         self.assertIn("feature-list.log", policy)
         self.assertIn("^{{POWERSHELL_HOST_FEATURE}}\\|(disabled|false)", policy)
         self.assertIn("^allowGlobalConfirmation\\|(disabled|false)", policy)
-        self.assertIn("disable-powershellHost.log", policy)
+        self.assertNotIn("disable-powershellHost.log", policy)
         self.assertIn("cage_chocolatey_collect_failure_diagnostics", policy)
         self.assertIn("allowGlobalConfirmation", policy)
         self.assertIn("install {{PACKAGE_ARGS}} -y", package)

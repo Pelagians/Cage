@@ -3,8 +3,9 @@ cage_chocolatey_collect_failure_diagnostics() {
   local diagnostic_json="$1"
   local failure_trigger="${2:-required-check}"
   local wine_prefix="${WINEPREFIX:-$HOME/.wine}"
-  local choco_exe_win='C:\ProgramData\chocolatey\bin\choco.exe'
-  local canonical_choco_dir="$wine_prefix/drive_c/ProgramData/chocolatey"
+  local choco_exe_win="${CFW_CHOCOLATEY_WINDOWS_PATH:?CFW Chocolatey interface is missing}"
+  local canonical_choco_dir
+  canonical_choco_dir="$(dirname "${CFW_CHOCOLATEY_PREFIX_PATH:?CFW Chocolatey interface is missing}")/.."
   local probe_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/chocolatey-diagnostics"
   local inventory_timeout="${CAGE_CHOCOLATEY_FAILURE_INVENTORY_TIMEOUT:-30s}"
   local inventory_limit="${CAGE_CHOCOLATEY_FAILURE_INVENTORY_LIMIT:-20000}"

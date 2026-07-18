@@ -1,8 +1,8 @@
 set -eu
 echo "[cage] Prove Chocolatey local package lifecycle"
 wine_prefix="${WINEPREFIX:-$HOME/.wine}"
-choco_exe="$wine_prefix/drive_c/ProgramData/chocolatey/bin/choco.exe"
-choco_exe_win='C:\ProgramData\chocolatey\bin\choco.exe'
+choco_exe="${CFW_CHOCOLATEY_PREFIX_PATH:?CFW Chocolatey interface is missing}"
+choco_exe_win="${CFW_CHOCOLATEY_WINDOWS_PATH:?CFW Chocolatey interface is missing}"
 bundle_root="${CAGE_BUNDLE_MOUNT:-/opt/cage}"
 smoke_feed_host="$bundle_root/build/chocolatey-smoke-feed"
 smoke_nupkg="$smoke_feed_host/cage-chocolatey-smoke.0.1.0.nupkg"
@@ -16,7 +16,6 @@ uninstall_proof="$wine_prefix/drive_c/ProgramData/Cage/chocolatey-smoke-uninstal
 mkdir -p "$smoke_feed_host" "$logs_dir" "$(dirname "$smoke_json")"
 smoke_run_id="$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
 export CAGE_CHOCOLATEY_SMOKE_RUN_ID="$smoke_run_id"
-unset WINEDLLOVERRIDES
 
 python3 - "$smoke_nupkg" "{{SMOKE_NUPKG_BASE64}}" "{{SMOKE_NUPKG_SHA256}}" <<'PY'
 import base64

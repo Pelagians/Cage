@@ -45,12 +45,13 @@ class ModuleCacheExecutionTests(unittest.TestCase):
                 )
                 return Completed()
 
+            runtime_image = "ghcr.io/pelagians/cage-wine@sha256:" + "d" * 64
             with patch("builder.executor._run_container_command", side_effect=fake_run) as run, patch("sys.stderr", io.StringIO()):
                 result = execute_inside_container(
                     manifest,
                     bundle,
                     engine="podman",
-                    image_ref="local/runtime:test",
+                    image_ref=runtime_image,
                     timeout=5,
                     workspace=tmp,
                     module_cache_dir=cache,
@@ -60,6 +61,8 @@ class ModuleCacheExecutionTests(unittest.TestCase):
         argv = run.call_args.args[0]
         self.assertIn(f"{cache.resolve()}:/opt/cage-module-cache:z", argv)
         self.assertIn("CAGE_MODULE_CACHE_DIR=/opt/cage-module-cache", argv)
+        self.assertIn(f"CAGE_RUNTIME_IMAGE={runtime_image}", argv)
+        self.assertEqual(result.image_ref, runtime_image)
         self.assertEqual(result.module_cache["containerDir"], "/opt/cage-module-cache")
 
     def test_execute_inside_container_normalizes_docker_emulation_to_podman(self):
@@ -144,6 +147,54 @@ class ModuleCacheExecutionTests(unittest.TestCase):
 
         self.assertEqual(build_args.module_cache_dir, "/tmp/cage-modules")
         self.assertEqual(compat_args.module_cache_dir, "/tmp/cage-modules")
+
+    def test_compat_real_build_uses_cfw_pinned_image(self):
+        image = "ghcr.io/pelagians/cage-wine@sha256:" + "d" * 64
+        data = {
+            **MANIFEST,
+            "runtime": {"provider": "wine", "version": "11.0"},
+            "modules": [{"type": "chocolatey", "install": {
+                "packages": [],
+                "runtimeArtifact": {
+                    "id": "cfw-runtime-test",
+                    "url": "https://example.invalid/runtime.tar.gz",
+                    "evidenceUrl": "https://example.invalid/runtime.json",
+                    "manifestUrl": "https://example.invalid/manifest.json",
+                    "manifestSha256": "c" * 64,
+                    "wineImage": image,
+                    "wineVersions": ["wine-11.0"], "environment": {"WINEDLLOVERRIDES": ""},
+                },
+            }}],
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            manifest_path = root / "recipe.cage.json"
+            manifest_path.write_text(__import__("json").dumps(data), encoding="utf-8")
+
+            def fake_execute(manifest, bundle_path, **kwargs):
+                from builder.executor import BuildResult
+                self.assertEqual(kwargs["image_ref"], image)
+                return BuildResult(
+                    success=False,
+                    bundle_path=str(bundle_path),
+                    runtime_provider=manifest.runtime.provider,
+                    runtime_version=manifest.runtime.version,
+                    image_ref=kwargs["image_ref"],
+                    engine=kwargs.get("engine") or "podman",
+                    exit_code=1,
+                )
+
+            with patch("compat.evidence.execute_inside_container", side_effect=fake_execute):
+                result = run_compat_test(
+                    manifest_path,
+                    output_dir=root / "dist",
+                    workspace=root,
+                    mode="build",
+                )
+            bundle = Path(result["build"]["bundle"])
+            graph = __import__("json").loads((bundle / "metadata/graph.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(graph["builderRuntime"]["image"], image)
 
     def test_compat_real_build_propagates_module_cache_dir(self):
         with tempfile.TemporaryDirectory() as tmpdir:

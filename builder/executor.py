@@ -14,7 +14,7 @@ from artifact.bundle import update_bundle_execution_metadata
 from artifact.inspection import verify_bundle, verify_prefix_materialization
 from builder.pipeline import generate_build_script
 from core.manifest import Manifest
-from runtime.providers import resolve_runtime
+from runtime.providers import required_cfw_runtime_image, resolve_manifest_runtime, resolve_runtime
 from runtime.runner_cache import ensure_runner
 
 
@@ -200,6 +200,9 @@ RUNNER_CONTAINER_DIR = "/opt/cage-runner"
 MODULE_CACHE_CONTAINER_DIR = "/opt/cage-module-cache"
 
 
+_required_cfw_runtime_image = required_cfw_runtime_image
+
+
 def _volume_mount(source: Path | str, target: str, *, engine: str, read_only: bool = False) -> str:
     """Return a Docker/Podman bind mount string.
 
@@ -286,10 +289,18 @@ def execute_inside_container(
         BuildResult with success/failure and metadata.
     """
     engine = _find_engine(engine) if engine == "docker" else (engine or _find_engine())
-    runtime = resolve_runtime(manifest.runtime)
+    runtime = resolve_manifest_runtime(manifest)
 
-    # Resolve image reference
-    img = image_ref or _resolve_image_ref(manifest, engine)
+    # Resolve image reference. A CFW prepared runtime binds the build to the
+    # exact producer image digest; explicit caller overrides may not replace it.
+    required_cfw_image = required_cfw_runtime_image(manifest)
+    if required_cfw_image and manifest.runtime.runner:
+        raise RuntimeError("CFW prepared runtimes cannot use runtime.runner; the producer image owns Wine identity")
+    if image_ref and required_cfw_image and image_ref != required_cfw_image:
+        raise RuntimeError(
+            f"requested runtime image {image_ref} does not match pinned CFW image {required_cfw_image}"
+        )
+    img = image_ref or required_cfw_image or _resolve_image_ref(manifest, engine)
     if not img:
         # Fallback: construct a ref for the user's information
         from container.manager import get_image_ref as _img_ref
@@ -323,7 +334,8 @@ def execute_inside_container(
         _volume_mount(host_bundle, "/opt/cage", engine=engine),
         _volume_mount(host_workspace, "/workspace", engine=engine, read_only=True),
     ]
-    environment: dict[str, str] = {}
+    environment: dict[str, str] = {"CAGE_RUNTIME_IMAGE": img}
+    environment.update(runtime.environment or {})
     if runner_cache:
         mounts.append(runner_cache["mount"])
         environment.update(runner_cache["environment"])

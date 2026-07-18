@@ -369,14 +369,23 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
     runtime_pair = {
         "provider": runtime.get("provider"),
         "version": runtime.get("version"),
+        "image": runtime.get("ociImage") or runtime.get("localOciImage"),
+        "digest": runtime.get("digest"),
+        "environment": runtime.get("environment"),
     }
     builder_pair = {
         "provider": graph_builder.get("provider"),
         "version": graph_builder.get("version"),
+        "image": graph_builder.get("image") or graph_builder.get("ociImage") or graph_builder.get("localOciImage"),
+        "digest": graph_builder.get("digest"),
+        "environment": graph_builder.get("environment"),
     }
     runner_pair = {
         "provider": graph_runner.get("provider"),
         "version": graph_runner.get("version"),
+        "image": graph_runner.get("image") or graph_runner.get("ociImage") or graph_runner.get("localOciImage"),
+        "digest": graph_runner.get("digest"),
+        "environment": graph_runner.get("environment"),
     }
     runtime_match = runtime_pair == builder_pair == runner_pair
     add_check(
@@ -388,7 +397,63 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
             "builderRuntime": builder_pair,
             "runnerRuntime": runner_pair,
         },
-        error="runtime.json must match graph builderRuntime and runnerRuntime provider/version",
+        error="runtime.json must match graph builderRuntime and runnerRuntime provider/version/image/digest",
+    )
+
+    cfw_artifacts: list[dict[str, Any]] = []
+    cfw_module_count = 0
+    for module in manifest.get("modules", []):
+        if not isinstance(module, dict) or module.get("type") != "chocolatey":
+            continue
+        cfw_module_count += 1
+        install = module.get("install")
+        artifact = install.get("runtimeArtifact") if isinstance(install, dict) else None
+        if isinstance(artifact, dict):
+            cfw_artifacts.append(artifact)
+    cfw_trust_ok = cfw_module_count == 0
+    expected_cfw_image = None
+    if cfw_module_count:
+        blocked_dry_run = (
+            not cfw_artifacts
+            and provenance.get("dryRun") is True
+            and status.get("state") == "planned"
+            and status.get("runnable") is False
+        )
+        identities = {
+            (
+                artifact.get("id"),
+                artifact.get("manifestSha256"),
+                artifact.get("wineImage"),
+                tuple(artifact.get("wineVersions") or []),
+                tuple(sorted((artifact.get("environment") or {}).items())),
+            )
+            for artifact in cfw_artifacts
+        }
+        artifact = cfw_artifacts[0] if len(cfw_artifacts) == 1 and len(identities) == 1 else None
+        expected_cfw_image = artifact.get("wineImage") if artifact else None
+        expected_environment = artifact.get("environment") if artifact else None
+        expected_digest = (
+            expected_cfw_image.rsplit("@sha256:", 1)[1]
+            if isinstance(expected_cfw_image, str) and "@sha256:" in expected_cfw_image
+            else None
+        )
+        cfw_trust_ok = blocked_dry_run or (
+            cfw_module_count == 1
+            and artifact is not None
+            and artifact.get("wineVersions") == ["wine-11.0"]
+            and expected_environment == {"WINEDLLOVERRIDES": ""}
+            and expected_cfw_image is not None
+            and all(pair["image"] == expected_cfw_image for pair in (runtime_pair, builder_pair, runner_pair))
+            and all(pair["digest"] == expected_digest for pair in (runtime_pair, builder_pair, runner_pair))
+            and all(pair["environment"] == expected_environment for pair in (runtime_pair, builder_pair, runner_pair))
+        )
+    add_check(
+        "cfw-runtime-trust-root",
+        cfw_trust_ok,
+        "runtime metadata is anchored to the serialized CFW producer trust root",
+        details={"manifestArtifacts": cfw_artifacts, "runtime": runtime_pair,
+                 "builderRuntime": builder_pair, "runnerRuntime": runner_pair},
+        error="CFW runtime metadata must match one serialized producer artifact image, digest, Wine version, and environment",
     )
 
     manifest_runtime = manifest.get("runtime") if isinstance(manifest.get("runtime"), dict) else {}
@@ -414,15 +479,34 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
     )
 
     graph_launch = graph.get("launch", {})
+    manifest_launch = manifest.get("launch")
+
+    def launch_contract(value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict) or not isinstance(value.get("entrypoint"), str):
+            return {}
+        contract = {
+            "entrypoint": value["entrypoint"],
+            "args": value.get("args", []),
+            "env": value.get("env", {}),
+        }
+        if value.get("workingDirectory") is not None:
+            contract["workingDirectory"] = value["workingDirectory"]
+        return contract
+
+    expected_launch = launch_contract(manifest_launch)
+    serialized_launch = launch_contract(launch)
+    resolved_launch = launch_contract(graph_launch)
+    launch_match = resolved_launch == serialized_launch == expected_launch
     add_check(
         "launch-match",
-        graph_launch.get("entrypoint") == launch.get("entrypoint"),
-        "graph launch entrypoint matches launch/entrypoint.json",
+        launch_match,
+        "graph launch contract matches launch/entrypoint.json",
         details={
-            "launch": launch.get("entrypoint"),
-            "graph": graph_launch.get("entrypoint"),
+            "manifest": expected_launch,
+            "launch": serialized_launch,
+            "graph": resolved_launch,
         },
-        error="graph launch entrypoint does not match launch/entrypoint.json",
+        error="graph launch contract does not match launch/entrypoint.json",
     )
 
     compatibility = graph.get("compatibility", {})

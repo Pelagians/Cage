@@ -6,7 +6,7 @@ Source evidence: private BYO legacy-installer probes recorded outside public Cag
 
 ## Context
 
-Deprecated thread: ADRs 0018–0021 preserve the manual reconstruction and unmodified-wrapper experiments. [ADR 0022](decisions/0022-deterministic-chocolatey-fork.md) is current: Cage runs a narrowly patched fork with verified offline inputs and independently requires installer, canonical-file, readiness, policy, and lifecycle success.
+Deprecated thread: ADRs 0018–0023 preserve the manual reconstruction, wrapper, and direct-fork experiments. [ADR 0024](decisions/0024-cfw-prepared-runtime-provider.md) is current: CFW publishes the behaviorally proven prepared runtime, while Cage verifies and consumes it without rebuilding compatibility internals.
 
 Hard business installers need more than a generic `wine setup.exe` path. A private BYO Office 2010 probe in `vic-legacy` exposed generic Cage platform gaps around media staging, prepared-prefix reuse, visible installer debugging, and failure summarization. This document turns those lessons into public Cage development slices without adding proprietary recipes, payloads, activation flows, or customer-specific logic to Cage.
 

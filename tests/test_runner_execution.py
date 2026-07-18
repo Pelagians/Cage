@@ -25,6 +25,18 @@ RUNNER_MANIFEST = {
 }
 
 
+def _cfw_runtime():
+    return {
+        "id": "cfw-runtime-test",
+        "url": "https://example.invalid/cfw-runtime-prefix.tar.gz",
+        "evidenceUrl": "https://example.invalid/runtime.json",
+        "manifestUrl": "https://example.invalid/cfw-runtime-manifest.json",
+        "manifestSha256": "a" * 64,
+        "wineImage": "ghcr.io/pelagians/cage-wine@sha256:" + "d" * 64,
+        "wineVersions": ["wine-11.0"], "environment": {"WINEDLLOVERRIDES": ""},
+    }
+
+
 class RunnerExecutionBuildTests(unittest.TestCase):
     def test_build_script_uses_cached_runner_when_runner_bin_env_is_present(self):
         script = generate_build_script(Manifest.from_dict(RUNNER_MANIFEST))
@@ -33,6 +45,123 @@ class RunnerExecutionBuildTests(unittest.TestCase):
         self.assertIn('export PATH="$CAGE_RUNNER_BIN:$PATH"', script)
         self.assertIn('export WINE="$CAGE_RUNNER_BIN/wine"', script)
         self.assertIn('Using cached Wine runner', script)
+
+    def test_cfw_runtime_rejects_separate_cached_runner(self):
+        manifest_data = {
+            **RUNNER_MANIFEST,
+            "runtime": {**RUNNER_MANIFEST["runtime"], "version": "11.0"},
+            "modules": [{
+                "type": "chocolatey",
+                "install": {
+                    "packages": [],
+                    "runtimeArtifact": {
+                        "id": "cfw-runtime-test",
+                        "url": "https://example.invalid/cfw-runtime-prefix.tar.gz",
+                        "evidenceUrl": "https://example.invalid/runtime.json",
+                        "manifestUrl": "https://example.invalid/cfw-runtime-manifest.json",
+                        "manifestSha256": "a" * 64,
+                        "wineImage": "ghcr.io/pelagians/cage-wine@sha256:" + "d" * 64,
+                        "wineVersions": ["wine-11.0"], "environment": {"WINEDLLOVERRIDES": ""},
+                    },
+                },
+            }],
+        }
+        with self.assertRaisesRegex(Exception, "cannot use runtime.runner"):
+            Manifest.from_dict(manifest_data)
+
+    def test_cfw_runtime_rejects_cage_compatibility_mutation(self):
+        manifest_data = {
+            **RUNNER_MANIFEST,
+            "runtime": {"provider": "wine", "version": "11.0"},
+            "compatibility": {"windowsVersion": "win7"},
+            "modules": [{
+                "type": "chocolatey",
+                "install": {"packages": [], "runtimeArtifact": _cfw_runtime()},
+            }],
+        }
+        with self.assertRaisesRegex(Exception, "cannot declare Cage compatibility policy"):
+            Manifest.from_dict(manifest_data)
+
+    def test_cfw_runtime_rejects_compatibility_mutating_modules(self):
+        for module in (
+            {"type": "winetricks", "verbs": ["corefonts"]},
+            {"type": "script", "command": "winecfg -v win7"},
+            {"type": "containerfile", "instructions": ["RUN winetricks corefonts"]},
+        ):
+            manifest_data = {
+                **RUNNER_MANIFEST,
+                "runtime": {"provider": "wine", "version": "11.0"},
+                "modules": [
+                    {"type": "chocolatey", "install": {
+                        "packages": [], "runtimeArtifact": _cfw_runtime(),
+                    }},
+                    module,
+                ],
+            }
+            with self.subTest(module=module["type"]), self.assertRaisesRegex(
+                Exception, "cannot combine with compatibility-mutating module"
+            ):
+                Manifest.from_dict(manifest_data)
+
+    def test_cfw_runtime_rejects_mutable_or_mismatched_container_image(self):
+        pinned_image = "ghcr.io/pelagians/cage-wine@sha256:" + "d" * 64
+        manifest_data = {
+            **RUNNER_MANIFEST,
+            "runtime": {"provider": "wine", "version": "11.0"},
+            "modules": [{
+                "type": "chocolatey",
+                "install": {
+                    "packages": [],
+                    "runtimeArtifact": {
+                        "id": "cfw-runtime-test",
+                        "url": "https://example.invalid/cfw-runtime-prefix.tar.gz",
+                        "evidenceUrl": "https://example.invalid/runtime.json",
+                        "manifestUrl": "https://example.invalid/cfw-runtime-manifest.json",
+                        "manifestSha256": "a" * 64,
+                        "wineImage": pinned_image,
+                        "wineVersions": ["wine-11.0"], "environment": {"WINEDLLOVERRIDES": ""},
+                    },
+                },
+            }],
+        }
+        manifest = Manifest.from_dict(manifest_data)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            bundle = create_bundle(manifest, tmp / "dist", dry_run=False)
+            with self.assertRaisesRegex(RuntimeError, "does not match pinned CFW image"):
+                execute_inside_container(
+                    manifest,
+                    bundle,
+                    engine="podman",
+                    image_ref="ghcr.io/pelagians/cage-wine:11.0",
+                    workspace=tmp,
+                )
+
+    def test_cfw_build_container_receives_producer_declared_environment(self):
+        manifest_data = {
+            **RUNNER_MANIFEST,
+            "runtime": {"provider": "wine", "version": "11.0"},
+            "modules": [{
+                "type": "chocolatey",
+                "install": {"packages": [], "runtimeArtifact": _cfw_runtime()},
+            }],
+        }
+        manifest = Manifest.from_dict(manifest_data)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            bundle = create_bundle(manifest, tmp / "dist", dry_run=False)
+
+            class Completed:
+                returncode = 1
+                stdout = ""
+                stderr = "expected test failure"
+
+            with patch("builder.executor._run_container_command", return_value=Completed()) as run, \
+                 patch("sys.stderr", io.StringIO()):
+                execute_inside_container(manifest, bundle, engine="podman", workspace=tmp)
+
+        argv = run.call_args.args[0]
+        self.assertIn("WINEDLLOVERRIDES=", argv)
 
     def test_execute_inside_container_mounts_cached_runner_for_real_build(self):
         with tempfile.TemporaryDirectory() as tmpdir:

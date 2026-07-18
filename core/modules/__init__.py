@@ -14,8 +14,6 @@ from .base import (
     WinetricksModule, PortableModule, FilesModule, ScriptModule, ContainerfileModule,
 )
 from .chocolatey import ChocolateyModule
-from .powershell_wrapper import PowerShellWrapperModule
-from .powershell_engine import powershell_engine_steps
 from ..build_step import BuildStep
 
 
@@ -98,7 +96,5 @@ __all__ = [
     "PortableModule",
     "FilesModule",
     "ScriptModule",
-    "PowerShellWrapperModule",
-    "powershell_engine_steps",
     "ContainerfileModule",
 ]

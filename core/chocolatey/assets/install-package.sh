@@ -1,10 +1,9 @@
 set -eu
 echo "[cage] Install Chocolatey packages"
-choco_exe="${WINEPREFIX:-$HOME/.wine}/drive_c/ProgramData/chocolatey/bin/choco.exe"
-choco_exe_win='C:\ProgramData\chocolatey\bin\choco.exe'
+choco_exe="${CFW_CHOCOLATEY_PREFIX_PATH:?CFW Chocolatey interface is missing}"
+choco_exe_win="${CFW_CHOCOLATEY_WINDOWS_PATH:?CFW Chocolatey interface is missing}"
 export ChocolateyInstall='C:\ProgramData\chocolatey'
 export ChocolateyToolsLocation='C:\tools'
-unset WINEDLLOVERRIDES
 diagnostic_json="${CAGE_BUNDLE_MOUNT:-/opt/cage}/metadata/chocolatey-diagnostic.json"
 if [ ! -f "$choco_exe" ]; then
   echo "[cage] ERROR: choco.exe is missing before package install: $choco_exe"
