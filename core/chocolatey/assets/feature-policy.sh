@@ -1,7 +1,7 @@
 set -eu
 echo "[cage] Verify Chocolatey feature policy"
 choco_exe_win="${CFW_CHOCOLATEY_WINDOWS_PATH:?CFW Chocolatey interface is missing}"
-choco_launcher=(wine "$choco_exe_win")
+choco_launcher=("${CFW_CHOCOLATEY_QUERY_LAUNCHER:?CFW Chocolatey query launcher is missing}" "$choco_exe_win")
 metadata_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/metadata"
 logs_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/chocolatey"
 policy_json="$metadata_dir/chocolatey-feature-policy.json"

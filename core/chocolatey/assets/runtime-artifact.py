@@ -145,6 +145,8 @@ def validate_manifest(profile: dict[str, Any], manifest: dict[str, Any]) -> None
         raise ValueError("CFW runtime manifest Chocolatey interface is missing")
     windows_path = chocolatey.get("windowsPath")
     prefix_path = chocolatey.get("prefixRelativePath")
+    query_launcher = chocolatey.get("queryLauncher")
+    package_launcher = chocolatey.get("packageLauncher")
     if not isinstance(windows_path, str):
         raise ValueError("CFW runtime manifest Chocolatey Windows path is invalid")
     if not isinstance(prefix_path, str):
@@ -162,6 +164,10 @@ def validate_manifest(profile: dict[str, Any], manifest: dict[str, Any]) -> None
     expected_prefix = PurePosixPath("drive_c", *windows.parts[1:]).as_posix()
     _require(prefix_path == expected_prefix,
              "CFW runtime manifest Chocolatey interface representations do not match")
+    _require(query_launcher == "wine",
+             "CFW runtime manifest Chocolatey query launcher must be wine")
+    _require(package_launcher == "wineconsole",
+             "CFW runtime manifest Chocolatey package launcher must be wineconsole")
     _require(interfaces.get("environment") == profile["environment"],
              "CFW runtime manifest environment does not match profile")
     _validate_bound_fields(manifest, "manifest")
@@ -329,6 +335,8 @@ def _manifest_fields(profile_path: Path, manifest_path: Path) -> None:
     print(manifest["archive"]["bytes"])
     print(manifest["interfaces"][REQUIRED_INTERFACE]["windowsPath"])
     print(manifest["interfaces"][REQUIRED_INTERFACE]["prefixRelativePath"])
+    print(manifest["interfaces"][REQUIRED_INTERFACE]["queryLauncher"])
+    print(manifest["interfaces"][REQUIRED_INTERFACE]["packageLauncher"])
 
 
 def _profile_fields(profile_path: Path) -> None:

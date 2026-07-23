@@ -57,6 +57,8 @@ def _records():
             "chocolatey": {
                 "windowsPath": r"C:\ProgramData\chocolatey\choco.exe",
                 "prefixRelativePath": "drive_c/ProgramData/chocolatey/choco.exe",
+                "queryLauncher": "wine",
+                "packageLauncher": "wineconsole",
             },
             "environment": {"WINEDLLOVERRIDES": ""},
         },
@@ -107,6 +109,14 @@ class CfwRuntimeArtifactTests(unittest.TestCase):
         manifest["interfaces"]["environment"] = {"WINEDLLOVERRIDES": "mscoree="}
         with self.assertRaisesRegex(ValueError, "environment does not match profile"):
             verify(profile, manifest, evidence, "wine-11.0", IMAGE)
+
+    def test_verification_rejects_unproven_chocolatey_launchers(self):
+        verify = _helper()["validate_records"]
+        for field, value in (("queryLauncher", "wineconsole"), ("packageLauncher", "wine")):
+            profile, manifest, evidence = _records()
+            manifest["interfaces"]["chocolatey"][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "launcher"):
+                verify(profile, manifest, evidence, "wine-11.0", IMAGE)
 
     def test_safe_extractor_rejects_cage_owned_metadata_paths(self):
         extract = _helper()["extract_prepared_prefix"]

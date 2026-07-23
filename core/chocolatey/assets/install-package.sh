@@ -2,7 +2,7 @@ set -eu
 echo "[cage] Install Chocolatey packages"
 choco_exe="${CFW_CHOCOLATEY_PREFIX_PATH:?CFW Chocolatey interface is missing}"
 choco_exe_win="${CFW_CHOCOLATEY_WINDOWS_PATH:?CFW Chocolatey interface is missing}"
-choco_launcher=(wine "$choco_exe_win")
+choco_launcher=("${CFW_CHOCOLATEY_PACKAGE_LAUNCHER:?CFW Chocolatey package launcher is missing}" "$choco_exe_win")
 export ChocolateyInstall='C:\ProgramData\chocolatey'
 export ChocolateyToolsLocation='C:\tools'
 diagnostic_json="${CAGE_BUNDLE_MOUNT:-/opt/cage}/metadata/chocolatey-diagnostic.json"

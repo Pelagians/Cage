@@ -69,7 +69,7 @@ fetch_or_copy_verified() {
 fetch_or_copy_verified "$manifest_url" "$manifest_sha256" "$manifest"
 python3 "$helper" manifest-fields "$profile" "$manifest" > "$manifest_fields_file"
 mapfile -t manifest_fields < "$manifest_fields_file"
-if [ "${#manifest_fields[@]}" -ne 5 ]; then
+if [ "${#manifest_fields[@]}" -ne 7 ]; then
   echo "[cage] ERROR: invalid CFW manifest field count" >&2
   exit 64
 fi
@@ -78,6 +78,8 @@ evidence_sha256="${manifest_fields[1]}"
 archive_bytes="${manifest_fields[2]}"
 export CFW_CHOCOLATEY_WINDOWS_PATH="${manifest_fields[3]}"
 cfw_chocolatey_prefix_relative="${manifest_fields[4]}"
+export CFW_CHOCOLATEY_QUERY_LAUNCHER="${manifest_fields[5]}"
+export CFW_CHOCOLATEY_PACKAGE_LAUNCHER="${manifest_fields[6]}"
 export CFW_CHOCOLATEY_PREFIX_PATH="$WINEPREFIX/$cfw_chocolatey_prefix_relative"
 
 fetch_or_copy_verified "$runtime_url" "$archive_sha256" "$archive"

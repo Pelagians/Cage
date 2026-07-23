@@ -37,6 +37,8 @@ def materialize_runnable_prefix(
                     "chocolatey": {
                         "windowsPath": r"C:\ProgramData\chocolatey\choco.exe",
                         "prefixRelativePath": "drive_c/ProgramData/chocolatey/choco.exe",
+                        "queryLauncher": "wine",
+                        "packageLauncher": "wineconsole",
                     },
                 },
             }, indent=2, sort_keys=True) + "\n",

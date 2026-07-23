@@ -3,7 +3,7 @@ echo "[cage] Diagnose Chocolatey readiness"
 wine_prefix="${WINEPREFIX:-$HOME/.wine}"
 choco_exe="${CFW_CHOCOLATEY_PREFIX_PATH:?CFW Chocolatey interface is missing}"
 choco_exe_win="${CFW_CHOCOLATEY_WINDOWS_PATH:?CFW Chocolatey interface is missing}"
-choco_launcher=(wine "$choco_exe_win")
+choco_launcher=("${CFW_CHOCOLATEY_QUERY_LAUNCHER:?CFW Chocolatey query launcher is missing}" "$choco_exe_win")
 probe_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/chocolatey-diagnostics"
 diagnostic_json="${CAGE_BUNDLE_MOUNT:-/opt/cage}/metadata/chocolatey-diagnostic.json"
 mkdir -p "$probe_dir" "$(dirname "$diagnostic_json")"

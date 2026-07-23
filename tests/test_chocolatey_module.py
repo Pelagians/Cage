@@ -242,7 +242,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("CFW_CHOCOLATEY_PREFIX_PATH", package)
         self.assertIn("CFW_CHOCOLATEY_WINDOWS_PATH", package)
         self.assertNotIn("ProgramData/tools/chocolateyInstall/choco.exe", package)
-        self.assertIn('choco_launcher=(wine "$choco_exe_win")', package)
+        self.assertIn("CFW_CHOCOLATEY_PACKAGE_LAUNCHER", package)
         self.assertIn('"${choco_launcher[@]}" install', package)
         self.assertIn("7zip notepadplusplus -y --use-system-powershell", package)
         self.assertIn("policy_status", package)

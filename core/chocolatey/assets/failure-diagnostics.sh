@@ -4,7 +4,7 @@ cage_chocolatey_collect_failure_diagnostics() {
   local failure_trigger="${2:-required-check}"
   local wine_prefix="${WINEPREFIX:-$HOME/.wine}"
   local choco_exe_win="${CFW_CHOCOLATEY_WINDOWS_PATH:?CFW Chocolatey interface is missing}"
-  local -a choco_launcher=(wine "$choco_exe_win")
+  local -a choco_launcher=("${CFW_CHOCOLATEY_QUERY_LAUNCHER:?CFW Chocolatey query launcher is missing}" "$choco_exe_win")
   local canonical_choco_dir
   canonical_choco_dir="$(dirname "${CFW_CHOCOLATEY_PREFIX_PATH:?CFW Chocolatey interface is missing}")"
   local probe_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/chocolatey-diagnostics"
