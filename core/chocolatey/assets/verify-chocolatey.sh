@@ -3,6 +3,7 @@ echo "[cage] Diagnose Chocolatey readiness"
 wine_prefix="${WINEPREFIX:-$HOME/.wine}"
 choco_exe="${CFW_CHOCOLATEY_PREFIX_PATH:?CFW Chocolatey interface is missing}"
 choco_exe_win="${CFW_CHOCOLATEY_WINDOWS_PATH:?CFW Chocolatey interface is missing}"
+choco_launcher=(wine "$choco_exe_win")
 probe_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/chocolatey-diagnostics"
 diagnostic_json="${CAGE_BUNDLE_MOUNT:-/opt/cage}/metadata/chocolatey-diagnostic.json"
 mkdir -p "$probe_dir" "$(dirname "$diagnostic_json")"
@@ -11,9 +12,9 @@ export ChocolateyToolsLocation='C:\tools'
 
 set +e
 test -f "$choco_exe"; canonical_choco_rc="$?"
-timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-20s}" wine "$choco_exe_win" --version > "$probe_dir/choco-version.log" 2>&1; choco_version_rc="$?"
+timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-20s}" "${choco_launcher[@]}" --version > "$probe_dir/choco-version.log" 2>&1; choco_version_rc="$?"
 timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-20s}" wine cmd /c "\"$choco_exe_win\" --version" > "$probe_dir/choco-version-cmd.log" 2>&1; choco_version_cmd_rc="$?"
-timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-20s}" wine "$choco_exe_win" source list > "$probe_dir/choco-source-list.log" 2>&1; choco_source_rc="$?"
+timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-20s}" "${choco_launcher[@]}" source list > "$probe_dir/choco-source-list.log" 2>&1; choco_source_rc="$?"
 set -e
 
 python3 - "$diagnostic_json" "$choco_exe" "$canonical_choco_rc" "$choco_version_rc" "$choco_version_cmd_rc" "$choco_source_rc" <<'PY'

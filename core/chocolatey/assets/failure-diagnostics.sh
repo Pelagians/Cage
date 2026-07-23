@@ -4,8 +4,9 @@ cage_chocolatey_collect_failure_diagnostics() {
   local failure_trigger="${2:-required-check}"
   local wine_prefix="${WINEPREFIX:-$HOME/.wine}"
   local choco_exe_win="${CFW_CHOCOLATEY_WINDOWS_PATH:?CFW Chocolatey interface is missing}"
+  local -a choco_launcher=(wine "$choco_exe_win")
   local canonical_choco_dir
-  canonical_choco_dir="$(dirname "${CFW_CHOCOLATEY_PREFIX_PATH:?CFW Chocolatey interface is missing}")/.."
+  canonical_choco_dir="$(dirname "${CFW_CHOCOLATEY_PREFIX_PATH:?CFW Chocolatey interface is missing}")"
   local probe_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/chocolatey-diagnostics"
   local inventory_timeout="${CAGE_CHOCOLATEY_FAILURE_INVENTORY_TIMEOUT:-30s}"
   local inventory_limit="${CAGE_CHOCOLATEY_FAILURE_INVENTORY_LIMIT:-20000}"
@@ -16,11 +17,11 @@ cage_chocolatey_collect_failure_diagnostics() {
   esac
   mkdir -p "$probe_dir"
   set +e
-  WINEDEBUG=+loaddll timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-15s}" wine "$choco_exe_win" --version > "$probe_dir/choco-mscoree-loader.log" 2>&1
+  WINEDEBUG=+loaddll timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-15s}" "${choco_launcher[@]}" --version > "$probe_dir/choco-mscoree-loader.log" 2>&1
   loader_rc="$?"
-  WINEDEBUG=+seh,+loaddll timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-15s}" wine "$choco_exe_win" --version > "$probe_dir/choco-version-winedebug.log" 2>&1
+  WINEDEBUG=+seh,+loaddll timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-15s}" "${choco_launcher[@]}" --version > "$probe_dir/choco-version-winedebug.log" 2>&1
   seh_rc="$?"
-  timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-15s}" wine "$choco_exe_win" --version > "$probe_dir/choco-live-probe.log" 2>&1 &
+  timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-15s}" "${choco_launcher[@]}" --version > "$probe_dir/choco-live-probe.log" 2>&1 &
   live_probe_pid="$!"
   sleep "$live_snapshot_delay"
   timeout "$inventory_timeout" python3 - "$inventory_limit" > "$probe_dir/choco-live-process-tree.log" 2>&1 <<'PY'

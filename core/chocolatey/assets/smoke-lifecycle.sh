@@ -3,6 +3,7 @@ echo "[cage] Prove Chocolatey local package lifecycle"
 wine_prefix="${WINEPREFIX:-$HOME/.wine}"
 choco_exe="${CFW_CHOCOLATEY_PREFIX_PATH:?CFW Chocolatey interface is missing}"
 choco_exe_win="${CFW_CHOCOLATEY_WINDOWS_PATH:?CFW Chocolatey interface is missing}"
+choco_launcher=(wine "$choco_exe_win")
 bundle_root="${CAGE_BUNDLE_MOUNT:-/opt/cage}"
 smoke_feed_host="$bundle_root/build/chocolatey-smoke-feed"
 smoke_nupkg="$smoke_feed_host/cage-chocolatey-smoke.0.1.0.nupkg"
@@ -36,10 +37,12 @@ smoke_feed="$(winepath -w "$smoke_feed_host")"
 
 # Remove any state from an interrupted prior proof before measuring this run.
 set +e
-timeout "${CAGE_CHOCOLATEY_SMOKE_TIMEOUT:-600s}" wine "$choco_exe_win" uninstall cage-chocolatey-smoke --source "$smoke_feed" --limit-output --no-progress -y > "$logs_dir/preclean-uninstall.log" 2>&1
+timeout "${CAGE_CHOCOLATEY_SMOKE_TIMEOUT:-600s}" "${choco_launcher[@]}" uninstall \
+  cage-chocolatey-smoke --source "$smoke_feed" --limit-output --no-progress \
+  --use-system-powershell -y > "$logs_dir/preclean-uninstall.log" 2>&1
 rm -f "$sentinel" "$install_evidence" "$uninstall_proof"
 wine reg delete 'HKCU\Environment' /v CAGE_CHOCOLATEY_SMOKE /f > "$logs_dir/preclean-marker.log" 2>&1
-timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe_win" list --exact cage-chocolatey-smoke --limit-output > "$logs_dir/package-state-before.log" 2>&1
+timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" "${choco_launcher[@]}" list --exact cage-chocolatey-smoke --limit-output > "$logs_dir/package-state-before.log" 2>&1
 preclean_list_rc="$?"
 grep -Eiq 'cage-chocolatey-smoke[| ]' "$logs_dir/package-state-before.log"
 preclean_package_present_rc="$?"
@@ -57,11 +60,13 @@ set -e
 set +e
 test -f "$choco_exe"
 canonical_exists_rc="$?"
-timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe_win" --version > "$logs_dir/choco-version-before.log" 2>&1
+timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" "${choco_launcher[@]}" --version > "$logs_dir/choco-version-before.log" 2>&1
 version_before_rc="$?"
 test -f "$smoke_nupkg"
 local_source_rc="$?"
-timeout "${CAGE_CHOCOLATEY_SMOKE_TIMEOUT:-600s}" wine "$choco_exe_win" install cage-chocolatey-smoke --version 0.1.0 --source "$smoke_feed" --exact --limit-output --no-progress -y > "$logs_dir/install.log" 2>&1
+timeout "${CAGE_CHOCOLATEY_SMOKE_TIMEOUT:-600s}" "${choco_launcher[@]}" install \
+  cage-chocolatey-smoke --version 0.1.0 --source "$smoke_feed" --exact \
+  --limit-output --no-progress --use-system-powershell -y > "$logs_dir/install.log" 2>&1
 install_rc="$?"
 test -f "$sentinel"
 sentinel_created_rc="$?"
@@ -71,13 +76,15 @@ grep -Fq "$smoke_run_id" "$logs_dir/marker-installed.log"
 marker_run_id_rc="$?"
 test -f "$install_evidence"
 powershell_evidence_rc="$?"
-timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe_win" list --exact cage-chocolatey-smoke --limit-output > "$logs_dir/package-state-installed.log" 2>&1
+timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" "${choco_launcher[@]}" list --exact cage-chocolatey-smoke --limit-output > "$logs_dir/package-state-installed.log" 2>&1
 package_state_rc="$?"
 grep -Eiq 'cage-chocolatey-smoke[| ]0\.1\.0' "$logs_dir/package-state-installed.log"
 package_version_rc="$?"
-timeout "${CAGE_CHOCOLATEY_SMOKE_TIMEOUT:-600s}" wine "$choco_exe_win" uninstall cage-chocolatey-smoke --source "$smoke_feed" --limit-output --no-progress -y > "$logs_dir/uninstall.log" 2>&1
+timeout "${CAGE_CHOCOLATEY_SMOKE_TIMEOUT:-600s}" "${choco_launcher[@]}" uninstall \
+  cage-chocolatey-smoke --source "$smoke_feed" --limit-output --no-progress \
+  --use-system-powershell -y > "$logs_dir/uninstall.log" 2>&1
 uninstall_rc="$?"
-timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe_win" list --exact cage-chocolatey-smoke --limit-output > "$logs_dir/package-state-after.log" 2>&1
+timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" "${choco_launcher[@]}" list --exact cage-chocolatey-smoke --limit-output > "$logs_dir/package-state-after.log" 2>&1
 package_state_after_rc="$?"
 grep -Eiq 'cage-chocolatey-smoke[| ]' "$logs_dir/package-state-after.log"
 package_present_after_rc="$?"
@@ -90,7 +97,7 @@ if [ "$marker_query_after_rc" -eq 0 ]; then marker_removed_rc=1; else marker_rem
 test -f "$uninstall_proof"
 uninstall_proof_rc="$?"
 echo "[cage] Verify choco --version after uninstall"
-timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" wine "$choco_exe_win" --version > "$logs_dir/choco-version-after.log" 2>&1
+timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" "${choco_launcher[@]}" --version > "$logs_dir/choco-version-after.log" 2>&1
 version_after_rc="$?"
 set -e
 

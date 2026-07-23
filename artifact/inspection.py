@@ -201,14 +201,40 @@ def verify_prefix_materialization(
         isinstance(module, dict) and module.get("type") == "chocolatey"
         for module in modules
     )
-    choco_path = prefix / "drive_c" / "ProgramData" / "chocolatey" / "bin" / "choco.exe"
-    choco_ok = not requires_chocolatey or _is_contained_regular_file(choco_path, prefix)
+    choco_path: Path | None = None
+    choco_interface_error: str | None = None
+    choco_windows_path: str | None = None
+    if requires_chocolatey:
+        cfw_manifest_path = bundle / "metadata" / "cfw-runtime-manifest.json"
+        try:
+            cfw_manifest = json.loads(cfw_manifest_path.read_text(encoding="utf-8"))
+            interfaces = cfw_manifest.get("interfaces")
+            chocolatey = interfaces.get("chocolatey") if isinstance(interfaces, dict) else None
+            if not isinstance(chocolatey, dict):
+                raise ValueError("Chocolatey interface is missing")
+            choco_windows_path = chocolatey.get("windowsPath")
+            if not isinstance(choco_windows_path, str):
+                raise ValueError("Chocolatey Windows path is missing")
+            choco_path = _prefix_path_for_windows_path(prefix, choco_windows_path)
+            if choco_path is None:
+                raise ValueError("Chocolatey Windows path is invalid")
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            choco_interface_error = str(exc)
+    choco_ok = not requires_chocolatey or (
+        choco_interface_error is None
+        and _is_contained_regular_file(choco_path, prefix)
+    )
     checks.append({
         "id": "chocolatey-readiness",
         "ok": choco_ok,
         "required": requires_chocolatey,
-        "message": "canonical Chocolatey executable exists" if requires_chocolatey and choco_ok else "Chocolatey is not required" if not requires_chocolatey else "canonical Chocolatey executable is missing",
-        "details": {"path": str(choco_path)},
+        "message": "manifest-declared Chocolatey executable exists" if requires_chocolatey and choco_ok else "Chocolatey is not required" if not requires_chocolatey else "manifest-declared Chocolatey executable is missing",
+        "details": {
+            "path": str(choco_path) if choco_path else None,
+            "windowsPath": choco_windows_path,
+            "manifestPath": "metadata/cfw-runtime-manifest.json",
+            "interfaceError": choco_interface_error,
+        },
     })
 
     launch_value = manifest_payload.get("launch")

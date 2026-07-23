@@ -1,6 +1,7 @@
 set -eu
 echo "[cage] Verify Chocolatey feature policy"
 choco_exe_win="${CFW_CHOCOLATEY_WINDOWS_PATH:?CFW Chocolatey interface is missing}"
+choco_launcher=(wine "$choco_exe_win")
 metadata_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/metadata"
 logs_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/chocolatey"
 policy_json="$metadata_dir/chocolatey-feature-policy.json"
@@ -15,7 +16,7 @@ if [ "$powershell_host_policy" != "disabled" ] || [ "$allow_global_confirmation_
 fi
 
 set +e
-timeout "${CAGE_CHOCOLATEY_FEATURE_TIMEOUT:-120s}" wine "$choco_exe_win" feature list --limit-output > "$feature_list_log" 2>&1
+timeout "${CAGE_CHOCOLATEY_FEATURE_TIMEOUT:-120s}" "${choco_launcher[@]}" feature list --limit-output > "$feature_list_log" 2>&1
 feature_list_rc="$?"
 timeout "${CAGE_CHOCOLATEY_FEATURE_SETTLE_TIMEOUT:-120s}" wineserver -w >> "$feature_list_log" 2>&1
 feature_list_settle_rc="$?"

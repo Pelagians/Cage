@@ -133,8 +133,10 @@ class ChocolateySmokePackageTests(unittest.TestCase):
         smoke = "\n".join(steps[smoke_index].commands)
         self.assertIn(SMOKE_NUPKG, smoke)
         self.assertIn("--source \"$smoke_feed\"", smoke)
-        self.assertIn("install cage-chocolatey-smoke", smoke)
-        self.assertIn("uninstall cage-chocolatey-smoke", smoke)
+        self.assertIn('"${choco_launcher[@]}" install \\\n  cage-chocolatey-smoke', smoke)
+        self.assertIn('"${choco_launcher[@]}" uninstall \\\n  cage-chocolatey-smoke', smoke)
+        self.assertIn('choco_launcher=(wine "$choco_exe_win")', smoke)
+        self.assertEqual(smoke.count("--use-system-powershell"), 3)
         self.assertIn("chocolatey-smoke.sentinel", smoke)
         self.assertIn("CAGE_CHOCOLATEY_SMOKE", smoke)
         self.assertIn("chocolatey-smoke.json", smoke)
@@ -217,7 +219,8 @@ class ChocolateyDiagnosticTierTests(unittest.TestCase):
         self.assertNotIn("disable-powershellHost.log", policy)
         self.assertIn("cage_chocolatey_collect_failure_diagnostics", policy)
         self.assertIn("allowGlobalConfirmation", policy)
-        self.assertIn("install {{PACKAGE_ARGS}} -y", package)
+        self.assertIn('"${choco_launcher[@]}" install', package)
+        self.assertIn("{{PACKAGE_ARGS}} -y --use-system-powershell", package)
         self.assertIn("chocolatey-feature-policy.json", package)
 
 

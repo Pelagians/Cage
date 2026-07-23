@@ -48,6 +48,10 @@ Cage's Chocolatey CI must not be green because the real lifecycle was skipped. U
 - The resolved runtime artifact is serialized into the bundle manifest even when it came from Cage's built-in default, so the bundle always carries its trust root.
 - CFW declares the post-bootstrap runtime environment. Cage validates it against the detached manifest and propagates it unchanged through build, graph, bundle, run, and OCI export. Recipe `launch.env` may not collide with producer-owned keys, and bundle verification binds the complete launch contract back to the serialized manifest.
 - The consumer validates the manifest bindings instead of trusting separately supplied hashes.
+- Cage launches the manifest-declared Chocolatey console interface directly
+  through `wine`; package install and uninstall commands always pass
+  `--use-system-powershell` so Chocolatey uses the CFW-owned Synchro wrapper
+  rather than its unsupported in-process PowerShell host.
 - Runtime-profile values are validated before build-script generation and transported as encoded data, not interpolated shell fragments.
 - Archive members are validated and extracted into temporary storage; the destination prefix is replaced only after paths, links, types, sizes, and required files pass.
 - A CFW-backed recipe cannot also select `runtime.runner`; Wine identity comes exclusively from the exact producer image digest.

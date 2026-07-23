@@ -55,8 +55,8 @@ def _records():
         ],
         "interfaces": {
             "chocolatey": {
-                "windowsPath": r"C:\ProgramData\chocolatey\bin\choco.exe",
-                "prefixRelativePath": "drive_c/ProgramData/chocolatey/bin/choco.exe",
+                "windowsPath": r"C:\ProgramData\chocolatey\choco.exe",
+                "prefixRelativePath": "drive_c/ProgramData/chocolatey/choco.exe",
             },
             "environment": {"WINEDLLOVERRIDES": ""},
         },
@@ -116,7 +116,7 @@ class CfwRuntimeArtifactTests(unittest.TestCase):
             with tarfile.open(archive, "w:gz") as tar:
                 member = tarfile.TarInfo(".cfw/runtime.json.part")
                 member.type = tarfile.SYMTYPE
-                member.linkname = "../drive_c/ProgramData/chocolatey/bin/choco.exe"
+                member.linkname = "../drive_c/ProgramData/chocolatey/choco.exe"
                 tar.addfile(member)
             with self.assertRaisesRegex(ValueError, "reserved Cage metadata path"):
                 extract(archive, root / "prefix")
@@ -230,7 +230,7 @@ class CfwRuntimeArtifactTests(unittest.TestCase):
             root = Path(temporary)
             archive = root / "runtime.tar.gz"
             payloads = {
-                "drive_c/ProgramData/chocolatey/bin/choco.exe": b"choco",
+                "drive_c/ProgramData/chocolatey/choco.exe": b"choco",
                 "drive_c/windows/system32/WindowsPowerShell/v1.0/powershell.exe": b"x64",
                 "drive_c/windows/syswow64/WindowsPowerShell/v1.0/powershell.exe": b"x86",
             }
@@ -262,7 +262,7 @@ class CfwRuntimeArtifactTests(unittest.TestCase):
             root = Path(temporary)
             archive = root / "runtime.tar.gz"
             payloads = {
-                "drive_c/ProgramData/chocolatey/bin/choco.exe": b"choco",
+                "drive_c/ProgramData/chocolatey/choco.exe": b"choco",
                 "drive_c/windows/system32/WindowsPowerShell/v1.0/powershell.exe": b"x64",
                 "drive_c/windows/syswow64/WindowsPowerShell/v1.0/powershell.exe": b"x86",
             }

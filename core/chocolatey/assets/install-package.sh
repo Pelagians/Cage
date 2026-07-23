@@ -2,6 +2,7 @@ set -eu
 echo "[cage] Install Chocolatey packages"
 choco_exe="${CFW_CHOCOLATEY_PREFIX_PATH:?CFW Chocolatey interface is missing}"
 choco_exe_win="${CFW_CHOCOLATEY_WINDOWS_PATH:?CFW Chocolatey interface is missing}"
+choco_launcher=(wine "$choco_exe_win")
 export ChocolateyInstall='C:\ProgramData\chocolatey'
 export ChocolateyToolsLocation='C:\tools'
 diagnostic_json="${CAGE_BUNDLE_MOUNT:-/opt/cage}/metadata/chocolatey-diagnostic.json"
@@ -35,4 +36,5 @@ if [ "$policy_status" != "passed" ]; then
   exit 70
 fi
 echo "[cage] Installing Chocolatey packages: {{PACKAGE_ARGS}}"
-timeout "${CAGE_CHOCOLATEY_INSTALL_TIMEOUT:-1800s}" wine "$choco_exe_win" install {{PACKAGE_ARGS}} -y{{SOURCE_ARG}}
+timeout "${CAGE_CHOCOLATEY_INSTALL_TIMEOUT:-1800s}" "${choco_launcher[@]}" install \
+  {{PACKAGE_ARGS}} -y --use-system-powershell{{SOURCE_ARG}}

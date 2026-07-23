@@ -107,8 +107,10 @@ def _export_lines(manifest: Manifest, *, bundle_mount: str) -> list[str]:
     ]
     if requires_chocolatey:
         lines.extend([
-            'echo "[cage] Verifying canonical Chocolatey executable"',
-            'test -f "$CAGE_PREFIX_PARTIAL/drive_c/ProgramData/chocolatey/bin/choco.exe" || { echo "[cage] ERROR: canonical Chocolatey executable is missing" >&2; exit 72; }',
+            'echo "[cage] Verifying manifest-declared Chocolatey executable"',
+            'case "${CFW_CHOCOLATEY_PREFIX_PATH:-}" in "$WINEPREFIX"/*) ;; *) echo "[cage] ERROR: CFW Chocolatey interface is outside the prepared prefix" >&2; exit 72 ;; esac',
+            'CAGE_CHOCOLATEY_PREFIX_RELATIVE="${CFW_CHOCOLATEY_PREFIX_PATH#"$WINEPREFIX"/}"',
+            'test -f "$CAGE_PREFIX_PARTIAL/$CAGE_CHOCOLATEY_PREFIX_RELATIVE" || { echo "[cage] ERROR: manifest-declared Chocolatey executable is missing" >&2; exit 72; }',
         ])
     if launch_relative:
         lines.extend([
