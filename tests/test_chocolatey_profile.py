@@ -134,8 +134,7 @@ class ChocolateyAssetContractTests(unittest.TestCase):
         self.assertNotIn("tar -xzf", seed)
         self.assertIn("CFW_CHOCOLATEY_PREFIX_PATH", seed)
         self.assertIn("CFW_CHOCOLATEY_WINDOWS_PATH", seed)
-        self.assertIn('ln -s / "$dosdevices/z:"', seed)
-        self.assertIn("ephemeral container binding", seed)
+        self.assertNotIn('ln -s / "$dosdevices/z:"', seed)
         self.assertIn(".cage-prefix-seeded", seed)
 
     def test_verified_fetch_uses_content_addressing_locking_and_atomic_promotion(self):

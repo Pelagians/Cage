@@ -93,16 +93,6 @@ python3 "$helper" verify-extract "$profile" "$manifest" "$evidence" "$archive" "
 test -d "$WINEPREFIX/drive_c"
 test -s "$CFW_CHOCOLATEY_PREFIX_PATH"
 
-# CFW archives the portable C: mapping but excludes Wine's host-specific Z:
-# mapping (z: -> /). Recreate only that ephemeral container binding here rather
-# than rerunning wineboot against the producer-owned compatibility state.
-dosdevices="$WINEPREFIX/dosdevices"
-mkdir -p "$dosdevices"
-if [ -e "$dosdevices/z:" ] || [ -L "$dosdevices/z:" ]; then
-  rm -f "$dosdevices/z:"
-fi
-ln -s / "$dosdevices/z:"
-
 cp -f "$evidence" "$metadata.part"
 mv -f "$metadata.part" "$metadata"
 cp -f "$manifest" "$manifest_metadata.part"
