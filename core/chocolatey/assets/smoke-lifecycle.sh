@@ -85,6 +85,8 @@ timeout "${CAGE_CHOCOLATEY_SMOKE_TIMEOUT:-600s}" "${choco_package_launcher[@]}" 
   cage-chocolatey-smoke --source "$smoke_feed" --limit-output --no-progress \
   --use-system-powershell -y > "$logs_dir/uninstall.log" 2>&1
 uninstall_rc="$?"
+timeout --kill-after=10s "${CAGE_CHOCOLATEY_SMOKE_SETTLE_TIMEOUT:-120s}" wineserver -w >> "$logs_dir/uninstall.log" 2>&1
+uninstall_settle_rc="$?"
 timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" "${choco_query_launcher[@]}" list --exact cage-chocolatey-smoke --limit-output > "$logs_dir/package-state-after.log" 2>&1
 package_state_after_rc="$?"
 grep -Eiq 'cage-chocolatey-smoke[| ]' "$logs_dir/package-state-after.log"
@@ -102,7 +104,7 @@ timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" "${choco_query_launcher[@]}" -
 version_after_rc="$?"
 set -e
 
-python3 - "$smoke_json" "$install_evidence" "$uninstall_proof" "{{SMOKE_NUPKG_SHA256}}" "$smoke_run_id" "$preclean_rc" "$canonical_exists_rc" "$version_before_rc" "$local_source_rc" "$install_rc" "$sentinel_created_rc" "$marker_created_rc" "$marker_run_id_rc" "$powershell_evidence_rc" "$package_state_rc" "$package_version_rc" "$uninstall_rc" "$package_removed_rc" "$sentinel_removed_rc" "$marker_removed_rc" "$uninstall_proof_rc" "$version_after_rc" <<'PY'
+python3 - "$smoke_json" "$install_evidence" "$uninstall_proof" "{{SMOKE_NUPKG_SHA256}}" "$smoke_run_id" "$preclean_rc" "$canonical_exists_rc" "$version_before_rc" "$local_source_rc" "$install_rc" "$sentinel_created_rc" "$marker_created_rc" "$marker_run_id_rc" "$powershell_evidence_rc" "$package_state_rc" "$package_version_rc" "$uninstall_rc" "$uninstall_settle_rc" "$package_removed_rc" "$sentinel_removed_rc" "$marker_removed_rc" "$uninstall_proof_rc" "$version_after_rc" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -111,7 +113,7 @@ from pathlib import Path
     smoke_run_id, preclean_rc, canonical_exists_rc, version_before_rc,
     local_source_rc, install_rc, sentinel_created_rc, marker_created_rc,
     marker_run_id_rc, powershell_evidence_rc, package_state_rc,
-    package_version_rc, uninstall_rc, package_removed_rc, sentinel_removed_rc,
+    package_version_rc, uninstall_rc, uninstall_settle_rc, package_removed_rc, sentinel_removed_rc,
     marker_removed_rc, uninstall_proof_rc, version_after_rc,
 ) = sys.argv[1:]
 
@@ -142,7 +144,7 @@ checks = {
     "currentRunEvidence": current_run_evidence,
     "packagePowerShellBoundary": powershell_evidence_rc == "0" and powershell_boundary,
     "smokePackageState": package_state_rc == "0" and package_version_rc == "0",
-    "smokeUninstall": uninstall_rc == "0",
+    "smokeUninstall": uninstall_rc == "0" and uninstall_settle_rc == "0",
     "smokePackageRemoved": package_removed_rc == "0",
     "smokeSentinelRemoved": sentinel_removed_rc == "0",
     "smokeMarkerRemoved": marker_removed_rc == "0",
@@ -156,6 +158,10 @@ payload = {
     "runId": smoke_run_id,
     "package": {"name": "cage-chocolatey-smoke", "version": "0.1.0", "nupkgSha256": nupkg_sha256},
     "checks": checks,
+    "returnCodes": {
+        "uninstall": int(uninstall_rc),
+        "uninstallSettle": int(uninstall_settle_rc),
+    },
     "installEvidence": install_evidence,
     "uninstallEvidence": uninstall_proof,
     "logs": {

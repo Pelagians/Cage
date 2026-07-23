@@ -139,6 +139,8 @@ class ChocolateySmokePackageTests(unittest.TestCase):
         self.assertIn("CFW_CHOCOLATEY_PACKAGE_LAUNCHER", smoke)
         self.assertIn('"${choco_package_launcher[@]}" install', smoke)
         self.assertIn('"${choco_package_launcher[@]}" uninstall', smoke)
+        self.assertIn("CAGE_CHOCOLATEY_SMOKE_SETTLE_TIMEOUT:-120s", smoke)
+        self.assertIn("uninstallSettle", smoke)
         self.assertEqual(smoke.count("--use-system-powershell"), 3)
         self.assertIn("chocolatey-smoke.sentinel", smoke)
         self.assertIn("CAGE_CHOCOLATEY_SMOKE", smoke)
