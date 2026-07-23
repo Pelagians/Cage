@@ -104,7 +104,7 @@ timeout "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-120s}" "${choco_query_launcher[@]}" -
 version_after_rc="$?"
 set -e
 
-python3 - "$smoke_json" "$install_evidence" "$uninstall_proof" "{{SMOKE_NUPKG_SHA256}}" "$smoke_run_id" "$preclean_rc" "$canonical_exists_rc" "$version_before_rc" "$local_source_rc" "$install_rc" "$sentinel_created_rc" "$marker_created_rc" "$marker_run_id_rc" "$powershell_evidence_rc" "$package_state_rc" "$package_version_rc" "$uninstall_rc" "$uninstall_settle_rc" "$package_removed_rc" "$sentinel_removed_rc" "$marker_removed_rc" "$uninstall_proof_rc" "$version_after_rc" <<'PY'
+python3 - "$smoke_json" "$install_evidence" "$uninstall_proof" "{{SMOKE_NUPKG_SHA256}}" "$smoke_run_id" "$preclean_rc" "$canonical_exists_rc" "$version_before_rc" "$local_source_rc" "$install_rc" "$sentinel_created_rc" "$marker_created_rc" "$marker_run_id_rc" "$powershell_evidence_rc" "$package_state_rc" "$package_version_rc" "$uninstall_rc" "$uninstall_settle_rc" "$package_removed_rc" "$sentinel_removed_rc" "$marker_removed_rc" "$marker_query_after_rc" "$uninstall_proof_rc" "$version_after_rc" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -114,7 +114,7 @@ from pathlib import Path
     local_source_rc, install_rc, sentinel_created_rc, marker_created_rc,
     marker_run_id_rc, powershell_evidence_rc, package_state_rc,
     package_version_rc, uninstall_rc, uninstall_settle_rc, package_removed_rc, sentinel_removed_rc,
-    marker_removed_rc, uninstall_proof_rc, version_after_rc,
+    marker_removed_rc, marker_query_after_rc, uninstall_proof_rc, version_after_rc,
 ) = sys.argv[1:]
 
 def load_json(path):
