@@ -50,6 +50,8 @@ class CanonicalPrefixScriptTests(unittest.TestCase):
         self.assertIn("/opt/cage/prefix.partial", script)
         self.assertIn("/opt/cage/prefix", script)
         self.assertIn("CAGE_PREFIX_PARTIAL", script)
+        self.assertIn('rm -f "$WINEPREFIX/dosdevices/z:"', script)
+        self.assertLess(script.index('rm -f "$WINEPREFIX/dosdevices/z:"'), script.index('cp -a "$WINEPREFIX/." "$CAGE_PREFIX_PARTIAL/"'))
         self.assertIn("mv \"$CAGE_PREFIX_PARTIAL\" \"$CAGE_PREFIX_FINAL\"", script)
         self.assertLess(script.index("Verifying launch executable"), script.index("mv \"$CAGE_PREFIX_PARTIAL\""))
 

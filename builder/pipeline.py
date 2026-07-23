@@ -98,6 +98,9 @@ def _export_lines(manifest: Manifest, *, bundle_mount: str) -> list[str]:
     lines = [
         'echo "[cage] Exporting bundle"',
         'test -d "$WINEPREFIX/drive_c" || { echo "[cage] ERROR: built Wine prefix is missing drive_c" >&2; exit 70; }',
+        '# Z: is an ephemeral host mapping needed while Wine executes. Never copy it',
+        '# into a portable bundle: z: -> / would recursively traverse the build host.',
+        'rm -f "$WINEPREFIX/dosdevices/z:"',
         'rm -rf "$CAGE_PREFIX_PARTIAL"',
         'mkdir -p "$CAGE_PREFIX_PARTIAL"',
         'cp -a "$WINEPREFIX/." "$CAGE_PREFIX_PARTIAL/"',
