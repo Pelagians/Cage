@@ -140,6 +140,8 @@ class ChocolateySmokePackageTests(unittest.TestCase):
         self.assertIn('"${choco_package_launcher[@]}" install', smoke)
         self.assertIn('"${choco_package_launcher[@]}" uninstall', smoke)
         self.assertIn("CAGE_CHOCOLATEY_SMOKE_SETTLE_TIMEOUT:-120s", smoke)
+        self.assertIn('uninstall_proof.get("markerRemoved") is True', smoke)
+        self.assertIn("markerRegistryQueryAfterUninstall", smoke)
         self.assertIn("uninstallSettle", smoke)
         self.assertEqual(smoke.count("--use-system-powershell"), 3)
         self.assertIn("chocolatey-smoke.sentinel", smoke)

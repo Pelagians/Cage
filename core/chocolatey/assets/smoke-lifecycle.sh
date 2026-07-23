@@ -147,7 +147,10 @@ checks = {
     "smokeUninstall": uninstall_rc == "0" and uninstall_settle_rc == "0",
     "smokePackageRemoved": package_removed_rc == "0",
     "smokeSentinelRemoved": sentinel_removed_rc == "0",
-    "smokeMarkerRemoved": marker_removed_rc == "0",
+    "smokeMarkerRemoved": (
+        uninstall_proof.get("RunId") == smoke_run_id
+        and uninstall_proof.get("markerRemoved") is True
+    ),
     "uninstallLifecycle": uninstall_proof_rc == "0" and bool(uninstall_proof),
     "chocoVersionAfterUninstall": version_after_rc == "0",
 }
@@ -161,6 +164,7 @@ payload = {
     "returnCodes": {
         "uninstall": int(uninstall_rc),
         "uninstallSettle": int(uninstall_settle_rc),
+        "markerRegistryQueryAfterUninstall": int(marker_query_after_rc),
     },
     "installEvidence": install_evidence,
     "uninstallEvidence": uninstall_proof,
