@@ -53,6 +53,17 @@ class CanonicalPrefixScriptTests(unittest.TestCase):
         self.assertIn("mv \"$CAGE_PREFIX_PARTIAL\" \"$CAGE_PREFIX_FINAL\"", script)
         self.assertLess(script.index("Verifying launch executable"), script.index("mv \"$CAGE_PREFIX_PARTIAL\""))
 
+    def test_seeded_wineboot_records_its_failure_boundary(self):
+        data = {
+            **APP,
+            "modules": [{"type": "chocolatey", "install": {"packages": []}}],
+        }
+        script = generate_build_script(Manifest.from_dict(data))
+
+        self.assertIn('wineboot_log="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/wineboot.log"', script)
+        self.assertIn('wineboot_rc="$?"', script)
+        self.assertIn('wineboot -u failed with exit code $wineboot_rc', script)
+
     def test_launch_values_are_shell_quoted_in_generated_script(self):
         data = dict(APP)
         data["launch"] = {
