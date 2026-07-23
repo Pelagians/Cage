@@ -222,7 +222,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         artifact = serialized["modules"][0]["install"]["runtimeArtifact"]
         self.assertEqual(artifact, _RUNTIME)
 
-    def test_released_default_runtime_profile_is_pinned_to_cfw_v101(self):
+    def test_released_default_runtime_profile_is_pinned_to_cfw_v102(self):
         from core.modules.chocolatey import (
             DEFAULT_CFW_RUNTIME_ARTIFACT,
             DEFAULT_CFW_RUNTIME_PROFILE_ID,
@@ -237,14 +237,14 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertEqual(DEFAULT_CFW_RUNTIME_ARTIFACT["id"], DEFAULT_CFW_RUNTIME_PROFILE_ID)
         self.assertEqual(
             DEFAULT_CFW_RUNTIME_ARTIFACT["manifestSha256"],
-            "189ede05627070826386ba5952cc6fe6046288db4ed9f8416c737d3fac6f4974",
+            "c3ef9da40ce4fa40413e1ea1918dc040c46eb266721180e6d9ee3c4a0606593d",
         )
         self.assertEqual(
             DEFAULT_CFW_RUNTIME_ARTIFACT["wineImage"],
             "ghcr.io/pelagians/cage-wine@sha256:b8462dedb8f4dc6e48305af5a4485c29796e5d7c292272b8492fb763b6b59224",
         )
         for field in ("url", "evidenceUrl", "manifestUrl"):
-            self.assertIn("/cfw-runtime-v1.0.1/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
+            self.assertIn("/cfw-runtime-v1.0.2/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
 
     def test_multiple_chocolatey_modules_are_rejected_before_duplicate_seeding(self):
         data = {
