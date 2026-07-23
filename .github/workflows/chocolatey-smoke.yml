@@ -152,6 +152,19 @@ jobs:
           fi
           exit "$rc"
 
+      - name: Package lifecycle evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="$(find dist -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
+          if [ -n "$bundle" ]; then
+            # Wine device mappings deliberately use filenames such as c:. GitHub's
+            # ZIP artifact transport rejects those for cross-filesystem safety;
+            # a tarball retains the exact evidence without path reinterpretation.
+            tar -czf /tmp/cage-lifecycle-bundle.tar.gz -C "$(dirname "$bundle")" "$(basename "$bundle")"
+          fi
+
       - name: Upload lifecycle evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -160,7 +173,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
           path: |
-            dist
+            /tmp/cage-lifecycle-bundle.tar.gz
             /tmp/cage-chocolatey-smoke.log
             /tmp/cage-chocolatey-summary.log
             /tmp/cage-lifecycle-files.txt
