@@ -173,6 +173,10 @@ class ChocolateySmokePackageTests(unittest.TestCase):
         self.assertIn("chocolatey-smoke.json", workflow)
         self.assertLess(
             workflow.index("echo '--- build tail ---'"),
+            workflow.index("echo '--- wineboot ---'"),
+        )
+        self.assertLess(
+            workflow.index("echo '--- wineboot ---'"),
             workflow.index("echo '--- CFW runtime manifest ---'"),
         )
         self.assertNotIn("KB3AIK_EN.iso", workflow)
