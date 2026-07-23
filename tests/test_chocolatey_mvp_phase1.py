@@ -11,10 +11,12 @@ from unittest.mock import patch
 from artifact.bundle import create_bundle
 from artifact.inspection import verify_bundle
 from artifact.oci import OCIExportError, create_oci_export_plan
-from builder.executor import execute_inside_container
+from builder.executor import BuildResult, execute_inside_container
 from builder.pipeline import generate_build_script
 from cage.cli import build_parser, cmd_build
 from core.manifest import Manifest
+from runtime.launcher import build_run_plan
+from tests.bundle_fixtures import materialize_runnable_prefix
 
 
 APP = {
@@ -48,8 +50,30 @@ class CanonicalPrefixScriptTests(unittest.TestCase):
         self.assertIn("/opt/cage/prefix.partial", script)
         self.assertIn("/opt/cage/prefix", script)
         self.assertIn("CAGE_PREFIX_PARTIAL", script)
+        self.assertIn('rm -f "$WINEPREFIX/dosdevices/z:"', script)
+        self.assertLess(script.index('rm -f "$WINEPREFIX/dosdevices/z:"'), script.index('cp -a "$WINEPREFIX/." "$CAGE_PREFIX_PARTIAL/"'))
         self.assertIn("mv \"$CAGE_PREFIX_PARTIAL\" \"$CAGE_PREFIX_FINAL\"", script)
         self.assertLess(script.index("Verifying launch executable"), script.index("mv \"$CAGE_PREFIX_PARTIAL\""))
+
+    def test_seeded_prefix_skips_producer_owned_wineboot_lifecycle(self):
+        data = {
+            **APP,
+            "modules": [{"type": "chocolatey", "install": {"packages": []}}],
+        }
+        script = generate_build_script(Manifest.from_dict(data))
+
+        self.assertIn('Phase 1: Adopting prepared Wine prefix', script)
+        self.assertIn('Prepared prefix adopted; skipping producer-owned wineboot lifecycle', script)
+        self.assertNotIn('wine wineboot -u', script)
+        self.assertNotIn('wine wineboot --init', script)
+
+    def test_unseeded_prefix_runs_wineboot_init_and_retains_its_failure_boundary(self):
+        script = generate_build_script(Manifest.from_dict(APP))
+
+        self.assertIn('wineboot_log="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/wineboot.log"', script)
+        self.assertIn('wineboot_rc="$?"', script)
+        self.assertIn('wine wineboot --init', script)
+        self.assertIn('wineboot --init failed with exit code $wineboot_rc', script)
 
     def test_launch_values_are_shell_quoted_in_generated_script(self):
         data = dict(APP)
@@ -142,6 +166,118 @@ class OCIExportGateTests(unittest.TestCase):
 
 
 class BuildSourcePreflightTests(unittest.TestCase):
+    def test_cfw_launch_cannot_override_producer_environment(self):
+        image = "ghcr.io/pelagians/cage-wine@sha256:" + "d" * 64
+        runtime = {
+            "id": "cfw-runtime-test",
+            "url": "https://example.invalid/runtime.tar.gz",
+            "evidenceUrl": "https://example.invalid/runtime.json",
+            "manifestUrl": "https://example.invalid/manifest.json",
+            "manifestSha256": "c" * 64,
+            "wineImage": image,
+            "wineVersions": ["wine-11.0"],
+            "environment": {"WINEDLLOVERRIDES": ""},
+        }
+        data = {
+            **APP,
+            "launch": {
+                **APP["launch"],
+                "env": {"WINEDLLOVERRIDES": "mscoree=n"},
+            },
+            "modules": [{
+                "type": "chocolatey",
+                "install": {"packages": [], "runtimeArtifact": runtime},
+            }],
+        }
+        with self.assertRaisesRegex(Exception, "producer-owned environment"):
+            Manifest.from_dict(data)
+
+    def test_cfw_build_uses_pinned_image_for_execution_graph_and_oci_base(self):
+        image = "ghcr.io/pelagians/cage-wine@sha256:" + "d" * 64
+        data = {
+            **APP,
+            "modules": [{"type": "chocolatey", "install": {
+                "packages": [],
+                "runtimeArtifact": {
+                    "id": "cfw-runtime-test",
+                    "url": "https://example.invalid/runtime.tar.gz",
+                    "evidenceUrl": "https://example.invalid/runtime.json",
+                    "manifestUrl": "https://example.invalid/manifest.json",
+                    "manifestSha256": "c" * 64,
+                    "wineImage": image,
+                    "wineVersions": ["wine-11.0"], "environment": {"WINEDLLOVERRIDES": ""},
+                },
+            }}],
+        }
+        manifest = Manifest.from_dict(data)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output = root / "dist"
+            args = build_parser().parse_args([
+                "build", str(root / "recipe.cage.yaml"),
+                "--output", str(output), "--workspace", str(root), "--engine", "docker",
+            ])
+            failed = BuildResult(
+                success=False,
+                bundle_path=str(output / "phase1-app-1.0.0"),
+                runtime_provider="wine",
+                runtime_version="11.0",
+                image_ref=image,
+                engine="docker",
+                exit_code=1,
+            )
+            with patch("cage.cli.load_manifest", return_value=manifest), \
+                 patch("cage.cli.execute_inside_container", return_value=failed) as execute, \
+                 patch("cage.cli.build_oci_image", return_value={"outputTag": "phase1-app:test"}) as oci, \
+                 patch("sys.stdout", io.StringIO()), patch("sys.stderr", io.StringIO()):
+                rc = cmd_build(args)
+            bundle = output / "phase1-app-1.0.0"
+            graph = json.loads((bundle / "metadata/graph.json").read_text(encoding="utf-8"))
+            runtime = json.loads((bundle / "runtime/runtime.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(rc, 1)
+        self.assertEqual(execute.call_args.kwargs["image_ref"], image)
+        self.assertEqual(oci.call_args.args[1], image)
+        self.assertEqual(graph["builderRuntime"]["image"], image)
+        self.assertEqual(graph["runnerRuntime"]["image"], image)
+        self.assertEqual(graph["builderRuntime"]["environment"], {"WINEDLLOVERRIDES": ""})
+        self.assertEqual(graph["runnerRuntime"]["environment"], {"WINEDLLOVERRIDES": ""})
+        self.assertEqual(runtime["ociImage"], image)
+        self.assertEqual(runtime["environment"], {"WINEDLLOVERRIDES": ""})
+
+    def test_cfw_environment_reaches_run_plan_and_oci_export(self):
+        image = "ghcr.io/pelagians/cage-wine@sha256:" + "d" * 64
+        data = {
+            **APP,
+            "modules": [{"type": "chocolatey", "install": {
+                "packages": [],
+                "runtimeArtifact": {
+                    "id": "cfw-runtime-test",
+                    "url": "https://example.invalid/runtime.tar.gz",
+                    "evidenceUrl": "https://example.invalid/runtime.json",
+                    "manifestUrl": "https://example.invalid/manifest.json",
+                    "manifestSha256": "c" * 64,
+                    "wineImage": image,
+                    "wineVersions": ["wine-11.0"],
+                    "environment": {"WINEDLLOVERRIDES": ""},
+                },
+            }}],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=False)
+            materialize_runnable_prefix(
+                bundle,
+                entrypoint=APP["launch"]["entrypoint"],
+                chocolatey=True,
+            )
+            run_plan = build_run_plan(bundle, engine="podman")
+            oci_plan = create_oci_export_plan(bundle, tag="phase1-app:test")
+
+        self.assertEqual(run_plan["container"]["environment"]["WINEDLLOVERRIDES"], "")
+        self.assertIn("WINEDLLOVERRIDES=", run_plan["container"]["argv"])
+        self.assertEqual(oci_plan["runtime"]["environment"], {"WINEDLLOVERRIDES": ""})
+        self.assertIn('ENV WINEDLLOVERRIDES=""', oci_plan["containerfile"]["content"])
+
     def test_failed_source_preflight_writes_evidence_and_skips_container(self):
         data = dict(APP)
         data["modules"] = [{

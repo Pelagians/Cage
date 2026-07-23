@@ -15,6 +15,19 @@ on:
       - 'tests/test_chocolatey_*.py'
       - 'pyproject.toml'
       - '.github/workflows/chocolatey-smoke.yml'
+  pull_request:
+    paths:
+      - 'artifact/**'
+      - 'builder/**'
+      - 'cage/**'
+      - 'core/chocolatey/**'
+      - 'core/modules/**'
+      - 'runtime/**'
+      - 'tests/fixtures/chocolatey-bootstrap-smoke.cage.yaml'
+      - 'tests/fixtures/chocolatey-feed/**'
+      - 'tests/test_chocolatey_*.py'
+      - 'pyproject.toml'
+      - '.github/workflows/chocolatey-smoke.yml'
   workflow_dispatch:
 
 permissions:
@@ -22,11 +35,46 @@ permissions:
   packages: read
 
 jobs:
+  runtime-profile:
+    name: resolve immutable CFW runtime
+    runs-on: ubuntu-latest
+    outputs:
+      available: ${{ steps.runtime.outputs.available }}
+      image: ${{ steps.runtime.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Check for released CFW runtime
+        id: runtime
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          from core.modules.chocolatey import DEFAULT_CFW_RUNTIME_ARTIFACT
+          print(f"available={'true' if DEFAULT_CFW_RUNTIME_ARTIFACT else 'false'}")
+          print(f"image={DEFAULT_CFW_RUNTIME_ARTIFACT['wineImage'] if DEFAULT_CFW_RUNTIME_ARTIFACT else ''}")
+          PY
+
+      - name: Explain blocked consumer lifecycle
+        if: steps.runtime.outputs.available != 'true'
+        run: |
+          echo 'A CFW prepared-prefix runtime has not been released and pinned yet.'
+          echo 'The CFW repository owns runtime construction and proof.'
+          echo 'Failing this check so skipped lifecycle work cannot appear green.'
+          exit 78
+
   lifecycle:
+    name: prove CFW consumer lifecycle
+    needs: runtime-profile
+    if: needs.runtime-profile.outputs.available == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      CAGE_RUNTIME_IMAGE: ghcr.io/pelagians/cage-wine:11.0
+      CAGE_RUNTIME_IMAGE: ${{ needs.runtime-profile.outputs.image }}
     steps:
       - uses: actions/checkout@v4
 
@@ -64,78 +112,37 @@ jobs:
             --build-timeout 7200 2>&1 | tee /tmp/cage-chocolatey-smoke.log
           rc=${PIPESTATUS[0]}
           set -e
+          bundle="$(find dist -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
+          if [ -n "$bundle" ]; then
+            find "$bundle" -type f -printf '%P bytes=%s\n' | sort > /tmp/cage-lifecycle-files.txt || true
+          else
+            : > /tmp/cage-lifecycle-files.txt
+          fi
           if [ "$rc" -ne 0 ]; then
-            bundle="$(find dist -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
-            diagnostic="$bundle/metadata/chocolatey-diagnostic.json"
-            bootstrap_metadata="$bundle/metadata/chocolatey-upstream-bootstrap.json"
-            installer_log="$bundle/logs/chocolatey-upstream/installer.log"
-            pwsh_direct_log="$bundle/logs/chocolatey-upstream/pwsh-direct-probe.log"
-            path_inventory="$bundle/logs/chocolatey-upstream/chocolatey-path-inventory.log"
             {
-              echo '--- Chocolatey-for-Wine stages ---'
-              if [ -f "$installer_log" ]; then
-                grep -a '^\[cfw\] stage=' "$installer_log" || true
-              else
-                grep -a '^\[cfw\] stage=' /tmp/cage-chocolatey-smoke.log || true
-              fi
-              echo '--- bootstrap result ---'
-              if [ -f "$bootstrap_metadata" ]; then
-                python3 -c 'import json,sys; from pathlib import Path; p=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); print(json.dumps({"status":p.get("status"),"returnCodes":p.get("returnCodes", {}),"checks":p.get("checks", {}),"offline":p.get("offline")}, sort_keys=True))' "$bootstrap_metadata"
-              else
-                echo 'bootstrap metadata unavailable'
-              fi
-              echo '--- Chocolatey path inventory ---'
-              if [ -f "$path_inventory" ]; then
-                cat "$path_inventory"
-              else
-                echo 'path inventory unavailable'
-              fi
-              echo '--- chocolatey diagnostic ---'
-              if [ -f "$diagnostic" ]; then
-                python3 -c 'import json,sys; from pathlib import Path; p=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); s=p.get("fileSizes", {}); f=p.get("tiers", {}).get("failureOnly", {}); print(json.dumps({"status":p.get("status"),"failedChecks":p.get("failedChecks", []),"returnCodes":p.get("returnCodes", {}),"failureTrigger":f.get("failureTrigger"),"criticalFileSizes":{n:s.get(n) for n in ("canonicalChoco","nativeMscoree","appLocalMscoree","nativeClr","appLocalClr")}}, sort_keys=True))' "$diagnostic"
-              else
-                echo 'diagnostic unavailable'
-              fi
-              echo '--- focused Chocolatey errors ---'
-              for log in \
-                "$bundle/logs/chocolatey-diagnostics/choco-version.log" \
-                "$bundle/logs/chocolatey-diagnostics/choco-version-cmd.log" \
-                "$bundle/logs/chocolatey-diagnostics/choco-mscoree-loader.log" \
-                "$bundle/logs/chocolatey-diagnostics/choco-version-winedebug.log"; do
-                if [ -f "$log" ]; then
-                  echo "[$log]"
-                  grep -Eai '(^|:)(err|fatal):|error|exception|failed|missing|cannot|status c[0-9a-f]+' "$log" | tail -25 || true
-                fi
-              done
-              echo '--- loader tail ---'
-              tail -25 "$bundle/logs/chocolatey-diagnostics/choco-mscoree-loader.log" 2>/dev/null || true
-              echo '--- live Chocolatey process tree ---'
-              tail -80 "$bundle/logs/chocolatey-diagnostics/choco-live-process-tree.log" 2>/dev/null || true
-              echo '--- process tree ---'
-              tail -80 "$bundle/logs/chocolatey-diagnostics/process-tree.log" 2>/dev/null || true
+              # GitHub limits annotation messages to 4 KiB. Lead with the
+              # immediate failing boundary, then retain structured records in
+              # the uploaded artifact for complete postmortem evidence.
               echo '--- build tail ---'
-              tail -30 /tmp/cage-chocolatey-smoke.log || true
-              echo '--- installer non-stage tail ---'
-              if [ -f "$installer_log" ]; then
-                grep -av '^\[cfw\] stage=' "$installer_log" | tail -40 || true
-                echo '--- focused finalizer output ---'
-                grep -Eai 'finalizer-script-entry|pwsh|powershell|choc_install|not recognized|parameter|cannot find|error' "$installer_log" | tail -60 || true
-              else
-                echo 'installer log unavailable'
-              fi
-              echo '--- direct pwsh probe ---'
-              if [ -f "$pwsh_direct_log" ]; then
-                tr -d '\r' < "$pwsh_direct_log" | grep -a '^\[cfw\] stage=direct-pwsh-alive$' || echo 'direct pwsh marker absent'
-              else
-                echo 'direct pwsh probe unavailable'
-              fi
+              tail -120 /tmp/cage-chocolatey-smoke.log || true
+              echo '--- wineboot ---'
+              tail -120 "$bundle/logs/wineboot.log" 2>/dev/null || echo 'wineboot log unavailable'
+              echo '--- Chocolatey version log ---'
+              tail -30 "$bundle/logs/chocolatey-diagnostics/choco-version.log" 2>/dev/null || echo 'Chocolatey version log unavailable'
+              echo '--- Chocolatey live process snapshot ---'
+              tail -40 "$bundle/logs/chocolatey-diagnostics/choco-live-process-tree.log" 2>/dev/null || echo 'Chocolatey live process snapshot unavailable'
+              echo '--- Chocolatey lifecycle ---'
+              cat "$bundle/metadata/chocolatey-smoke.json" 2>/dev/null || echo 'lifecycle evidence unavailable'
+              echo '--- Chocolatey readiness ---'
+              cat "$bundle/metadata/chocolatey-diagnostic.json" 2>/dev/null || echo 'readiness evidence unavailable'
+              echo '--- Chocolatey feature policy ---'
+              cat "$bundle/metadata/chocolatey-feature-policy.json" 2>/dev/null || echo 'feature evidence unavailable'
+              echo '--- CFW runtime manifest ---'
+              cat "$bundle/metadata/cfw-runtime-manifest.json" 2>/dev/null || echo 'runtime manifest unavailable'
+              echo '--- CFW runtime evidence ---'
+              cat "$bundle/metadata/cfw-runtime.json" 2>/dev/null || echo 'runtime evidence unavailable'
             } > /tmp/cage-chocolatey-summary.log
-            summary="$(tail -160 /tmp/cage-chocolatey-summary.log)"
-            if [ -f "$path_inventory" ]; then
-              summary="${summary}"$'\n--- Chocolatey path inventory ---\n'"$(cat "$path_inventory")"
-            else
-              summary="${summary}"$'\n--- Chocolatey path inventory ---\npath inventory unavailable'
-            fi
+            summary="$(tail -300 /tmp/cage-chocolatey-summary.log)"
             summary="${summary//'%'/'%25'}"
             summary="${summary//$'\n'/'%0A'}"
             summary="${summary//$'\r'/'%0D'}"
@@ -145,6 +152,19 @@ jobs:
           fi
           exit "$rc"
 
+      - name: Package lifecycle evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="$(find dist -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
+          if [ -n "$bundle" ]; then
+            # Wine device mappings deliberately use filenames such as c:. GitHub's
+            # ZIP artifact transport rejects those for cross-filesystem safety;
+            # a tarball retains the exact evidence without path reinterpretation.
+            tar -czf /tmp/cage-lifecycle-bundle.tar.gz -C "$(dirname "$bundle")" "$(basename "$bundle")"
+          fi
+
       - name: Upload lifecycle evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -153,7 +173,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
           path: |
-            dist/**/metadata/*.json
-            dist/**/logs/**
-            dist/**/build/run.sh
+            /tmp/cage-lifecycle-bundle.tar.gz
             /tmp/cage-chocolatey-smoke.log
+            /tmp/cage-chocolatey-summary.log
+            /tmp/cage-lifecycle-files.txt

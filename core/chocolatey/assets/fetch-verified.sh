@@ -26,7 +26,7 @@ cage_fetch_verified() {
   if [ ! -f "$blob" ]; then
     part="$blob.part.$$"
     rm -f "$part"
-    if ! curl --fail --location --retry 3 --connect-timeout "${CAGE_CACHE_CONNECT_TIMEOUT:-30}" --max-time "${CAGE_CACHE_TOTAL_TIMEOUT:-1800}" --output "$part" "$url"; then
+    if ! curl --fail --location --silent --show-error --retry 3 --connect-timeout "${CAGE_CACHE_CONNECT_TIMEOUT:-30}" --max-time "${CAGE_CACHE_TOTAL_TIMEOUT:-1800}" --output "$part" "$url"; then
       rm -f "$part"
       return 65
     fi

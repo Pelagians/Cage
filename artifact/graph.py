@@ -14,7 +14,7 @@ from typing import Any
 
 from builder.pipeline import build_plan
 from core.manifest import Manifest, resolve_module_capabilities
-from runtime.providers import RuntimeBinding, resolve_runtime
+from runtime.providers import RuntimeBinding, resolve_manifest_runtime
 
 SCHEMA_VERSION = "cage.execution-graph/v0"
 DEFAULT_GRAPHICS_MODE = "headless"
@@ -23,7 +23,7 @@ SUPPORTED_GRAPHICS_MODES = ["headless", "vnc"]
 
 def build_execution_graph(manifest: Manifest) -> dict[str, Any]:
     """Return a deterministic resolved execution graph for *manifest*."""
-    runtime = resolve_runtime(manifest.runtime)
+    runtime = resolve_manifest_runtime(manifest)
     runtime_node_id = _runtime_node_id(runtime)
     manifest_node_id = f"manifest:{manifest.name}:{manifest.version}"
     phase_plan = build_plan(manifest)

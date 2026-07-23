@@ -13,7 +13,7 @@ from core.manifest import load_manifest
 from core.sources import verify_manifest_sources
 from compat.failure_analysis import analyze_failure_path
 from runtime.launcher import build_run_plan, execute_run_plan
-from runtime.providers import resolve_runtime
+from runtime.providers import resolve_manifest_runtime
 
 COMPAT_TEST_SCHEMA_VERSION = "cage.compat-test/v0"
 
@@ -60,7 +60,7 @@ def run_compat_test(
     workspace_path = Path(workspace or Path.cwd()).resolve()
     output_path = Path(output_dir)
     manifest = load_manifest(manifest_file)
-    runtime = resolve_runtime(manifest.runtime)
+    runtime = resolve_manifest_runtime(manifest)
     source_integrity = verify_manifest_sources(manifest, workspace=workspace_path)
     requested_entrypoints = _requested_entrypoints(manifest, entrypoints or [], all_entrypoints)
 

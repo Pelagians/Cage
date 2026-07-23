@@ -48,7 +48,7 @@ namespaces = false
 [tool.setuptools.package-data]
 "compat.corpus" = ["*.json"]
 runtime = ["catalog.json"]
-"core.chocolatey.assets" = ["*.sh", "*.nupkg"]
+"core.chocolatey.assets" = ["*.sh", "*.ps1", "*.nupkg", "*.py", "*.json"]
 container = [
   "build.sh",
   "docker-compose.yml",

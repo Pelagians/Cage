@@ -5,7 +5,7 @@ Date: 2026-07-09
 Owner: Noah Giroux / CTO
 Supersedes: [0018. Deterministic PowerShell and Chocolatey capabilities](0018-deterministic-powershell-chocolatey-capabilities.md)
 
-> Supersession note (2026-07-10): the unmodified installer could exit `0` without canonical Chocolatey. ADR 0022 is current and carries a narrow fork that serializes finalization, propagates failures, and supports verified offline inputs.
+> Supersession note (2026-07-17): the unmodified installer could exit `0` without canonical Chocolatey. ADR 0024 is current: CFW produces and proves the prepared runtime; Cage no longer runs the installer or reconstructs compatibility.
 
 ## Decision
 

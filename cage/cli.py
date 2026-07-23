@@ -40,7 +40,7 @@ from compat.failure_analysis import FailureAnalysisError, analyze_failure_path
 from core.manifest import ManifestError, RuntimeSpec, load_manifest
 from core.sources import audit_manifest_sources, verify_manifest_sources
 from core.media import MediaStageError, stage_media
-from runtime.providers import list_providers, resolve_runtime
+from runtime.providers import list_providers, resolve_manifest_runtime, resolve_runtime
 from runtime.launcher import RunError, build_run_plan, execute_run_plan
 from runtime.runner_cache import RunnerCacheError, diagnose_runner, ensure_runner
 from runtime.runner_catalog import RunnerCatalogError, RunnerSpec, resolve_runner_spec, runner_catalog_payload
@@ -52,14 +52,14 @@ from runtime.runner_catalog import RunnerCatalogError, RunnerSpec, resolve_runne
 def cmd_inspect(args):
     manifest = load_manifest(Path(args.manifest))
     payload = manifest.to_dict()
-    payload["resolvedRuntime"] = resolve_runtime(manifest.runtime).to_dict()
+    payload["resolvedRuntime"] = resolve_manifest_runtime(manifest).to_dict()
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 
 
 def cmd_plan(args):
     manifest = load_manifest(Path(args.manifest))
-    binding = resolve_runtime(manifest.runtime)
+    binding = resolve_manifest_runtime(manifest)
     result = {
         "manifest": manifest.name,
         "version": manifest.version,
@@ -209,7 +209,7 @@ def cmd_build(args):
             print(json.dumps(result, indent=2))
             return 1
 
-    binding = resolve_runtime(manifest.runtime)
+    binding = resolve_manifest_runtime(manifest)
     base_image = binding.oci_image or get_image_ref(
         manifest.runtime.provider, manifest.runtime.version)
 

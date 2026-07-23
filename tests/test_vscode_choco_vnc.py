@@ -15,7 +15,7 @@ class VSCodeChocoVNCTests(unittest.TestCase):
         self.assertEqual(manifest.name, "vscode-choco-vnc")
         self.assertEqual([m.type for m in manifest.modules], ["chocolatey"])
         self.assertEqual(manifest.runtime.provider, "wine")
-        self.assertEqual(manifest.runtime.version, "latest")
+        self.assertEqual(manifest.runtime.version, "11.0")
         self.assertEqual(manifest.runtime.network, "bridge")
         self.assertEqual(manifest.launch.entrypoint, "/opt/wine/bin/winevnc.sh")
         self.assertIn("C:/Program Files/Microsoft VS Code/Code.exe", manifest.launch.args)

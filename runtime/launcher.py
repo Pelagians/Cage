@@ -96,6 +96,7 @@ def build_run_plan(
     launch_command = _launch_command(runtime, launch, [item["winePath"] for item in file_arguments])
     runner_cache = _runner_cache_plan(runtime, runner_cache_dir, require_runner=require_runner, engine=selected_engine)
     environment = _container_environment(mode)
+    environment.update(dict(runtime.get("environment") or {}))
     environment.update(compatibility_env)
     if runner_cache and runner_cache.get("status") == "present":
         environment.update(runner_cache["environment"])
@@ -359,13 +360,6 @@ def _container_environment(graphics: str) -> dict[str, str]:
         "WINEFS": "launcher",
         "CAGE_GRAPHICS": graphics,
         "DISPLAY": ":99",
-        # The runtime image disables mscoree/mshtml by default to keep Wine
-        # prefix initialization fast. Runtime launches consume an already-built
-        # prefix, so clear that inherited DLL override unless the bundle's
-        # compatibility policy explicitly sets one. .NET/CoreCLR apps such as
-        # PowerShell Core fail to resolve System.Runtime.dll when mscoree is
-        # still disabled at launch time.
-        "WINEDLLOVERRIDES": "",
     }
 
 

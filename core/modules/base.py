@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..build_step import BuildStep
-from core.chocolatey import DEFAULT_BOOTSTRAP_PROFILE_ID
+
 
 
 class ModuleError(Exception):
@@ -65,7 +65,7 @@ class ModuleBase:
 
 
 MODULE_FIELDS: dict[str, set[str]] = {
-    "chocolatey": {"type", "defaults", "install", "source", "bootstrap"},
+    "chocolatey": {"type", "defaults", "install", "packageSource"},
     "exe": {"type", "defaults", "source", "sha256", "silentArgs"},
     "msi": {"type", "defaults", "source", "sha256", "silentArgs"},
     "iso": {"type", "defaults", "source", "autorun"},
@@ -73,7 +73,6 @@ MODULE_FIELDS: dict[str, set[str]] = {
     "portable": {"type", "defaults", "source", "target", "config"},
     "files": {"type", "defaults", "mappings"},
     "script": {"type", "defaults", "command", "working_directory", "workingDirectory"},
-    "powershell-wrapper": {"type", "defaults", "version", "wrapperVersion"},
     "containerfile": {"type", "defaults", "instructions"},
 }
 
@@ -159,17 +158,13 @@ def _validate_common_module_data(module_type: str, data: dict[str, Any], index: 
         _optional_str(data, "command", location)
         _optional_str(data, "working_directory", location)
         _optional_str(data, "workingDirectory", location)
-    elif module_type == "powershell-wrapper":
-        _optional_str(data, "version", location)
-        _optional_str(data, "wrapperVersion", location)
     elif module_type == "containerfile" and data.get("instructions") is not None:
         _string_list(data["instructions"], f"{location}.instructions")
     elif module_type == "chocolatey":
         install = data.get("install")
         if install is not None and not isinstance(install, dict):
             raise ModuleError(f"{location}.install must be an object")
-        _optional_str(data, "source", location)
-        _optional_str(data, "bootstrap", location)
+        _optional_str(data, "packageSource", location)
 
 
 @dataclass
@@ -428,8 +423,7 @@ def parse_module(data: dict[str, Any], index: int = 0) -> ModuleBase:
         ModuleError: If module type is unknown or required fields are missing
     """
     from .chocolatey import ChocolateyModule
-    from .powershell_wrapper import PowerShellWrapperModule
-    
+
     if not isinstance(data, dict):
         raise ModuleError(f"modules[{index}] must be an object")
 
@@ -444,23 +438,20 @@ def parse_module(data: dict[str, Any], index: int = 0) -> ModuleBase:
     
     # Merge defaults with user data
     merged_data = ModuleBase(type=module_type, defaults=defaults).merge_defaults(data)
-    if module_type == "powershell":
-        raise ModuleError(
-            f"modules[{index}] module type 'powershell' was renamed to 'powershell-wrapper'"
-        )
     if module_type not in MODULE_FIELDS:
         raise ModuleError(f"modules[{index}] unknown module type: {module_type}")
     _validate_common_module_data(module_type, merged_data, index)
     
     # Parse based on module type
     if module_type == "chocolatey":
-        return ChocolateyModule(
+        module = ChocolateyModule(
             type=module_type,
             defaults=defaults,
             install=merged_data.get("install"),
-            source=merged_data.get("source"),
-            bootstrap=merged_data.get("bootstrap", DEFAULT_BOOTSTRAP_PROFILE_ID),
+            package_source=merged_data.get("packageSource"),
         )
+        module.validate()
+        return module
     elif module_type == "exe":
         return ExeModule(
             type=module_type,
@@ -511,17 +502,6 @@ def parse_module(data: dict[str, Any], index: int = 0) -> ModuleBase:
             defaults=defaults,
             command=merged_data.get("command"),
             working_directory=working_directory,
-        )
-    elif module_type == "powershell":
-        raise ModuleError(
-            f"modules[{index}] module type 'powershell' was renamed to 'powershell-wrapper'"
-        )
-    elif module_type == "powershell-wrapper":
-        return PowerShellWrapperModule(
-            type=module_type,
-            defaults=defaults,
-            version=merged_data.get("version", "7"),
-            wrapper_version=merged_data.get("wrapperVersion", "v4.2.0"),
         )
     elif module_type == "containerfile":
         return ContainerfileModule(

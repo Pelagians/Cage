@@ -4,42 +4,18 @@ version: "0.1.0"
 
 runtime:
   provider: wine
-  version: latest
-  # This sandbox is for interactive VNC choco/package experiments.
-  # Keep bridge networking here; production app artifacts should normally use none.
+  version: "11.0"
+  # Interactive VNC Chocolatey/package experiment. The module remains visibly
+  # blocked until Cage pins a passing immutable CFW prepared-runtime release.
   network: bridge
-
-sources:
-  - id: chocolatey-for-wine
-    type: archive
-    policy: redistributable
-    url: https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.6/Chocolatey-for-wine.7z
-    sha256: 25c2e3cd544c7f83e9c196a5b8b0f98e020b4f5e24f19de30ea6ceec585d0792
-    description: Noah's deterministic Chocolatey-for-Wine fork release, executed by the Chocolatey module and independently verified by Cage.
-  - id: chocolatey
-    type: archive
-    policy: redistributable
-    url: https://community.chocolatey.org/api/v2/package/chocolatey/2.6.0
-    sha256: f13a2af9cd4ec2c9b58d81861bc95ad7151e3a871d8f758dffa72a996a3792d8
-    description: Chocolatey nupkg version consumed by the pinned fork installer.
 
 modules:
   - type: chocolatey
-    bootstrap: cfw-v0.5c.755-noah.6-choco-2.6.0-fork-r12
     install:
       packages:
         - 7zip.install
 
-compatibility:
-  arch: win64
-  windowsVersion: win10
-  graphics:
-    backend: wined3d
-  env:
-    WINEDEBUG: "-all"
-
-# Chocolatey-for-wine makes wine powershell.exe start the PowerShell Core-backed
-# wrapper environment. Use wineconsole for visible VNC/noVNC interaction.
+# The prepared prefix owns the Windows PowerShell compatibility surface.
 launch:
   entrypoint: C:/windows/system32/wineconsole.exe
   args:
@@ -73,18 +49,8 @@ entrypoints:
       - set PATH=C:\ProgramData\chocolatey\bin;%PATH%
     workingDirectory: C:/
 
-
 exports:
   - name: chocolatey-for-wine-tools
     path: C:/ProgramData/Chocolatey-for-wine
   - name: chocolatey-install
     path: C:/ProgramData/chocolatey
-
-provenance:
-  sources:
-    - uri: https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.6/Chocolatey-for-wine.7z
-      sha256: 25c2e3cd544c7f83e9c196a5b8b0f98e020b4f5e24f19de30ea6ceec585d0792
-      note: Patched fork release serializes finalization and propagates installer failures; Cage independently proves readiness and lifecycle.
-    - uri: https://community.chocolatey.org/api/v2/package/chocolatey/2.6.0
-      sha256: f13a2af9cd4ec2c9b58d81861bc95ad7151e3a871d8f758dffa72a996a3792d8
-      note: The fork extracts this nupkg to ProgramData/tools/ChocolateyInstall before serialized finalization.

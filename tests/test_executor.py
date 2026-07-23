@@ -114,16 +114,15 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertIn("x11vnc", plan["container"]["script"])
         self.assertIn("websockify", plan["container"]["script"])
 
-    def test_run_plan_clears_inherited_base_image_dll_overrides_by_default(self):
+    def test_run_plan_inherits_producer_image_dll_policy_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = self._bundle(tmp)
             plan = build_run_plan(bundle, graphics="headless", engine="docker", allow_non_runnable=True)
 
         env = plan["container"]["environment"]
         argv = plan["container"]["argv"]
-        self.assertIn("WINEDLLOVERRIDES", env)
-        self.assertEqual(env["WINEDLLOVERRIDES"], "")
-        self.assertIn("WINEDLLOVERRIDES=", argv)
+        self.assertNotIn("WINEDLLOVERRIDES", env)
+        self.assertFalse(any(value.startswith("WINEDLLOVERRIDES=") for value in argv))
 
     def test_wineconsole_entrypoints_use_native_helper_and_strip_legacy_backend_option(self):
         data = dict(VALID)
@@ -238,91 +237,6 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertNotIn("python3-venv", final_stage)
         self.assertNotIn("pip install", final_stage)
         self.assertIn("COPY --from=umu-build /opt/umu /opt/umu", dockerfile)
-
-    def test_wine_runtime_images_ship_powershell_runtime_smoke(self):
-        root = Path(__file__).resolve().parents[1]
-        smoke = (root / "container/common/cage-powershell-runtime-smoke.sh").read_text(encoding="utf-8")
-        self.assertIn("PowerShell-7.5.5-win-x64.msi", smoke)
-        self.assertIn("b2ac56b7639e2b259bb78bab077555d76f2a5eec6c516690d63de36bc1d6ca25", smoke)
-        self.assertIn("PWSH-ALIVE", smoke)
-        self.assertIn("cage-pwsh-smoke-ok.txt", smoke)
-        self.assertIn("try_pwsh_launch direct", smoke)
-        self.assertIn("try_pwsh_launch cmd", smoke)
-        self.assertIn("try_pwsh_launch cmdfile", smoke)
-        self.assertIn("run-smoke.cmd", smoke)
-        self.assertIn('wine cmd /s /c "$SMOKE_LAUNCHER_WIN"', smoke)
-        self.assertIn('call "%s" -NoLogo -NoProfile -ExecutionPolicy Bypass', smoke)
-        self.assertNotIn('wine cmd /s /c "\\\"$SMOKE_LAUNCHER_WIN\\\""', smoke)
-        self.assertIn("POWER SHELL RUNTIME SMOKE PASSED", smoke)
-        self.assertIn("github_error", smoke)
-        self.assertIn("CAGE_GITHUB_ANNOTATIONS", smoke)
-        self.assertIn("CAGE_GITHUB_ANNOTATION_LEVEL", smoke)
-        self.assertIn("Wine prefix initialization failed", smoke)
-        self.assertIn("Wine win10 configuration failed", smoke)
-        self.assertIn("PowerShell MSI checksum mismatch", smoke)
-        self.assertIn("PowerShell MSI did not install pwsh.exe", smoke)
-        self.assertIn("Preparing pwsh.exe Wine DLL overrides", smoke)
-        self.assertIn("reg_add_pwsh_override", smoke)
-        self.assertIn("PowerShell DLL override registry prep failed", smoke)
-        self.assertIn("HKCU\\Software\\Wine\\AppDefaults\\pwsh.exe\\DllOverrides", smoke)
-        self.assertNotIn("HKCU\\\\Software\\\\Wine\\\\AppDefaults", smoke)
-        self.assertIn("rpcrt4", smoke)
-        self.assertIn("PowerShell launch failed", smoke)
-        self.assertIn("No PowerShell launch mode produced runtime proof", smoke)
-        self.assertIn("run_pwsh_winedebug_probe", smoke)
-        self.assertIn("PowerShell WINEDEBUG probe", smoke)
-        self.assertIn("+loaddll,+seh", smoke)
-        self.assertIn("CAGE_POWERSHELL_DEBUG_TIMEOUT", smoke)
-        self.assertIn("wait_for_wine_launch_children", smoke)
-        self.assertIn("CAGE_POWERSHELL_SMOKE_SETTLE_TIMEOUT", smoke)
-        self.assertIn("wineserver -w", smoke)
-        self.assertIn("stderr_tail_b64=", smoke)
-        self.assertIn("sentinel=", smoke)
-        self.assertIn("stdout_bytes=", smoke)
-        self.assertIn("stderr_bytes=", smoke)
-        self.assertIn("stdout_b64=", smoke)
-        self.assertIn("stderr_b64=", smoke)
-        self.assertIn('export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-mscoree,mshtml=}"', smoke)
-        self.assertIn("wine wineboot --init", smoke)
-        self.assertIn('export WINEDLLOVERRIDES=""', smoke)
-        self.assertLess(
-            smoke.index("wine wineboot --init"),
-            smoke.index('export WINEDLLOVERRIDES=""'),
-        )
-        self.assertNotIn("unset WINEDLLOVERRIDES", smoke)
-        for rel in [
-            "container/runtimes/wine/Dockerfile",
-            "container/runtimes/wine-staging/Dockerfile",
-        ]:
-            with self.subTest(rel=rel):
-                dockerfile = (root / rel).read_text(encoding="utf-8")
-                self.assertIn("cage-powershell-runtime-smoke.sh", dockerfile)
-                self.assertIn("/usr/local/bin/cage-powershell-runtime-smoke", dockerfile)
-
-    def test_container_workflow_smokes_powershell_on_published_wine_11_image(self):
-        root = Path(__file__).resolve().parents[1]
-        workflow = (root / ".github/workflows/containers.yml").read_text(encoding="utf-8")
-
-        self.assertIn("Observe deprecated PowerShell runtime smoke on wine 11.0", workflow)
-        self.assertIn("matrix.provider == 'wine' && matrix.version == '11.0'", workflow)
-        self.assertIn("github.sha", workflow)
-        self.assertIn("cage-powershell-runtime-smoke", workflow)
-        self.assertIn("--shm-size 2g", workflow)
-        self.assertIn("-e CAGE_GITHUB_ANNOTATIONS=1", workflow)
-        self.assertIn("-e CAGE_GITHUB_ANNOTATION_LEVEL=warning", workflow)
-        self.assertIn("shell: bash", workflow)
-        self.assertIn("PIPESTATUS[0]", workflow)
-        self.assertIn("Deprecated PowerShell smoke failed", workflow)
-        self.assertIn("Deprecated PowerShell smoke passed", workflow)
-        self.assertIn("tee \"$LOG\"", workflow)
-        self.assertIn("tail -80", workflow)
-        self.assertIn("summary=\"${summary//$'\\n'/'%0A'}\"", workflow)
-        self.assertIn("Compare PowerShell runtime smoke on candidate Wine images", workflow)
-        self.assertIn("matrix.provider == 'staging'", workflow)
-        self.assertIn("matrix.version == '10.0'", workflow)
-        self.assertIn("CAGE_GITHUB_ANNOTATION_LEVEL=warning", workflow)
-        self.assertIn("Candidate PowerShell smoke failed", workflow)
-        self.assertIn("Candidate PowerShell smoke passed", workflow)
 
 
 if __name__ == "__main__":

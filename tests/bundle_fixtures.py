@@ -28,9 +28,22 @@ def materialize_runnable_prefix(
     executable.write_bytes(b"MZ-test-executable")
 
     if chocolatey:
-        choco = prefix / "drive_c/ProgramData/chocolatey/bin/choco.exe"
+        choco = prefix / "drive_c/ProgramData/chocolatey/choco.exe"
         choco.parent.mkdir(parents=True, exist_ok=True)
         choco.write_bytes(b"MZ-test-chocolatey")
+        (bundle / "metadata/cfw-runtime-manifest.json").write_text(
+            json.dumps({
+                "interfaces": {
+                    "chocolatey": {
+                        "windowsPath": r"C:\ProgramData\chocolatey\choco.exe",
+                        "prefixRelativePath": "drive_c/ProgramData/chocolatey/choco.exe",
+                        "queryLauncher": "wine",
+                        "packageLauncher": "wineconsole",
+                    },
+                },
+            }, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
 
     files = [path for path in prefix.rglob("*") if path.is_file()]
     metadata = {

@@ -30,6 +30,7 @@ APP = {
     "exports": [],
     "provenance": {"sources": []},
 }
+FIXTURE = "tests/fixtures/indexed-demo.cage.yaml"
 
 
 def _make_bundle(tmp: str | Path) -> Path:
@@ -65,10 +66,7 @@ class ArtifactIndexModuleTests(unittest.TestCase):
         self.assertEqual(versioned["application"]["version"], "1.2.3")
 
     def test_default_index_path_lives_under_output_directory(self):
-        self.assertEqual(
-            default_index_path(Path("dist")),
-            Path("dist/.cage/artifacts.json"),
-        )
+        self.assertEqual(default_index_path(Path("dist")), Path("dist/.cage/artifacts.json"))
 
 
 class ArtifactIndexCLITests(unittest.TestCase):
@@ -81,7 +79,7 @@ class ArtifactIndexCLITests(unittest.TestCase):
                     sys.executable,
                     "cmd/cage.py",
                     "build",
-                    "examples/notepad-plus-plus.cage.yaml",
+                    FIXTURE,
                     "--dry-run",
                     "--output",
                     str(output),
@@ -115,7 +113,7 @@ class ArtifactIndexCLITests(unittest.TestCase):
         self.assertEqual(listed.returncode, 0, listed.stderr)
         payload = json.loads(listed.stdout)
         self.assertEqual(payload["schemaVersion"], ARTIFACT_INDEX_SCHEMA_VERSION)
-        self.assertIn("notepad-plus-plus", payload["artifacts"])
+        self.assertIn("indexed-demo", payload["artifacts"])
 
     def test_cli_resolve_and_run_plan_accept_app_name_but_oci_rejects_dry_run_bundle(self):
         root = Path(__file__).resolve().parents[1]
@@ -126,7 +124,7 @@ class ArtifactIndexCLITests(unittest.TestCase):
                     sys.executable,
                     "cmd/cage.py",
                     "build",
-                    "examples/notepad-plus-plus.cage.yaml",
+                    FIXTURE,
                     "--dry-run",
                     "--output",
                     str(output),
@@ -145,7 +143,7 @@ class ArtifactIndexCLITests(unittest.TestCase):
                     "cmd/cage.py",
                     "artifacts",
                     "resolve",
-                    "notepad-plus-plus",
+                    "indexed-demo",
                     "--index",
                     str(index_path),
                 ],
@@ -159,7 +157,7 @@ class ArtifactIndexCLITests(unittest.TestCase):
                     sys.executable,
                     "cmd/cage.py",
                     "run",
-                    "notepad-plus-plus",
+                    "indexed-demo",
                     "--artifact-index",
                     str(index_path),
                     "--dry-run",
@@ -179,11 +177,11 @@ class ArtifactIndexCLITests(unittest.TestCase):
                     "cmd/cage.py",
                     "export",
                     "oci",
-                    "notepad-plus-plus",
+                    "indexed-demo",
                     "--artifact-index",
                     str(index_path),
                     "--tag",
-                    "local/notepad:8.6.0",
+                    "local/indexed-demo:1.2.3",
                     "--dry-run",
                 ],
                 cwd=root,
@@ -195,7 +193,7 @@ class ArtifactIndexCLITests(unittest.TestCase):
         self.assertEqual(resolved.returncode, 0, resolved.stderr)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(export.returncode, 5, export.stderr)
-        self.assertTrue(json.loads(resolved.stdout)["bundle"].endswith("notepad-plus-plus-8.6.0"))
+        self.assertTrue(json.loads(resolved.stdout)["bundle"].endswith("indexed-demo-1.2.3"))
         self.assertEqual(json.loads(run.stdout)["schemaVersion"], "cage.run-plan/v0")
         self.assertIn("not runnable", export.stderr)
 

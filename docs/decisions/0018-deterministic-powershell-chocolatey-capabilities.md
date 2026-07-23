@@ -4,7 +4,10 @@ Status: historical; superseded by [0022. Deterministic Chocolatey-for-Wine fork]
 Date: 2026-07-08
 Owner: Noah Giroux / CTO
 
-> Update note (2026-07-10): ADRs 0019–0021 tested subsequent approaches. ADR 0022 is current: use the patched fork with verified offline inputs and Cage-owned readiness/lifecycle gates.
+> Update note (2026-07-17): ADRs 0019–0023 tested subsequent approaches. ADR
+> 0024 is current: CFW owns and publishes the prepared compatibility runtime;
+> Cage verifies and consumes it without reconstructing PowerShell, Synchro,
+> CLR, or Chocolatey compatibility.
 
 ## Decision
 

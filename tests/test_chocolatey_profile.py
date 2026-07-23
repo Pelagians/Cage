@@ -1,32 +1,31 @@
-"""Tests for the immutable Chocolatey bootstrap profile boundary."""
+"""Tests for Cage's prepared CFW runtime consumer boundary."""
 from __future__ import annotations
 
-import dataclasses
 import hashlib
-import json
-import re
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from core.chocolatey.assets import asset_sha256, load_asset
-from core.chocolatey.profile import (
-    DEFAULT_BOOTSTRAP_PROFILE_ID,
-    ChocolateyProfileError,
-    get_bootstrap_profile,
-)
 from core.manifest import Manifest, ManifestError
 
-
 ROOT = Path(__file__).resolve().parents[1]
+RUNTIME = {
+    "id": "cfw-runtime-test",
+    "url": "https://example.invalid/cfw-runtime-prefix.tar.gz",
+    "evidenceUrl": "https://example.invalid/runtime.json",
+    "manifestUrl": "https://example.invalid/cfw-runtime-manifest.json",
+    "manifestSha256": "c" * 64,
+    "wineImage": "ghcr.io/pelagians/cage-wine@sha256:" + "d" * 64,
+    "wineVersions": ["wine-11.0"], "environment": {"WINEDLLOVERRIDES": ""},
+}
 
 
 def _manifest(**module_overrides):
     module = {
         "type": "chocolatey",
-        "install": {"packages": ["7zip"]},
+        "install": {"packages": ["7zip"], "runtimeArtifact": dict(RUNTIME)},
     }
     module.update(module_overrides)
     return Manifest.from_dict({
@@ -39,92 +38,57 @@ def _manifest(**module_overrides):
     })
 
 
-class ChocolateyBootstrapProfileTests(unittest.TestCase):
-    def test_builtin_profile_is_frozen_complete_and_compatibility_set_named(self):
-        profile = get_bootstrap_profile(DEFAULT_BOOTSTRAP_PROFILE_ID)
+class ChocolateyRuntimeProfileTests(unittest.TestCase):
+    def test_runtime_profile_is_recorded_without_cfw_payload_details(self):
+        steps = _manifest().modules[0].build()
+        record = steps[0]
+        command = "\n".join(record.commands)
 
-        self.assertTrue(dataclasses.is_dataclass(profile))
-        with self.assertRaises(dataclasses.FrozenInstanceError):
-            profile.id = "mutated"  # type: ignore[misc]
-        self.assertEqual(profile.id, "cfw-v0.5c.755-noah.6-choco-2.6.0-fork-r12")
-        self.assertEqual(profile.dotnet_profile, "dotnet48-cfw-r1")
-        self.assertEqual(profile.dotnet_installer_sha256, "95889d6de3f2070c07790ad6cf2000d33d9a1bdfc6a381725ab82ab1c314fd53")
-        self.assertEqual(profile.chocolatey_for_wine_version, "v0.5c.755-noah.6")
-        self.assertEqual(profile.chocolatey_for_wine_installer_version, "0.5c.755")
-        self.assertEqual(
-            profile.chocolatey_for_wine_url,
-            "https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/v0.5c.755-noah.6/Chocolatey-for-wine.7z",
-        )
-        self.assertEqual(
-            profile.chocolatey_for_wine_sha256,
-            "25c2e3cd544c7f83e9c196a5b8b0f98e020b4f5e24f19de30ea6ceec585d0792",
-        )
-        self.assertEqual(profile.upstream_project, "noahgiroux/Chocolatey-for-wine")
-        self.assertEqual(profile.upstream_tag, "v0.5c.755-noah.6")
-        self.assertEqual(
-            profile.winetricks_ps1_url,
-            "https://raw.githubusercontent.com/noahgiroux/Chocolatey-for-wine/9d635ecdba9b10103c202fea51dbaba70aec4d83/winetricks.ps1",
-        )
-        self.assertEqual(profile.chocolatey_version, "2.6.0")
-        self.assertEqual(profile.powershell_version, "7.5.5")
-        self.assertEqual(profile.powershell_host_feature, "powershellHost")
-        self.assertEqual(profile.powershell_host, "disabled")
-        self.assertEqual(profile.allow_global_confirmation, "disabled")
-        self.assertFalse(any(key.startswith("powershellWrapper") for key in profile.to_dict()))
-        self.assertEqual(profile.revision, "r12")
-        for name, value in profile.to_dict().items():
-            if name.endswith("Sha256"):
-                self.assertRegex(value, r"^[0-9a-f]{64}$", name)
+        self.assertEqual(record.description, "Record CFW prepared runtime profile")
+        self.assertIn("metadata/chocolatey-runtime-profile.json", command)
+        self.assertIn(RUNTIME["id"], command)
+        self.assertIn(RUNTIME["manifestSha256"], command)
+        self.assertNotIn("external-windows-powershell", command)
+        self.assertNotIn("packageExecutionHost", command)
+        self.assertNotIn("KB3AIK_EN.iso", command)
+        self.assertNotIn("KB3191566", command)
+        self.assertNotIn("KB958488", command)
+        for step in steps:
+            if "scriptAsset" in step.metadata:
+                self.assertRegex(step.metadata["scriptSha256"], r"^[0-9a-f]{64}$")
 
-    def test_unknown_or_incomplete_bootstrap_profiles_are_rejected(self):
-        manifest = _manifest(bootstrap="missing-profile")
-
-        with self.assertRaisesRegex(Exception, "unknown Chocolatey bootstrap profile"):
-            manifest.modules[0].build()
-
-    def test_legacy_independent_bootstrap_component_fields_are_rejected(self):
+    def test_legacy_independent_bootstrap_fields_are_rejected(self):
         for field, value in (("version", "v0.5c.755"), ("sha256", "0" * 64)):
             with self.subTest(field=field):
                 with self.assertRaises((ManifestError, Exception)) as ctx:
                     _manifest(**{field: value})
                 self.assertIn("unknown module field", str(ctx.exception))
 
-    def test_module_steps_record_profile_and_versioned_asset_hashes(self):
-        module = _manifest().modules[0]
-        steps = module.build()
-
-        self.assertEqual(module.bootstrap, DEFAULT_BOOTSTRAP_PROFILE_ID)
-        self.assertEqual(steps[0].description, "Record Chocolatey bootstrap profile")
-        self.assertIn("metadata/chocolatey-bootstrap.json", "\n".join(steps[0].commands))
-        self.assertIn(asset_sha256("fetch-verified.sh"), "\n".join(steps[0].commands))
-        for step in steps:
-            self.assertEqual(step.metadata["bootstrapProfile"], DEFAULT_BOOTSTRAP_PROFILE_ID)
-            if "scriptAsset" in step.metadata:
-                self.assertRegex(step.metadata["scriptSha256"], r"^[0-9a-f]{64}$")
-
-    def test_module_uses_packaged_assets_instead_of_python_heredocs(self):
+    def test_consumer_module_uses_packaged_assets_not_embedded_cfw_installers(self):
         module_source = (ROOT / "core/modules/chocolatey.py").read_text(encoding="utf-8")
         base_source = (ROOT / "core/modules/base.py").read_text(encoding="utf-8")
 
         self.assertNotIn("cfw-v0.5c.755-noah", base_source)
-        self.assertIn("DEFAULT_BOOTSTRAP_PROFILE_ID", base_source)
-        self.assertNotIn("<<'PY'", module_source)
-        self.assertNotIn('f\'\'\'set -eu', module_source)
-        self.assertLess(len(module_source.splitlines()), 300)
+        self.assertNotIn("DEFAULT_BOOTSTRAP_PROFILE_ID", base_source)
+        self.assertNotIn("DEFAULT_CFW_RUNTIME_PROFILE_ID", base_source)
+        self.assertNotIn("get_bootstrap_profile", module_source)
+        self.assertNotIn("choc_install.ps1", module_source)
+        self.assertNotIn("install-powershell51", module_source)
+        self.assertNotIn("install-native-mscoree", module_source)
+        self.assertNotIn("install-dpx-helper", module_source)
+        self.assertLess(len(module_source.splitlines()), 325)
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('"core.chocolatey.assets"', pyproject)
         self.assertIn('"*.sh"', pyproject)
 
 
-
-
-
 class ChocolateyAssetContractTests(unittest.TestCase):
-    def test_all_step_assets_are_versioned_and_hashable(self):
+    def test_only_consumer_owned_assets_are_required(self):
         names = [
             "fetch-verified.sh",
             "failure-diagnostics.sh",
-            "bootstrap.sh",
+            "seed-cfw-runtime.sh",
+            "runtime-artifact.py",
             "verify-chocolatey.sh",
             "feature-policy.sh",
             "smoke-lifecycle.sh",
@@ -135,30 +99,57 @@ class ChocolateyAssetContractTests(unittest.TestCase):
                 self.assertTrue(load_asset(name).strip())
                 self.assertRegex(asset_sha256(name), r"^[0-9a-f]{64}$")
 
-        legacy = {
-            "install-mscoree.sh",
-            "install-dotnet481.sh",
-            "install-powershell-wrapper.sh",
-            "prepare-registry.sh",
-            "promote-chocolatey.sh",
-            "powershell-msi.sh",
-            "prepare-data.sh",
-            "upstream-bootstrap.sh",
-        }
+        module_source = (ROOT / "core/modules/chocolatey.py").read_text(encoding="utf-8")
         assets_dir = ROOT / "core/chocolatey/assets"
-        self.assertFalse(legacy & {path.name for path in assets_dir.glob("*.sh")})
+        for removed in (
+            "assembly-inventory.cs",
+            "assembly-inventory.exe",
+            "bootstrap.sh",
+            "finalize-cfw-runtime.sh",
+            "install-dpx-helper.sh",
+            "install-native-mscoree.sh",
+            "install-powershell51.sh",
+            "assembly_inventory.py",
+            "install-profile-fragments.sh",
+            "profile-20-chocolatey.ps1",
+            "profile-30-cfw-winetricks.ps1",
+            "profile-40-cfw-command-adapters.ps1",
+            "verify-powershell-layer.sh",
+        ):
+            self.assertNotIn(f'"{removed}"', module_source)
+            self.assertFalse((assets_dir / removed).exists(), removed)
+
+    def test_seed_asset_verifies_archive_evidence_and_prefix_outputs(self):
+        seed = load_asset("seed-cfw-runtime.sh")
+        helper = load_asset("runtime-artifact.py")
+        self.assertIn("CFW_RUNTIME_PROFILE_BASE64", seed)
+        self.assertIn("cfw.prepared-runtime-manifest/v1", helper)
+        self.assertIn("runtime archive does not match manifest", helper)
+        self.assertIn("runtime evidence does not match manifest", helper)
+        self.assertIn("runtime evidence status is not passed", helper)
+        self.assertIn("requiredProofs", helper)
+        self.assertIn("interfaces", helper)
+        self.assertNotIn('REQUIRED_CHECKS = {', helper)
+        self.assertIn("extract_prepared_prefix", helper)
+        self.assertNotIn("tar -xzf", seed)
+        self.assertIn("CFW_CHOCOLATEY_PREFIX_PATH", seed)
+        self.assertIn("CFW_CHOCOLATEY_WINDOWS_PATH", seed)
+        self.assertIn('ln -s / "$dosdevices/z:"', seed)
+        self.assertIn("ephemeral build prefix", seed)
+        self.assertIn(".cage-prefix-seeded", seed)
 
     def test_verified_fetch_uses_content_addressing_locking_and_atomic_promotion(self):
         helper = load_asset("fetch-verified.sh")
-
         self.assertIn("blobs/sha256", helper)
         self.assertIn("flock", helper)
         self.assertIn(".part", helper)
         self.assertIn("sha256sum", helper)
         self.assertIn("--connect-timeout", helper)
         self.assertIn("--max-time", helper)
-        self.assertIn("mv \"$part\" \"$blob\"", helper)
-        self.assertIn("rm -f \"$blob\"", helper)
+        self.assertIn("--silent", helper)
+        self.assertIn("--show-error", helper)
+        self.assertIn('mv "$part" "$blob"', helper)
+        self.assertIn('rm -f "$blob"', helper)
         self.assertIn("destination_actual", helper)
         self.assertIn("profile_lock", helper)
 
@@ -203,8 +194,6 @@ class ChocolateyAssetContractTests(unittest.TestCase):
             subprocess.run([str(runner)], env=environment, check=True)
             self.assertEqual(blob.read_bytes(), payload)
             self.assertEqual((root / "output.bin").read_bytes(), payload)
-
-
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # 0017. BlueBuild-style build modules
 
-Status: accepted / implemented
+Status: accepted / implemented; Chocolatey ownership amended by [ADR 0024](0024-cfw-prepared-runtime-provider.md)
 Date: 2026-07-02
 Owner: Cage technical direction
 
@@ -33,7 +33,7 @@ modules:
 
 Chocolatey is not a single installer step under Wine. The reliable path is PietJankbal's Chocolatey-for-wine release, which owns its own PowerShell/CoreCLR setup, Wine compatibility shims, Chocolatey bootstrap, and package install surface.
 
-Putting that chain behind `modules[].type: chocolatey` keeps recipes declarative and lets Cage own the setup/install logic. Cage also exposes Synchro's PowerShell wrapper as a separate `modules[].type: powershell-wrapper` capability, but `chocolatey` and `powershell-wrapper` are temporarily incompatible in the same recipe because both replace the same Wine PowerShell surface with different compatibility layers. Raw `install.kind: choco` remains only the lowered internal build-step representation.
+Putting that chain behind `modules[].type: chocolatey` keeps recipes declarative. ADR 0024 later moved compatibility setup, Synchro, PowerShell, and prefix construction fully into CFW. Cage now verifies and consumes that prepared runtime; raw `install.kind: choco` remains only the lowered internal build-step representation.
 
 ## Consequences
 

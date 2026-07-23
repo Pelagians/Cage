@@ -1,7 +1,7 @@
 """Pluggable runtime provider abstraction with runtime catalog binding."""
 from __future__ import annotations
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, replace
+from typing import Any, Protocol
 
 from core.manifest import ManifestError, RuntimeSpec
 from runtime.catalog import (
@@ -34,6 +34,7 @@ class RuntimeBinding:
     oci_image: str | None = None
     local_oci_image: str | None = None
     runtime_usable: bool | None = None
+    environment: dict[str, str] | None = None
 
     def to_dict(self):
         d = {k: v for k, v in {
@@ -58,6 +59,7 @@ class RuntimeBinding:
             "ociImage": self.oci_image,
             "localOciImage": self.local_oci_image,
             "runtimeUsable": self.runtime_usable,
+            "environment": self.environment,
         }.items() if v is not None}
         return d
 
@@ -149,6 +151,52 @@ def resolve_runtime(spec: RuntimeSpec) -> RuntimeBinding:
         oci_image=spec.image or entry.published_ref,
         local_oci_image=entry.local_ref,
         runtime_usable=entry.runtime_usable,
+    )
+
+
+def required_cfw_runtime_artifact(manifest) -> dict[str, Any] | None:
+    """Return one fully resolved, coherent CFW trust-root artifact."""
+    artifacts: list[dict[str, Any]] = []
+    identities: set[tuple[object, ...]] = set()
+    for module in manifest.modules:
+        if getattr(module, "type", None) != "chocolatey":
+            continue
+        resolver = getattr(module, "_runtime_artifact", None)
+        artifact = resolver() if callable(resolver) else None
+        if isinstance(artifact, dict):
+            normalized = dict(artifact)
+            artifacts.append(normalized)
+            identities.add((
+                normalized["id"],
+                normalized["manifestSha256"],
+                normalized["wineImage"],
+                tuple(normalized["wineVersions"]),
+                tuple(sorted(normalized["environment"].items())),
+            ))
+    if len(identities) > 1:
+        raise ManifestError("Chocolatey modules declare conflicting CFW prepared runtimes")
+    return artifacts[0] if artifacts else None
+
+
+def required_cfw_runtime_image(manifest) -> str | None:
+    """Return the producer image from one coherent CFW trust-root artifact."""
+    artifact = required_cfw_runtime_artifact(manifest)
+    return artifact["wineImage"] if artifact is not None else None
+
+
+def resolve_manifest_runtime(manifest) -> RuntimeBinding:
+    """Resolve a manifest runtime, honoring a CFW producer-image lock."""
+    binding = resolve_runtime(manifest.runtime)
+    artifact = required_cfw_runtime_artifact(manifest)
+    if artifact is None:
+        return binding
+    image = artifact["wineImage"]
+    return replace(
+        binding,
+        oci_image=image,
+        local_oci_image=None,
+        digest=image.rsplit("@sha256:", 1)[1],
+        environment=dict(artifact["environment"]),
     )
 
 
