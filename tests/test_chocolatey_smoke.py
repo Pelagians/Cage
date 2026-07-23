@@ -177,8 +177,14 @@ class ChocolateySmokePackageTests(unittest.TestCase):
         )
         self.assertLess(
             workflow.index("echo '--- wineboot ---'"),
+            workflow.index("echo '--- Chocolatey version log ---'"),
+        )
+        self.assertLess(
+            workflow.index("echo '--- Chocolatey version log ---'"),
             workflow.index("echo '--- CFW runtime manifest ---'"),
         )
+        self.assertIn('tail -30 "$bundle/logs/chocolatey-diagnostics/choco-version.log"', workflow)
+        self.assertIn('tail -40 "$bundle/logs/chocolatey-diagnostics/choco-live-process-tree.log"', workflow)
         self.assertNotIn("KB3AIK_EN.iso", workflow)
         self.assertNotIn("wmf-dpx-extract.log", workflow)
         self.assertNotIn("powershell-engine.json", workflow)

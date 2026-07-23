@@ -127,6 +127,10 @@ jobs:
               tail -120 /tmp/cage-chocolatey-smoke.log || true
               echo '--- wineboot ---'
               tail -120 "$bundle/logs/wineboot.log" 2>/dev/null || echo 'wineboot log unavailable'
+              echo '--- Chocolatey version log ---'
+              tail -30 "$bundle/logs/chocolatey-diagnostics/choco-version.log" 2>/dev/null || echo 'Chocolatey version log unavailable'
+              echo '--- Chocolatey live process snapshot ---'
+              tail -40 "$bundle/logs/chocolatey-diagnostics/choco-live-process-tree.log" 2>/dev/null || echo 'Chocolatey live process snapshot unavailable'
               echo '--- Chocolatey lifecycle ---'
               cat "$bundle/metadata/chocolatey-smoke.json" 2>/dev/null || echo 'lifecycle evidence unavailable'
               echo '--- Chocolatey readiness ---'
