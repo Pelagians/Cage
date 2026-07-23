@@ -171,6 +171,10 @@ class ChocolateySmokePackageTests(unittest.TestCase):
         self.assertIn("chocolatey-diagnostic.json", workflow)
         self.assertIn("chocolatey-feature-policy.json", workflow)
         self.assertIn("chocolatey-smoke.json", workflow)
+        self.assertLess(
+            workflow.index("echo '--- build tail ---'"),
+            workflow.index("echo '--- CFW runtime manifest ---'"),
+        )
         self.assertNotIn("KB3AIK_EN.iso", workflow)
         self.assertNotIn("wmf-dpx-extract.log", workflow)
         self.assertNotIn("powershell-engine.json", workflow)

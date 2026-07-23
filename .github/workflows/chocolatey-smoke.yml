@@ -120,18 +120,21 @@ jobs:
           fi
           if [ "$rc" -ne 0 ]; then
             {
-              echo '--- CFW runtime manifest ---'
-              cat "$bundle/metadata/cfw-runtime-manifest.json" 2>/dev/null || echo 'runtime manifest unavailable'
-              echo '--- CFW runtime evidence ---'
-              cat "$bundle/metadata/cfw-runtime.json" 2>/dev/null || echo 'runtime evidence unavailable'
+              # GitHub limits annotation messages to 4 KiB. Lead with the
+              # immediate failing boundary, then retain structured records in
+              # the uploaded artifact for complete postmortem evidence.
+              echo '--- build tail ---'
+              tail -120 /tmp/cage-chocolatey-smoke.log || true
+              echo '--- Chocolatey lifecycle ---'
+              cat "$bundle/metadata/chocolatey-smoke.json" 2>/dev/null || echo 'lifecycle evidence unavailable'
               echo '--- Chocolatey readiness ---'
               cat "$bundle/metadata/chocolatey-diagnostic.json" 2>/dev/null || echo 'readiness evidence unavailable'
               echo '--- Chocolatey feature policy ---'
               cat "$bundle/metadata/chocolatey-feature-policy.json" 2>/dev/null || echo 'feature evidence unavailable'
-              echo '--- Chocolatey lifecycle ---'
-              cat "$bundle/metadata/chocolatey-smoke.json" 2>/dev/null || echo 'lifecycle evidence unavailable'
-              echo '--- build tail ---'
-              tail -120 /tmp/cage-chocolatey-smoke.log || true
+              echo '--- CFW runtime manifest ---'
+              cat "$bundle/metadata/cfw-runtime-manifest.json" 2>/dev/null || echo 'runtime manifest unavailable'
+              echo '--- CFW runtime evidence ---'
+              cat "$bundle/metadata/cfw-runtime.json" 2>/dev/null || echo 'runtime evidence unavailable'
             } > /tmp/cage-chocolatey-summary.log
             summary="$(tail -300 /tmp/cage-chocolatey-summary.log)"
             summary="${summary//'%'/'%25'}"
