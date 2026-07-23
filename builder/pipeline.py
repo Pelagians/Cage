@@ -2,7 +2,8 @@
 
 Most module steps execute in declaration order after Wine initialization.
 ``prefix-seed`` steps are the one pipeline-owned exception: they materialize a
-prepared prefix foundation before ``wineboot`` and before any application module.
+producer-complete prefix foundation before application modules. Cage does not
+rerun ``wineboot`` against that producer-owned compatibility state.
 """
 from __future__ import annotations
 
@@ -263,27 +264,30 @@ def generate_build_script(
             '',
         ])
 
-    lines.extend([
-        'echo "[cage] Phase 1: Initializing Wine prefix"',
-        'wineboot_log="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/wineboot.log"',
-        'mkdir -p "$(dirname "$wineboot_log")"',
-        'set +e',
-        'if [ -f "$WINEPREFIX/.cage-prefix-seeded" ]; then',
-        '  timeout 300s wine wineboot -u > "$wineboot_log" 2>&1',
-        '  wineboot_rc="$?"',
-        'else',
-        '  timeout 300s wine wineboot --init > "$wineboot_log" 2>&1',
-        '  wineboot_rc="$?"',
-        'fi',
-        'set -e',
-        'sed "s/^/  /" "$wineboot_log" || true',
-        'if [ "$wineboot_rc" -ne 0 ]; then',
-        '  echo "[cage] ERROR: wineboot -u failed with exit code $wineboot_rc; see $wineboot_log" >&2',
-        '  exit "$wineboot_rc"',
-        'fi',
-        'echo "[cage]   Prefix initialized"',
-        '',
-    ])
+    if seed_script:
+        lines.extend([
+            'echo "[cage] Phase 1: Adopting prepared Wine prefix"',
+            'test -d "$WINEPREFIX/drive_c" || { echo "[cage] ERROR: prepared Wine prefix is missing drive_c" >&2; exit 69; }',
+            'echo "[cage]   Prepared prefix adopted; skipping producer-owned wineboot lifecycle"',
+            '',
+        ])
+    else:
+        lines.extend([
+            'echo "[cage] Phase 1: Initializing Wine prefix"',
+            'wineboot_log="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/wineboot.log"',
+            'mkdir -p "$(dirname "$wineboot_log")"',
+            'set +e',
+            'timeout 300s wine wineboot --init > "$wineboot_log" 2>&1',
+            'wineboot_rc="$?"',
+            'set -e',
+            'sed "s/^/  /" "$wineboot_log" || true',
+            'if [ "$wineboot_rc" -ne 0 ]; then',
+            '  echo "[cage] ERROR: wineboot --init failed with exit code $wineboot_rc; see $wineboot_log" >&2',
+            '  exit "$wineboot_rc"',
+            'fi',
+            'echo "[cage]   Prefix initialized"',
+            '',
+        ])
 
     lines.extend([
         'echo "[cage] Phase 2: Executing modules"',

@@ -53,16 +53,25 @@ class CanonicalPrefixScriptTests(unittest.TestCase):
         self.assertIn("mv \"$CAGE_PREFIX_PARTIAL\" \"$CAGE_PREFIX_FINAL\"", script)
         self.assertLess(script.index("Verifying launch executable"), script.index("mv \"$CAGE_PREFIX_PARTIAL\""))
 
-    def test_seeded_wineboot_records_its_failure_boundary(self):
+    def test_seeded_prefix_skips_producer_owned_wineboot_lifecycle(self):
         data = {
             **APP,
             "modules": [{"type": "chocolatey", "install": {"packages": []}}],
         }
         script = generate_build_script(Manifest.from_dict(data))
 
+        self.assertIn('Phase 1: Adopting prepared Wine prefix', script)
+        self.assertIn('Prepared prefix adopted; skipping producer-owned wineboot lifecycle', script)
+        self.assertNotIn('wine wineboot -u', script)
+        self.assertNotIn('wine wineboot --init', script)
+
+    def test_unseeded_prefix_runs_wineboot_init_and_retains_its_failure_boundary(self):
+        script = generate_build_script(Manifest.from_dict(APP))
+
         self.assertIn('wineboot_log="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/wineboot.log"', script)
         self.assertIn('wineboot_rc="$?"', script)
-        self.assertIn('wineboot -u failed with exit code $wineboot_rc', script)
+        self.assertIn('wine wineboot --init', script)
+        self.assertIn('wineboot --init failed with exit code $wineboot_rc', script)
 
     def test_launch_values_are_shell_quoted_in_generated_script(self):
         data = dict(APP)
