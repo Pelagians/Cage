@@ -160,7 +160,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn(".cage-prefix-seeded", seed)
 
     def test_unreleased_runtime_still_plans_but_real_build_fails_before_wineboot(self):
-        steps = _manifest(include_runtime=False).modules[0].build()
+        with patch("core.modules.chocolatey.DEFAULT_CFW_RUNTIME_ARTIFACT", None):
+            steps = _manifest(include_runtime=False).modules[0].build()
         seed = next(step for step in steps if step.kind == "prefix-seed")
         script = "\n".join(seed.commands)
         self.assertEqual(seed.description, "Require released CFW prepared prefix")
@@ -220,6 +221,30 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
 
         artifact = serialized["modules"][0]["install"]["runtimeArtifact"]
         self.assertEqual(artifact, _RUNTIME)
+
+    def test_released_default_runtime_profile_is_pinned_to_cfw_v101(self):
+        from core.modules.chocolatey import (
+            DEFAULT_CFW_RUNTIME_ARTIFACT,
+            DEFAULT_CFW_RUNTIME_PROFILE_ID,
+        )
+
+        self.assertIsNotNone(DEFAULT_CFW_RUNTIME_ARTIFACT)
+        assert DEFAULT_CFW_RUNTIME_ARTIFACT is not None
+        self.assertEqual(
+            DEFAULT_CFW_RUNTIME_PROFILE_ID,
+            "cfw-chocolatey-2.6.0-powershell-7.5.5-synchro-4.2.0",
+        )
+        self.assertEqual(DEFAULT_CFW_RUNTIME_ARTIFACT["id"], DEFAULT_CFW_RUNTIME_PROFILE_ID)
+        self.assertEqual(
+            DEFAULT_CFW_RUNTIME_ARTIFACT["manifestSha256"],
+            "189ede05627070826386ba5952cc6fe6046288db4ed9f8416c737d3fac6f4974",
+        )
+        self.assertEqual(
+            DEFAULT_CFW_RUNTIME_ARTIFACT["wineImage"],
+            "ghcr.io/pelagians/cage-wine@sha256:b8462dedb8f4dc6e48305af5a4485c29796e5d7c292272b8492fb763b6b59224",
+        )
+        for field in ("url", "evidenceUrl", "manifestUrl"):
+            self.assertIn("/cfw-runtime-v1.0.1/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
 
     def test_multiple_chocolatey_modules_are_rejected_before_duplicate_seeding(self):
         data = {

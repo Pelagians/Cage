@@ -1,0 +1,10 @@
+{
+  "id": "cfw-chocolatey-2.6.0-powershell-7.5.5-synchro-4.2.0",
+  "url": "https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/cfw-runtime-v1.0.1/cfw-runtime-prefix-wine-11.0.tar.gz",
+  "evidenceUrl": "https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/cfw-runtime-v1.0.1/cfw-runtime-evidence-wine-11.0.json",
+  "manifestUrl": "https://github.com/noahgiroux/Chocolatey-for-wine/releases/download/cfw-runtime-v1.0.1/cfw-runtime-manifest-wine-11.0.json",
+  "manifestSha256": "189ede05627070826386ba5952cc6fe6046288db4ed9f8416c737d3fac6f4974",
+  "wineImage": "ghcr.io/pelagians/cage-wine@sha256:b8462dedb8f4dc6e48305af5a4485c29796e5d7c292272b8492fb763b6b59224",
+  "wineVersions": ["wine-11.0"],
+  "environment": {"WINEDLLOVERRIDES": ""}
+}

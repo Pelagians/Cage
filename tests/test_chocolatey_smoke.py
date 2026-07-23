@@ -147,13 +147,13 @@ class ChocolateySmokePackageTests(unittest.TestCase):
         self.assertIn("initialStateClean", smoke)
         self.assertNotIn("community.chocolatey.org", smoke)
 
-    def test_bootstrap_only_fixture_plans_until_a_runtime_is_released(self):
+    def test_bootstrap_only_fixture_uses_the_released_default_runtime(self):
         manifest = load_manifest(ROOT / "tests/fixtures/chocolatey-bootstrap-smoke.cage.yaml")
         steps = manifest.modules[0].build()
         descriptions = [step.description for step in steps]
 
         self.assertEqual(getattr(manifest.modules[0], "install"), {"packages": []})
-        self.assertIn("Require released CFW prepared prefix", descriptions)
+        self.assertIn("Seed CFW prepared prefix", descriptions)
         self.assertIn("Prove Chocolatey local package lifecycle", descriptions)
         self.assertFalse(any(name.startswith("Install Chocolatey packages:") for name in descriptions))
 

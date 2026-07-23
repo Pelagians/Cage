@@ -23,8 +23,9 @@ _WINE_IMAGE_RE = re.compile(r"^ghcr\.io/pelagians/cage-wine@sha256:[0-9a-f]{64}$
 _RUNTIME_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _WINE_VERSION_RE = re.compile(r"^wine-[0-9]+(?:\.[0-9]+){1,2}$")
 _UNSAFE_SOURCE_RE = re.compile(r"[\x00-\x1f\x7f$`;&|<>]")
-DEFAULT_CFW_RUNTIME_PROFILE_ID = "cfw-runtime-v1"
-DEFAULT_CFW_RUNTIME_ARTIFACT: dict[str, Any] | None = None
+_DEFAULT_CFW_RUNTIME_ASSET = "cfw-runtime-v1.0.1-wine-11.0.json"
+DEFAULT_CFW_RUNTIME_ARTIFACT: dict[str, Any] = json.loads(load_asset(_DEFAULT_CFW_RUNTIME_ASSET))
+DEFAULT_CFW_RUNTIME_PROFILE_ID = DEFAULT_CFW_RUNTIME_ARTIFACT["id"]
 CFW_RUNTIME_PROVIDER = "cfw-chocolatey-runtime"
 
 _FAILURE_DIAGNOSTIC_ASSETS = {

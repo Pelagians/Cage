@@ -222,12 +222,13 @@ class BundleInspectionTests(unittest.TestCase):
             "runtime": {"provider": "wine", "version": "11.0"},
             "modules": [{"type": "chocolatey", "install": {"packages": []}}],
         }
-        for dry_run, expected_valid in ((True, True), (False, False)):
-            with self.subTest(dry_run=dry_run), tempfile.TemporaryDirectory() as tmp:
-                bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=dry_run)
-                result = verify_bundle(bundle)
-                self.assertEqual(result["valid"], expected_valid)
-                self.assertFalse(result["runnable"])
+        with patch("core.modules.chocolatey.DEFAULT_CFW_RUNTIME_ARTIFACT", None):
+            for dry_run, expected_valid in ((True, True), (False, False)):
+                with self.subTest(dry_run=dry_run), tempfile.TemporaryDirectory() as tmp:
+                    bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=dry_run)
+                    result = verify_bundle(bundle)
+                    self.assertEqual(result["valid"], expected_valid)
+                    self.assertFalse(result["runnable"])
 
     def test_verify_bundle_rejects_missing_graph(self):
         with tempfile.TemporaryDirectory() as tmp:
