@@ -1,10 +1,14 @@
 schemaVersion: cage.app/v0
-name: pwschoco
-version: "1.0.0"
+name: 7zip
+version: "0.1.0"
 
 runtime:
   provider: wine
-  version: latest
+  version: "11.0"
+  network: none
+
+build:
+  network: bridge
 
 modules:
   - type: chocolatey
@@ -12,7 +16,5 @@ modules:
       packages:
         - 7zip.install
 
-# 7-Zip File Manager works great under Wine (native Win32 app)
 launch:
   entrypoint: C:/Program Files/7-Zip/7zFM.exe
-

@@ -1,5 +1,12 @@
 # Cage Documentation
 
+## Public Chocolatey recipes
+
+The public Chocolatey examples use the built-in **CFW v1.0.2** prepared runtime
+with **Wine 11**. CFW owns the compatibility prefix and Wine identity, so a
+CFW-backed recipe must not declare `runtime.runner` or a Cage `compatibility` block. See [Notepad++ Chocolatey Recipe](notepadplusplus-chocolatey.md) and
+`recipes/7zip.cage.yaml` for the supported examples.
+
 ## Quick Start
 
 - [README](../README.md) - Installation and usage

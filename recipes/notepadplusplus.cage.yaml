@@ -4,7 +4,7 @@ version: "0.1.0"
 
 runtime:
   provider: wine
-  version: latest
+  version: "11.0"
   network: none
 
 build:
@@ -15,12 +15,6 @@ modules:
     install:
       packages:
         - notepadplusplus
-
-compatibility:
-  arch: win64
-  windowsVersion: win10
-  graphics:
-    backend: wined3d
 
 launch:
   entrypoint: C:/Program Files/Notepad++/notepad++.exe
