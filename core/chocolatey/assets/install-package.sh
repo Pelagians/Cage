@@ -36,5 +36,24 @@ if [ "$policy_status" != "passed" ]; then
   exit 70
 fi
 echo "[cage] Installing Chocolatey packages: {{PACKAGE_ARGS}}"
+set +e
 timeout "${CAGE_CHOCOLATEY_INSTALL_TIMEOUT:-1800s}" "${choco_launcher[@]}" install \
   {{PACKAGE_ARGS}} -y --use-system-powershell{{SOURCE_ARG}}
+install_rc="$?"
+timeout "${CAGE_CHOCOLATEY_SETTLE_TIMEOUT:-120s}" wineserver -w
+settle_rc="$?"
+lib_dir="$(dirname "$choco_exe")/../lib"
+evidence_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/metadata"
+helper_path="$(mktemp)"
+printf '%s' '{{PACKAGE_EVIDENCE_HELPER_BASE64}}' | base64 -d > "$helper_path"
+python3 "$helper_path" --lib "$lib_dir" --output "$evidence_dir/chocolatey-package-evidence.json" \
+  --requested '{{REQUESTED_PACKAGES_JSON}}' --install-rc "$install_rc" --settle-rc "$settle_rc"
+query_rc="$?"
+rm -f "$helper_path"
+if [ "$install_rc" -ne 0 ]; then
+  exit "$install_rc"
+fi
+if [ "$settle_rc" -ne 0 ]; then
+  exit "$settle_rc"
+fi
+exit "$query_rc"

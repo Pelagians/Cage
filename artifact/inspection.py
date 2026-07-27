@@ -482,6 +482,55 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
         error="CFW runtime metadata must match one serialized producer artifact image, digest, Wine version, and environment",
     )
 
+    requested_packages: list[str] = []
+    for module in manifest.get("modules", []):
+        if isinstance(module, dict) and module.get("type") == "chocolatey":
+            install = module.get("install")
+            packages = install.get("packages") if isinstance(install, dict) else None
+            if isinstance(packages, list) and all(isinstance(package, str) for package in packages):
+                requested_packages.extend(packages)
+    requires_package_evidence = bool(requested_packages) and not (
+        provenance.get("dryRun") is True and status.get("state") == "planned"
+    )
+    evidence_path = bundle / "metadata" / "chocolatey-package-evidence.json"
+    evidence_error = None
+    evidence: dict[str, Any] = {}
+    if requires_package_evidence:
+        try:
+            evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            evidence_error = "missing" if isinstance(exc, FileNotFoundError) else str(exc)
+    evidence_requested = evidence.get("requested")
+    evidence_ok = not requires_package_evidence
+    if requires_package_evidence:
+        evidence_ok = (
+            evidence_error is None
+            and evidence.get("schemaVersion") == "cage.chocolatey-package-evidence/v0"
+            and evidence.get("status") == "passed"
+            and evidence.get("checks") == {"requestedPackages": True}
+            and evidence.get("returnCodes") == {"install": 0, "settle": 0, "query": 0}
+            and isinstance(evidence_requested, list)
+            and [item.get("id") for item in evidence_requested] == requested_packages
+            and all(
+                isinstance(item, dict)
+                and item.get("observed") is True
+                and isinstance(item.get("version"), str)
+                and bool(item["version"])
+                for item in evidence_requested
+            )
+        )
+    add_check(
+        "chocolatey-package-evidence",
+        evidence_ok,
+        "requested Chocolatey packages have exact installed-version evidence" if evidence_ok and requires_package_evidence
+        else "Chocolatey package evidence is not required" if not requires_package_evidence
+        else "requested Chocolatey package evidence is missing, malformed, failed, or mismatched",
+        details={"path": "metadata/chocolatey-package-evidence.json", "requested": requested_packages,
+                 "error": evidence_error, "evidence": evidence if evidence else None},
+        error="metadata/chocolatey-package-evidence.json must prove every requested Chocolatey package and version"
+        if requires_package_evidence else None,
+    )
+
     manifest_runtime = manifest.get("runtime") if isinstance(manifest.get("runtime"), dict) else {}
     manifest_network = manifest_runtime["network"] if "network" in manifest_runtime else "none"
     runner_network = graph_runner["network"] if "network" in graph_runner else "none"

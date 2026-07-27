@@ -91,6 +91,45 @@ class CanonicalPrefixScriptTests(unittest.TestCase):
 
 
 class PrefixRunnabilityTests(unittest.TestCase):
+    def test_requested_chocolatey_packages_require_valid_evidence(self):
+        data = {
+            **APP,
+            "modules": [{"type": "chocolatey", "install": {"packages": ["7zip"]}}],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=True)
+            status_path = bundle / "metadata/status.json"
+            status = json.loads(status_path.read_text(encoding="utf-8"))
+            status["state"] = "build-passed"
+            status_path.write_text(json.dumps(status), encoding="utf-8")
+            result = verify_bundle(bundle)
+        check = next(check for check in result["checks"] if check["id"] == "chocolatey-package-evidence")
+        self.assertFalse(check["ok"])
+        self.assertIn("missing", check["message"])
+
+    def test_package_free_chocolatey_bundle_does_not_require_evidence(self):
+        data = {**APP, "modules": [{"type": "chocolatey", "install": {"packages": []}}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=True)
+            result = verify_bundle(bundle)
+        check = next(check for check in result["checks"] if check["id"] == "chocolatey-package-evidence")
+        self.assertTrue(check["ok"])
+
+    def test_valid_requested_chocolatey_evidence_is_accepted(self):
+        data = {**APP, "modules": [{"type": "chocolatey", "install": {"packages": ["7zip"]}}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=True)
+            (bundle / "metadata/chocolatey-package-evidence.json").write_text(json.dumps({
+                "schemaVersion": "cage.chocolatey-package-evidence/v0",
+                "status": "passed",
+                "requested": [{"id": "7zip", "observed": True, "version": "24.09"}],
+                "checks": {"requestedPackages": True},
+                "returnCodes": {"install": 0, "settle": 0, "query": 0},
+            }), encoding="utf-8")
+            result = verify_bundle(bundle)
+        check = next(check for check in result["checks"] if check["id"] == "chocolatey-package-evidence")
+        self.assertTrue(check["ok"])
+
     def test_placeholder_prefix_cannot_be_marked_runnable(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = create_bundle(Manifest.from_dict(APP), Path(tmp), dry_run=True)

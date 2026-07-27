@@ -1,7 +1,7 @@
 # Cage Production Hardening Roadmap
 
-Status: partially implemented — runtime network isolation implemented; deterministic fork lifecycle validation in progress
-Date: 2026-07-02
+Status: partially implemented — runtime network isolation, immutable CFW v1.0.2/Wine 11 runtime publication, and Cage recipe pinning implemented; requested-package evidence and public-package runtime proof remain active
+Date: 2026-07-27
 
 ## Objective
 
@@ -59,7 +59,7 @@ The manifest field captures *intent*; the CLI flag allows the operator to *overr
 
 ### Status
 
-Architecture revised in [ADR 0024](decisions/0024-cfw-prepared-runtime-provider.md). CFW owns Windows/Wine compatibility construction and must publish a passing immutable prepared-prefix release before Cage enables its consumer lifecycle.
+Architecture revised in [ADR 0024](decisions/0024-cfw-prepared-runtime-provider.md). CFW owns Windows/Wine compatibility construction and has published the immutable v1.0.2 prepared-prefix release for Wine 11. Cage now consumes that pinned runtime; requested-package evidence and public-package runtime proof are the remaining active work.
 
 ### Accepted design: `modules[].type: chocolatey`
 
@@ -98,12 +98,13 @@ Cage does not reconstruct CLR, GAC, PowerShell, Synchro, Chocolatey bootstrap, p
 
 ### Acceptance criteria
 
-- A real CFW Wine 11 producer run passes every required behavioral proof.
-- CFW publishes immutable archive, evidence, manifest, and checksum assets.
-- Cage pins the detached manifest digest and exact producer image.
+- CFW publishes immutable archive, evidence, manifest, and checksum assets for the v1.0.2/Wine 11 runtime. **Implemented.**
+- Cage pins the detached manifest digest, exact producer image, and public recipe runtime selection. **Implemented.**
+- Requested-package evidence and public-package runtime proof are captured against the exact released runtime. **Remaining active work.**
+- Live Docker proof is not claimed as passed here; acceptance requires recorded runtime evidence from the public-package execution path.
 - Unsafe profile values and unsafe archive members are rejected before prefix replacement.
 - Missing producer assets fail the workflow rather than yielding a green skipped lifecycle.
-- Cage’s package lifecycle and requested package install pass against the exact released runtime.
+- Cage’s package lifecycle and requested package install pass against the exact released runtime, with evidence attached to the public-package proof. **Remaining active work.**
 
 ### Parked work
 
@@ -113,7 +114,7 @@ Cage does not reconstruct CLR, GAC, PowerShell, Synchro, Chocolatey bootstrap, p
 
 ## Theme 3: End-to-End Production Architecture
 
-Once Themes 1 and 2 are complete, Cage's architecture matches the Gemini-described model:
+Once the remaining Theme 2 evidence and public-package runtime proof are complete, Cage's architecture matches the Gemini-described model:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -149,7 +150,7 @@ Once Themes 1 and 2 are complete, Cage's architecture matches the Gemini-describ
 | Order | Theme | Effort | Dependencies | Delivers |
 |---|---|---|---|---|
 | 1 | Runtime `--net none` default | Small (1–2 files + tests) | None | Implemented — immediate security hardening |
-| 2 | Deterministic Chocolatey MVP path | Medium/large (CFW producer + verified consumer + tests) | ADR 0024 | In progress — static producer/consumer boundaries exist; immutable Wine 11 release and non-skipped lifecycle remain |
+| 2 | Deterministic Chocolatey MVP path | Medium/large (CFW producer + verified consumer + tests) | ADR 0024 | Runtime foundation implemented — immutable CFW v1.0.2/Wine 11 publication and Cage recipe pinning are complete; requested-package evidence and public-package runtime proof remain active (without claiming live Docker proof passed) |
 | 3 | Network escape hatch (manifest field + CLI flag) | Small (manifest + launcher + kube) | Theme 1 (parallel ok) | Implemented — overridable isolation |
 | 4 | External module registry | Medium (module.yaml resolver) | Built-in Chocolatey module proves the pattern | Proposed — cleaner abstraction |
 | 5 | Additional prepared-runtime producers | Medium (producer contract + CI + immutable release) | Theme 2 | Parked — only after Wine 11 CFW proof |

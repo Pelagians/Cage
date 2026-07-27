@@ -190,7 +190,6 @@ class ChocolateyModule(ModuleBase):
         self.validate()
         packages = self._packages()
         runtime = self._runtime_artifact()
-
         values = {
             "PACKAGE_ARGS": " ".join(shlex.quote(package) for package in packages),
             "SOURCE_ARG": (
@@ -203,6 +202,8 @@ class ChocolateyModule(ModuleBase):
             "POWERSHELL_HOST_FEATURE": "powershellHost",
             "POWERSHELL_HOST_POLICY": "disabled",
             "ALLOW_GLOBAL_CONFIRMATION_POLICY": "disabled",
+            "REQUESTED_PACKAGES_JSON": json.dumps(packages, separators=(",", ":")),
+            "PACKAGE_EVIDENCE_HELPER_BASE64": base64.b64encode(load_asset_bytes("package-evidence.py")).decode("ascii"),
         }
         asset_names = (
             "fetch-verified.sh",
@@ -213,10 +214,10 @@ class ChocolateyModule(ModuleBase):
             "feature-policy.sh",
             "smoke-lifecycle.sh",
             "install-package.sh",
+            "package-evidence.py",
             "cage-chocolatey-smoke.0.1.0.nupkg",
         )
         asset_hashes = {name: asset_sha256(name) for name in asset_names}
-
         runtime_id = runtime["id"] if runtime else DEFAULT_CFW_RUNTIME_PROFILE_ID
         common_metadata: dict[str, Any] = {
             "runtimeId": runtime_id,
@@ -270,7 +271,6 @@ class ChocolateyModule(ModuleBase):
                     "runtimeManifest": "metadata/cfw-runtime-manifest.json",
                 },
             ))
-
         failure_helper = load_asset("failure-diagnostics.sh").rstrip()
         for asset_name, description, kind, timeout in _POST_SEED_STEP_SPECS:
             if asset_name == "install-package.sh" and not packages:
@@ -289,6 +289,8 @@ class ChocolateyModule(ModuleBase):
                 metadata["featurePolicyEvidence"] = "metadata/chocolatey-feature-policy.json"
             elif asset_name == "smoke-lifecycle.sh":
                 metadata["smokeEvidence"] = "metadata/chocolatey-smoke.json"
+            elif asset_name == "install-package.sh":
+                metadata.update({"packageEvidence": "metadata/chocolatey-package-evidence.json", "requestedPackages": packages})
             steps.append(BuildStep(
                 commands=[script],
                 description=(

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import json
 import runpy
 import shutil
 import subprocess
@@ -253,6 +254,30 @@ class ChocolateyDiagnosticTierTests(unittest.TestCase):
         self.assertIn('"${choco_launcher[@]}" install', package)
         self.assertIn("{{PACKAGE_ARGS}} -y --use-system-powershell", package)
         self.assertIn("chocolatey-feature-policy.json", package)
+
+    def test_package_evidence_helper_observes_exact_nuspec_versions(self):
+        helper = ROOT / "core/chocolatey/assets/package-evidence.py"
+        with tempfile.TemporaryDirectory() as temporary:
+            lib = Path(temporary) / "lib"
+            package_dir = lib / "7zip"
+            package_dir.mkdir(parents=True)
+            (package_dir / "7zip.nuspec").write_text(
+                "<package><metadata><id>7zip</id><version>24.09</version></metadata></package>",
+                encoding="utf-8",
+            )
+            output = Path(temporary) / "evidence.json"
+            result = subprocess.run(
+                [sys.executable, str(helper), "--lib", str(lib), "--output", str(output),
+                 "--requested", json.dumps(["7zip"]), "--install-rc", "0", "--settle-rc", "0"],
+                check=False, capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            evidence = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(evidence["schemaVersion"], "cage.chocolatey-package-evidence/v0")
+        self.assertEqual(evidence["status"], "passed")
+        self.assertEqual(evidence["requested"], [{"id": "7zip", "observed": True, "version": "24.09"}])
+        self.assertEqual(evidence["checks"], {"requestedPackages": True})
+        self.assertEqual(evidence["returnCodes"], {"install": 0, "settle": 0, "query": 0})
 
 
 if __name__ == "__main__":

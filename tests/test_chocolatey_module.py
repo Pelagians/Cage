@@ -285,6 +285,21 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("cage_chocolatey_collect_failure_diagnostics", diagnostic)
         self.assertIn("choco_diag_status", package)
 
+    def test_package_install_embeds_requested_package_evidence_helper(self):
+        steps = _manifest(["7zip", "notepadplusplus"]).modules[0].build()
+        package_step = next(step for step in steps if step.description == "Install Chocolatey packages: 7zip notepadplusplus")
+        package = "\\n".join(package_step.commands)
+        self.assertIn("IyEvdXNyL2Jpbi9lbnYgcHl0aG9uMwo", package)
+        self.assertIn("chocolatey-package-evidence.json", package)
+        self.assertIn('install_rc="$?"', package)
+        self.assertIn("settle_rc", package)
+        self.assertIn("query_rc", package)
+
+    def test_package_free_install_does_not_embed_package_evidence(self):
+        steps = _manifest([]).modules[0].build()
+        script = _all_commands(steps)
+        self.assertNotIn("chocolatey-package-evidence.json", script)
+
     def test_runtime_artifact_requires_producer_declared_environment(self):
         runtime = dict(_RUNTIME)
         runtime.pop("environment")
