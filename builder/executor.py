@@ -426,10 +426,10 @@ def _write_host_chocolatey_package_evidence(manifest: Manifest, bundle_path: Pat
         output.parent.resolve().relative_to(bundle_root)
     except (OSError, ValueError):
         return False
-    if not all(_safe_package_tree(lib, package) for package in packages):
-        return False
     receipts = {package: _resolve_public_chocolatey_package_receipt(source_url, package) for package in packages}
     if any(receipt is None for receipt in receipts.values()):
+        return False
+    if not all(_safe_package_tree(lib, package) for package in packages):
         return False
     with tempfile.TemporaryDirectory(prefix="cage-package-evidence-") as temporary:
         helper = Path(temporary) / "package-evidence.py"
