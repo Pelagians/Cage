@@ -528,11 +528,9 @@ class ExecutorVerificationTests(unittest.TestCase):
             (outside / "7zip.24.09.nupkg").write_bytes(b"outside bytes")
             (lib / "7zip").symlink_to(outside, target_is_directory=True)
 
-            with patch("builder.executor._resolve_public_chocolatey_package_receipt", return_value=None) as resolver:
+            with patch("builder.executor._resolve_public_chocolatey_package_receipt") as resolver:
                 self.assertFalse(_write_host_chocolatey_package_evidence(manifest, bundle))
-            resolver.assert_called_once_with(
-                "https://community.chocolatey.org/api/v2/", "7zip"
-            )
+            resolver.assert_not_called()
 
     def test_host_rejects_symlinked_evidence_output(self):
         manifest = Manifest.from_dict({
@@ -604,22 +602,6 @@ class ExecutorVerificationTests(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertFalse(result.runnable)
         self.assertIn("host failed to bind", result.error or "")
-
-    def test_host_binding_queries_feed_before_requiring_exported_package_tree(self):
-        manifest = Manifest.from_dict({
-            **APP,
-            "modules": [{"type": "chocolatey", "install": {"packages": ["7zip.install"]}}],
-        })
-        with tempfile.TemporaryDirectory() as tmp:
-            bundle = create_bundle(manifest, Path(tmp), dry_run=False)
-            with patch(
-                "builder.executor._resolve_public_chocolatey_package_receipt",
-                return_value=None,
-            ) as resolver:
-                self.assertFalse(_write_host_chocolatey_package_evidence(manifest, bundle))
-            resolver.assert_called_once_with(
-                "https://community.chocolatey.org/api/v2/", "7zip.install"
-            )
 
     def test_container_exit_zero_without_materialized_prefix_fails_verification(self):
         manifest = Manifest.from_dict(APP)

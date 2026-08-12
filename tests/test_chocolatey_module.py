@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from core.manifest import Manifest
+from builder.pipeline import generate_build_script
 
 _RUNTIME = {
     "id": "cfw-runtime-test",
@@ -310,6 +311,20 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn('install_rc="$?"', package)
         self.assertIn("settle_rc", package)
         self.assertIn("query_rc", package)
+        self.assertFalse(package.rstrip().endswith('exit "$query_rc"'))
+        self.assertIn('if [ "$query_rc" -ne 0 ]; then', package)
+        self.assertIn("Chocolatey package install and evidence completed", package)
+
+    def test_successful_package_install_does_not_exit_before_bundle_export(self):
+        script = generate_build_script(_manifest(["7zip"]))
+        completion = 'echo "[cage] Chocolatey package install and evidence completed"'
+        export = 'echo "[cage] Phase 4: Exporting bundle"'
+
+        self.assertIn(completion, script)
+        self.assertIn(export, script)
+        self.assertLess(script.index(completion), script.index(export))
+        package_section = script[script.index('# Install Chocolatey packages: 7zip'):script.index(export)]
+        self.assertFalse(package_section.rstrip().endswith('exit "$query_rc"'))
 
     def test_package_free_install_does_not_embed_package_evidence(self):
         steps = _manifest([]).modules[0].build()

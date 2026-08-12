@@ -57,4 +57,8 @@ fi
 if [ "$settle_rc" -ne 0 ]; then
   exit "$settle_rc"
 fi
-exit "$query_rc"
+if [ "$query_rc" -ne 0 ]; then
+  exit "$query_rc"
+fi
+set -e
+echo "[cage] Chocolatey package install and evidence completed"

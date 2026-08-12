@@ -56,7 +56,15 @@ def analyze_failure_path(path: Path | str, *, write: bool = False) -> dict[str, 
         raise FileNotFoundError(f"failure analysis path does not exist: {root}")
     bundle_root = _bundle_root(root)
     log_files = _collect_log_files(root)
-    execution_return_code = _execution_result_exit_code(bundle_root)
+    execution_result = _read_execution_result(bundle_root)
+    execution_return_code = _execution_result_exit_code(execution_result)
+    execution_verification_failed = bool(
+        execution_result
+        and execution_result.get("success") is False
+        and execution_return_code == 0
+        and isinstance(execution_result.get("error"), str)
+        and execution_result["error"].strip()
+    )
     chocolatey_diagnostic = _read_chocolatey_diagnostic(bundle_root)
     return_codes: list[int] = []
     rollback_packages: list[str] = []
@@ -108,6 +116,7 @@ def analyze_failure_path(path: Path | str, *, write: bool = False) -> dict[str, 
         runtime_transport_failed
         or runtime_integrity_failed
         or chocolatey_failed
+        or execution_verification_failed
         or first_failed_package
         or failure_windows
         or (top_level_return_code is not None and top_level_return_code != 0)
@@ -119,6 +128,8 @@ def analyze_failure_path(path: Path | str, *, write: bool = False) -> dict[str, 
         classification = "runtime-artifact-transport-failed"
     elif chocolatey_failed:
         classification = "chocolatey-diagnostic-failed"
+    elif execution_verification_failed:
+        classification = "build-verification-failed"
     else:
         classification = "windows-installer-failed" if failure_detected else "no-failure-detected"
 
@@ -243,7 +254,7 @@ def _candidate_log_roots(root: Path, *, safe_root: Path | None = None) -> Iterab
     yield root
 
 
-def _execution_result_exit_code(bundle: Path | None) -> int | None:
+def _read_execution_result(bundle: Path | None) -> dict[str, Any] | None:
     if not bundle:
         return None
     safe_root = bundle.resolve()
@@ -256,6 +267,12 @@ def _execution_result_exit_code(bundle: Path | None) -> int | None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _execution_result_exit_code(payload: dict[str, Any] | None) -> int | None:
+    if not payload:
         return None
     value = payload.get("exitCode")
     if isinstance(value, int):

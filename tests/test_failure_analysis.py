@@ -151,6 +151,33 @@ class FailureAnalysisTests(unittest.TestCase):
             self.assertEqual(result["topLevelReturnCode"], 1603)
             self.assertEqual(result["classification"], "windows-installer-failed")
 
+    def test_zero_exit_verification_failure_is_detected_from_execution_result(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = Path(tmp) / "verification-failure-1.0.0"
+            metadata = bundle / "metadata"
+            logs = bundle / "logs"
+            metadata.mkdir(parents=True)
+            logs.mkdir()
+            (logs / "build.log").write_text(
+                "[cage] Chocolatey package install and evidence completed\n",
+                encoding="utf-8",
+            )
+            (metadata / "execution-result.json").write_text(
+                json.dumps({
+                    "success": False,
+                    "runnable": False,
+                    "exitCode": 0,
+                    "error": "materialized prefix verification failed",
+                }),
+                encoding="utf-8",
+            )
+
+            result = analyze_failure_path(bundle, write=False)
+
+        self.assertTrue(result["failureDetected"])
+        self.assertEqual(result["topLevelReturnCode"], 0)
+        self.assertEqual(result["classification"], "build-verification-failed")
+
     def test_runtime_asset_transport_failure_is_not_mislabeled_as_windows_installer(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
