@@ -8,7 +8,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import os, queue, shutil, subprocess, sys, tempfile, threading, time
+import os, queue, re, shutil, subprocess, sys, tempfile, threading, time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -263,7 +263,14 @@ def _prepare_module_cache(cache_dir: Path | str | None, *, engine: str) -> dict[
     }
 
 
-def _resolve_public_chocolatey_package_receipt(source_url: str, package_id: str) -> dict[str, str] | None:
+_CHOCOLATEY_VERSION_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._+-]{0,127}$")
+_ATOM_NS = "http://www.w3.org/2005/Atom"
+_ODATA_DATA_NS = "http://schemas.microsoft.com/ado/2007/08/dataservices"
+
+
+def _resolve_public_chocolatey_package_receipt(
+    source_url: str, package_id: str, version: str | None = None
+) -> dict[str, str] | None:
     if source_url != "https://community.chocolatey.org/api/v2/":
         return None
 
@@ -282,45 +289,73 @@ def _resolve_public_chocolatey_package_receipt(source_url: str, package_id: str)
         except (OSError, ET.ParseError, ValueError):
             return None
 
-    primary = fetch("/Packages()", {
-        "$filter": f"Id eq '{package_id}' and IsLatestVersion",
-        "$select": "Id,Version,IsLatestVersion,PackageHash,PackageHashAlgorithm",
-    })
+    if version is not None:
+        if _CHOCOLATEY_VERSION_RE.fullmatch(version) is None:
+            return None
+        primary = fetch(
+            f"/Packages(Id='{package_id}',Version='{version}')", {}
+        )
+    else:
+        primary = fetch("/Packages()", {
+            "$filter": f"Id eq '{package_id}' and IsLatestVersion",
+            "$select": "Id,Version,IsLatestVersion,PackageHash,PackageHashAlgorithm",
+        })
     if primary is None:
         return None
-    if primary.tag != "{http://www.w3.org/2005/Atom}feed":
-        return None
-    primary_entries = [
-        node for node in primary
-        if node.tag.rsplit("}", 1)[-1] == "entry"
-    ]
-    primary_matches = _matching_feed_entries(primary, package_id)
-    if primary_entries:
-        if len(primary_matches) != len(primary_entries):
+    if version is not None:
+        exact_title = _feed_exact_value(primary, "title", namespace=_ATOM_NS)
+        exact_version = _feed_exact_value(primary, "Version", namespace=_ODATA_DATA_NS)
+        if (
+            primary.tag != f"{{{_ATOM_NS}}}entry"
+            or exact_title is None
+            or exact_title.casefold() != package_id.casefold()
+            or exact_version != version
+        ):
             return None
-        entries = [
-            entry for entry in primary_matches
-            if _feed_value(entry, "IsLatestVersion").casefold() == "true"
-        ]
-        if len(entries) != 1:
-            return None
+        entries = [primary]
     else:
-        root = fetch("/Search()", {
-            "searchTerm": f"'{package_id}'",
-            "targetFramework": "''",
-            "includePrerelease": "false",
-            "$skip": "0",
-            "$top": "50",
-        })
-        entries = _matching_feed_entries(root, package_id) if root is not None else []
-        entries = [entry for entry in entries if _feed_value(entry, "IsLatestVersion").casefold() == "true"]
+        if primary.tag != "{http://www.w3.org/2005/Atom}feed":
+            return None
+        primary_entries = [
+            node for node in primary
+            if node.tag.rsplit("}", 1)[-1] == "entry"
+        ]
+        primary_matches = _matching_feed_entries(primary, package_id)
+        if primary_entries:
+            if len(primary_matches) != len(primary_entries):
+                return None
+            entries = [
+                entry for entry in primary_matches
+                if _feed_value(entry, "IsLatestVersion").casefold() == "true"
+            ]
+            if len(entries) != 1:
+                return None
+        else:
+            root = fetch("/Search()", {
+                "searchTerm": f"'{package_id}'",
+                "targetFramework": "''",
+                "includePrerelease": "false",
+                "$skip": "0",
+                "$top": "50",
+            })
+            entries = _matching_feed_entries(root, package_id) if root is not None else []
+            entries = [entry for entry in entries if _feed_value(entry, "IsLatestVersion").casefold() == "true"]
     if len(entries) != 1:
         return None
     node = entries[0]
-    values = {
-        name: _feed_value(node, name)
-        for name in ("Version", "PackageHash", "PackageHashAlgorithm")
-    }
+    if version is not None:
+        authority_fields = {
+            name: _feed_exact_value(node, name, namespace=_ODATA_DATA_NS)
+            for name in ("Version", "PackageHash", "PackageHashAlgorithm")
+        }
+        if any(value is None for value in authority_fields.values()):
+            return None
+        values = {name: value or "" for name, value in authority_fields.items()}
+    else:
+        values = {
+            name: _feed_value(node, name, namespace=_ODATA_DATA_NS)
+            for name in ("Version", "PackageHash", "PackageHashAlgorithm")
+        }
     if values["PackageHashAlgorithm"].upper() != "SHA512" or not values["Version"]:
         return None
     try:
@@ -336,9 +371,28 @@ def _resolve_public_chocolatey_package_receipt(source_url: str, package_id: str)
     }
 
 
-def _feed_value(node: ET.Element, name: str) -> str:
+def _feed_exact_value(node: ET.Element, name: str, *, namespace: str) -> str | None:
+    expected = f"{{{namespace}}}{name}"
+    same_local_name = [
+        child
+        for child in node.iter()
+        if child.tag.rsplit("}", 1)[-1] == name
+    ]
+    if len(same_local_name) != 1 or same_local_name[0].tag != expected:
+        return None
+    text = same_local_name[0].text
+    return text.strip() if text else ""
+
+
+def _feed_value(node: ET.Element, name: str, *, namespace: str | None = None) -> str:
+    expected = f"{{{namespace}}}{name}" if namespace is not None else None
     return next(
-        (child.text.strip() for child in node.iter() if child.tag.rsplit("}", 1)[-1] == name and child.text),
+        (
+            child.text.strip()
+            for child in node.iter()
+            if child.text
+            and (child.tag == expected if expected is not None else child.tag.rsplit("}", 1)[-1] == name)
+        ),
         "",
     )
 
@@ -428,9 +482,6 @@ def _write_host_chocolatey_package_evidence(manifest: Manifest, bundle_path: Pat
         return False
     if not all(_safe_package_tree(lib, package) for package in packages):
         return False
-    receipts = {package: _resolve_public_chocolatey_package_receipt(source_url, package) for package in packages}
-    if any(receipt is None for receipt in receipts.values()):
-        return False
     with tempfile.TemporaryDirectory(prefix="cage-package-evidence-") as temporary:
         helper = Path(temporary) / "package-evidence.py"
         helper.write_bytes(load_asset_bytes("package-evidence.py"))
@@ -450,10 +501,14 @@ def _write_host_chocolatey_package_evidence(manifest: Manifest, bundle_path: Pat
         evidence = json.loads(output.read_text(encoding="utf-8"))
         observed = {item["id"]: item for item in evidence["requested"]}
         for package in packages:
-            receipt = receipts[package]
+            item = observed.get(package)
+            if not isinstance(item, dict) or not isinstance(item.get("version"), str):
+                return False
+            receipt = _resolve_public_chocolatey_package_receipt(
+                source_url, package, item["version"]
+            )
             if receipt is None:
                 return False
-            item = observed.get(package)
             nupkg_path = lib / item["nupkgPath"] if isinstance(item, dict) else None
             if nupkg_path is not None and (
                 _has_symlink_component(nupkg_path, lib)

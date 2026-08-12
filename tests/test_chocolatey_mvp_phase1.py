@@ -352,6 +352,126 @@ class ExecutorVerificationTests(unittest.TestCase):
             "packageHash": digest.hex(),
         })
 
+    def test_public_feed_receipt_resolves_observed_version_without_latest_requirement(self):
+        digest = hashlib.sha512(b"package bytes").digest()
+        payload = (
+            '<entry xmlns="http://www.w3.org/2005/Atom" '
+            'xmlns:d="http://schemas.microsoft.com/ado/2007/08/dataservices">'
+            '<title>notepadplusplus</title><content>'
+            '<m:properties xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata">'
+            '<d:Version>8.9.7</d:Version>'
+            f'<d:PackageHash>{base64.b64encode(digest).decode()}</d:PackageHash>'
+            '<d:PackageHashAlgorithm>SHA512</d:PackageHashAlgorithm>'
+            '<d:IsLatestVersion>false</d:IsLatestVersion>'
+            '</m:properties></content></entry>'
+        ).encode()
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = payload
+        with patch("builder.executor.urllib.request.urlopen", return_value=response) as urlopen:
+            receipt = _resolve_public_chocolatey_package_receipt(
+                "https://community.chocolatey.org/api/v2/", "notepadplusplus", "8.9.7"
+            )
+
+        self.assertEqual(receipt, {
+            "version": "8.9.7",
+            "packageHashAlgorithm": "SHA512",
+            "packageHash": digest.hex(),
+        })
+        requested_url = urlopen.call_args.args[0].full_url
+        self.assertIn("Packages(Id='notepadplusplus',Version='8.9.7')", requested_url)
+        self.assertNotIn("IsLatestVersion", requested_url)
+
+        wrong_namespace = payload.replace(
+            b'xmlns:d="http://schemas.microsoft.com/ado/2007/08/dataservices"',
+            b'xmlns:d="urn:attacker-controlled"',
+        )
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = wrong_namespace
+        with patch("builder.executor.urllib.request.urlopen", return_value=response):
+            self.assertIsNone(_resolve_public_chocolatey_package_receipt(
+                "https://community.chocolatey.org/api/v2/", "notepadplusplus", "8.9.7"
+            ))
+
+    def test_public_feed_receipt_rejects_duplicate_exact_authority_fields(self):
+        digest = hashlib.sha512(b"package bytes").digest()
+        payload = (
+            '<entry xmlns="http://www.w3.org/2005/Atom" '
+            'xmlns:d="http://schemas.microsoft.com/ado/2007/08/dataservices" '
+            'xmlns:x="urn:attacker-controlled">'
+            '<title>notepadplusplus</title><content>'
+            '<m:properties xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata">'
+            '<d:Version>8.9.7</d:Version>'
+            f'<d:PackageHash>{base64.b64encode(digest).decode()}</d:PackageHash>'
+            '<d:PackageHashAlgorithm>SHA512</d:PackageHashAlgorithm>'
+            '</m:properties></content></entry>'
+        )
+        cases = {
+            "duplicate Atom title": payload.replace(
+                '<title>notepadplusplus</title>',
+                '<title>notepadplusplus</title><title>wrong</title>',
+            ),
+            "cross-namespace title": payload.replace(
+                '<title>notepadplusplus</title>',
+                '<title>notepadplusplus</title><x:title>wrong</x:title>',
+            ),
+            "duplicate Version": payload.replace(
+                '<d:Version>8.9.7</d:Version>',
+                '<d:Version>8.9.7</d:Version><d:Version>0.0.0</d:Version>',
+            ),
+            "cross-namespace Version": payload.replace(
+                '<d:Version>8.9.7</d:Version>',
+                '<d:Version>8.9.7</d:Version><x:Version>0.0.0</x:Version>',
+            ),
+            "duplicate PackageHash": payload.replace(
+                '</d:PackageHash>',
+                '</d:PackageHash><d:PackageHash>AAAA</d:PackageHash>',
+            ),
+            "cross-namespace PackageHash": payload.replace(
+                '</d:PackageHash>',
+                '</d:PackageHash><x:PackageHash>AAAA</x:PackageHash>',
+            ),
+            "duplicate PackageHashAlgorithm": payload.replace(
+                '<d:PackageHashAlgorithm>SHA512</d:PackageHashAlgorithm>',
+                '<d:PackageHashAlgorithm>SHA512</d:PackageHashAlgorithm>'
+                '<d:PackageHashAlgorithm>SHA256</d:PackageHashAlgorithm>',
+            ),
+            "cross-namespace PackageHashAlgorithm": payload.replace(
+                '<d:PackageHashAlgorithm>SHA512</d:PackageHashAlgorithm>',
+                '<d:PackageHashAlgorithm>SHA512</d:PackageHashAlgorithm>'
+                '<x:PackageHashAlgorithm>SHA256</x:PackageHashAlgorithm>',
+            ),
+        }
+        for name, response_payload in cases.items():
+            response = MagicMock()
+            response.__enter__.return_value.read.return_value = response_payload.encode()
+            with self.subTest(name=name), patch(
+                "builder.executor.urllib.request.urlopen", return_value=response
+            ) as urlopen:
+                self.assertIsNone(_resolve_public_chocolatey_package_receipt(
+                    "https://community.chocolatey.org/api/v2/",
+                    "notepadplusplus",
+                    "8.9.7",
+                ))
+                self.assertEqual(urlopen.call_count, 1)
+
+    def test_public_feed_receipt_rejects_missing_or_mismatched_observed_version(self):
+        empty = MagicMock()
+        empty.__enter__.return_value.read.return_value = b'<feed xmlns="http://www.w3.org/2005/Atom" />'
+        with patch("builder.executor.urllib.request.urlopen", return_value=empty) as urlopen:
+            self.assertIsNone(_resolve_public_chocolatey_package_receipt(
+                "https://community.chocolatey.org/api/v2/", "notepadplusplus", "8.9.7"
+            ))
+        self.assertEqual(urlopen.call_count, 1)
+        for version in (
+            "", "8.9.7' or true", "1.2.3%27", "1.2.3/evil",
+            "1.2.3?x=y", "1.2.3#fragment", "1.2.3\\evil", "1.2.3\tbad",
+        ):
+            with self.subTest(version=version), patch("builder.executor.urllib.request.urlopen") as blocked:
+                self.assertIsNone(_resolve_public_chocolatey_package_receipt(
+                    "https://community.chocolatey.org/api/v2/", "notepadplusplus", version
+                ))
+                blocked.assert_not_called()
+
     def test_public_feed_receipt_uses_search_fallback_only_for_valid_empty_primary(self):
         digest = hashlib.sha512(b"package bytes").digest()
         empty_primary = MagicMock()
@@ -455,8 +575,11 @@ class ExecutorVerificationTests(unittest.TestCase):
             evidence_path.write_text('{"status":"attacker-claimed"}', encoding="utf-8")
 
             receipt = self._receipt_for(package_dir)
-            with patch("builder.executor._resolve_public_chocolatey_package_receipt", return_value=receipt):
+            with patch("builder.executor._resolve_public_chocolatey_package_receipt", return_value=receipt) as resolver:
                 self.assertTrue(_write_host_chocolatey_package_evidence(manifest, bundle))
+            resolver.assert_called_once_with(
+                "https://community.chocolatey.org/api/v2/", "7zip", "24.09"
+            )
             evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
 
         self.assertEqual(evidence["status"], "passed")

@@ -50,6 +50,14 @@ class PublicChocolateyRecipeTests(unittest.TestCase):
         self.assertIn("chocolatey-feature-policy.json", workflow)
         self.assertIn("chocolatey-smoke.json", workflow)
 
+    def test_public_package_workflow_excludes_wine_prefix_from_direct_artifact_globs(self):
+        workflow = (ROOT / ".github/workflows/chocolatey-public-package-proof.yml").read_text(encoding="utf-8")
+
+        for package in ("7zip", "notepadplusplus"):
+            self.assertIn(f"!dist-{package}/**/prefix/**", workflow)
+        self.assertIn("evidence/7zip-bundle.tar.gz", workflow)
+        self.assertIn("evidence/notepadplusplus-bundle.tar.gz", workflow)
+
     def test_public_package_workflow_is_credentialless_and_truthfully_named(self):
         workflow = (ROOT / ".github/workflows/chocolatey-public-package-proof.yml").read_text(encoding="utf-8")
 

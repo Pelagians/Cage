@@ -218,5 +218,7 @@ jobs:
             logs/**
             dist-7zip/**/logs/**
             dist-7zip/**/metadata/**
+            !dist-7zip/**/prefix/**
             dist-notepadplusplus/**/logs/**
             dist-notepadplusplus/**/metadata/**
+            !dist-notepadplusplus/**/prefix/**
