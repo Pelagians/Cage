@@ -40,6 +40,36 @@ class PublicChocolateyRecipeTests(unittest.TestCase):
     def test_legacy_pwschoco_recipe_is_not_public(self):
         self.assertFalse((RECIPES / "pwschoco.cage.yaml").exists())
 
+    def test_public_package_workflow_emits_actionable_failure_annotations(self):
+        workflow = (ROOT / ".github/workflows/chocolatey-public-package-proof.yml").read_text(encoding="utf-8")
+
+        self.assertIn("title=7zip public package proof failed", workflow)
+        self.assertIn("title=Notepad++ public package proof failed", workflow)
+        self.assertIn("chocolatey-package-evidence.json", workflow)
+        self.assertIn("chocolatey-diagnostic.json", workflow)
+        self.assertIn("chocolatey-feature-policy.json", workflow)
+        self.assertIn("chocolatey-smoke.json", workflow)
+
+    def test_public_package_workflow_is_credentialless_and_truthfully_named(self):
+        workflow = (ROOT / ".github/workflows/chocolatey-public-package-proof.yml").read_text(encoding="utf-8")
+
+        self.assertIn("persist-credentials: false", workflow)
+        self.assertNotIn("docker/login-action", workflow)
+        self.assertNotIn("secrets.GITHUB_TOKEN", workflow)
+        self.assertIn("Public Chocolatey Package Install and Launch-Plan Evidence", workflow)
+        self.assertIn("launch-plan-evidence.json", workflow)
+        self.assertNotIn("launch-evidence.json", workflow)
+
+    def test_public_package_workflow_covers_all_proof_affecting_sources(self):
+        workflow = (ROOT / ".github/workflows/chocolatey-public-package-proof.yml").read_text(encoding="utf-8")
+
+        for path in (
+            "core/manifest/**", "core/build_step.py", "core/chocolatey/**",
+            "core/modules/**", "compat/**",
+        ):
+            with self.subTest(path=path):
+                self.assertIn(f"- '{path}'", workflow)
+
     def test_chocolatey_recipe_docs_state_exact_cfw_release_and_wine_version(self):
         expected = "CFW v1.0.2"
         for path in (DOCS / "README.md", DOCS / "notepadplusplus-chocolatey.md"):

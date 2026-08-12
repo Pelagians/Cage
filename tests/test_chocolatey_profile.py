@@ -148,6 +148,8 @@ class ChocolateyAssetContractTests(unittest.TestCase):
         self.assertIn("--max-time", helper)
         self.assertIn("--silent", helper)
         self.assertIn("--show-error", helper)
+        self.assertIn("--retry-all-errors", helper)
+        self.assertIn("--retry-delay", helper)
         self.assertIn('mv "$part" "$blob"', helper)
         self.assertIn('rm -f "$blob"', helper)
         self.assertIn("destination_actual", helper)

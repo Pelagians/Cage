@@ -1,17 +1,24 @@
 """Regression tests for the Chocolatey MVP Phase 1 artifact contract."""
 from __future__ import annotations
 
+import base64
+import hashlib
 import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from artifact.bundle import create_bundle
 from artifact.inspection import verify_bundle
 from artifact.oci import OCIExportError, create_oci_export_plan
-from builder.executor import BuildResult, execute_inside_container
+from builder.executor import (
+    BuildResult,
+    _resolve_public_chocolatey_package_receipt,
+    _write_host_chocolatey_package_evidence,
+    execute_inside_container,
+)
 from builder.pipeline import generate_build_script
 from cage.cli import build_parser, cmd_build
 from core.manifest import Manifest
@@ -119,16 +126,161 @@ class PrefixRunnabilityTests(unittest.TestCase):
         data = {**APP, "modules": [{"type": "chocolatey", "install": {"packages": ["7zip"]}}]}
         with tempfile.TemporaryDirectory() as tmp:
             bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=True)
-            (bundle / "metadata/chocolatey-package-evidence.json").write_text(json.dumps({
+            package_dir = bundle / "prefix/drive_c/ProgramData/chocolatey/lib/7zip"
+            package_dir.mkdir(parents=True)
+            nuspec = package_dir / "7zip.nuspec"
+            nupkg = package_dir / "7zip.24.09.nupkg"
+            nuspec.write_text(
+                "<package><metadata><id>7zip</id><version>24.09</version></metadata></package>",
+                encoding="utf-8",
+            )
+            nupkg.write_bytes(b"exact package bytes")
+            status_path = bundle / "metadata/status.json"
+            status = json.loads(status_path.read_text(encoding="utf-8"))
+            status["state"] = "build-passed"
+            status_path.write_text(json.dumps(status), encoding="utf-8")
+            evidence_path = bundle / "metadata/chocolatey-package-evidence.json"
+            evidence_path.write_text(json.dumps({
                 "schemaVersion": "cage.chocolatey-package-evidence/v0",
                 "status": "passed",
-                "requested": [{"id": "7zip", "observed": True, "version": "24.09"}],
+                "authority": "host-resolved-public-feed-receipt",
+                "sourceUrl": "https://community.chocolatey.org/api/v2/",
+                "requested": [{
+                    "id": "7zip",
+                    "observed": True,
+                    "version": "24.09",
+                    "authority": "host-resolved-public-feed-receipt",
+                    "feedReceipt": {
+                        "version": "24.09",
+                        "packageHashAlgorithm": "SHA512",
+                        "packageHash": hashlib.sha512(nupkg.read_bytes()).hexdigest(),
+                    },
+                    "nuspecPath": "7zip/7zip.nuspec",
+                    "nuspecSha256": hashlib.sha256(nuspec.read_bytes()).hexdigest(),
+                    "nupkgPath": "7zip/7zip.24.09.nupkg",
+                    "nupkgSha256": hashlib.sha256(nupkg.read_bytes()).hexdigest(),
+                }],
                 "checks": {"requestedPackages": True},
                 "returnCodes": {"install": 0, "settle": 0, "query": 0},
             }), encoding="utf-8")
             result = verify_bundle(bundle)
+            self.assertTrue(evidence_path.exists())
+            outside = Path(tmp) / "outside-valid-evidence.json"
+            outside.write_bytes(evidence_path.read_bytes())
+            evidence_path.unlink()
+            evidence_path.symlink_to(outside)
+            symlink_result = verify_bundle(bundle)
         check = next(check for check in result["checks"] if check["id"] == "chocolatey-package-evidence")
         self.assertTrue(check["ok"])
+        symlink_check = next(
+            check for check in symlink_result["checks"] if check["id"] == "chocolatey-package-evidence"
+        )
+        self.assertFalse(symlink_check["ok"])
+
+    def test_symlinked_chocolatey_evidence_is_rejected(self):
+        data = {**APP, "modules": [{"type": "chocolatey", "install": {"packages": ["7zip"]}}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=True)
+            status_path = bundle / "metadata/status.json"
+            status = json.loads(status_path.read_text(encoding="utf-8"))
+            status["state"] = "build-passed"
+            status_path.write_text(json.dumps(status), encoding="utf-8")
+            outside = Path(tmp) / "outside-evidence.json"
+            outside.write_text("{}", encoding="utf-8")
+            (bundle / "metadata/chocolatey-package-evidence.json").symlink_to(outside)
+
+            result = verify_bundle(bundle)
+
+        check = next(check for check in result["checks"] if check["id"] == "chocolatey-package-evidence")
+        self.assertFalse(check["ok"])
+
+    def test_malformed_requested_chocolatey_evidence_fails_closed(self):
+        data = {**APP, "modules": [{"type": "chocolatey", "install": {"packages": ["7zip"]}}]}
+        malformed = (
+            [],
+            {"requested": ["not-an-object"]},
+            {
+                "schemaVersion": "cage.chocolatey-package-evidence/v0",
+                "status": "passed",
+                "requested": [{"id": "7zip", "observed": True, "version": "   "}],
+                "checks": {"requestedPackages": True},
+                "returnCodes": {"install": False, "settle": 0, "query": 0},
+            },
+        )
+        for evidence in malformed:
+            with self.subTest(evidence=evidence), tempfile.TemporaryDirectory() as tmp:
+                bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=True)
+                status_path = bundle / "metadata/status.json"
+                status = json.loads(status_path.read_text(encoding="utf-8"))
+                status["state"] = "build-passed"
+                status_path.write_text(json.dumps(status), encoding="utf-8")
+                (bundle / "metadata/chocolatey-package-evidence.json").write_text(
+                    json.dumps(evidence), encoding="utf-8"
+                )
+
+                result = verify_bundle(bundle)
+
+                check = next(item for item in result["checks"] if item["id"] == "chocolatey-package-evidence")
+                self.assertFalse(check["ok"])
+
+    def test_chocolatey_evidence_hashes_exact_package_bytes(self):
+        data = {**APP, "modules": [{"type": "chocolatey", "install": {"packages": ["7zip"]}}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=True)
+            package_dir = bundle / "prefix/drive_c/ProgramData/chocolatey/lib/7zip"
+            package_dir.mkdir(parents=True)
+            nuspec = package_dir / "7zip.nuspec"
+            nupkg = package_dir / "7zip.24.09.nupkg"
+            nuspec.write_text(
+                "<package><metadata><id>7zip</id><version>24.09</version></metadata></package>",
+                encoding="utf-8",
+            )
+            nupkg.write_bytes(b"trusted bytes")
+            evidence = {
+                "schemaVersion": "cage.chocolatey-package-evidence/v0",
+                "status": "passed",
+                "authority": "host-resolved-public-feed-receipt",
+                "sourceUrl": "https://community.chocolatey.org/api/v2/",
+                "requested": [{
+                    "id": "7zip", "observed": True, "version": "24.09",
+                    "authority": "host-resolved-public-feed-receipt",
+                    "feedReceipt": {
+                        "version": "24.09",
+                        "packageHashAlgorithm": "SHA512",
+                        "packageHash": hashlib.sha512(nupkg.read_bytes()).hexdigest(),
+                    },
+                    "nuspecPath": "7zip/7zip.nuspec",
+                    "nuspecSha256": hashlib.sha256(nuspec.read_bytes()).hexdigest(),
+                    "nupkgPath": "7zip/7zip.24.09.nupkg",
+                    "nupkgSha256": hashlib.sha256(nupkg.read_bytes()).hexdigest(),
+                }],
+                "checks": {"requestedPackages": True},
+                "returnCodes": {"install": 0, "settle": 0, "query": 0},
+            }
+            status_path = bundle / "metadata/status.json"
+            status = json.loads(status_path.read_text(encoding="utf-8"))
+            status["state"] = "build-passed"
+            status_path.write_text(json.dumps(status), encoding="utf-8")
+            evidence_path = bundle / "metadata/chocolatey-package-evidence.json"
+            evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+            self.assertTrue(next(
+                check for check in verify_bundle(bundle)["checks"]
+                if check["id"] == "chocolatey-package-evidence"
+            )["ok"])
+            evidence["requested"][0]["version"] = "attacker-claimed"
+            evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+            self.assertFalse(next(
+                check for check in verify_bundle(bundle)["checks"]
+                if check["id"] == "chocolatey-package-evidence"
+            )["ok"])
+            evidence["requested"][0]["version"] = "24.09"
+            evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+            nupkg.write_bytes(b"tampered bytes")
+            self.assertFalse(next(
+                check for check in verify_bundle(bundle)["checks"]
+                if check["id"] == "chocolatey-package-evidence"
+            )["ok"])
 
     def test_placeholder_prefix_cannot_be_marked_runnable(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -167,6 +319,290 @@ class PrefixRunnabilityTests(unittest.TestCase):
 
 
 class ExecutorVerificationTests(unittest.TestCase):
+    @staticmethod
+    def _receipt_for(package_dir: Path, version: str = "24.09") -> dict[str, str]:
+        nupkg = next(package_dir.glob("*.nupkg"))
+        return {
+            "version": version,
+            "packageHashAlgorithm": "SHA512",
+            "packageHash": hashlib.sha512(nupkg.read_bytes()).hexdigest(),
+        }
+
+    def test_public_feed_receipt_parser_requires_sha512_and_one_entry(self):
+        digest = hashlib.sha512(b"package bytes").digest()
+        payload = (
+            '<feed xmlns="http://www.w3.org/2005/Atom" '
+            'xmlns:d="http://schemas.microsoft.com/ado/2007/08/dataservices">'
+            '<entry><title>7zip</title><content><m:properties xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata">'
+            '<d:Version>24.09</d:Version>'
+            f'<d:PackageHash>{base64.b64encode(digest).decode()}</d:PackageHash>'
+            '<d:PackageHashAlgorithm>SHA512</d:PackageHashAlgorithm>'
+            '<d:IsLatestVersion>true</d:IsLatestVersion>'
+            '</m:properties></content></entry></feed>'
+        ).encode()
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = payload
+        with patch("builder.executor.urllib.request.urlopen", side_effect=[response, AssertionError("fallback should not run")]):
+            receipt = _resolve_public_chocolatey_package_receipt(
+                "https://community.chocolatey.org/api/v2/", "7zip"
+            )
+        self.assertEqual(receipt, {
+            "version": "24.09",
+            "packageHashAlgorithm": "SHA512",
+            "packageHash": digest.hex(),
+        })
+
+    def test_public_feed_receipt_uses_search_fallback_only_for_valid_empty_primary(self):
+        digest = hashlib.sha512(b"package bytes").digest()
+        empty_primary = MagicMock()
+        empty_primary.__enter__.return_value.read.return_value = b'<feed xmlns="http://www.w3.org/2005/Atom" />'
+        fallback_payload = (
+            '<feed xmlns="http://www.w3.org/2005/Atom" '
+            'xmlns:d="http://schemas.microsoft.com/ado/2007/08/dataservices">'
+            '<entry><title>7zip</title><content><m:properties xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata">'
+            '<d:Version>24.09</d:Version>'
+            f'<d:PackageHash>{base64.b64encode(digest).decode()}</d:PackageHash>'
+            '<d:PackageHashAlgorithm>SHA512</d:PackageHashAlgorithm>'
+            '<d:IsLatestVersion>true</d:IsLatestVersion>'
+            '</m:properties></content></entry></feed>'
+        ).encode()
+        fallback = MagicMock()
+        fallback.__enter__.return_value.read.return_value = fallback_payload
+        with patch("builder.executor.urllib.request.urlopen", side_effect=[empty_primary, fallback]) as urlopen:
+            receipt = _resolve_public_chocolatey_package_receipt(
+                "https://community.chocolatey.org/api/v2/", "7zip"
+            )
+
+        self.assertIsNotNone(receipt)
+        assert receipt is not None
+        self.assertEqual(receipt["version"], "24.09")
+        self.assertEqual(urlopen.call_count, 2)
+
+    def test_public_feed_receipt_rejects_nonlatest_primary_entry(self):
+        digest = hashlib.sha512(b"package bytes").digest()
+
+        def payload(is_latest: bool) -> bytes:
+            return (
+                '<feed xmlns="http://www.w3.org/2005/Atom" '
+                'xmlns:d="http://schemas.microsoft.com/ado/2007/08/dataservices">'
+                '<entry><title>7zip</title><content><m:properties xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata">'
+                '<d:Version>24.09</d:Version>'
+                f'<d:PackageHash>{base64.b64encode(digest).decode()}</d:PackageHash>'
+                '<d:PackageHashAlgorithm>SHA512</d:PackageHashAlgorithm>'
+                f'<d:IsLatestVersion>{str(is_latest).lower()}</d:IsLatestVersion>'
+                '</m:properties></content></entry></feed>'
+            ).encode()
+
+        primary = MagicMock()
+        primary.__enter__.return_value.read.return_value = payload(False)
+        with patch("builder.executor.urllib.request.urlopen", return_value=primary) as urlopen:
+            receipt = _resolve_public_chocolatey_package_receipt(
+                "https://community.chocolatey.org/api/v2/", "7zip"
+            )
+
+        self.assertIsNone(receipt)
+        self.assertEqual(urlopen.call_count, 1)
+
+    def test_public_feed_receipt_rejects_malformed_primary_without_fallback(self):
+        primary = MagicMock()
+        primary.__enter__.return_value.read.return_value = b"<not-xml"
+        fallback = MagicMock()
+        with patch("builder.executor.urllib.request.urlopen", side_effect=[primary, fallback]) as urlopen:
+            receipt = _resolve_public_chocolatey_package_receipt(
+                "https://community.chocolatey.org/api/v2/", "7zip"
+            )
+
+        self.assertIsNone(receipt)
+        self.assertEqual(urlopen.call_count, 1)
+
+    def test_public_feed_receipt_rejects_structurally_invalid_primary_responses(self):
+        valid_fallback = MagicMock()
+        valid_fallback.__enter__.return_value.read.return_value = (
+            b'<feed xmlns="http://www.w3.org/2005/Atom" />'
+        )
+        cases = (
+            b"<root />",
+            b'<feed xmlns="urn:not-atom" />',
+            b'<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>wrong-id</title></entry></feed>',
+        )
+        for primary_payload in cases:
+            with self.subTest(primary_payload=primary_payload):
+                primary = MagicMock()
+                primary.__enter__.return_value.read.return_value = primary_payload
+                with patch("builder.executor.urllib.request.urlopen", side_effect=[primary, valid_fallback]) as urlopen:
+                    receipt = _resolve_public_chocolatey_package_receipt(
+                        "https://community.chocolatey.org/api/v2/", "7zip"
+                    )
+                self.assertIsNone(receipt)
+                self.assertEqual(urlopen.call_count, 1)
+
+    def test_host_rewrites_chocolatey_evidence_from_exported_package_bytes(self):
+        manifest = Manifest.from_dict({
+            **APP,
+            "modules": [{"type": "chocolatey", "install": {"packages": ["7zip"]}}],
+        })
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = create_bundle(manifest, Path(tmp), dry_run=False)
+            package_dir = bundle / "prefix/drive_c/ProgramData/chocolatey/lib/7zip"
+            package_dir.mkdir(parents=True)
+            (package_dir / "7zip.nuspec").write_text(
+                "<package><metadata><id>7zip</id><version>24.09</version></metadata></package>",
+                encoding="utf-8",
+            )
+            nupkg = package_dir / "7zip.24.09.nupkg"
+            nupkg.write_bytes(b"exported package bytes")
+            evidence_path = bundle / "metadata/chocolatey-package-evidence.json"
+            evidence_path.write_text('{"status":"attacker-claimed"}', encoding="utf-8")
+
+            receipt = self._receipt_for(package_dir)
+            with patch("builder.executor._resolve_public_chocolatey_package_receipt", return_value=receipt):
+                self.assertTrue(_write_host_chocolatey_package_evidence(manifest, bundle))
+            evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(evidence["status"], "passed")
+        self.assertEqual(evidence["authority"], "host-resolved-public-feed-receipt")
+        self.assertEqual(evidence["requested"][0]["feedReceipt"], receipt)
+        self.assertEqual(evidence["requested"][0]["authority"], "host-resolved-public-feed-receipt")
+        self.assertEqual(evidence["requested"][0]["version"], "24.09")
+        self.assertEqual(
+            evidence["requested"][0]["nupkgSha256"],
+            hashlib.sha256(b"exported package bytes").hexdigest(),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = create_bundle(manifest, Path(tmp), dry_run=False)
+            package_dir = bundle / "prefix/drive_c/ProgramData/chocolatey/lib/7zip"
+            package_dir.mkdir(parents=True)
+            (package_dir / "7zip.nuspec").write_text(
+                "<package><metadata><id>7zip</id><version>24.09</version></metadata></package>",
+                encoding="utf-8",
+            )
+            (package_dir / "7zip.24.09.nupkg").write_bytes(b"exported package bytes")
+            with patch("builder.executor._resolve_public_chocolatey_package_receipt", return_value={
+                "version": "attacker-claimed",
+                "packageHashAlgorithm": "SHA512",
+                "packageHash": hashlib.sha512(b"exported package bytes").hexdigest(),
+            }):
+                self.assertFalse(_write_host_chocolatey_package_evidence(manifest, bundle))
+
+    def test_host_rejects_bundle_reached_through_symlinked_parent(self):
+        manifest = Manifest.from_dict({
+            **APP,
+            "modules": [{"type": "chocolatey", "install": {"packages": ["7zip"]}}],
+        })
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            real_parent = root / "real-parent"
+            real_parent.mkdir()
+            bundle = create_bundle(manifest, real_parent, dry_run=False)
+            package_dir = bundle / "prefix/drive_c/ProgramData/chocolatey/lib/7zip"
+            package_dir.mkdir(parents=True)
+            (package_dir / "7zip.nuspec").write_text(
+                "<package><metadata><id>7zip</id><version>24.09</version></metadata></package>",
+                encoding="utf-8",
+            )
+            (package_dir / "7zip.24.09.nupkg").write_bytes(b"exported package bytes")
+            alias_parent = root / "alias-parent"
+            alias_parent.symlink_to(real_parent, target_is_directory=True)
+            alias_bundle = alias_parent / bundle.name
+
+            with patch("builder.executor._resolve_public_chocolatey_package_receipt", return_value=self._receipt_for(package_dir)):
+                self.assertFalse(_write_host_chocolatey_package_evidence(manifest, alias_bundle))
+            self.assertFalse(verify_bundle(alias_bundle)["valid"])
+
+    def test_host_rejects_symlinked_package_tree_before_feed_resolution(self):
+        manifest = Manifest.from_dict({
+            **APP,
+            "modules": [{"type": "chocolatey", "install": {"packages": ["7zip"]}}],
+        })
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bundle = create_bundle(manifest, root, dry_run=False)
+            lib = bundle / "prefix/drive_c/ProgramData/chocolatey/lib"
+            lib.mkdir(parents=True)
+            outside = root / "outside-package"
+            outside.mkdir()
+            (outside / "7zip.nuspec").write_text(
+                "<package><metadata><id>7zip</id><version>24.09</version></metadata></package>",
+                encoding="utf-8",
+            )
+            (outside / "7zip.24.09.nupkg").write_bytes(b"outside bytes")
+            (lib / "7zip").symlink_to(outside, target_is_directory=True)
+
+            with patch("builder.executor._resolve_public_chocolatey_package_receipt") as resolver:
+                self.assertFalse(_write_host_chocolatey_package_evidence(manifest, bundle))
+            resolver.assert_not_called()
+
+    def test_host_rejects_symlinked_evidence_output(self):
+        manifest = Manifest.from_dict({
+            **APP,
+            "modules": [{"type": "chocolatey", "install": {"packages": ["7zip"]}}],
+        })
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = create_bundle(manifest, Path(tmp), dry_run=False)
+            package_dir = bundle / "prefix/drive_c/ProgramData/chocolatey/lib/7zip"
+            package_dir.mkdir(parents=True)
+            (package_dir / "7zip.nuspec").write_text(
+                "<package><metadata><id>7zip</id><version>24.09</version></metadata></package>",
+                encoding="utf-8",
+            )
+            (package_dir / "7zip.24.09.nupkg").write_bytes(b"exported package bytes")
+            outside = Path(tmp) / "outside-evidence.json"
+            evidence_path = bundle / "metadata/chocolatey-package-evidence.json"
+            evidence_path.symlink_to(outside)
+
+            with patch("builder.executor._resolve_public_chocolatey_package_receipt", return_value=self._receipt_for(package_dir)):
+                self.assertFalse(_write_host_chocolatey_package_evidence(manifest, bundle))
+            self.assertFalse(outside.exists())
+
+    def test_host_rejects_symlinked_chocolatey_lib_root(self):
+        manifest = Manifest.from_dict({
+            **APP,
+            "modules": [{"type": "chocolatey", "install": {"packages": ["7zip"]}}],
+        })
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = create_bundle(manifest, Path(tmp), dry_run=False)
+            nominal_lib = bundle / "prefix/drive_c/ProgramData/chocolatey/lib"
+            nominal_lib.parent.mkdir(parents=True, exist_ok=True)
+            outside = Path(tmp) / "outside-lib"
+            package_dir = outside / "7zip"
+            package_dir.mkdir(parents=True)
+            (package_dir / "7zip.nuspec").write_text(
+                "<package><metadata><id>7zip</id><version>24.09</version></metadata></package>",
+                encoding="utf-8",
+            )
+            (package_dir / "7zip.24.09.nupkg").write_bytes(b"outside package bytes")
+            nominal_lib.symlink_to(outside, target_is_directory=True)
+
+            with patch("builder.executor._resolve_public_chocolatey_package_receipt", return_value=self._receipt_for(package_dir)):
+                self.assertFalse(_write_host_chocolatey_package_evidence(manifest, bundle))
+
+    def test_container_success_fails_when_host_cannot_bind_package_bytes(self):
+        manifest = Manifest.from_dict({
+            **APP,
+            "modules": [{"type": "chocolatey", "install": {"packages": ["7zip"]}}],
+        })
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = create_bundle(manifest, Path(tmp), dry_run=False)
+
+            class Completed:
+                returncode = 0
+                stdout = "container claimed success"
+                stderr = ""
+
+            def fake_run(*_args, **_kwargs):
+                materialize_runnable_prefix(bundle, entrypoint=APP["launch"]["entrypoint"])
+                return Completed()
+
+            with patch("builder.executor._resolve_public_chocolatey_package_receipt", return_value=None), patch("builder.executor._run_container_command", side_effect=fake_run), patch("sys.stderr", io.StringIO()):
+                result = execute_inside_container(
+                    manifest, bundle, engine="docker",
+                    timeout=5, workspace=tmp,
+                )
+
+        self.assertFalse(result.success)
+        self.assertFalse(result.runnable)
+        self.assertIn("host failed to bind", result.error or "")
+
     def test_container_exit_zero_without_materialized_prefix_fails_verification(self):
         manifest = Manifest.from_dict(APP)
         with tempfile.TemporaryDirectory() as tmp:

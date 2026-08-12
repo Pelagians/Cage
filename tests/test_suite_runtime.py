@@ -123,6 +123,27 @@ class SuiteRunPlanTests(unittest.TestCase):
         self.assertEqual(payload["selectedEntrypoint"]["id"], "writer")
         self.assertIn("--safe-mode", payload["launchCommand"])
         self.assertIn("Z:\\mnt\\cage-inputs\\0\\notes.docx", payload["launchCommand"])
+    def test_cli_run_rejects_unknown_options(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            bundle = create_bundle(Manifest.from_dict(suite_manifest_data()), tmp / "dist", dry_run=True)
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    "cmd/cage.py",
+                    "run",
+                    str(bundle),
+                    "--dry-run",
+                    "--unknown-runtime-option",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("unrecognized arguments: --unknown-runtime-option", proc.stderr)
 
 
 class SuiteCompatEvidenceTests(unittest.TestCase):

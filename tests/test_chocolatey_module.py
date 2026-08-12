@@ -69,6 +69,10 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertEqual(manifest.modules[0].install["packages"], ["7zip", "notepadplusplus"])
         self.assertEqual(manifest.provenance, {"test": "value"})
 
+    def test_chocolatey_rejects_case_insensitive_duplicate_packages(self):
+        with self.assertRaisesRegex(Exception, "must not contain duplicates"):
+            _manifest(["7zip", "7ZIP"])
+
     def test_chocolatey_claims_prepared_runtime_capabilities(self):
         capabilities = _manifest().modules[0].capabilities()
         self.assertEqual(capabilities, {
@@ -91,6 +95,15 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertEqual(module.to_dict()["packageSource"], feed)
         install = _commands_for(module.build(), "Install Chocolatey packages: 7zip")
         self.assertIn(feed, install)
+
+    def test_package_evidence_reads_chocolateys_actual_lib_directory(self):
+        install = _commands_for(
+            _manifest(["7zip.install"]).modules[0].build(),
+            "Install Chocolatey packages: 7zip.install",
+        )
+
+        self.assertIn('lib_dir="$(dirname "$choco_exe")/lib"', install)
+        self.assertNotIn('lib_dir="$(dirname "$choco_exe")/../lib"', install)
 
     def test_chocolatey_rejects_unsafe_package_source_urls(self):
         for value in (
@@ -244,6 +257,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             "ghcr.io/pelagians/cage-wine@sha256:b8462dedb8f4dc6e48305af5a4485c29796e5d7c292272b8492fb763b6b59224",
         )
         for field in ("url", "evidenceUrl", "manifestUrl"):
+            self.assertIn("github.com/noahgiroux/CFW/releases/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
             self.assertIn("/cfw-runtime-v1.0.2/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
 
     def test_multiple_chocolatey_modules_are_rejected_before_duplicate_seeding(self):
@@ -266,6 +280,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         policy = _commands_for(steps, "Verify Chocolatey external-host policy")
         self.assertIn("CFW_CHOCOLATEY_PREFIX_PATH", package)
         self.assertIn("CFW_CHOCOLATEY_WINDOWS_PATH", package)
+        self.assertIn("community.chocolatey.org/api/v2", package)
+        self.assertIn("--source-url", package)
         self.assertNotIn("ProgramData/tools/chocolateyInstall/choco.exe", package)
         self.assertIn("CFW_CHOCOLATEY_PACKAGE_LAUNCHER", package)
         self.assertIn('"${choco_launcher[@]}" install', package)

@@ -104,7 +104,7 @@ Cage does not reconstruct CLR, GAC, PowerShell, Synchro, Chocolatey bootstrap, p
 - Live Docker proof is not claimed as passed here; acceptance requires recorded runtime evidence from the public-package execution path.
 - Unsafe profile values and unsafe archive members are rejected before prefix replacement.
 - Missing producer assets fail the workflow rather than yielding a green skipped lifecycle.
-- Cage’s package lifecycle and requested package install pass against the exact released runtime, with evidence attached to the public-package proof. **Remaining active work.**
+- Cage’s package lifecycle and requested package installation are exercised against the exact released runtime, with installed-package byte hashes and dry-run launch-plan evidence attached to the public-package workflow. This is not yet evidence that the application itself launched successfully. **Remaining active work.**
 
 ### Parked work
 

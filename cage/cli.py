@@ -811,7 +811,16 @@ def build_parser():
 
 def main(argv=None):
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args, unknown = parser.parse_known_args(argv)
+    if unknown:
+        # Python 3.11 argparse does not resume a trailing ``nargs='*'``
+        # positional after optional arguments in a subparser.  Cage supports
+        # Python 3.11, so recover only non-option run-file arguments while
+        # continuing to reject misspelled or unsupported flags.
+        if args.command == "run" and all(not item.startswith("-") for item in unknown):
+            args.files.extend(unknown)
+        else:
+            parser.error(f"unrecognized arguments: {' '.join(unknown)}")
     try:
         return args.func(args)
     except ManifestError as exc:

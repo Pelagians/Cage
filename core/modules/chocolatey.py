@@ -22,11 +22,12 @@ _HOSTNAME_RE = re.compile(
 _WINE_IMAGE_RE = re.compile(r"^ghcr\.io/pelagians/cage-wine@sha256:[0-9a-f]{64}$")
 _RUNTIME_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _WINE_VERSION_RE = re.compile(r"^wine-[0-9]+(?:\.[0-9]+){1,2}$")
-_UNSAFE_SOURCE_RE = re.compile(r"[\x00-\x1f\x7f$`;&|<>]")
+_UNSAFE_SOURCE_RE = re.compile(r"[\x00-\x1f\x7f$`';&|<>]")
 _DEFAULT_CFW_RUNTIME_ASSET = "cfw-runtime-v1.0.2-wine-11.0.json"
 DEFAULT_CFW_RUNTIME_ARTIFACT: dict[str, Any] = json.loads(load_asset(_DEFAULT_CFW_RUNTIME_ASSET))
 DEFAULT_CFW_RUNTIME_PROFILE_ID = DEFAULT_CFW_RUNTIME_ARTIFACT["id"]
 CFW_RUNTIME_PROVIDER = "cfw-chocolatey-runtime"
+DEFAULT_CHOCOLATEY_PACKAGE_SOURCE = "https://community.chocolatey.org/api/v2/"
 
 _FAILURE_DIAGNOSTIC_ASSETS = {
     "verify-chocolatey.sh",
@@ -103,18 +104,18 @@ class ChocolateyModule(ModuleBase):
     def validate(self) -> None:
         self._packages()
         self._runtime_artifact()
-        if self.package_source:
-            if _UNSAFE_SOURCE_RE.search(self.package_source):
-                raise ModuleError("chocolatey packageSource contains unsafe characters")
-            parsed = urlparse(self.package_source)
-            if (
-                parsed.scheme != "https"
-                or not parsed.hostname
-                or _HOSTNAME_RE.fullmatch(parsed.hostname) is None
-                or parsed.username
-                or parsed.password
-            ):
-                raise ModuleError("chocolatey packageSource must be a plain HTTPS URL")
+        source = self.package_source or DEFAULT_CHOCOLATEY_PACKAGE_SOURCE
+        if _UNSAFE_SOURCE_RE.search(source):
+            raise ModuleError("chocolatey packageSource contains unsafe characters")
+        parsed = urlparse(source)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or _HOSTNAME_RE.fullmatch(parsed.hostname) is None
+            or parsed.username
+            or parsed.password
+        ):
+            raise ModuleError("chocolatey packageSource must be a plain HTTPS URL")
 
     def capabilities(self) -> dict[str, str]:
         return {
@@ -137,6 +138,9 @@ class ChocolateyModule(ModuleBase):
                     "letters, numbers, dots, underscores, plus, or dashes only: "
                     f"{package}"
                 )
+        normalized_packages = [package.casefold() for package in packages]
+        if len(normalized_packages) != len(set(normalized_packages)):
+            raise ModuleError("chocolatey module 'install.packages' must not contain duplicates")
         return packages
 
     def _runtime_artifact(self) -> dict[str, Any] | None:
@@ -192,9 +196,8 @@ class ChocolateyModule(ModuleBase):
         runtime = self._runtime_artifact()
         values = {
             "PACKAGE_ARGS": " ".join(shlex.quote(package) for package in packages),
-            "SOURCE_ARG": (
-                " -s '" + self.package_source.replace("'", "'\"'\"'") + "'" if self.package_source else ""
-            ),
+            "PACKAGE_SOURCE": self.package_source or DEFAULT_CHOCOLATEY_PACKAGE_SOURCE,
+            "SOURCE_ARG": " -s '" + (self.package_source or DEFAULT_CHOCOLATEY_PACKAGE_SOURCE) + "'",
             "SMOKE_NUPKG_BASE64": base64.b64encode(
                 load_asset_bytes("cage-chocolatey-smoke.0.1.0.nupkg")
             ).decode("ascii"),

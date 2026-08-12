@@ -42,12 +42,13 @@ timeout "${CAGE_CHOCOLATEY_INSTALL_TIMEOUT:-1800s}" "${choco_launcher[@]}" insta
 install_rc="$?"
 timeout "${CAGE_CHOCOLATEY_SETTLE_TIMEOUT:-120s}" wineserver -w
 settle_rc="$?"
-lib_dir="$(dirname "$choco_exe")/../lib"
+lib_dir="$(dirname "$choco_exe")/lib"
 evidence_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/metadata"
 helper_path="$(mktemp)"
 printf '%s' '{{PACKAGE_EVIDENCE_HELPER_BASE64}}' | base64 -d > "$helper_path"
 python3 "$helper_path" --lib "$lib_dir" --output "$evidence_dir/chocolatey-package-evidence.json" \
-  --requested '{{REQUESTED_PACKAGES_JSON}}' --install-rc "$install_rc" --settle-rc "$settle_rc"
+  --requested '{{REQUESTED_PACKAGES_JSON}}' --install-rc "$install_rc" --settle-rc "$settle_rc" \
+  --source-url '{{PACKAGE_SOURCE}}'
 query_rc="$?"
 rm -f "$helper_path"
 if [ "$install_rc" -ne 0 ]; then

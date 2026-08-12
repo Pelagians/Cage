@@ -5,13 +5,20 @@ container, producing a real built prefix with installed dependencies
 and applications.
 """
 from __future__ import annotations
-import os, queue, shutil, subprocess, sys, threading, time
+import base64
+import hashlib
+import json
+import os, queue, shutil, subprocess, sys, tempfile, threading, time
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from artifact.bundle import update_bundle_execution_metadata
 from artifact.inspection import verify_bundle, verify_prefix_materialization
+from core.chocolatey.assets import load_asset_bytes
 from builder.pipeline import generate_build_script
 from core.manifest import Manifest
 from runtime.providers import required_cfw_runtime_image, resolve_manifest_runtime, resolve_runtime
@@ -256,6 +263,229 @@ def _prepare_module_cache(cache_dir: Path | str | None, *, engine: str) -> dict[
     }
 
 
+def _resolve_public_chocolatey_package_receipt(source_url: str, package_id: str) -> dict[str, str] | None:
+    if source_url != "https://community.chocolatey.org/api/v2/":
+        return None
+
+    def fetch(path: str, query: dict[str, str]) -> ET.Element | None:
+        request = urllib.request.Request(
+            source_url.rstrip("/") + path + "?" + urllib.parse.urlencode(query),
+            headers={
+                "Accept": "application/atom+xml,application/xml",
+                "User-Agent": "Cage/0.1 package-receipt",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                payload = response.read(2_000_000)
+            return ET.fromstring(payload)
+        except (OSError, ET.ParseError, ValueError):
+            return None
+
+    primary = fetch("/Packages()", {
+        "$filter": f"Id eq '{package_id}' and IsLatestVersion",
+        "$select": "Id,Version,IsLatestVersion,PackageHash,PackageHashAlgorithm",
+    })
+    if primary is None:
+        return None
+    if primary.tag != "{http://www.w3.org/2005/Atom}feed":
+        return None
+    primary_entries = [
+        node for node in primary
+        if node.tag.rsplit("}", 1)[-1] == "entry"
+    ]
+    primary_matches = _matching_feed_entries(primary, package_id)
+    if primary_entries:
+        if len(primary_matches) != len(primary_entries):
+            return None
+        entries = [
+            entry for entry in primary_matches
+            if _feed_value(entry, "IsLatestVersion").casefold() == "true"
+        ]
+        if len(entries) != 1:
+            return None
+    else:
+        root = fetch("/Search()", {
+            "searchTerm": f"'{package_id}'",
+            "targetFramework": "''",
+            "includePrerelease": "false",
+            "$skip": "0",
+            "$top": "50",
+        })
+        entries = _matching_feed_entries(root, package_id) if root is not None else []
+        entries = [entry for entry in entries if _feed_value(entry, "IsLatestVersion").casefold() == "true"]
+    if len(entries) != 1:
+        return None
+    node = entries[0]
+    values = {
+        name: _feed_value(node, name)
+        for name in ("Version", "PackageHash", "PackageHashAlgorithm")
+    }
+    if values["PackageHashAlgorithm"].upper() != "SHA512" or not values["Version"]:
+        return None
+    try:
+        package_hash = base64.b64decode(values["PackageHash"], validate=True).hex()
+    except (KeyError, ValueError):
+        return None
+    if len(package_hash) != 128:
+        return None
+    return {
+        "version": values["Version"],
+        "packageHashAlgorithm": "SHA512",
+        "packageHash": package_hash,
+    }
+
+
+def _feed_value(node: ET.Element, name: str) -> str:
+    return next(
+        (child.text.strip() for child in node.iter() if child.tag.rsplit("}", 1)[-1] == name and child.text),
+        "",
+    )
+
+
+def _matching_feed_entries(root: ET.Element, package_id: str) -> list[ET.Element]:
+    entries: list[ET.Element] = []
+    for node in root:
+        if node.tag.rsplit("}", 1)[-1] != "entry":
+            continue
+        if _feed_value(node, "title").casefold() == package_id.casefold():
+            entries.append(node)
+    return entries
+
+
+def _has_symlink_ancestor(path: Path) -> bool:
+    current = path.absolute()
+    while True:
+        if current.is_symlink():
+            return True
+        parent = current.parent
+        if parent == current:
+            return False
+        current = parent
+
+
+def _has_symlink_component(path: Path, root: Path) -> bool:
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        return True
+    current = root
+    if current.is_symlink():
+        return True
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def _safe_package_tree(lib: Path, package_id: str) -> bool:
+    try:
+        matches = [
+            child for child in lib.iterdir()
+            if child.name.casefold() == package_id.casefold()
+        ]
+        if len(matches) != 1 or matches[0].is_symlink() or not matches[0].is_dir():
+            return False
+        stack = [matches[0]]
+        while stack:
+            directory = stack.pop()
+            for child in directory.iterdir():
+                if child.is_symlink():
+                    return False
+                if child.is_dir():
+                    stack.append(child)
+        return True
+    except OSError:
+        return False
+
+
+def _write_host_chocolatey_package_evidence(manifest: Manifest, bundle_path: Path) -> bool:
+    modules = [module for module in manifest.modules if getattr(module, "type", None) == "chocolatey"]
+    if not modules:
+        return True
+    if len(modules) != 1:
+        return False
+    module = modules[0]
+    install = getattr(module, "install", None)
+    packages = install.get("packages") if isinstance(install, dict) else None
+    if not isinstance(packages, list) or not all(isinstance(package, str) for package in packages):
+        return False
+    if not packages:
+        return True
+    source_url = getattr(module, "package_source", None) or "https://community.chocolatey.org/api/v2/"
+    bundle_root = bundle_path.resolve()
+    if _has_symlink_ancestor(bundle_path):
+        return False
+    lib = bundle_path / "prefix/drive_c/ProgramData/chocolatey/lib"
+    output = bundle_path / "metadata/chocolatey-package-evidence.json"
+    if _has_symlink_component(lib, bundle_path) or output.is_symlink() or _has_symlink_component(output.parent, bundle_path):
+        return False
+    try:
+        lib.resolve().relative_to(bundle_root)
+        output.parent.resolve().relative_to(bundle_root)
+    except (OSError, ValueError):
+        return False
+    if not all(_safe_package_tree(lib, package) for package in packages):
+        return False
+    receipts = {package: _resolve_public_chocolatey_package_receipt(source_url, package) for package in packages}
+    if any(receipt is None for receipt in receipts.values()):
+        return False
+    with tempfile.TemporaryDirectory(prefix="cage-package-evidence-") as temporary:
+        helper = Path(temporary) / "package-evidence.py"
+        helper.write_bytes(load_asset_bytes("package-evidence.py"))
+        result = subprocess.run(
+            [
+                sys.executable, str(helper), "--lib", str(lib), "--output", str(output),
+                "--requested", json.dumps(packages, separators=(",", ":")),
+                "--install-rc", "0", "--settle-rc", "0", "--source-url", source_url,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    if result.returncode != 0:
+        return False
+    try:
+        evidence = json.loads(output.read_text(encoding="utf-8"))
+        observed = {item["id"]: item for item in evidence["requested"]}
+        for package in packages:
+            receipt = receipts[package]
+            if receipt is None:
+                return False
+            item = observed.get(package)
+            nupkg_path = lib / item["nupkgPath"] if isinstance(item, dict) else None
+            if nupkg_path is not None and (
+                _has_symlink_component(nupkg_path, lib)
+                or not nupkg_path.resolve().is_relative_to(lib.resolve())
+            ):
+                return False
+            if (
+                not isinstance(item, dict)
+                or item.get("version") != receipt["version"]
+                or nupkg_path is None
+                or not nupkg_path.is_file()
+                or nupkg_path.is_symlink()
+                or hashlib.sha512(nupkg_path.read_bytes()).hexdigest() != receipt["packageHash"]
+            ):
+                return False
+            item["feedReceipt"] = receipt
+            item["authority"] = "host-resolved-public-feed-receipt"
+        evidence["authority"] = "host-resolved-public-feed-receipt"
+        if output.is_symlink() or _has_symlink_component(output.parent, bundle_path):
+            return False
+        temporary_output = output.with_name(output.name + ".host.tmp")
+        if temporary_output.exists() or temporary_output.is_symlink():
+            return False
+        with temporary_output.open("x", encoding="utf-8") as handle:
+            json.dump(evidence, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        temporary_output.replace(output)
+    except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
+        return False
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Container execution
 # ---------------------------------------------------------------------------
@@ -396,6 +626,7 @@ def execute_inside_container(
             error = f"container exited with code {exit_code}"
             materialized_prefix = False
         else:
+            host_evidence_ok = _write_host_chocolatey_package_evidence(manifest, bundle_path)
             prefix_verification = verify_prefix_materialization(bundle_path)
             checks = list(prefix_verification.get("checks") or [])
             has_default_launch = manifest.launch is not None
@@ -404,6 +635,12 @@ def execute_inside_container(
                 if check.get("ok") is not True
                 and (check.get("id") != "launch-executable" or has_default_launch)
             ]
+            if not host_evidence_ok:
+                failed_checks.append({
+                    "id": "host-chocolatey-package-evidence",
+                    "ok": False,
+                    "message": "host failed to bind requested packages to exported nuspec and nupkg bytes",
+                })
             materialized_prefix = prefix_verification.get("materialized") is True
             prefix_size = int(prefix_verification.get("byteSize") or 0)
             prefix_file_count = int(prefix_verification.get("fileCount") or 0)

@@ -265,19 +265,54 @@ class ChocolateyDiagnosticTierTests(unittest.TestCase):
                 "<package><metadata><id>7zip</id><version>24.09</version></metadata></package>",
                 encoding="utf-8",
             )
+            (package_dir / "7zip.24.09.nupkg").write_bytes(b"exact package bytes")
             output = Path(temporary) / "evidence.json"
             result = subprocess.run(
                 [sys.executable, str(helper), "--lib", str(lib), "--output", str(output),
-                 "--requested", json.dumps(["7zip"]), "--install-rc", "0", "--settle-rc", "0"],
+                 "--requested", json.dumps(["7zip"]), "--install-rc", "0", "--settle-rc", "0",
+                 "--source-url", "https://community.chocolatey.org/api/v2/"],
                 check=False, capture_output=True, text=True,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             evidence = json.loads(output.read_text(encoding="utf-8"))
         self.assertEqual(evidence["schemaVersion"], "cage.chocolatey-package-evidence/v0")
         self.assertEqual(evidence["status"], "passed")
-        self.assertEqual(evidence["requested"], [{"id": "7zip", "observed": True, "version": "24.09"}])
+        package = evidence["requested"][0]
+        self.assertEqual(package["id"], "7zip")
+        self.assertTrue(package["observed"])
+        self.assertEqual(package["version"], "24.09")
+        self.assertEqual(package["nuspecPath"], "7zip/7zip.nuspec")
+        self.assertEqual(package["nupkgPath"], "7zip/7zip.24.09.nupkg")
+        self.assertRegex(package["nuspecSha256"], r"^[0-9a-f]{64}$")
+        self.assertRegex(package["nupkgSha256"], r"^[0-9a-f]{64}$")
+        self.assertEqual(evidence["sourceUrl"], "https://community.chocolatey.org/api/v2/")
         self.assertEqual(evidence["checks"], {"requestedPackages": True})
         self.assertEqual(evidence["returnCodes"], {"install": 0, "settle": 0, "query": 0})
+
+    def test_package_evidence_helper_rejects_ambiguous_nuspecs(self):
+        helper = ROOT / "core/chocolatey/assets/package-evidence.py"
+        with tempfile.TemporaryDirectory() as temporary:
+            lib = Path(temporary) / "lib"
+            package_dir = lib / "7zip"
+            package_dir.mkdir(parents=True)
+            for name, version in (("one.nuspec", "24.09"), ("two.nuspec", "25.01")):
+                (package_dir / name).write_text(
+                    f"<package><metadata><id>7zip</id><version>{version}</version></metadata></package>",
+                    encoding="utf-8",
+                )
+            (package_dir / "7zip.24.09.nupkg").write_bytes(b"exact package bytes")
+            output = Path(temporary) / "evidence.json"
+            result = subprocess.run(
+                [sys.executable, str(helper), "--lib", str(lib), "--output", str(output),
+                 "--requested", json.dumps(["7zip"]), "--install-rc", "0", "--settle-rc", "0",
+                 "--source-url", "https://community.chocolatey.org/api/v2/"],
+                check=False, capture_output=True, text=True,
+            )
+            evidence = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(evidence["status"], "failed")
+        self.assertEqual(evidence["requested"], [{"id": "7zip", "observed": False, "version": None}])
 
 
 if __name__ == "__main__":

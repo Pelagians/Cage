@@ -151,6 +151,52 @@ class FailureAnalysisTests(unittest.TestCase):
             self.assertEqual(result["topLevelReturnCode"], 1603)
             self.assertEqual(result["classification"], "windows-installer-failed")
 
+    def test_runtime_asset_transport_failure_is_not_mislabeled_as_windows_installer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bundle = root / "transport-failure-1.0.0"
+            (bundle / "metadata").mkdir(parents=True)
+            (bundle / "logs").mkdir()
+            (bundle / "logs" / "build.log").write_text(
+                "[cage] Seed verified CFW prepared prefix\ncurl: (56) Connection died\n",
+                encoding="utf-8",
+            )
+
+            result = analyze_failure_path(bundle, write=False)
+
+        self.assertTrue(result["failureDetected"])
+        self.assertEqual(result["classification"], "runtime-artifact-transport-failed")
+
+    def test_standalone_curl_failure_excerpt_is_classified_as_transport_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = Path(tmp) / "transport-excerpt-1.0.0"
+            (bundle / "metadata").mkdir(parents=True)
+            (bundle / "logs").mkdir()
+            (bundle / "logs" / "build.log").write_text(
+                "curl: (56) Connection reset by peer\n",
+                encoding="utf-8",
+            )
+
+            result = analyze_failure_path(bundle, write=False)
+
+        self.assertTrue(result["failureDetected"])
+        self.assertEqual(result["classification"], "runtime-artifact-transport-failed")
+
+    def test_runtime_asset_checksum_failure_is_classified_as_integrity_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = Path(tmp) / "integrity-failure-1.0.0"
+            (bundle / "metadata").mkdir(parents=True)
+            (bundle / "logs").mkdir()
+            (bundle / "logs" / "build.log").write_text(
+                "[cage] ERROR: bootstrap destination checksum mismatch: /tmp/runtime.tar.gz\n",
+                encoding="utf-8",
+            )
+
+            result = analyze_failure_path(bundle, write=False)
+
+        self.assertTrue(result["failureDetected"])
+        self.assertEqual(result["classification"], "runtime-artifact-integrity-failed")
+
     def test_failure_analysis_prioritizes_failed_chocolatey_diagnostic_over_msi_warning_noise(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

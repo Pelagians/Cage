@@ -1,4 +1,4 @@
-name: Chocolatey Public Package Proof
+name: Public Chocolatey Package Install and Launch-Plan Evidence
 
 on:
   push:
@@ -7,8 +7,11 @@ on:
       - 'recipes/**/*.cage.yaml'
       - 'core/chocolatey/**'
       - 'core/modules/**'
+      - 'core/manifest/**'
+      - 'core/build_step.py'
       - 'artifact/**'
       - 'builder/**'
+      - 'compat/**'
       - 'cage/**'
       - 'runtime/**'
       - 'pyproject.toml'
@@ -18,8 +21,11 @@ on:
       - 'recipes/**/*.cage.yaml'
       - 'core/chocolatey/**'
       - 'core/modules/**'
+      - 'core/manifest/**'
+      - 'core/build_step.py'
       - 'artifact/**'
       - 'builder/**'
+      - 'compat/**'
       - 'cage/**'
       - 'runtime/**'
       - 'pyproject.toml'
@@ -28,7 +34,6 @@ on:
 
 permissions:
   contents: read
-  packages: read
 
 jobs:
   runtime-profile:
@@ -39,6 +44,8 @@ jobs:
       image: ${{ steps.runtime.outputs.image }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -65,7 +72,7 @@ jobs:
           exit 78
 
   public-packages:
-    name: Build and prove public Chocolatey packages
+    name: Build public packages and verify launch plans
     needs: runtime-profile
     if: needs.runtime-profile.outputs.available == 'true'
     runs-on: ubuntu-latest
@@ -77,6 +84,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -87,13 +96,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e .
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Restore shared Chocolatey module cache
         uses: actions/cache@v4
@@ -114,7 +116,7 @@ jobs:
           cage inspect recipes/7zip.cage.yaml > evidence/7zip-recipe-inspection.json
           cage inspect recipes/notepadplusplus.cage.yaml > evidence/notepadplusplus-recipe-inspection.json
 
-      - name: Build and prove 7zip against the public Chocolatey feed
+      - name: Build 7zip and verify its launch plan against the public Chocolatey feed
         shell: bash
         run: |
           set -euo pipefail
@@ -129,7 +131,24 @@ jobs:
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -ne 0 ]; then
-            echo "7zip build failed with exit code $rc" >&2
+            bundle="$(find dist-7zip -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
+            {
+              echo '--- build tail ---'
+              tail -100 logs/7zip-build.log || true
+              for name in chocolatey-package-evidence.json chocolatey-diagnostic.json chocolatey-feature-policy.json chocolatey-smoke.json; do
+                echo "--- $name ---"
+                if [ -n "$bundle" ]; then
+                  cat "$bundle/metadata/$name" 2>/dev/null || echo unavailable
+                else
+                  echo 'bundle unavailable'
+                fi
+              done
+            } > logs/7zip-failure-summary.log
+            summary="$(tail -240 logs/7zip-failure-summary.log)"
+            summary="${summary//'%'/'%25'}"
+            summary="${summary//$'\n'/'%0A'}"
+            summary="${summary//$'\r'/'%0D'}"
+            echo "::error title=7zip public package proof failed::exit=$rc%0A${summary}"
             exit "$rc"
           fi
           bundle="$(find dist-7zip -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
@@ -138,11 +157,11 @@ jobs:
           cage bundle verify "$bundle" > evidence/7zip-bundle-verification.json
           test -s "$bundle/metadata/chocolatey-package-evidence.json"
           cp "$bundle/metadata/chocolatey-package-evidence.json" evidence/7zip-package-evidence.json
-          cage run --dry-run --graphics headless "$bundle" > evidence/7zip-launch-evidence.json
-          test -s evidence/7zip-launch-evidence.json
+          cage run --dry-run --graphics headless "$bundle" > evidence/7zip-launch-plan-evidence.json
+          test -s evidence/7zip-launch-plan-evidence.json
           tar -czf evidence/7zip-bundle.tar.gz -C "$(dirname "$bundle")" "$(basename "$bundle")"
 
-      - name: Build and prove Notepad++ against the public Chocolatey feed
+      - name: Build Notepad++ and verify its launch plan against the public Chocolatey feed
         shell: bash
         run: |
           set -euo pipefail
@@ -157,7 +176,24 @@ jobs:
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -ne 0 ]; then
-            echo "Notepad++ build failed with exit code $rc" >&2
+            bundle="$(find dist-notepadplusplus -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
+            {
+              echo '--- build tail ---'
+              tail -100 logs/notepadplusplus-build.log || true
+              for name in chocolatey-package-evidence.json chocolatey-diagnostic.json chocolatey-feature-policy.json chocolatey-smoke.json; do
+                echo "--- $name ---"
+                if [ -n "$bundle" ]; then
+                  cat "$bundle/metadata/$name" 2>/dev/null || echo unavailable
+                else
+                  echo 'bundle unavailable'
+                fi
+              done
+            } > logs/notepadplusplus-failure-summary.log
+            summary="$(tail -240 logs/notepadplusplus-failure-summary.log)"
+            summary="${summary//'%'/'%25'}"
+            summary="${summary//$'\n'/'%0A'}"
+            summary="${summary//$'\r'/'%0D'}"
+            echo "::error title=Notepad++ public package proof failed::exit=$rc%0A${summary}"
             exit "$rc"
           fi
           bundle="$(find dist-notepadplusplus -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
@@ -166,8 +202,8 @@ jobs:
           cage bundle verify "$bundle" > evidence/notepadplusplus-bundle-verification.json
           test -s "$bundle/metadata/chocolatey-package-evidence.json"
           cp "$bundle/metadata/chocolatey-package-evidence.json" evidence/notepadplusplus-package-evidence.json
-          cage run --dry-run --graphics headless "$bundle" > evidence/notepadplusplus-launch-evidence.json
-          test -s evidence/notepadplusplus-launch-evidence.json
+          cage run --dry-run --graphics headless "$bundle" > evidence/notepadplusplus-launch-plan-evidence.json
+          test -s evidence/notepadplusplus-launch-plan-evidence.json
           tar -czf evidence/notepadplusplus-bundle.tar.gz -C "$(dirname "$bundle")" "$(basename "$bundle")"
 
       - name: Upload public-package proof evidence
@@ -175,7 +211,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: chocolatey-public-package-proof-${{ github.sha }}
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
           path: |
             evidence/**

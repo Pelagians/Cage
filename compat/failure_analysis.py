@@ -24,6 +24,16 @@ _ROLLBACK_RE = re.compile(r"rolled back install of package:\s*([^\s]+)", re.IGNO
 _ERROR_CODE_RE = re.compile(r"\bErrorCode:\s*(\d+)", re.IGNORECASE)
 _PIDKEY_RE = re.compile(r"[A-Z0-9]{5}(?:-?[A-Z0-9]{5}){4}", re.IGNORECASE)
 _SECRET_ASSIGNMENT_RE = re.compile(r"(?i)\b([A-Za-z0-9_-]*(?:password|passwd|token|secret|api[_-]?key|pidkey)[A-Za-z0-9_-]*)\s*[:=]\s*[^\s,;]+")
+_RUNTIME_TRANSPORT_RE = re.compile(
+    r"(?:Seed verified CFW prepared prefix[\s\S]{0,500}curl:\s*\(\d+\))|"
+    r"(?:^|\n)curl:\s*\(\d+\)|downloaded bootstrap checksum mismatch",
+    re.IGNORECASE,
+)
+_RUNTIME_INTEGRITY_RE = re.compile(
+    r"(?:downloaded bootstrap checksum mismatch|bootstrap destination checksum mismatch|"
+    r"runtime (?:archive|evidence|manifest).*mismatch)",
+    re.IGNORECASE,
+)
 _COMMON_EXE_NAMES = {
     "WINWORD.EXE",
     "EXCEL.EXE",
@@ -52,9 +62,16 @@ def analyze_failure_path(path: Path | str, *, write: bool = False) -> dict[str, 
     rollback_packages: list[str] = []
     failure_windows: list[dict[str, Any]] = []
     first_failed_package: dict[str, Any] | None = None
+    runtime_transport_failed = False
+    runtime_integrity_failed = False
 
     for log_file in log_files:
-        lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+        log_text = log_file.read_text(encoding="utf-8", errors="replace")
+        if _RUNTIME_TRANSPORT_RE.search(log_text):
+            runtime_transport_failed = True
+        if _RUNTIME_INTEGRITY_RE.search(log_text):
+            runtime_integrity_failed = True
+        lines = log_text.splitlines()
         current_package: str | None = None
         for index, line in enumerate(lines):
             chained = _CHAINED_PACKAGE_RE.search(line)
@@ -88,13 +105,19 @@ def analyze_failure_path(path: Path | str, *, write: bool = False) -> dict[str, 
     top_level_return_code = execution_return_code if execution_return_code is not None else (return_codes[-1] if return_codes else None)
     chocolatey_failed = bool(chocolatey_diagnostic and chocolatey_diagnostic.get("status") == "failed")
     failure_detected = bool(
-        chocolatey_failed
+        runtime_transport_failed
+        or runtime_integrity_failed
+        or chocolatey_failed
         or first_failed_package
         or failure_windows
         or (top_level_return_code is not None and top_level_return_code != 0)
     )
     installed_executables = _find_installed_executables(bundle_root)
-    if chocolatey_failed:
+    if runtime_integrity_failed:
+        classification = "runtime-artifact-integrity-failed"
+    elif runtime_transport_failed:
+        classification = "runtime-artifact-transport-failed"
+    elif chocolatey_failed:
         classification = "chocolatey-diagnostic-failed"
     else:
         classification = "windows-installer-failed" if failure_detected else "no-failure-detected"

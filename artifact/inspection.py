@@ -6,9 +6,12 @@ Wine, Docker, Podman, or OCI access.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
-from typing import Any
+import re
+from typing import Any, cast
+import xml.etree.ElementTree as ET
 
 GRAPH_SCHEMA_VERSION = "cage.execution-graph/v0"
 MANIFEST_SCHEMA_VERSIONS = {"cage.app/v0", "cage.dev/v0"}
@@ -134,8 +137,30 @@ def _prefix_path_for_windows_path(prefix: Path, value: str) -> Path | None:
     return current
 
 
+def _has_symlink_ancestor(path: Path) -> bool:
+    current = path.absolute()
+    while True:
+        if current.is_symlink():
+            return True
+        parent = current.parent
+        if parent == current:
+            return False
+        current = parent
+
+
 def _is_contained_regular_file(path: Path | None, root: Path) -> bool:
-    if path is None or not path.is_file() or path.is_symlink():
+    if path is None or _has_symlink_ancestor(root):
+        return False
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        return False
+    current = root
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            return False
+    if not path.is_file():
         return False
     try:
         return path.resolve().is_relative_to(root.resolve())
@@ -280,12 +305,12 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
         if warning:
             warnings.append(warning)
 
-    bundle_is_dir = bundle.exists() and bundle.is_dir()
+    bundle_is_dir = bundle.exists() and bundle.is_dir() and not _has_symlink_ancestor(bundle)
     add_check(
         "bundle-directory",
         bundle_is_dir,
-        "bundle path exists and is a directory" if bundle_is_dir
-        else "bundle path is missing or is not a directory",
+        "bundle path exists as a directory without symlink aliases" if bundle_is_dir
+        else "bundle path is missing, not a directory, or reached through a symlink",
         error=f"bundle path is missing or not a directory: {bundle}",
     )
 
@@ -497,26 +522,86 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
     evidence: dict[str, Any] = {}
     if requires_package_evidence:
         try:
+            if evidence_path.is_symlink() or not _is_contained_regular_file(evidence_path, bundle / "metadata"):
+                raise ValueError("evidence path is not a contained regular file")
             evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
             evidence_error = "missing" if isinstance(exc, FileNotFoundError) else str(exc)
-    evidence_requested = evidence.get("requested")
+    evidence_requested = evidence.get("requested") if isinstance(evidence, dict) else None
+    expected_sources = {
+        module.get("packageSource", "https://community.chocolatey.org/api/v2/")
+        for module in manifest.get("modules", [])
+        if isinstance(module, dict) and module.get("type") == "chocolatey"
+    }
+
+    def package_bytes_match(item: dict[str, Any]) -> bool:
+        hash_re = r"^[0-9a-f]{64}$"
+        files: dict[str, bytes] = {}
+        for path_key, hash_key in (("nuspecPath", "nuspecSha256"), ("nupkgPath", "nupkgSha256")):
+            relative = item.get(path_key)
+            expected_hash = item.get(hash_key)
+            if not isinstance(relative, str) or not relative or not isinstance(expected_hash, str):
+                return False
+            if re.fullmatch(hash_re, expected_hash) is None:
+                return False
+            candidate = bundle / "prefix/drive_c/ProgramData/chocolatey/lib" / relative
+            if not _is_contained_regular_file(candidate, bundle / "prefix/drive_c/ProgramData/chocolatey/lib"):
+                return False
+            data = candidate.read_bytes()
+            files[path_key] = data
+            if hashlib.sha256(data).hexdigest() != expected_hash:
+                return False
+        try:
+            root = ET.fromstring(files["nuspecPath"])
+        except ET.ParseError:
+            return False
+        metadata = next((child for child in root if child.tag.rsplit("}", 1)[-1] == "metadata"), None)
+        if metadata is None:
+            return False
+        nuspec = {child.tag.rsplit("}", 1)[-1]: (child.text or "").strip() for child in metadata}
+        receipt = item.get("feedReceipt")
+        return (
+            item.get("authority") == "host-resolved-public-feed-receipt"
+            and isinstance(receipt, dict)
+            and receipt.get("packageHashAlgorithm") == "SHA512"
+            and isinstance(receipt.get("packageHash"), str)
+            and re.fullmatch(r"^[0-9a-f]{128}$", receipt["packageHash"]) is not None
+            and hashlib.sha512(files["nupkgPath"]).hexdigest() == receipt["packageHash"]
+            and nuspec.get("id", "").casefold() == str(item.get("id", "")).casefold()
+            and nuspec.get("version") == item.get("version") == receipt.get("version")
+        )
+
     evidence_ok = not requires_package_evidence
     if requires_package_evidence:
+        return_codes = evidence.get("returnCodes") if isinstance(evidence, dict) else None
+        return_codes_ok = (
+            isinstance(return_codes, dict)
+            and set(return_codes) == {"install", "settle", "query"}
+            and all(type(return_codes[name]) is int and return_codes[name] == 0 for name in return_codes)
+        )
+        requested_shape_ok = (
+            isinstance(evidence_requested, list)
+            and all(isinstance(item, dict) for item in evidence_requested)
+        )
+        requested_items = cast(list[dict[str, Any]], evidence_requested) if requested_shape_ok else []
         evidence_ok = (
             evidence_error is None
+            and isinstance(evidence, dict)
             and evidence.get("schemaVersion") == "cage.chocolatey-package-evidence/v0"
             and evidence.get("status") == "passed"
+            and evidence.get("authority") == "host-resolved-public-feed-receipt"
             and evidence.get("checks") == {"requestedPackages": True}
-            and evidence.get("returnCodes") == {"install": 0, "settle": 0, "query": 0}
-            and isinstance(evidence_requested, list)
-            and [item.get("id") for item in evidence_requested] == requested_packages
+            and len(expected_sources) == 1
+            and evidence.get("sourceUrl") in expected_sources
+            and return_codes_ok
+            and requested_shape_ok
+            and [item.get("id") for item in requested_items] == requested_packages
             and all(
-                isinstance(item, dict)
-                and item.get("observed") is True
+                item.get("observed") is True
                 and isinstance(item.get("version"), str)
-                and bool(item["version"])
-                for item in evidence_requested
+                and bool(item["version"].strip())
+                and package_bytes_match(item)
+                for item in requested_items
             )
         )
     add_check(
