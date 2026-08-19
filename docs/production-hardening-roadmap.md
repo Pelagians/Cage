@@ -1,7 +1,7 @@
 # Cage Production Hardening Roadmap
 
-Status: partially implemented — runtime network isolation, immutable CFW v1.0.2/Wine 11 runtime publication, and Cage recipe pinning implemented; requested-package evidence and public-package runtime proof remain active
-Date: 2026-07-27
+Status: partially implemented — runtime network isolation, immutable CFW v1.0.3/Wine 11 runtime publication, Cage recipe pinning, requested-package evidence, and public-package installation/launch-plan proof implemented; bounded real application execution remains active
+Date: 2026-08-19
 
 ## Objective
 
@@ -59,7 +59,7 @@ The manifest field captures *intent*; the CLI flag allows the operator to *overr
 
 ### Status
 
-Architecture revised in [ADR 0024](decisions/0024-cfw-prepared-runtime-provider.md). CFW owns Windows/Wine compatibility construction and has published the immutable v1.0.2 prepared-prefix release for Wine 11. Cage now consumes that pinned runtime; requested-package evidence and public-package runtime proof are the remaining active work.
+Architecture revised in [ADR 0024](decisions/0024-cfw-prepared-runtime-provider.md). CFW owns Windows/Wine compatibility construction and has published the immutable v1.0.3 prepared-prefix release for Wine 11. Cage consumes that pinned runtime. Requested-package evidence and public-package installation plus launch-plan proof are implemented; bounded real application execution remains active.
 
 ### Accepted design: `modules[].type: chocolatey`
 
@@ -91,20 +91,20 @@ Cage does not reconstruct CLR, GAC, PowerShell, Synchro, Chocolatey bootstrap, p
 
 | Area | Responsibility |
 |---|---|
-| `noahgiroux/Chocolatey-for-wine` | Compatibility construction, exact inputs, runtime proofs, prepared-prefix archive, evidence, and detached manifest |
+| `noahgiroux/CFW` | Compatibility construction, exact inputs, runtime proofs, prepared-prefix archive, evidence, and detached manifest |
 | `core/modules/chocolatey.py` | Strict recipe/profile validation and declaration-order consumer steps |
 | `core/chocolatey/assets/runtime-artifact.py` | Manifest/evidence verification and safe temporary extraction/promotion |
 | readiness/policy/lifecycle assets | Verification of imported behavior and requested package execution, without compatibility reconstruction |
 
 ### Acceptance criteria
 
-- CFW publishes immutable archive, evidence, manifest, and checksum assets for the v1.0.2/Wine 11 runtime. **Implemented.**
+- CFW publishes immutable archive, evidence, manifest, and checksum assets for the v1.0.3/Wine 11 runtime. **Implemented.**
 - Cage pins the detached manifest digest, exact producer image, and public recipe runtime selection. **Implemented.**
-- Requested-package evidence and public-package runtime proof are captured against the exact released runtime. **Remaining active work.**
-- Live Docker proof is not claimed as passed here; acceptance requires recorded runtime evidence from the public-package execution path.
+- Requested-package evidence, public-package installation, bundle verification, and launch-plan evidence are captured against the exact released runtime. **Implemented.**
+- The public-package workflow must pass against v1.0.3 before merge. Its installation and launch-plan evidence do not claim that either Windows application executed successfully.
 - Unsafe profile values and unsafe archive members are rejected before prefix replacement.
 - Missing producer assets fail the workflow rather than yielding a green skipped lifecycle.
-- Cage’s package lifecycle and requested package installation are exercised against the exact released runtime, with installed-package byte hashes and dry-run launch-plan evidence attached to the public-package workflow. This is not yet evidence that the application itself launched successfully. **Remaining active work.**
+- Cage’s package lifecycle and requested package installation are exercised against the exact released runtime, with installed-package byte hashes and dry-run launch-plan evidence attached to the public-package workflow. **Implemented.** This is not yet evidence that the application itself launched successfully; bounded real execution remains active.
 
 ### Parked work
 
@@ -150,7 +150,7 @@ Once the remaining Theme 2 evidence and public-package runtime proof are complet
 | Order | Theme | Effort | Dependencies | Delivers |
 |---|---|---|---|---|
 | 1 | Runtime `--net none` default | Small (1–2 files + tests) | None | Implemented — immediate security hardening |
-| 2 | Deterministic Chocolatey MVP path | Medium/large (CFW producer + verified consumer + tests) | ADR 0024 | Runtime foundation implemented — immutable CFW v1.0.2/Wine 11 publication and Cage recipe pinning are complete; requested-package evidence and public-package runtime proof remain active (without claiming live Docker proof passed) |
+| 2 | Deterministic Chocolatey MVP path | Medium/large (CFW producer + verified consumer + tests) | ADR 0024 | Runtime foundation implemented — immutable CFW v1.0.3/Wine 11 publication, Cage pinning, requested-package evidence, and public-package installation/launch-plan proof are complete; bounded real application execution remains active |
 | 3 | Network escape hatch (manifest field + CLI flag) | Small (manifest + launcher + kube) | Theme 1 (parallel ok) | Implemented — overridable isolation |
 | 4 | External module registry | Medium (module.yaml resolver) | Built-in Chocolatey module proves the pattern | Proposed — cleaner abstraction |
 | 5 | Additional prepared-runtime producers | Medium (producer contract + CI + immutable release) | Theme 2 | Parked — only after Wine 11 CFW proof |

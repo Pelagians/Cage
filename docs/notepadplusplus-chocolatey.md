@@ -1,6 +1,6 @@
 # Notepad++ Chocolatey Recipe
 
-`recipes/notepadplusplus.cage.yaml` is the strict v0, module-first Chocolatey recipe for a Notepad++ proof. It uses the built-in **CFW v1.0.2** prepared runtime with **Wine 11**. CFW owns the compatibility prefix and Wine identity, so this CFW-backed recipe must not declare `runtime.runner` or a Cage `compatibility` block.
+`recipes/notepadplusplus.cage.yaml` is the strict v0, module-first Chocolatey recipe for a Notepad++ proof. It uses the built-in **CFW v1.0.3** prepared runtime with **Wine 11**. CFW owns the compatibility prefix and Wine identity, so this CFW-backed recipe must not declare `runtime.runner` or a Cage `compatibility` block.
 
 ## Inspect
 

@@ -79,7 +79,7 @@ class PublicChocolateyRecipeTests(unittest.TestCase):
                 self.assertIn(f"- '{path}'", workflow)
 
     def test_chocolatey_recipe_docs_state_exact_cfw_release_and_wine_version(self):
-        expected = "CFW v1.0.2"
+        expected = "CFW v1.0.3"
         for path in (DOCS / "README.md", DOCS / "notepadplusplus-chocolatey.md"):
             with self.subTest(path=path):
                 text = path.read_text(encoding="utf-8")

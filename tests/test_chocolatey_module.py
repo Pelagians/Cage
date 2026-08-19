@@ -151,7 +151,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn("cfw-chocolatey-runtime", script)
         self.assertNotIn("KB3AIK_EN.iso", script)
         self.assertNotIn("Win7AndW2K8R2-KB3191566-x64.zip", script)
-        self.assertNotIn("PowerShell-7.5.5-win-x64.msi", script)
+        self.assertNotRegex(script, r"PowerShell-[0-9]+(?:\.[0-9]+)+-win-x64\.msi")
         self.assertNotIn("Install Synchro PowerShell layer", descriptions)
         self.assertNotIn("Install Windows PowerShell 5.1 backend", descriptions)
 
@@ -236,7 +236,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         artifact = serialized["modules"][0]["install"]["runtimeArtifact"]
         self.assertEqual(artifact, _RUNTIME)
 
-    def test_released_default_runtime_profile_is_pinned_to_cfw_v102(self):
+    def test_released_default_runtime_profile_is_pinned_to_cfw_v103(self):
         from core.modules.chocolatey import (
             DEFAULT_CFW_RUNTIME_ARTIFACT,
             DEFAULT_CFW_RUNTIME_PROFILE_ID,
@@ -246,20 +246,20 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         assert DEFAULT_CFW_RUNTIME_ARTIFACT is not None
         self.assertEqual(
             DEFAULT_CFW_RUNTIME_PROFILE_ID,
-            "cfw-chocolatey-2.6.0-powershell-7.5.5-synchro-4.2.0",
+            "cfw-chocolatey-2.6.0-powershell-7.6.5-synchro-4.2.0",
         )
         self.assertEqual(DEFAULT_CFW_RUNTIME_ARTIFACT["id"], DEFAULT_CFW_RUNTIME_PROFILE_ID)
         self.assertEqual(
             DEFAULT_CFW_RUNTIME_ARTIFACT["manifestSha256"],
-            "c3ef9da40ce4fa40413e1ea1918dc040c46eb266721180e6d9ee3c4a0606593d",
+            "4c5da877a30a560368d0885541e26710cf5039d6ee5f51859c6468763f3fded6",
         )
         self.assertEqual(
             DEFAULT_CFW_RUNTIME_ARTIFACT["wineImage"],
-            "ghcr.io/pelagians/cage-wine@sha256:b8462dedb8f4dc6e48305af5a4485c29796e5d7c292272b8492fb763b6b59224",
+            "ghcr.io/pelagians/cage-wine@sha256:5ef0537cc730d4033c9a50a369043df825afaa54c05035453aadbaf96060d148",
         )
         for field in ("url", "evidenceUrl", "manifestUrl"):
             self.assertIn("github.com/noahgiroux/CFW/releases/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
-            self.assertIn("/cfw-runtime-v1.0.2/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
+            self.assertIn("/cfw-runtime-v1.0.3/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
 
     def test_multiple_chocolatey_modules_are_rejected_before_duplicate_seeding(self):
         data = {
