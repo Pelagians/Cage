@@ -7,6 +7,7 @@ policy.
 """
 from __future__ import annotations
 
+import base64
 import json
 import re
 import shlex
@@ -25,7 +26,7 @@ BUNDLE_MOUNT = "/opt/cage/bundle"
 PREFIX_COPY = "/tmp/cage-prefix"
 FILE_INPUT_MOUNT_ROOT = "/mnt/cage-inputs"
 RUNNER_CONTAINER_DIR = "/opt/cage-runner"
-SUPPORTED_GRAPHICS = {"headless", "vnc"}
+SUPPORTED_GRAPHICS = {"headless", "selkies"}
 SUPPORTED_NETWORK_MODES = {"none", "bridge", "host"}
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
@@ -39,8 +40,7 @@ def build_run_plan(
     *,
     graphics: str | None = None,
     engine: str | None = None,
-    vnc_port: int = 5900,
-    novnc_port: int = 6080,
+    selkies_port: int = 3001,
     container_name: str | None = None,
     entrypoint: str | None = None,
     files: list[Path | str] | None = None,
@@ -87,19 +87,30 @@ def build_run_plan(
             f"(supported: {', '.join(supported_modes) or 'none'})"
         )
 
+    session_contract = str(runtime.get("sessionContract") or "")
+    if mode == "selkies" and session_contract != "cage.selkies-wayland/v1":
+        raise RunError(
+            "runtime image is not qualified for Cage Selkies/Wayland sessions "
+            f"(sessionContract={session_contract or 'missing'}); publish and pin a producer-owned "
+            "desktop runtime with sessionContract=cage.selkies-wayland/v1"
+        )
+
     graph_network = runtime["network"] if "network" in runtime else "none"
     selected_network = network if network is not None else graph_network
+    if isinstance(selkies_port, bool) or not isinstance(selkies_port, int) or not 1 <= selkies_port <= 65535:
+        raise RunError("selkies port must be between 1 and 65535")
     _validate_network_mode(selected_network)
     _validate_graphics_network(mode, selected_network)
 
-    image = _runtime_image(runtime)
+    image = (
+        str(runtime.get("desktopImage") or "")
+        if mode == "selkies"
+        else _runtime_image(runtime)
+    )
+    if not image:
+        raise RunError("runtime does not declare a Selkies desktop image")
     launch_command = _launch_command(runtime, launch, [item["winePath"] for item in file_arguments])
     runner_cache = _runner_cache_plan(runtime, runner_cache_dir, require_runner=require_runner, engine=selected_engine)
-    environment = _container_environment(mode)
-    environment.update(dict(runtime.get("environment") or {}))
-    environment.update(compatibility_env)
-    if runner_cache and runner_cache.get("status") == "present":
-        environment.update(runner_cache["environment"])
     script = _launch_script(
         mode,
         launch,
@@ -107,6 +118,14 @@ def build_run_plan(
         compatibility_env,
         runner_enabled=bool(runner_cache and runner_cache.get("status") == "present"),
     )
+    wine_graphics = str(graphics_contract.get("wineGraphics") or "xwayland")
+    if mode == "headless" and wine_graphics == "wayland":
+        raise RunError("native Wine Wayland requires graphics selkies")
+    environment = _container_environment(mode, wine_graphics, script)
+    environment.update(dict(runtime.get("environment") or {}))
+    environment.update(compatibility_env)
+    if runner_cache and runner_cache.get("status") == "present":
+        environment.update(runner_cache["environment"])
     argv = _container_argv(
         selected_engine,
         bundle,
@@ -114,8 +133,7 @@ def build_run_plan(
         environment,
         script,
         graphics=mode,
-        vnc_port=vnc_port,
-        novnc_port=novnc_port,
+        selkies_port=selkies_port,
         container_name=container_name,
         network=selected_network,
         file_mounts=[item["mount"] for item in file_arguments] + ([runner_cache["mount"]] if runner_cache and runner_cache.get("status") == "present" else []),
@@ -154,8 +172,12 @@ def build_run_plan(
         "graphics": {
             "mode": mode,
             "supportedModes": supported_modes,
-            "vncPort": vnc_port if mode == "vnc" else None,
-            "noVncPort": novnc_port if mode == "vnc" else None,
+            "httpsPort": selkies_port if mode == "selkies" else None,
+            "sessionBackend": graphics_contract.get("sessionBackend", "wayland"),
+            "compositor": graphics_contract.get("compositor", "labwc"),
+            "wineGraphics": wine_graphics,
+            "resolution": graphics_contract.get("resolution", {"width": 1280, "height": 800}),
+            "dpi": graphics_contract.get("dpi", 96),
         },
         "launch": launch,
         "entrypoints": suite_entrypoints,
@@ -316,8 +338,7 @@ def _container_argv(
     script: str,
     *,
     graphics: str,
-    vnc_port: int,
-    novnc_port: int,
+    selkies_port: int,
     container_name: str | None,
     network: str,
     file_mounts: list[str] | None = None,
@@ -330,10 +351,14 @@ def _container_argv(
         argv.extend(["-v", mount])
     for key, value in environment.items():
         argv.extend(["-e", f"{key}={value}"])
-    if graphics == "vnc":
-        argv.extend(["-p", f"127.0.0.1:{vnc_port}:5900"])
-        argv.extend(["-p", f"127.0.0.1:{novnc_port}:6080"])
-    argv.extend([image, "bash", "-lc", script])
+    if graphics == "selkies":
+        argv.extend(["-p", f"127.0.0.1:{selkies_port}:3001"])
+    if graphics == "selkies":
+        # The separate desktop image owns ENTRYPOINT=/init.
+        argv.append(image)
+    else:
+        # Existing build/headless runtime images retain their command-exec entrypoint.
+        argv.extend([image, "bash", "-lc", script])
     return argv
 
 
@@ -344,23 +369,33 @@ def _validate_network_mode(network: str) -> None:
 
 
 def _validate_graphics_network(graphics: str, network: str) -> None:
-    if graphics == "vnc" and network != "bridge":
+    if graphics == "selkies" and network != "bridge":
         raise RunError(
-            "graphics vnc requires network bridge for loopback-only VNC/noVNC "
+            "graphics selkies requires network bridge for loopback-only HTTPS "
             "port publishing; use --network bridge"
         )
 
 
-def _container_environment(graphics: str) -> dict[str, str]:
-    return {
+def _container_environment(graphics: str, wine_graphics: str, script: str) -> dict[str, str]:
+    encoded_script = base64.b64encode(script.encode("utf-8")).decode("ascii")
+    environment = {
         "CAGE_BUNDLE": BUNDLE_MOUNT,
         "CAGE_GRAPH": f"{BUNDLE_MOUNT}/metadata/graph.json",
         "CAGE_PREFIX_SOURCE": f"{BUNDLE_MOUNT}/prefix",
         "WINEPREFIX": PREFIX_COPY,
         "WINEFS": "launcher",
         "CAGE_GRAPHICS": graphics,
-        "DISPLAY": ":99",
+        "CAGE_SESSION_MODE": graphics,
+        "CAGE_WINE_GRAPHICS": wine_graphics,
+        "CAGE_LAUNCH_SCRIPT_B64": encoded_script,
+        "START_DOCKER": "false",
+        "PIXELFLUX_WAYLAND": "true",
+        "RESTART_APP": "false",
     }
+    if graphics != "selkies":
+        for key in ("CAGE_LAUNCH_SCRIPT_B64", "START_DOCKER", "PIXELFLUX_WAYLAND", "RESTART_APP"):
+            environment.pop(key, None)
+    return environment
 
 
 def _launch_script(
@@ -382,6 +417,7 @@ def _launch_script(
         *_runner_launch_script_lines(runner_enabled),
         "rm -rf \"$WINEPREFIX\"",
         "cp -a \"$CAGE_PREFIX_SOURCE\" \"$WINEPREFIX\"",
+        "/usr/local/libexec/cage-select-wine-graphics",
     ]
 
     working_dir = launch.get("workingDirectory")
@@ -397,18 +433,6 @@ def _launch_script(
         if not _ENV_NAME.fullmatch(key):
             raise RunError(f"launch.env key {key!r} is not a valid POSIX environment name")
         lines.append(f"export {key}={shlex.quote(str(value))}")
-
-    if mode == "vnc":
-        lines.extend([
-            "if ! command -v x11vnc >/dev/null 2>&1; then echo 'x11vnc is required for Cage vnc graphics' >&2; exit 70; fi",
-            "if ! command -v websockify >/dev/null 2>&1; then echo 'websockify is required for Cage vnc graphics' >&2; exit 70; fi",
-            "x11vnc -display \"$DISPLAY\" -rfbport 5900 -forever -shared -nopw -listen 0.0.0.0 >/tmp/cage-x11vnc.log 2>&1 &",
-            "if [ -d /usr/share/novnc ]; then",
-            "  websockify --web=/usr/share/novnc 0.0.0.0:6080 localhost:5900 >/tmp/cage-websockify.log 2>&1 &",
-            "else",
-            "  websockify 0.0.0.0:6080 localhost:5900 >/tmp/cage-websockify.log 2>&1 &",
-            "fi",
-        ])
 
     lines.append("exec " + " ".join(shlex.quote(part) for part in command))
     return "\n".join(lines) + "\n"

@@ -1,0 +1,18 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+# LinuxServer's Labwc session runs this file as abc. Cage launch plans are
+# transported as base64 so Docker/Podman never replace the inherited /init.
+if [[ -n "${CAGE_LAUNCH_SCRIPT_B64:-}" ]]; then
+  launch_script=/tmp/cage-launch.sh
+  printf '%s' "$CAGE_LAUNCH_SCRIPT_B64" | base64 -d > "$launch_script"
+  chmod 0700 "$launch_script"
+  exec bash "$launch_script"
+fi
+
+# Runnable application OCI images install this launcher and inherit /init.
+if [[ -n "${CAGE_APP_LAUNCHER:-}" && -x "${CAGE_APP_LAUNCHER}" ]]; then
+  exec "${CAGE_APP_LAUNCHER}"
+fi
+
+exec sleep infinity

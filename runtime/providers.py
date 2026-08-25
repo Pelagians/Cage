@@ -172,6 +172,8 @@ def required_cfw_runtime_artifact(manifest) -> dict[str, Any] | None:
                 normalized["wineImage"],
                 tuple(normalized["wineVersions"]),
                 tuple(sorted(normalized["environment"].items())),
+                normalized.get("sessionContract"),
+                normalized.get("selkiesImage"),
             ))
     if len(identities) > 1:
         raise ManifestError("Chocolatey modules declare conflicting CFW prepared runtimes")
@@ -199,6 +201,29 @@ def resolve_manifest_runtime(manifest) -> RuntimeBinding:
         environment=dict(artifact["environment"]),
     )
 
+
+
+def resolve_selkies_image(binding: RuntimeBinding, *, published: bool = True) -> str | None:
+    """Resolve the separate interactive Selkies image for a runtime binding."""
+    suffix = {
+        "wine": "wine-selkies",
+        "staging": "wine-staging-selkies",
+    }.get(binding.provider)
+    if suffix is None:
+        return None
+    tag = binding.resolved_version or binding.version
+    prefix = "ghcr.io/pelagians/cage-" if published else "cage/"
+    return f"{prefix}{suffix}:{tag}"
+
+
+def resolve_manifest_selkies_image(manifest, binding: RuntimeBinding, *, published: bool = True) -> str | None:
+    """Resolve a Cage-owned or producer-owned qualified desktop image."""
+    artifact = required_cfw_runtime_artifact(manifest)
+    if artifact is not None:
+        if artifact.get("sessionContract") != "cage.selkies-wayland/v1":
+            return None
+        return artifact.get("selkiesImage")
+    return resolve_selkies_image(binding, published=published)
 
 def list_providers() -> list[str]:
     return sorted(set(list_catalog_providers()) | set(_EXTRA_PROVIDERS))

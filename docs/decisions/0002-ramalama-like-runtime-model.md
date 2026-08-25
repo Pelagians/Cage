@@ -23,7 +23,7 @@ Valve Proton is removed as an active provider for now because upstream GitHub re
 
 ## Scope
 
-Cage should be Podman-native in UX and support local build/test/deploy, OCI export/import, graphics modes (`headless` and visible/VNC), and Kubernetes manifest generation. Cage should not become the full production orchestrator; advanced multi-tenant/session orchestration belongs to downstream systems such as VIC.
+Cage should be Podman-native in UX and support local build/test/deploy, OCI export/import, graphics modes (`headless` and visible/Selkies), and Kubernetes manifest generation. Cage should not become the full production orchestrator; advanced multi-tenant/session orchestration belongs to downstream systems such as Nereus.
 
 ## Reasoning
 

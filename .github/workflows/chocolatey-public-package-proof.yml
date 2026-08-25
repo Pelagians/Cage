@@ -42,6 +42,7 @@ jobs:
     outputs:
       available: ${{ steps.runtime.outputs.available }}
       image: ${{ steps.runtime.outputs.image }}
+      session_contract: ${{ steps.runtime.outputs.session_contract }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,6 +63,7 @@ jobs:
           artifact = DEFAULT_CFW_RUNTIME_ARTIFACT
           print(f"available={'true' if artifact else 'false'}")
           print(f"image={artifact['wineImage'] if artifact else ''}")
+          print(f"session_contract={artifact.get('sessionContract', '') if artifact else ''}")
           PY
 
       - name: Fail closed when the pinned runtime is unavailable

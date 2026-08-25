@@ -139,10 +139,10 @@ class ModuleCacheExecutionTests(unittest.TestCase):
         parser = build_parser()
 
         build_args = parser.parse_args([
-            "build", "examples/vscode-choco-vnc.cage.yaml", "--module-cache-dir", "/tmp/cage-modules"
+            "build", "examples/vscode-choco-selkies.cage.yaml", "--module-cache-dir", "/tmp/cage-modules"
         ])
         compat_args = parser.parse_args([
-            "compat", "test", "examples/vscode-choco-vnc.cage.yaml", "--module-cache-dir", "/tmp/cage-modules"
+            "compat", "test", "examples/vscode-choco-selkies.cage.yaml", "--module-cache-dir", "/tmp/cage-modules"
         ])
 
         self.assertEqual(build_args.module_cache_dir, "/tmp/cage-modules")

@@ -32,6 +32,7 @@ def create_kube_export_plan(
     replicas: int = 1,
     graphics: str = 'headless',
     allow_mutable_tag: bool = False,
+    image_verification: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return a Kubernetes export plan for a verified Cage bundle."""
     bundle = Path(bundle_path)
@@ -53,6 +54,23 @@ def create_kube_export_plan(
     labels = _labels(resource_name, app_name, app_version)
     annotations = _annotations(app_name, app_version, image)
     network_mode = _network_mode(graph)
+    graph_graphics = dict(graph.get('graphics') or {})
+    supported_graphics = set(graph_graphics.get('supportedModes') or [])
+    if graphics not in supported_graphics:
+        raise KubeExportError(
+            f"graphics mode {graphics!r} is not supported by bundle graph"
+        )
+    if graphics == 'selkies' and network_mode != 'bridge':
+        raise KubeExportError(
+            "graphics selkies requires runtime.network bridge for pod HTTPS access"
+        )
+    if graphics == 'selkies':
+        if replicas != 1:
+            raise KubeExportError("graphics selkies requires exactly one replica")
+        _validate_selkies_image_verification(image, image_verification)
+    wine_graphics = str(graph_graphics.get('wineGraphics') or 'xwayland')
+    if graphics == 'headless' and wine_graphics == 'wayland':
+        raise KubeExportError('native Wine Wayland requires graphics selkies')
 
     resources: list[dict[str, Any]] = []
     if not no_pvc:
@@ -60,6 +78,9 @@ def create_kube_export_plan(
         resources.append(_pvc(f'{resource_name}-exports', namespace, labels, annotations, exports_size))
     if network_mode == 'none':
         resources.append(_deny_egress_policy(f'{resource_name}-deny-egress', namespace, labels, annotations))
+    if graphics == 'selkies':
+        resources.append(_deny_ingress_policy(f'{resource_name}-deny-ingress', namespace, labels, annotations))
+        resources.append(_selkies_service(resource_name, namespace, labels, annotations))
     resources.append(_deployment(
         name=resource_name,
         namespace=namespace,
@@ -69,6 +90,7 @@ def create_kube_export_plan(
         no_pvc=no_pvc,
         replicas=replicas,
         graphics=graphics,
+        wine_graphics=wine_graphics,
         network=network_mode,
     ))
     manifest_yaml = render_kube_yaml(resources)
@@ -130,6 +152,7 @@ def export_kube_manifest(
     replicas: int = 1,
     graphics: str = 'headless',
     allow_mutable_tag: bool = False,
+    image_verification: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Write Kubernetes YAML for a Cage application image and return a summary."""
     plan = create_kube_export_plan(
@@ -143,6 +166,7 @@ def export_kube_manifest(
         replicas=replicas,
         graphics=graphics,
         allow_mutable_tag=allow_mutable_tag,
+        image_verification=image_verification,
     )
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -184,6 +208,29 @@ def _pvc(
     }
 
 
+def _selkies_service(
+    name: str,
+    namespace: str,
+    labels: dict[str, str],
+    annotations: dict[str, str],
+) -> dict[str, Any]:
+    return {
+        'apiVersion': 'v1',
+        'kind': 'Service',
+        'metadata': {
+            'name': name,
+            'namespace': namespace,
+            'labels': labels,
+            'annotations': annotations,
+        },
+        'spec': {
+            'type': 'ClusterIP',
+            'selector': {'app.kubernetes.io/instance': name},
+            'ports': [{'name': 'https', 'port': 3001, 'targetPort': 3001}],
+        },
+    }
+
+
 def _deployment(
     *,
     name: str,
@@ -194,16 +241,55 @@ def _deployment(
     no_pvc: bool,
     replicas: int,
     graphics: str,
+    wine_graphics: str,
     network: str,
 ) -> dict[str, Any]:
     state_volume = {'name': 'cage-state'}
     exports_volume = {'name': 'cage-exports'}
+    config_volume = {'name': 'cage-config', 'emptyDir': {}}
     if no_pvc:
         state_volume['emptyDir'] = {}
         exports_volume['emptyDir'] = {}
     else:
         state_volume['persistentVolumeClaim'] = {'claimName': f'{name}-state'}
         exports_volume['persistentVolumeClaim'] = {'claimName': f'{name}-exports'}
+
+
+    container = {
+        'name': 'cage-app',
+        'image': image,
+        'imagePullPolicy': 'IfNotPresent',
+        'env': [
+            {'name': 'CAGE_STATE', 'value': STATE_ROOT},
+            {'name': 'CAGE_EXPORTS', 'value': EXPORTS_ROOT},
+            {'name': 'CAGE_GRAPHICS', 'value': graphics},
+            {'name': 'CAGE_SESSION_MODE', 'value': graphics},
+            {'name': 'CAGE_WINE_GRAPHICS', 'value': wine_graphics},
+        ],
+        'volumeMounts': [
+            {'name': 'cage-state', 'mountPath': STATE_ROOT},
+            {'name': 'cage-exports', 'mountPath': EXPORTS_ROOT},
+        ],
+    }
+    volumes = [state_volume, exports_volume]
+    if graphics == 'selkies':
+        container['env'].extend([
+            {'name': 'PUID', 'value': '1000'},
+            {'name': 'PGID', 'value': '1000'},
+        ])
+        container['command'] = ['/init']
+        container['ports'] = [{'name': 'https', 'containerPort': 3001, 'protocol': 'TCP'}]
+        container['securityContext'] = {
+            'runAsUser': 0,
+            'runAsGroup': 0,
+            'runAsNonRoot': False,
+            'allowPrivilegeEscalation': False,
+            'privileged': False,
+            'capabilities': {'drop': ['ALL'], 'add': ['CHOWN', 'SETGID', 'SETUID']},
+            'seccompProfile': {'type': 'RuntimeDefault'},
+        }
+        container['volumeMounts'].append({'name': 'cage-config', 'mountPath': '/config'})
+        volumes.append(config_volume)
 
     return {
         'apiVersion': 'apps/v1',
@@ -228,27 +314,56 @@ def _deployment(
                 },
                 'spec': {
                     'hostNetwork': network == 'host',
-                    'containers': [
-                        {
-                            'name': 'cage-app',
-                            'image': image,
-                            'imagePullPolicy': 'IfNotPresent',
-                            'env': [
-                                {'name': 'CAGE_STATE', 'value': STATE_ROOT},
-                                {'name': 'CAGE_EXPORTS', 'value': EXPORTS_ROOT},
-                                {'name': 'CAGE_GRAPHICS', 'value': graphics},
-                            ],
-                            'volumeMounts': [
-                                {'name': 'cage-state', 'mountPath': STATE_ROOT},
-                                {'name': 'cage-exports', 'mountPath': EXPORTS_ROOT},
-                            ],
-                        },
-                    ],
-                    'volumes': [state_volume, exports_volume],
+                    'containers': [container],
+                    'volumes': volumes,
                 },
             },
         },
     }
+
+
+def _deny_ingress_policy(
+    name: str,
+    namespace: str,
+    labels: dict[str, str],
+    annotations: dict[str, str],
+) -> dict[str, Any]:
+    return {
+        'apiVersion': 'networking.k8s.io/v1',
+        'kind': 'NetworkPolicy',
+        'metadata': {'name': name, 'namespace': namespace, 'labels': labels, 'annotations': annotations},
+        'spec': {
+            'podSelector': {'matchLabels': {'app.kubernetes.io/instance': labels['app.kubernetes.io/instance']}},
+            'policyTypes': ['Ingress'],
+            'ingress': [],
+        },
+    }
+
+
+def _validate_selkies_image_verification(
+    image: str,
+    verification: dict[str, Any] | None,
+) -> None:
+    if not isinstance(verification, dict):
+        raise KubeExportError(
+            'graphics selkies requires a valid cage image verify receipt for the exact image'
+        )
+    checks = verification.get('checks')
+    if (
+        verification.get('schemaVersion') != 'cage.oci-image-verification/v0'
+        or verification.get('success') is not True
+        or verification.get('valid') is not True
+        or verification.get('errors') not in ([], None)
+        or not isinstance(checks, list)
+        or not checks
+        or any(not isinstance(check, dict) or check.get('ok') is not True for check in checks)
+    ):
+        raise KubeExportError('Selkies image verification receipt is incomplete or failed')
+    if verification.get('imageRef') != image:
+        raise KubeExportError('Selkies image verification receipt does not match --image')
+    artifact = verification.get('artifactMetadata')
+    if not isinstance(artifact, dict) or artifact.get('imageGraphics') != 'selkies':
+        raise KubeExportError('verified OCI image is not a Selkies application image')
 
 
 def _deny_egress_policy(
@@ -309,7 +424,7 @@ def _validate_image_ref(image: str, *, allow_mutable_tag: bool) -> None:
 
 
 def _is_digest_pinned(image: str) -> bool:
-    return '@sha256:' in image and bool(image.split('@sha256:', 1)[1])
+    return re.fullmatch(r'[^@\s]+@sha256:[0-9a-f]{64}', image) is not None
 
 
 def _network_mode(graph: dict[str, Any]) -> str:

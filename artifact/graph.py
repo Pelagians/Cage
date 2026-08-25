@@ -14,11 +14,14 @@ from typing import Any
 
 from builder.pipeline import build_plan
 from core.manifest import Manifest, resolve_module_capabilities
-from runtime.providers import RuntimeBinding, resolve_manifest_runtime
+from runtime.providers import (
+    RuntimeBinding, required_cfw_runtime_artifact, resolve_manifest_runtime,
+    resolve_manifest_selkies_image,
+)
 
 SCHEMA_VERSION = "cage.execution-graph/v0"
 DEFAULT_GRAPHICS_MODE = "headless"
-SUPPORTED_GRAPHICS_MODES = ["headless", "vnc"]
+SUPPORTED_GRAPHICS_MODES = ["headless", "selkies"]
 
 
 def build_execution_graph(manifest: Manifest) -> dict[str, Any]:
@@ -33,6 +36,17 @@ def build_execution_graph(manifest: Manifest) -> dict[str, Any]:
     builder_runtime_payload = _runtime_payload(runtime)
     runner_runtime_payload = dict(builder_runtime_payload)
     runner_runtime_payload["network"] = manifest.runtime.network
+    cfw_runtime = required_cfw_runtime_artifact(manifest)
+    desktop_image = resolve_manifest_selkies_image(manifest, runtime, published=True)
+    local_desktop_image = resolve_manifest_selkies_image(manifest, runtime, published=False)
+    runner_runtime_payload["sessionContract"] = (
+        str(cfw_runtime.get("sessionContract") or "unqualified-producer-runtime")
+        if cfw_runtime is not None
+        else "cage.selkies-wayland/v1"
+    )
+    runner_runtime_payload["desktopImage"] = desktop_image
+    if local_desktop_image and local_desktop_image != desktop_image:
+        runner_runtime_payload["localDesktopImage"] = local_desktop_image
     build_payload = {"network": manifest.build.network}
     launch_payload = manifest.launch.to_dict() if manifest.launch else {"hasDefaultLaunch": False}
 
@@ -114,6 +128,11 @@ def build_execution_graph(manifest: Manifest) -> dict[str, Any]:
         "graphics": {
             "defaultMode": DEFAULT_GRAPHICS_MODE,
             "supportedModes": SUPPORTED_GRAPHICS_MODES,
+            "sessionBackend": "wayland",
+            "compositor": "labwc",
+            "wineGraphics": manifest.runtime.wine_graphics,
+            "resolution": {"width": 1280, "height": 800},
+            "dpi": 96,
         },
         "launch": launch_payload,
         "entrypoints": [entrypoint if isinstance(entrypoint, dict) else entrypoint.to_dict() for entrypoint in manifest.entrypoints],

@@ -679,13 +679,13 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
 
     graphics = graph.get("graphics", {})
     modes = graphics.get("supportedModes", [])
-    graphics_ok = graphics.get("defaultMode") in modes and {"headless", "vnc"}.issubset(set(modes))
+    graphics_ok = graphics.get("defaultMode") in modes and {"headless", "selkies"}.issubset(set(modes))
     add_check(
         "graphics-contract",
         graphics_ok,
-        "graph supports headless and vnc graphics modes",
+        "graph supports headless and Selkies graphics modes",
         details={"defaultMode": graphics.get("defaultMode"), "supportedModes": modes},
-        error="graph graphics must include defaultMode and support headless and vnc",
+        error="graph graphics must include defaultMode and support headless and selkies",
     )
 
     node_ids = {node.get("id") for node in graph.get("nodes", [])}

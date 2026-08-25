@@ -1,18 +1,16 @@
 schemaVersion: cage.app/v0
-name: vscode-choco-vnc
+name: vscode-choco-selkies
 version: "0.1.0"
 
 runtime:
   provider: wine
   version: "11.0"
   network: bridge
+  wineGraphics: xwayland
 
 launch:
-  entrypoint: /opt/wine/bin/winevnc.sh
-  args:
-    - "C:/Program Files/Microsoft VS Code/Code.exe"
+  entrypoint: "C:/Program Files/Microsoft VS Code/Code.exe"
   env:
-    VNC_GEOMETRY: "1920x1080"
     WINEDEBUG: "-all"
 
 modules:

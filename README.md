@@ -129,7 +129,7 @@ cage artifacts resolve notepad-plus-plus
 # Preview and run the built application artifact by app name or bundle path
 cage run --dry-run --graphics headless notepad-plus-plus
 cage run --graphics headless notepad-plus-plus
-cage run --graphics vnc --network bridge --vnc-port 5900 --novnc-port 6080 dist/notepad-plus-plus-8.6.0
+cage run --graphics selkies --network bridge --selkies-port 3001 dist/notepad-plus-plus-8.6.0
 
 # Export a runnable application OCI image by app name or bundle path
 cage export oci notepad-plus-plus \
@@ -282,7 +282,7 @@ fileAssociations:
       - application/vnd.openxmlformats-officedocument.wordprocessingml.document
 ```
 
-Application-specific or proprietary recipes, including Office-shaped recipes, belong in `vic-legacy` or customer/private repositories rather than public Cage.
+Application-specific or proprietary recipes, including Office-shaped recipes, belong in customer/private repositories rather than public Cage.
 
 ## Source Integrity and Compatibility Evidence
 
@@ -392,12 +392,12 @@ inside the catalog runtime container.
 # Machine-readable run plan only
 cage run --dry-run --graphics headless dist/my-app-1.0.0
 
-# Headless execution through the runtime image's Xvfb entrypoint
+# Headless execution through the catalog build/runtime image
 cage run --graphics headless dist/my-app-1.0.0 \
   --runner-cache-dir "$HOME/cage-runners"
 
-# Visible execution with bridge networking and host-loopback-published VNC/noVNC ports
-cage run --graphics vnc --network bridge --vnc-port 5900 --novnc-port 6080 dist/my-app-1.0.0
+# Visible execution with bridge networking and host-loopback-published Selkies HTTPS ports
+cage run --graphics selkies --network bridge --selkies-port 3001 dist/my-app-1.0.0
 ```
 
 For v0, the bundle is mounted read-only at `/opt/cage/bundle`; the prefix
@@ -524,12 +524,15 @@ container/
 ├── build.sh                          # Build all providers
 ├── docker-compose.yml                # Local dev compose
 ├── common/
-│   ├── xvfb-entrypoint.sh            # Xvfb init + headless Wine exec
 │   └── wine-env.sh                   # Standard Wine environment
-└── providers/
-    ├── wine/Dockerfile               # Wine Stable (WineHQ apt)
-    ├── wine-staging/Dockerfile       # Wine Staging (WineHQ apt)
-    └── umu-proton-ge/Dockerfile      # UMU + GE-Proton stack
+├── runtimes/                         # Build/headless runtime family
+│   ├── wine/Dockerfile               # Wine Stable build/headless
+│   ├── wine-staging/Dockerfile       # Wine Staging build/headless
+│   └── umu-proton-ge/Dockerfile      # UMU + GE-Proton build/headless
+├── selkies/root/                     # Shared s6, Labwc, and Wayland overlay
+└── desktop/                          # Separate interactive image family
+    ├── wine/Dockerfile               # Wine Stable Selkies desktop
+    └── wine-staging/Dockerfile       # Wine Staging Selkies desktop
 ```
 
 ## Reference Repos
@@ -543,8 +546,8 @@ Cage's design draws from the broader Wine/Proton ecosystem:
 | [umu-launcher](https://github.com/Open-Wine-Components/umu-launcher) | Runtime download/verify pipeline, SHA256 verification, file-locking pattern, Proton version management |
 | [umu-protonfixes](https://github.com/Open-Wine-Components/umu-protonfixes) | Verb/component catalog (`*.verb`), game engine detection, store-agnostic fix layering |
 | [Steam Runtime](https://github.com/valvesoftware/steam-runtime) | Layer composition model, build-runtime.py pattern, template-based manifest generation |
-| [MTGOBot](https://github.com/videre-project/MTGOBot) | Headless Wine OCI container pattern (Xvfb entrypoint, DISPLAY=:99, wine --headless) |
-| [docker-wine](https://github.com/scottyhardy/docker-wine) | Container ergonomics: UID/GID mapping, display modes, Xvfb/RDP/audio concerns; Cage does not adopt its mutable desktop-container goal |
+| [LinuxServer Selkies](https://github.com/linuxserver/docker-baseimage-selkies) | `/init`/s6 lifecycle, browser streaming, Wayland/Labwc, and PixelFlux integration |
+| [docker-wine](https://github.com/scottyhardy/docker-wine) | Container ergonomics: UID/GID mapping, display modes, Wayland/Labwc/RDP/audio concerns; Cage does not adopt its mutable desktop-container goal |
 | [LSW](https://github.com/barrersoftware/lsw) | Foundation-first compatibility architecture and path/registry translation awareness; Cage does not adopt its no-Wine/kernel/PE-loader goal |
 
 Detailed analysis in [docs/reference-study.md](docs/reference-study.md).
@@ -574,8 +577,10 @@ Cage/
 ├── container/                   # OCI container build definitions
 │   ├── build.sh                 # Build script for all providers
 │   ├── docker-compose.yml       # Local dev compose
-│   ├── common/                  # Shared scripts (xvfb-entrypoint, wine-env)
-│   └── providers/               # Dockerfiles per runtime provider
+│   ├── common/                  # Build/headless display and Wine environment
+│   ├── runtimes/                # Catalog build/headless provider images
+│   ├── selkies/                 # Shared s6/Wayland/Labwc overlay
+│   └── desktop/                 # Separate Selkies desktop provider images
 ├── artifact/
 │   ├── bundle.py                # Bundle writer (sealed artifact)
 │   ├── graph.py                 # Resolved execution graph writer

@@ -112,12 +112,13 @@ class ExecutionGraphTests(unittest.TestCase):
         self.assertEqual(graph["builderRuntime"]["image"], "ghcr.io/pelagians/cage-wine:9.0")
         self.assertNotIn("network", graph["builderRuntime"])
         self.assertEqual(graph["runnerRuntime"]["network"], "none")
+        self.assertEqual(graph["runnerRuntime"]["sessionContract"], "cage.selkies-wayland/v1")
         self.assertEqual(
-            {k: v for k, v in graph["runnerRuntime"].items() if k != "network"},
+            {k: v for k, v in graph["runnerRuntime"].items() if k not in {"network", "sessionContract", "desktopImage", "localDesktopImage"}},
             graph["builderRuntime"],
         )
         self.assertEqual(graph["graphics"]["defaultMode"], "headless")
-        self.assertEqual(graph["graphics"]["supportedModes"], ["headless", "vnc"])
+        self.assertEqual(graph["graphics"]["supportedModes"], ["headless", "selkies"])
         self.assertEqual(graph["launch"]["entrypoint"], "C:/Program Files/App/App.exe")
         self.assertEqual(graph["launch"]["args"], ["--safe-mode"])
         self.assertTrue(graph["compatibility"]["requiresExactRuntime"])

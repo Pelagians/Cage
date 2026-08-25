@@ -32,7 +32,7 @@ class OCIExportError(RuntimeError):
     '''Raised when a bundle cannot be exported as an OCI application image.'''
 
 
-def create_oci_export_plan(bundle_path: Path | str, *, tag: str) -> dict[str, Any]:
+def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str = 'headless') -> dict[str, Any]:
     '''Return a dry-run plan for exporting *bundle_path* as a runnable OCI image.'''
     bundle = Path(bundle_path)
     verification = verify_bundle(bundle)
@@ -48,12 +48,26 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str) -> dict[str, An
     manifest = _load_json(bundle, 'manifest.cage.json')
     graph = _load_json(bundle, 'metadata/graph.json')
     runtime = dict(graph.get('runnerRuntime') or {})
+    if graphics not in {'headless', 'selkies'}:
+        raise OCIExportError("graphics must be headless or selkies")
+    if graphics == 'selkies' and runtime.get('sessionContract') != 'cage.selkies-wayland/v1':
+        raise OCIExportError(
+            'runner runtime is not qualified for Cage Selkies/Wayland application export'
+        )
     launch = dict(graph.get('launch') or {})
     application = dict(graph.get('application') or {
         'name': manifest.get('name'),
         'version': manifest.get('version'),
     })
-    base_image = _runtime_image(runtime)
+    base_image = (
+        str(runtime.get('desktopImage') or '')
+        if graphics == 'selkies'
+        else _runtime_image(runtime)
+    )
+    if not base_image:
+        raise OCIExportError('runner runtime does not declare a Selkies desktop image')
+    if graphics == 'headless' and str((graph.get('graphics') or {}).get('wineGraphics') or 'xwayland') == 'wayland':
+        raise OCIExportError('native Wine Wayland requires graphics selkies')
     artifact_metadata = _artifact_metadata(
         bundle=bundle,
         tag=tag,
@@ -63,13 +77,20 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str) -> dict[str, An
         runtime=runtime,
         launch=launch,
         base_image=base_image,
+        image_graphics=graphics,
     )
     labels = _oci_labels(application, runtime, base_image)
-    containerfile = _containerfile(base_image, labels, dict(runtime.get('environment') or {}))
+    labels['io.cage.graphics'] = graphics
+    image_environment = dict(runtime.get('environment') or {})
+    image_environment['CAGE_WINE_GRAPHICS'] = str(
+        (graph.get('graphics') or {}).get('wineGraphics') or 'xwayland'
+    )
+    containerfile = _containerfile(base_image, labels, image_environment, graphics=graphics)
 
     return {
         'schemaVersion': OCI_EXPORT_PLAN_SCHEMA_VERSION,
         'imageType': 'runnable-application-image',
+        'graphics': graphics,
         'bundle': str(bundle),
         'tag': tag,
         'baseImage': base_image,
@@ -138,10 +159,11 @@ def export_oci_image(
     context_dir: Path | str | None = None,
     timeout: int = 600,
     push: bool = False,
+    graphics: str = 'headless',
 ) -> dict[str, Any]:
     '''Build a runnable application OCI image from a verified Cage bundle.'''
     bundle = Path(bundle_path)
-    plan = create_oci_export_plan(bundle, tag=tag)
+    plan = create_oci_export_plan(bundle, tag=tag, graphics=graphics)
     selected_engine = _select_engine(engine)
     if selected_engine is None:
         requested = engine or 'podman/docker'
@@ -419,6 +441,7 @@ def verify_oci_image_metadata(
     runtime = artifact.get('runtime') or {}
     application = artifact.get('application') or {}
     add_check('schema', 'io.cage.schema', artifact.get('schemaVersion'))
+    add_check('graphics', 'io.cage.graphics', artifact.get('imageGraphics'))
     add_check('app-name', 'io.cage.app.name', application.get('name'))
     add_check('app-version', 'io.cage.app.version', application.get('version'))
     add_check('runtime-provider', 'io.cage.runtime.provider', runtime.get('provider'))
@@ -474,10 +497,12 @@ def _artifact_metadata(
     runtime: dict[str, Any],
     launch: dict[str, Any],
     base_image: str,
+    image_graphics: str,
 ) -> dict[str, Any]:
     return {
         'schemaVersion': ARTIFACT_IMAGE_SCHEMA_VERSION,
         'imageType': 'runnable-application-image',
+        'imageGraphics': image_graphics,
         'application': application,
         'runtime': {
             **_runtime_summary(runtime),
@@ -546,6 +571,8 @@ def _containerfile(
     base_image: str,
     labels: dict[str, str],
     environment: dict[str, str] | None = None,
+    *,
+    graphics: str = 'headless',
 ) -> str:
     label_lines = '\n'.join(
         f'LABEL {key}={_docker_quote(value)}' for key, value in labels.items()
@@ -554,25 +581,27 @@ def _containerfile(
         f'ENV {key}={_docker_quote(value)}\n'
         for key, value in sorted((environment or {}).items())
     )
+    lifecycle = (
+        f'ENV CAGE_APP_LAUNCHER={APP_LAUNCHER}\n'
+        if graphics == 'selkies'
+        else f'CMD ["{APP_LAUNCHER}"]\n'
+    )
     return (
-        f'FROM {base_image}\n'
-        '\n'
-        f'{label_lines}\n'
-        '\n'
+        f'FROM {base_image}\n\n'
+        f'{label_lines}\n\n'
         f'{environment_lines}'
         f'ENV CAGE_BUNDLE={BUNDLE_ROOT} \\\n'
         f'    CAGE_STATE={STATE_ROOT} \\\n'
         f'    CAGE_EXPORTS={EXPORTS_ROOT} \\\n'
         f'    WINEPREFIX={STATE_ROOT}/prefix \\\n'
-        '    CAGE_GRAPHICS=headless\n'
-        '\n'
+        f'    CAGE_GRAPHICS={graphics} \\\n'
+        f'    CAGE_SESSION_MODE={graphics}\n\n'
         f'COPY bundle {BUNDLE_ROOT}\n'
         f'COPY cage-app-launch {APP_LAUNCHER}\n'
         f'RUN chmod +x {APP_LAUNCHER} && mkdir -p {STATE_ROOT} {EXPORTS_ROOT}\n'
         f'VOLUME ["{STATE_ROOT}", "{EXPORTS_ROOT}"]\n'
-        f'ENTRYPOINT ["{APP_LAUNCHER}"]\n'
+        f'{lifecycle}'
     )
-
 
 def _launcher_script() -> str:
     return f'''#!/usr/bin/env bash
@@ -589,6 +618,10 @@ if [ ! -d "$WINEPREFIX/drive_c" ]; then
   rm -rf "$WINEPREFIX"
   mkdir -p "$(dirname "$WINEPREFIX")"
   cp -a "$CAGE_BUNDLE/prefix" "$WINEPREFIX"
+fi
+
+if [ "${{CAGE_GRAPHICS:-headless}}" = selkies ]; then
+  /usr/local/libexec/cage-select-wine-graphics
 fi
 
 exec python3 - "$@" <<'PY'

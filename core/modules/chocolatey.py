@@ -20,6 +20,7 @@ _HOSTNAME_RE = re.compile(
     r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$"
 )
 _WINE_IMAGE_RE = re.compile(r"^ghcr\.io/pelagians/cage-wine@sha256:[0-9a-f]{64}$")
+_SELKIES_IMAGE_RE = re.compile(r"^ghcr\.io/pelagians/cage-wine-selkies@sha256:[0-9a-f]{64}$")
 _RUNTIME_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _WINE_VERSION_RE = re.compile(r"^wine-[0-9]+(?:\.[0-9]+){1,2}$")
 _UNSAFE_SOURCE_RE = re.compile(r"[\x00-\x1f\x7f$`';&|<>]")
@@ -49,6 +50,8 @@ _RUNTIME_FIELDS = {
     "wineImage",
     "wineVersions",
     "environment",
+    "sessionContract",
+    "selkiesImage",
 }
 
 
@@ -173,6 +176,21 @@ class ChocolateyModule(ModuleBase):
         wine_versions = runtime.get("wineVersions")
         if wine_versions != ["wine-11.0"]:
             raise ModuleError("Chocolatey Phase 1 supports exactly Wine 11 (wine-11.0)")
+        session_contract = runtime.get("sessionContract")
+        if session_contract is not None and session_contract != "cage.selkies-wayland/v1":
+            raise ModuleError(
+                "chocolatey runtimeArtifact.sessionContract must be cage.selkies-wayland/v1"
+            )
+        selkies_image = runtime.get("selkiesImage")
+        if (session_contract is None) != (selkies_image is None):
+            raise ModuleError(
+                "chocolatey runtimeArtifact.sessionContract and selkiesImage must be declared together"
+            )
+        if session_contract and (not isinstance(selkies_image, str) or not _SELKIES_IMAGE_RE.fullmatch(selkies_image)):
+            raise ModuleError(
+                "qualified chocolatey runtimeArtifact.selkiesImage must be a digest-pinned "
+                "ghcr.io/pelagians/cage-wine-selkies image"
+            )
         environment = runtime.get("environment")
         if environment != {"WINEDLLOVERRIDES": ""}:
             raise ModuleError(
@@ -188,6 +206,10 @@ class ChocolateyModule(ModuleBase):
             "wineImage": runtime["wineImage"],
             "wineVersions": ["wine-11.0"],
             "environment": {"WINEDLLOVERRIDES": ""},
+            **({
+                "sessionContract": session_contract,
+                "selkiesImage": selkies_image,
+            } if session_contract else {}),
         }
 
     def build(self) -> list[BuildStep]:

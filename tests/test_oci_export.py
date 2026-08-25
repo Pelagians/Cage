@@ -76,7 +76,8 @@ class OCIExportPlanTests(unittest.TestCase):
         self.assertEqual(plan["containerfile"]["path"], "Containerfile")
         self.assertIn("FROM ghcr.io/pelagians/cage-wine:11.0", plan["containerfile"]["content"])
         self.assertIn("COPY bundle /opt/cage/bundle", plan["containerfile"]["content"])
-        self.assertIn('ENTRYPOINT ["/usr/local/bin/cage-app-launch"]', plan["containerfile"]["content"])
+        self.assertNotIn("ENTRYPOINT", plan["containerfile"]["content"])
+        self.assertIn('CMD ["/usr/local/bin/cage-app-launch"]', plan["containerfile"]["content"])
 
     def test_prepare_oci_build_context_writes_metadata_containerfile_and_launcher(self):
         with tempfile.TemporaryDirectory() as tmp:

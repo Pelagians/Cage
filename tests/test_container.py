@@ -1,6 +1,8 @@
 """Tests for the Cage Container Manager and runtime catalog."""
+
 from __future__ import annotations
 import unittest
+from pathlib import Path
 from container.manager import (
     list_definitions,
     get_image_ref,
@@ -10,7 +12,6 @@ from container.manager import (
 
 
 class ContainerManagerTests(unittest.TestCase):
-
     def test_list_definitions_returns_all_providers(self):
         defs = list_definitions()
         names = [d["name"] for d in defs]
@@ -21,26 +22,32 @@ class ContainerManagerTests(unittest.TestCase):
         self.assertNotIn("proton-ge", names)
 
     def test_get_image_ref_known_provider_returns_published_ref(self):
-        self.assertEqual(get_image_ref("wine", "latest"),
-                         "ghcr.io/pelagians/cage-wine:11.0")
-        self.assertEqual(get_image_ref("wine", "10.0"),
-                         "ghcr.io/pelagians/cage-wine:10.0")
-        self.assertEqual(get_image_ref("staging", "latest"),
-                         "ghcr.io/pelagians/cage-wine-staging:11.10")
-        self.assertEqual(get_image_ref("umu-proton-ge", "latest"),
-                         "ghcr.io/pelagians/cage-umu-proton-ge:GE-Proton11-1")
+        self.assertEqual(
+            get_image_ref("wine", "latest"), "ghcr.io/pelagians/cage-wine:11.0"
+        )
+        self.assertEqual(
+            get_image_ref("wine", "10.0"), "ghcr.io/pelagians/cage-wine:10.0"
+        )
+        self.assertEqual(
+            get_image_ref("staging", "latest"),
+            "ghcr.io/pelagians/cage-wine-staging:11.10",
+        )
+        self.assertEqual(
+            get_image_ref("umu-proton-ge", "latest"),
+            "ghcr.io/pelagians/cage-umu-proton-ge:GE-Proton11-1",
+        )
 
     def test_get_local_image_ref_known_provider(self):
-        self.assertEqual(get_local_image_ref("wine", "latest"),
-                         "cage/wine:11.0")
-        self.assertEqual(get_local_image_ref("staging", "previous"),
-                         "cage/wine-staging:11.9")
+        self.assertEqual(get_local_image_ref("wine", "latest"), "cage/wine:11.0")
+        self.assertEqual(
+            get_local_image_ref("staging", "previous"), "cage/wine-staging:11.9"
+        )
 
     def test_get_image_ref_unknown_falls_back_to_published_name(self):
-        self.assertEqual(get_image_ref("unknown", "1.0"),
-                         "ghcr.io/pelagians/cage-unknown:1.0")
-        self.assertEqual(get_local_image_ref("unknown", "1.0"),
-                         "cage/unknown:1.0")
+        self.assertEqual(
+            get_image_ref("unknown", "1.0"), "ghcr.io/pelagians/cage-unknown:1.0"
+        )
+        self.assertEqual(get_local_image_ref("unknown", "1.0"), "cage/unknown:1.0")
 
     def test_build_container_unknown_provider(self):
         result = build_container("nonexistent", "1.0")
@@ -55,9 +62,17 @@ class ContainerManagerTests(unittest.TestCase):
 
 
 class RuntimeCatalogTests(unittest.TestCase):
+    def test_desktop_matrix_excludes_unqualified_umu(self):
+        from runtime.catalog import ci_desktop_matrix
+
+        rows = ci_desktop_matrix()["include"]
+        self.assertTrue(rows)
+        self.assertTrue(all(row["provider"] in {"wine", "staging"} for row in rows))
+        self.assertTrue(all(Path(row["desktop_dockerfile"]).is_file() for row in rows))
 
     def test_catalog_ci_matrix_contains_build_entries(self):
         from runtime.catalog import ci_matrix
+
         matrix = ci_matrix()
         self.assertIn("include", matrix)
         providers = {entry["provider"] for entry in matrix["include"]}
@@ -70,6 +85,7 @@ class RuntimeCatalogTests(unittest.TestCase):
 
     def test_catalog_default_version_resolution(self):
         from runtime.catalog import resolve_catalog_version
+
         entry = resolve_catalog_version("wine", "default")
         self.assertIsNotNone(entry)
         assert entry is not None
@@ -78,9 +94,7 @@ class RuntimeCatalogTests(unittest.TestCase):
         self.assertEqual(entry.resolved_version, "11.0")
         self.assertEqual(entry.aliases, ("latest", "stable"))
         self.assertEqual(entry.package_version, "11.0.0.0~bookworm-1")
-        self.assertEqual(entry.published_ref,
-                         "ghcr.io/pelagians/cage-wine:11.0")
-
+        self.assertEqual(entry.published_ref, "ghcr.io/pelagians/cage-wine:11.0")
 
     def test_latest_and_channel_aliases_resolve_to_pinned_versions(self):
         from runtime.catalog import resolve_catalog_version
@@ -106,19 +120,26 @@ class RuntimeCatalogTests(unittest.TestCase):
     def test_catalog_ci_matrix_covers_curated_runner_versions_only(self):
         from runtime.catalog import ci_matrix
 
-        versions = {(entry["provider"], entry["version"]) for entry in ci_matrix()["include"]}
-        self.assertEqual(versions, {
-            ("wine", "11.0"),
-            ("wine", "10.0"),
-            ("wine", "9.0"),
-            ("staging", "11.10"),
-            ("staging", "11.9"),
-            ("staging", "11.0"),
-            ("umu-proton-ge", "GE-Proton11-1"),
-            ("umu-proton-ge", "GE-Proton10-34"),
-            ("umu-proton-ge", "GE-Proton9-27"),
-        })
-        self.assertFalse(any(entry["version"] == "latest" for entry in ci_matrix()["include"]))
+        versions = {
+            (entry["provider"], entry["version"]) for entry in ci_matrix()["include"]
+        }
+        self.assertEqual(
+            versions,
+            {
+                ("wine", "11.0"),
+                ("wine", "10.0"),
+                ("wine", "9.0"),
+                ("staging", "11.10"),
+                ("staging", "11.9"),
+                ("staging", "11.0"),
+                ("umu-proton-ge", "GE-Proton11-1"),
+                ("umu-proton-ge", "GE-Proton10-34"),
+                ("umu-proton-ge", "GE-Proton9-27"),
+            },
+        )
+        self.assertFalse(
+            any(entry["version"] == "latest" for entry in ci_matrix()["include"])
+        )
 
     def test_latest_tags_are_declared_as_publish_aliases_not_matrix_versions(self):
         from runtime.catalog import resolve_catalog_version
@@ -132,7 +153,6 @@ class RuntimeCatalogTests(unittest.TestCase):
         self.assertEqual(wine.tag, "11.0")
         self.assertEqual(proton.tag, "GE-Proton11-1")
 
-
     def test_shell_build_list_includes_publish_alias_tags_for_bulk_builds(self):
         from runtime.catalog import shell_build_list
 
@@ -143,70 +163,83 @@ class RuntimeCatalogTests(unittest.TestCase):
 
     def test_valve_proton_and_legacy_proton_ge_are_not_active_providers(self):
         from runtime.catalog import resolve_catalog_version
+
         self.assertIsNone(resolve_catalog_version("proton", "default"))
         self.assertIsNone(resolve_catalog_version("proton-ge", "default"))
 
 
 class RuntimeProviderOCITests(unittest.TestCase):
-
     def test_runtime_binding_includes_published_and_local_oci_images(self):
         from core.manifest import RuntimeSpec
         from runtime.providers import resolve_runtime
-        binding = resolve_runtime(RuntimeSpec(
-            provider="wine", version="latest",
-        ))
+
+        binding = resolve_runtime(
+            RuntimeSpec(
+                provider="wine",
+                version="latest",
+            )
+        )
         self.assertEqual(binding.version, "11.0")
         self.assertEqual(binding.requested_version, "latest")
         self.assertEqual(binding.resolved_version, "11.0")
         self.assertEqual(binding.runner, "winehq-stable")
         self.assertEqual(binding.package_version, "11.0.0.0~bookworm-1")
-        self.assertEqual(binding.oci_image,
-                         "ghcr.io/pelagians/cage-wine:11.0")
-        self.assertEqual(binding.local_oci_image,
-                         "cage/wine:11.0")
+        self.assertEqual(binding.oci_image, "ghcr.io/pelagians/cage-wine:11.0")
+        self.assertEqual(binding.local_oci_image, "cage/wine:11.0")
         self.assertTrue(binding.runtime_usable)
 
     def test_runtime_binding_oci_image_staging(self):
         from core.manifest import RuntimeSpec
         from runtime.providers import resolve_runtime
-        binding = resolve_runtime(RuntimeSpec(
-            provider="staging", version="previous",
-        ))
+
+        binding = resolve_runtime(
+            RuntimeSpec(
+                provider="staging",
+                version="previous",
+            )
+        )
         self.assertEqual(binding.version, "11.9")
         self.assertEqual(binding.requested_version, "previous")
-        self.assertEqual(binding.oci_image,
-                         "ghcr.io/pelagians/cage-wine-staging:11.9")
-        self.assertEqual(binding.local_oci_image,
-                         "cage/wine-staging:11.9")
+        self.assertEqual(binding.oci_image, "ghcr.io/pelagians/cage-wine-staging:11.9")
+        self.assertEqual(binding.local_oci_image, "cage/wine-staging:11.9")
 
     def test_runtime_binding_oci_image_umu_proton_ge(self):
         from core.manifest import RuntimeSpec
         from runtime.providers import resolve_runtime
-        binding = resolve_runtime(RuntimeSpec(
-            provider="umu-proton-ge", version="latest",
-        ))
+
+        binding = resolve_runtime(
+            RuntimeSpec(
+                provider="umu-proton-ge",
+                version="latest",
+            )
+        )
         self.assertEqual(binding.version, "GE-Proton11-1")
         self.assertEqual(binding.requested_version, "latest")
         self.assertEqual(binding.resolved_version, "GE-Proton11-1")
         self.assertEqual(binding.runner, "ge-proton")
         self.assertEqual(binding.launcher_version, "1.4.0")
-        self.assertEqual(binding.oci_image,
-                         "ghcr.io/pelagians/cage-umu-proton-ge:GE-Proton11-1")
-        self.assertEqual(binding.local_oci_image,
-                         "cage/umu-proton-ge:GE-Proton11-1")
+        self.assertEqual(
+            binding.oci_image, "ghcr.io/pelagians/cage-umu-proton-ge:GE-Proton11-1"
+        )
+        self.assertEqual(binding.local_oci_image, "cage/umu-proton-ge:GE-Proton11-1")
         self.assertEqual(binding.launcher, "umu")
 
     def test_oci_image_in_to_dict(self):
         from core.manifest import RuntimeSpec
         from runtime.providers import resolve_runtime
-        binding = resolve_runtime(RuntimeSpec(
-            provider="umu-proton-ge", version="latest",
-        ))
+
+        binding = resolve_runtime(
+            RuntimeSpec(
+                provider="umu-proton-ge",
+                version="latest",
+            )
+        )
         d = binding.to_dict()
         self.assertIn("ociImage", d)
         self.assertIn("localOciImage", d)
-        self.assertEqual(d["ociImage"],
-                         "ghcr.io/pelagians/cage-umu-proton-ge:GE-Proton11-1")
+        self.assertEqual(
+            d["ociImage"], "ghcr.io/pelagians/cage-umu-proton-ge:GE-Proton11-1"
+        )
         self.assertEqual(d["requestedVersion"], "latest")
         self.assertEqual(d["resolvedVersion"], "GE-Proton11-1")
         self.assertEqual(d["runner"], "ge-proton")
@@ -220,16 +253,23 @@ class RuntimeProviderOCITests(unittest.TestCase):
 
         class CustomProvider:
             name = "custom-test"
+
             def resolve(self, spec):
                 from runtime.providers import RuntimeBinding
+
                 return RuntimeBinding(
-                    spec.provider, spec.version, "wine",
+                    spec.provider,
+                    spec.version,
+                    "wine",
                 )
 
         register_provider(CustomProvider())
-        binding = resolve_runtime(RuntimeSpec(
-            provider="custom-test", version="1.0",
-        ))
+        binding = resolve_runtime(
+            RuntimeSpec(
+                provider="custom-test",
+                version="1.0",
+            )
+        )
         d = binding.to_dict()
         self.assertIsNone(binding.oci_image)
         self.assertNotIn("ociImage", d)

@@ -26,12 +26,12 @@ Without explicit runtime network isolation, a deployed Win32 application inside 
 
 ### Escape hatch
 
-Some runtime scenarios need local connectivity (host database, local printer service), or interactive VNC/noVNC access. Two mechanisms:
+Some runtime scenarios need local connectivity (host database, local printer service), or interactive Selkies HTTPS access. Two mechanisms:
 
 1. **CLI flag** — `cage run my-app --network host|bridge|none`
 2. **Manifest field** — `runtime.network` recorded in bundle graph metadata so intent survives packaging
 
-The manifest field captures *intent*; the CLI flag allows the operator to *override* at deployment time for extra hardening. Bundle verification requires `manifest.runtime.network` to match `metadata/graph.json` `runnerRuntime.network` so graph tampering cannot silently escalate a default air-gapped bundle to host networking. Local VNC/noVNC runs are intentionally limited to `--network bridge` so Docker/Podman host-port publishing can bind access to loopback; the VNC helpers still listen inside the container, so bridge-mode VNC should not be attached to an untrusted/shared container network. `none` is non-interactive air-gap mode and `host` is rejected for VNC.
+The manifest field captures *intent*; the CLI flag allows the operator to *override* at deployment time for extra hardening. Bundle verification requires `manifest.runtime.network` to match `metadata/graph.json` `runnerRuntime.network` so graph tampering cannot silently escalate a default air-gapped bundle to host networking. Local Selkies HTTPS runs are intentionally limited to `--network bridge` so Docker/Podman host-port publishing can bind access to loopback; the Selkies services still listen inside the container, so bridge-mode Selkies should not be attached to an untrusted/shared container network. `none` is non-interactive air-gap mode and `host` is rejected for Selkies.
 
 ### Implemented changes
 
@@ -47,8 +47,8 @@ The manifest field captures *intent*; the CLI flag allows the operator to *overr
 
 - `cage run my-app` starts container with `--net none` by default
 - `cage run my-app --network host` uses host networking for headless runs
-- `cage run my-app --graphics vnc --network bridge` keeps host-published VNC/noVNC access loopback-bound
-- VNC with `network: none` or `network: host` is rejected instead of producing a broken or exposed plan
+- `cage run my-app --graphics selkies --network bridge` keeps host-published Selkies HTTPS access loopback-bound
+- Selkies with `network: none` or `network: host` is rejected instead of producing a broken or exposed plan
 - Bundle graph records `network: "none"` for default builds
 - `cage export kube` emits appropriate network config, with deny-egress policy for `network: none` when the cluster CNI enforces NetworkPolicy
 - Existing build containers are unaffected (keep default networking)

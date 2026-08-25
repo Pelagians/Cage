@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<labwc_config>
+  <core><decoration>server</decoration><gap>0</gap></core>
+  <theme>
+    <name>Clearlooks</name>
+    <titlebar><layout>icon:iconify,max,close</layout><showTitle>yes</showTitle></titlebar>
+  </theme>
+  <keyboard>
+    <default />
+    <keybind key="A-F4"><action name="Close" /></keybind>
+    <keybind key="A-Escape"><action name="Close" /></keybind>
+  </keyboard>
+  <mouse><default /></mouse>
+  <windowRules>
+    <windowRule identifier="*" serverDecoration="yes" />
+    <windowRule type="dialog" serverDecoration="yes">
+      <action name="Raise" /><action name="Focus" />
+    </windowRule>
+  </windowRules>
+</labwc_config>

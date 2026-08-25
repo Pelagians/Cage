@@ -91,28 +91,27 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
             graph["graphics"]["supportedModes"] = ["headless"]
             graph_path.write_text(json.dumps(graph, indent=2), encoding="utf-8")
             with self.assertRaises(RunError) as cm:
-                build_run_plan(bundle, graphics="vnc", engine="docker", allow_non_runnable=True)
+                build_run_plan(bundle, graphics="selkies", engine="docker", allow_non_runnable=True)
 
         self.assertIn("graph graphics must include defaultMode", str(cm.exception))
 
-    def test_vnc_run_plan_publishes_loopback_vnc_and_novnc_ports(self):
+    def test_selkies_run_plan_publishes_loopback_https_port(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = self._bundle(tmp)
             plan = build_run_plan(
                 bundle,
-                graphics="vnc",
+                graphics="selkies",
                 engine="docker",
                 network="bridge",
-                vnc_port=5901,
-                novnc_port=6081,
+                selkies_port=3002,
             allow_non_runnable=True,
             )
 
         argv = plan["container"]["argv"]
-        self.assertIn("127.0.0.1:5901:5900", argv)
-        self.assertIn("127.0.0.1:6081:6080", argv)
-        self.assertIn("x11vnc", plan["container"]["script"])
-        self.assertIn("websockify", plan["container"]["script"])
+        self.assertIn("127.0.0.1:3002:3001", argv)
+        self.assertNotIn("5900", " ".join(argv))
+        self.assertNotIn("6080", " ".join(argv))
+        self.assertEqual(argv[-1], plan["runtime"]["image"])
 
     def test_run_plan_inherits_producer_image_dll_policy_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -190,33 +189,26 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertIn("umu-run", plan["launchCommand"])
 
 
-    def test_umu_proton_ge_image_installs_umu_launcher(self):
-        root = Path(__file__).resolve().parents[1]
-        dockerfile = (root / "container/runtimes/umu-proton-ge/Dockerfile").read_text(encoding="utf-8")
-        self.assertIn("umu-launcher", dockerfile)
-        self.assertIn("umu-run", dockerfile)
-        self.assertIn("UMU_LAUNCHER_REF", dockerfile)
-        self.assertIn("test -x /opt/umu/bin/umu-run", dockerfile)
-
-    def test_runtime_container_images_include_vnc_helpers(self):
+    def test_runtime_container_images_use_selkies_without_legacy_vnc_helpers(self):
         root = Path(__file__).resolve().parents[1]
         dockerfiles = [
-            "container/runtimes/wine/Dockerfile",
-            "container/runtimes/wine-staging/Dockerfile",
-            "container/runtimes/umu-proton-ge/Dockerfile",
+            "container/desktop/wine/Dockerfile",
+            "container/desktop/wine-staging/Dockerfile",
         ]
         for rel in dockerfiles:
             with self.subTest(rel=rel):
-                dockerfile = (root / rel).read_text(encoding="utf-8")
-                self.assertIn("x11vnc", dockerfile)
-                self.assertIn("websockify", dockerfile)
-                self.assertIn("novnc", dockerfile)
+                dockerfile = (root / rel).read_text(encoding="utf-8").lower()
+                self.assertIn("baseimage-selkies", dockerfile)
+                self.assertIn("pixelflux", dockerfile)
+                self.assertIn("expose 3001", dockerfile)
+                for obsolete in ("x11vnc", "websockify", "novnc", "xvfb"):
+                    self.assertNotIn(obsolete, dockerfile)
 
-    def test_vnc_launcher_accepts_debian_novnc_assets(self):
+    def test_selkies_launcher_preserves_inherited_init(self):
         root = Path(__file__).resolve().parents[1]
         launcher = (root / "runtime/launcher.py").read_text(encoding="utf-8")
-
-        self.assertIn("/usr/share/novnc", launcher)
+        self.assertIn("CAGE_LAUNCH_SCRIPT_B64", launcher)
+        self.assertIn("argv.append(image)", launcher)
 
     def test_default_wine_image_does_not_ship_build_toolchains(self):
         root = Path(__file__).resolve().parents[1]
@@ -228,15 +220,6 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertNotIn("cargo", dockerfile)
         self.assertNotIn("/root/.cargo", dockerfile)
 
-    def test_umu_final_image_does_not_ship_git_or_pip_install_tooling(self):
-        root = Path(__file__).resolve().parents[1]
-        dockerfile = (root / "container/runtimes/umu-proton-ge/Dockerfile").read_text(encoding="utf-8")
-        final_stage = dockerfile.split("FROM ge-download AS final", 1)[1]
-
-        self.assertNotIn(" git ", final_stage)
-        self.assertNotIn("python3-venv", final_stage)
-        self.assertNotIn("pip install", final_stage)
-        self.assertIn("COPY --from=umu-build /opt/umu /opt/umu", dockerfile)
 
 
 if __name__ == "__main__":

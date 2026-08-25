@@ -20,10 +20,10 @@ Cage now prioritizes reproducible BYO source materialization over prefix-first i
 
 ## Consequences
 
-Cage can now model proprietary/business-suite recipes without containing proprietary payloads. The artifact can declare whether its inputs are `bring-your-own-files`, `bring-your-own-licensed-media`, or another explicit policy. Office-shaped recipes and customer-specific recipes should live in `vic-legacy` or customer/private repositories, not public Cage.
+Cage can now model proprietary/business-suite recipes without containing proprietary payloads. The artifact can declare whether its inputs are `bring-your-own-files`, `bring-your-own-licensed-media`, or another explicit policy. Office-shaped recipes and customer-specific recipes should live in customer/private repositories, not public Cage.
 
 `mode: merge` makes pre-installed file directories first-class without requiring users to provide a whole Wine prefix. BYO prefix import remains a possible future convenience path, especially for importing personal Bottles, but it is not the primary reproducibility model.
 
-Suite metadata is recorded in manifests and artifacts. Phase 6E adds `cage run <app> --entrypoint <id>` and host-file routing; `fileAssociations` remain metadata for higher-level routing and future VIC integration.
+Suite metadata is recorded in manifests and artifacts. Phase 6E adds `cage run <app> --entrypoint <id>` and host-file routing; `fileAssociations` remain metadata for higher-level routing and future downstream integration.
 
 Cage still must not download, encode, runbook, or redistribute cracked/pre-activated Office archives or activation bypasses. BAT/CMD install support is a generic BYO-media primitive, not approval to automate unauthorized activation scripts.

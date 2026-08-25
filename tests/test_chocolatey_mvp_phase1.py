@@ -858,6 +858,8 @@ class BuildSourcePreflightTests(unittest.TestCase):
                     "wineImage": image,
                     "wineVersions": ["wine-11.0"],
                     "environment": {"WINEDLLOVERRIDES": ""},
+                    "sessionContract": "cage.selkies-wayland/v1",
+                    "selkiesImage": "ghcr.io/pelagians/cage-wine-selkies@sha256:" + "e" * 64,
                 },
             }}],
         }

@@ -19,6 +19,7 @@ from .constants import (
     SOURCE_FIELDS,
     SUPPORTED_SCHEMA_VERSIONS,
     ALLOWED_RUNTIME_NETWORK_MODES,
+    ALLOWED_WINE_GRAPHICS_MODES,
     ALLOWED_SOURCE_TYPES,
     ALLOWED_SOURCE_POLICIES,
 )
@@ -64,6 +65,7 @@ class RuntimeSpec:
     runner: str | None = None
     image: str | None = None
     network: str = "none"
+    wine_graphics: str = "xwayland"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RuntimeSpec:
@@ -75,6 +77,16 @@ class RuntimeSpec:
         if network not in ALLOWED_RUNTIME_NETWORK_MODES:
             raise ManifestError(
                 f"runtime.network must be one of {sorted(ALLOWED_RUNTIME_NETWORK_MODES)}, got {network!r}"
+            )
+        wine_graphics = _optional_str(data, "wineGraphics") or "xwayland"
+        if wine_graphics not in ALLOWED_WINE_GRAPHICS_MODES:
+            raise ManifestError(
+                "runtime.wineGraphics must be one of: "
+                + ", ".join(sorted(ALLOWED_WINE_GRAPHICS_MODES))
+            )
+        if wine_graphics == "wayland" and provider not in {"wine", "staging"}:
+            raise ManifestError(
+                "runtime.wineGraphics native Wayland is supported only by wine and staging providers"
             )
 
         from runtime.catalog import list_catalog_providers, resolve_catalog_version
@@ -97,6 +109,7 @@ class RuntimeSpec:
             runner=_optional_str(data, "runner"),
             image=_optional_str(data, "image") or _optional_str(data, "imageRef"),
             network=network,
+            wine_graphics=wine_graphics,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -109,6 +122,7 @@ class RuntimeSpec:
             "runner": self.runner,
             "image": self.image,
             "network": self.network,
+            "wineGraphics": self.wine_graphics,
         })
 
 

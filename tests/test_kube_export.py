@@ -31,7 +31,7 @@ APP = {
     "provenance": {"sources": []},
 }
 
-DIGEST_IMAGE = "ghcr.io/acme/cage-app-kube-demo@sha256:abcdef1234567890"
+DIGEST_IMAGE = "ghcr.io/acme/cage-app-kube-demo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 TAG_IMAGE = "ghcr.io/acme/cage-app-kube-demo:2.1.0"
 
 
@@ -200,7 +200,7 @@ class KubeExportCLITests(unittest.TestCase):
                     "--artifact-index",
                     str(output_dir / ".cage" / "artifacts.json"),
                     "--image",
-                    "ghcr.io/acme/notepad@sha256:abc123",
+                    "ghcr.io/acme/notepad@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                     "--namespace",
                     "cage-apps",
                     "--dry-run",
@@ -216,7 +216,7 @@ class KubeExportCLITests(unittest.TestCase):
         self.assertEqual(payload["schemaVersion"], KUBE_EXPORT_SCHEMA_VERSION)
         self.assertEqual(payload["application"]["name"], "notepad-plus-plus")
         self.assertIn("kind: Deployment", payload["manifestYaml"])
-        self.assertIn("ghcr.io/acme/notepad@sha256:abc123", payload["manifestYaml"])
+        self.assertIn("ghcr.io/acme/notepad@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", payload["manifestYaml"])
 
     def test_cli_export_kube_output_writes_yaml_and_rejects_mutable_tag(self):
         root = Path(__file__).resolve().parents[1]

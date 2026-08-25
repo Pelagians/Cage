@@ -6,6 +6,7 @@ runtime:
   provider: wine
   version: "11.0"
   network: none
+  wineGraphics: xwayland
 
 build:
   network: bridge

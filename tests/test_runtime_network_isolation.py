@@ -133,27 +133,26 @@ class RuntimeNetworkRunPlanTests(unittest.TestCase):
                 build_run_plan(bundle, graphics="headless", engine="docker", network="internet", allow_non_runnable=True)
 
 
-    def test_vnc_requires_bridge_network_for_loopback_port_publish(self):
+    def test_selkies_requires_bridge_network_for_loopback_port_publish(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = _bundle(tmp)
-            with self.assertRaisesRegex(RunError, "graphics vnc requires network bridge"):
-                build_run_plan(bundle, graphics="vnc", engine="docker", allow_non_runnable=True)
+            with self.assertRaisesRegex(RunError, "graphics selkies requires network bridge"):
+                build_run_plan(bundle, graphics="selkies", engine="docker", allow_non_runnable=True)
 
-    def test_vnc_rejects_host_network_to_avoid_exposing_unauthenticated_listeners(self):
+    def test_selkies_rejects_host_network_to_avoid_exposing_unauthenticated_listeners(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = _bundle(tmp)
-            with self.assertRaisesRegex(RunError, "graphics vnc requires network bridge"):
-                build_run_plan(bundle, graphics="vnc", engine="docker", network="host", allow_non_runnable=True)
+            with self.assertRaisesRegex(RunError, "graphics selkies requires network bridge"):
+                build_run_plan(bundle, graphics="selkies", engine="docker", network="host", allow_non_runnable=True)
 
-    def test_vnc_with_bridge_network_keeps_loopback_port_publish(self):
+    def test_selkies_with_bridge_network_keeps_loopback_port_publish(self):
         with tempfile.TemporaryDirectory() as tmp:
             plan = build_run_plan(
                 _bundle(tmp),
-                graphics="vnc",
+                graphics="selkies",
                 engine="docker",
                 network="bridge",
-                vnc_port=5901,
-                novnc_port=6081,
+                selkies_port=3002,
             allow_non_runnable=True,
             )
 
@@ -161,20 +160,20 @@ class RuntimeNetworkRunPlanTests(unittest.TestCase):
         argv = plan["container"]["argv"]
         net_index = argv.index("--net")
         self.assertEqual(argv[net_index + 1], "bridge")
-        self.assertIn("127.0.0.1:5901:5900", argv)
-        self.assertIn("127.0.0.1:6081:6080", argv)
+        self.assertIn("127.0.0.1:3002:3001", argv)
+        self.assertIn("127.0.0.1:3002:3001", argv)
 
 
-    def test_vnc_uses_manifest_bridge_network_without_cli_override(self):
+    def test_selkies_uses_manifest_bridge_network_without_cli_override(self):
         with tempfile.TemporaryDirectory() as tmp:
-            plan = build_run_plan(_bundle(tmp, network="bridge"), graphics="vnc", engine="docker", allow_non_runnable=True)
+            plan = build_run_plan(_bundle(tmp, network="bridge"), graphics="selkies", engine="docker", allow_non_runnable=True)
 
         self.assertEqual(plan["runtime"]["network"], "bridge")
         argv = plan["container"]["argv"]
         net_index = argv.index("--net")
         self.assertEqual(argv[net_index + 1], "bridge")
-        self.assertIn("127.0.0.1:5900:5900", argv)
-        self.assertIn("127.0.0.1:6080:6080", argv)
+        self.assertIn("127.0.0.1:3001:3001", argv)
+        self.assertIn("127.0.0.1:3001:3001", argv)
 
     def test_bundle_verification_rejects_manifest_graph_network_mismatch(self):
         with tempfile.TemporaryDirectory() as tmp:
