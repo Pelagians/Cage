@@ -315,7 +315,7 @@ class SelkiesImageContractTests(unittest.TestCase):
         autostart = (
             ROOT / "container/selkies/root/defaults/autostart_wayland"
         ).read_text(encoding="utf-8")
-        watcher = ROOT / "container/selkies/root/custom-services.d/cage-shutdown/run"
+        watcher = ROOT / "container/selkies/root/custom-services.d/cage-shutdown"
         self.assertIn("shutdown-request", autostart)
         self.assertTrue(watcher.is_file())
         self.assertIn(
