@@ -1,13 +1,15 @@
 """Tests for the Cage Container Manager and runtime catalog."""
 
 from __future__ import annotations
+
 import unittest
 from pathlib import Path
+
 from container.manager import (
-    list_definitions,
+    build_container,
     get_image_ref,
     get_local_image_ref,
-    build_container,
+    list_definitions,
 )
 
 
@@ -62,13 +64,16 @@ class ContainerManagerTests(unittest.TestCase):
 
 
 class RuntimeCatalogTests(unittest.TestCase):
-    def test_desktop_matrix_excludes_unqualified_umu(self):
-        from runtime.catalog import ci_desktop_matrix
+    def test_runtime_matrix_is_universal_selkies_matrix(self):
+        from runtime.catalog import ci_matrix
 
-        rows = ci_desktop_matrix()["include"]
-        self.assertTrue(rows)
-        self.assertTrue(all(row["provider"] in {"wine", "staging"} for row in rows))
-        self.assertTrue(all(Path(row["desktop_dockerfile"]).is_file() for row in rows))
+        rows = ci_matrix()["include"]
+        self.assertEqual(len(rows), 9)
+        self.assertEqual(
+            {row["provider"] for row in rows}, {"wine", "staging", "umu-proton-ge"}
+        )
+        self.assertTrue(all("desktop_dockerfile" not in row for row in rows))
+        self.assertTrue(all(Path(row["dockerfile"]).is_file() for row in rows))
 
     def test_catalog_ci_matrix_contains_build_entries(self):
         from runtime.catalog import ci_matrix
@@ -93,7 +98,7 @@ class RuntimeCatalogTests(unittest.TestCase):
         self.assertEqual(entry.requested_version, "default")
         self.assertEqual(entry.resolved_version, "11.0")
         self.assertEqual(entry.aliases, ("latest", "stable"))
-        self.assertEqual(entry.package_version, "11.0.0.0~bookworm-1")
+        self.assertEqual(entry.package_version, "11.0.0.0~trixie-1")
         self.assertEqual(entry.published_ref, "ghcr.io/pelagians/cage-wine:11.0")
 
     def test_latest_and_channel_aliases_resolve_to_pinned_versions(self):
@@ -110,9 +115,9 @@ class RuntimeCatalogTests(unittest.TestCase):
         self.assertEqual(wine.requested_version, "latest")
         self.assertEqual(wine.resolved_version, "11.0")
         self.assertEqual(wine.runner, "winehq-stable")
-        self.assertEqual(wine.package_version, "11.0.0.0~bookworm-1")
+        self.assertEqual(wine.package_version, "11.0.0.0~trixie-1")
         self.assertEqual(staging.version, "11.9")
-        self.assertEqual(staging.package_version, "11.9~bookworm-1")
+        self.assertEqual(staging.package_version, "11.9~trixie-1")
         self.assertEqual(proton.version, "GE-Proton11-1")
         self.assertEqual(proton.runner, "ge-proton")
         self.assertEqual(proton.launcher_version, "1.4.0")
@@ -183,7 +188,7 @@ class RuntimeProviderOCITests(unittest.TestCase):
         self.assertEqual(binding.requested_version, "latest")
         self.assertEqual(binding.resolved_version, "11.0")
         self.assertEqual(binding.runner, "winehq-stable")
-        self.assertEqual(binding.package_version, "11.0.0.0~bookworm-1")
+        self.assertEqual(binding.package_version, "11.0.0.0~trixie-1")
         self.assertEqual(binding.oci_image, "ghcr.io/pelagians/cage-wine:11.0")
         self.assertEqual(binding.local_oci_image, "cage/wine:11.0")
         self.assertTrue(binding.runtime_usable)
@@ -248,8 +253,8 @@ class RuntimeProviderOCITests(unittest.TestCase):
 
     def test_to_dict_omits_none_oci(self):
         """Custom providers without OCI mapping should omit the field."""
-        from runtime.providers import register_provider, resolve_runtime
         from core.manifest import RuntimeSpec
+        from runtime.providers import register_provider, resolve_runtime
 
         class CustomProvider:
             name = "custom-test"

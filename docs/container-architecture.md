@@ -1,82 +1,47 @@
 # Cage Container Architecture
 
-## Two image roles
+## One universal runtime image per catalog entry
 
-Cage deliberately separates build/headless runtimes from interactive desktop runtimes.
+Every image selected by `runtime/catalog.json` inherits the digest-pinned LinuxServer Selkies Debian Trixie base. There is no parallel build/headless or desktop image family.
 
-### Build and headless runtime images
+The nine catalog entries cover Wine Stable, Wine Staging, and UMU + GE-Proton. Each image:
 
-`container/runtimes/*` remains the deterministic prefix-construction substrate selected by `runtime/catalog.json`. These Debian Bookworm images retain a build-only Xvfb display because Windows installers can require an X server even during non-interactive builds. The obsolete VNC/browser-proxy packages are removed.
-
-These images preserve the command-exec entrypoint used by `builder/executor.py` and by `cage run --graphics headless`.
-
-### Selkies desktop images
-
-`container/desktop/*` is a sibling image family for interactive application execution. Each image:
-
-- inherits the digest-pinned LinuxServer Selkies Debian Trixie base;
-- installs the corresponding Wine or Wine Staging runtime independently;
-- preserves inherited `ENTRYPOINT ["/init"]` and s6;
-- uses Wayland and restricted Labwc;
-- publishes Selkies HTTPS on container port `3001`; and
-- keeps PixelFlux screenshot/input support on container loopback.
-
-The desktop images do not copy package-manager-owned Wine files out of the build images. Their Debian release, lifecycle, and user model are independent and are tested as such.
+- preserves LinuxServer `/init` and the s6 lifecycle;
+- starts the Wayland/Labwc session as `abc` after bounded root initialization;
+- includes Selkies HTTPS on container port `3001`;
+- includes internal PixelFlux support;
+- supports build, headless application, and visible interactive modes through environment-delivered supervised scripts;
+- contains no retired virtual-display or browser-proxy session contract.
 
 ```text
-recipe/build
-  -> catalog build image (Bookworm + build-only Xvfb)
-  -> sealed Cage bundle
-  -> headless run using catalog image
-     OR
-  -> interactive run/export using sibling Selkies desktop image
+recipe
+  -> one catalog runtime image
+  -> build script through /init + Labwc
+  -> sealed bundle
+  -> headless or visible run through the same image and /init
+  -> optional OCI application image inheriting the same /init
 ```
 
-## Runtime metadata
+## Graphics modes
 
-The execution graph keeps `builderRuntime` and `runnerRuntime` for Cage's existing exact-runtime contract. `runnerRuntime.desktopImage` and `localDesktopImage` identify the separate interactive target. A CFW producer-owned prepared runtime must explicitly provide both:
+`runtime.wineGraphics: xwayland` selects Wine's X11 driver under Selkies' XWayland compatibility service. `wayland` selects Wine's native Wayland driver and is limited to Wine Stable and Wine Staging. UMU + GE-Proton uses XWayland until its native Wayland path is independently proven.
 
-```text
+Both `cage run --graphics headless` and `--graphics selkies` preserve `/init`. Headless mode does not publish a host port; visible mode requires bridge networking and binds `127.0.0.1:<port>:3001`.
+
+## Producer-owned CFW runtimes
+
+A CFW runtime is also one image. A producer release must bind its digest-pinned `wineImage` to:
+
+```yaml
 sessionContract: cage.selkies-wayland/v1
-selkiesImage: ghcr.io/pelagians/cage-wine-selkies@sha256:<digest>
 ```
 
-Absent that pair, headless build/run remains valid but Selkies launch and Selkies OCI export fail closed.
-
-## Desktop lifecycle
-
-LinuxServer `/init` starts as root, applies `PUID`/`PGID`, runs `custom-cont-init.d`, and launches services and the application as `abc`. Cage never replaces `/init`.
-
-`container/selkies/root/defaults/autostart_wayland` launches either:
-
-1. a base64-encoded local `cage run` script; or
-2. `CAGE_APP_LAUNCHER` in an exported Selkies application image.
-
-Wine graphics selection uses `HKCU\Software\Wine\Drivers`, value `Graphics`:
-
-- `xwayland` selects `x11`;
-- `wayland` selects Wine's native Wayland driver.
-
-Native Wayland is admitted for Wine Stable and Wine Staging. No UMU/GE-Proton desktop image is published until its upstream artifacts and launch path are independently pinned and proven.
-
-## CLI modes
-
-```bash
-cage run --graphics headless dist/app-1.0.0
-cage run --graphics selkies --network bridge --selkies-port 3001 dist/app-1.0.0
-
-cage export oci dist/app-1.0.0 --graphics headless --tag cage-app:headless
-cage export oci dist/app-1.0.0 --graphics selkies --tag cage-app:desktop
-```
-
-Headless OCI images retain the base runtime entrypoint and set the Cage launcher as `CMD`. Selkies OCI images inherit `/init` and set `CAGE_APP_LAUNCHER` for the supervised Wayland session.
+The removed `selkiesImage` sibling field is rejected. Existing immutable pre-Selkies CFW artifacts fail closed until CFW republishes them from the universal image.
 
 ## Kubernetes
 
-A headless export emits the existing Deployment/PVC/network-policy resources. A Selkies export requires a successful `cage image verify` receipt for the exact digest-pinned application image, enforces one replica, and emits a ClusterIP Service on HTTPS port `3001` plus default-deny ingress. Nereus or an operator must add an explicit authenticated ingress policy before any client can reach the session.
+All generated application images inherit `/init`, so all exported Deployments retain the narrow LinuxServer initialization security context and `/config` volume. Visible Selkies export additionally requires exact live OCI verification, one replica, a ClusterIP service on `3001`, and default-deny ingress. Nereus owns admission and any authenticated ingress policy.
 
-Interactive LinuxServer initialization requires root PID 1 with only `CHOWN`, `SETGID`, and `SETUID`; privilege escalation and privileged mode remain disabled, all other capabilities are dropped, and `RuntimeDefault` seccomp remains enabled. Nereus or the operator owns admission, ingress, authentication, policy, and lifecycle.
+## Live acceptance gates
 
-## SELinux mounts
-
-Rootless Podman bind mounts retain the shared `z` label for the read-only bundle, optional files, and runner cache. Persistent `/config` belongs to the desktop session and must remain separate from the sealed bundle and Cage runtime state.
+CI must build all nine image entries. Runtime acceptance must prove `/init`, s6, `abc` ownership, build completion receipts, headless completion, Selkies HTTPS, XWayland for all providers, native Wayland for Wine/ Staging, PixelFlux, reconnect, and a republished CFW/Notepad++ flow.

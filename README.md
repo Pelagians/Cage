@@ -525,14 +525,11 @@ container/
 ├── docker-compose.yml                # Local dev compose
 ├── common/
 │   └── wine-env.sh                   # Standard Wine environment
-├── runtimes/                         # Build/headless runtime family
-│   ├── wine/Dockerfile               # Wine Stable build/headless
-│   ├── wine-staging/Dockerfile       # Wine Staging build/headless
-│   └── umu-proton-ge/Dockerfile      # UMU + GE-Proton build/headless
-├── selkies/root/                     # Shared s6, Labwc, and Wayland overlay
-└── desktop/                          # Separate interactive image family
-    ├── wine/Dockerfile               # Wine Stable Selkies desktop
-    └── wine-staging/Dockerfile       # Wine Staging Selkies desktop
+├── runtimes/                         # Universal Selkies runtime family
+│   ├── wine/Dockerfile               # Wine Stable: build, headless, interactive
+│   ├── wine-staging/Dockerfile       # Wine Staging: build, headless, interactive
+│   └── umu-proton-ge/Dockerfile      # UMU + GE-Proton: build, headless, interactive
+└── selkies/root/                     # Shared /init, s6, Labwc, and Wayland overlay
 ```
 
 ## Reference Repos
@@ -577,10 +574,9 @@ Cage/
 ├── container/                   # OCI container build definitions
 │   ├── build.sh                 # Build script for all providers
 │   ├── docker-compose.yml       # Local dev compose
-│   ├── common/                  # Build/headless display and Wine environment
-│   ├── runtimes/                # Catalog build/headless provider images
-│   ├── selkies/                 # Shared s6/Wayland/Labwc overlay
-│   └── desktop/                 # Separate Selkies desktop provider images
+│   ├── common/                  # Shared Wine environment
+│   ├── runtimes/                # Universal Selkies catalog images
+│   └── selkies/                 # Shared /init/s6/Wayland/Labwc overlay
 ├── artifact/
 │   ├── bundle.py                # Bundle writer (sealed artifact)
 │   ├── graph.py                 # Resolved execution graph writer

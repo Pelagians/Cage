@@ -155,6 +155,19 @@ class SelkiesRunPlanTests(unittest.TestCase):
                     allow_non_runnable=True,
                 )
 
+    def test_catalog_headless_run_preserves_universal_selkies_init(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = self._bundle(tmp)
+            plan = build_run_plan(
+                bundle,
+                graphics="headless",
+                engine="docker",
+                allow_non_runnable=True,
+            )
+        self.assertEqual(plan["container"]["argv"][-1], plan["runtime"]["image"])
+        self.assertIn("CAGE_LAUNCH_SCRIPT_B64", plan["container"]["environment"])
+        self.assertNotIn("bash", plan["container"]["argv"][-3:])
+
 
 class ProducerRuntimeQualificationTests(unittest.TestCase):
     def test_future_cfw_release_can_declare_selkies_session_contract(self):
@@ -169,16 +182,13 @@ class ProducerRuntimeQualificationTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
         )
         artifact["sessionContract"] = "cage.selkies-wayland/v1"
-        artifact["selkiesImage"] = (
-            "ghcr.io/pelagians/cage-wine-selkies@sha256:" + "e" * 64
-        )
         data["modules"][0]["install"]["runtimeArtifact"] = artifact
         graph = build_execution_graph(Manifest.from_dict(data))
         self.assertEqual(
             graph["runnerRuntime"]["sessionContract"], "cage.selkies-wayland/v1"
         )
 
-    def test_cfw_desktop_qualification_fields_are_both_or_neither(self):
+    def test_cfw_rejects_parallel_selkies_image_field(self):
         import yaml
 
         data = yaml.safe_load(
@@ -193,27 +203,34 @@ class ProducerRuntimeQualificationTests(unittest.TestCase):
             "ghcr.io/pelagians/cage-wine-selkies@sha256:" + "e" * 64
         )
         data["modules"][0]["install"]["runtimeArtifact"] = artifact
-        with self.assertRaisesRegex(ManifestError, "must be declared together"):
+        with self.assertRaisesRegex(
+            ManifestError, "unknown Chocolatey runtimeArtifact field"
+        ):
             Manifest.from_dict(data)
 
     def test_unqualified_cfw_runtime_fails_closed_before_launch(self):
         manifest = load_manifest(ROOT / "recipes/notepadplusplus.cage.yaml")
         with tempfile.TemporaryDirectory() as tmp:
             bundle = create_bundle(manifest, Path(tmp), dry_run=True)
-            with self.assertRaisesRegex(Exception, "not qualified"):
-                build_run_plan(
-                    bundle,
-                    graphics="selkies",
-                    engine="docker",
-                    allow_non_runnable=True,
-                )
+            for graphics in ("headless", "selkies"):
+                with (
+                    self.subTest(graphics=graphics),
+                    self.assertRaisesRegex(Exception, "universal Selkies"),
+                ):
+                    build_run_plan(
+                        bundle,
+                        graphics=graphics,
+                        engine="docker",
+                        allow_non_runnable=True,
+                    )
 
 
 class SelkiesImageContractTests(unittest.TestCase):
-    def test_all_runtime_images_inherit_digest_pinned_selkies_and_s6(self):
+    def test_all_catalog_runtime_images_use_one_selkies_image_contract(self):
         for rel in (
-            "container/desktop/wine/Dockerfile",
-            "container/desktop/wine-staging/Dockerfile",
+            "container/runtimes/wine/Dockerfile",
+            "container/runtimes/wine-staging/Dockerfile",
+            "container/runtimes/umu-proton-ge/Dockerfile",
         ):
             with self.subTest(rel=rel):
                 text = (ROOT / rel).read_text(encoding="utf-8")
@@ -222,14 +239,42 @@ class SelkiesImageContractTests(unittest.TestCase):
                     r"ARG SELKIES_BASE_IMAGE=ghcr\.io/linuxserver/baseimage-selkies:[^\s]+@sha256:[0-9a-f]{64}",
                 )
                 self.assertIn("FROM ${SELKIES_BASE_IMAGE}", text)
-                self.assertNotIn("Winetricks/winetricks/master", text)
-                self.assertRegex(text, r"ARG WINETRICKS_COMMIT=[0-9a-f]{40}")
-                self.assertRegex(text, r"ARG WINETRICKS_SHA256=[0-9a-f]{64}")
                 self.assertIn("COPY container/selkies/root/ /", text)
                 self.assertIn("EXPOSE 3001", text)
+                self.assertNotIn("xvfb", text.lower())
                 self.assertNotIn("ENTRYPOINT", text)
-                for obsolete in ("xvfb", "x11vnc", "novnc", "websockify"):
-                    self.assertNotIn(obsolete, text.lower())
+
+        self.assertFalse((ROOT / "container/desktop").exists())
+
+    def test_catalog_has_one_universal_image_matrix_for_every_provider(self):
+        from runtime.catalog import ci_matrix
+
+        rows = ci_matrix()["include"]
+        self.assertEqual(len(rows), 9)
+        self.assertEqual(
+            {row["provider"] for row in rows}, {"wine", "staging", "umu-proton-ge"}
+        )
+        self.assertTrue(all("desktop_dockerfile" not in row for row in rows))
+        self.assertTrue(all(Path(row["dockerfile"]).is_file() for row in rows))
+
+    def test_umu_selkies_image_pins_ge_proton_and_umu_release_assets(self):
+        text = (ROOT / "container/runtimes/umu-proton-ge/Dockerfile").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("unverified", text)
+        self.assertNotIn("git+https://", text)
+        self.assertIn(
+            "python3-umu-launcher_${UMU_LAUNCHER_VERSION}-1_amd64_debian-13.deb", text
+        )
+        self.assertIn(
+            "3de80fdcffdc5daabd65e7c9567aff4b8beeecc238eae11529fe737c0b4083f7", text
+        )
+        for digest in (
+            "ce6dd663ea01725a31805ed5c165723a253cdf0945a6642907330742ae2de5e4",
+            "51c580b66a833c73998fe00f0717eeac57197654040a2f2ed5189e3ee68d773d",
+            "86a2b2962a2509104201b3532bc829d058d666bc8220417f71bd4af660b6d05781e9f684b3982339d695a5fd4babe19e97ec42a82a78311faf99fc1257280623",
+        ):
+            self.assertIn(digest, text)
 
     def test_selkies_overlay_defines_labwc_and_s6_startup(self):
         autostart = ROOT / "container/selkies/root/defaults/autostart_wayland"
@@ -246,6 +291,12 @@ class SelkiesImageContractTests(unittest.TestCase):
         self.assertIn("Graphics", selector.read_text(encoding="utf-8"))
         self.assertIn("CAGE_LAUNCH_SCRIPT_B64", autostart.read_text(encoding="utf-8"))
 
+    def test_init_does_not_chown_the_caller_bundle_mount(self):
+        init = (
+            ROOT / "container/selkies/root/custom-cont-init.d/10-cage-session"
+        ).read_text(encoding="utf-8")
+        self.assertNotRegex(init, r"(?m)^\s*/opt/cage(?:\s|\\|$)")
+
 
 class SelkiesOCIContractTests(unittest.TestCase):
     def test_application_image_inherits_s6_entrypoint(self):
@@ -255,13 +306,26 @@ class SelkiesOCIContractTests(unittest.TestCase):
             plan = create_oci_export_plan(bundle, tag="cage-demo:1", graphics="selkies")
         content = plan["containerfile"]["content"]
         self.assertNotIn("ENTRYPOINT", content)
-        self.assertIn("FROM ghcr.io/pelagians/cage-wine-selkies:11.0", content)
+        self.assertIn("FROM ghcr.io/pelagians/cage-wine:11.0", content)
         self.assertIn("CAGE_APP_LAUNCHER=/usr/local/bin/cage-app-launch", content)
         self.assertIn("CAGE_SESSION_MODE=selkies", content)
 
+    def test_headless_application_image_also_inherits_s6_entrypoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = create_bundle(Manifest.from_dict(APP), Path(tmp), dry_run=True)
+            materialize_runnable_prefix(bundle, entrypoint=APP["launch"]["entrypoint"])
+            plan = create_oci_export_plan(
+                bundle, tag="cage-demo:headless", graphics="headless"
+            )
+        content = plan["containerfile"]["content"]
+        self.assertNotIn("ENTRYPOINT", content)
+        self.assertNotIn("CMD [", content)
+        self.assertIn("CAGE_APP_LAUNCHER=/usr/local/bin/cage-app-launch", content)
+        self.assertIn("CAGE_EXIT_WHEN_DONE=true", content)
+
 
 class SelkiesKubernetesContractTests(unittest.TestCase):
-    def test_headless_export_does_not_inherit_selkies_root_exception(self):
+    def test_headless_export_preserves_universal_selkies_init(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = create_bundle(Manifest.from_dict(APP), Path(tmp), dry_run=True)
             plan = create_kube_export_plan(
@@ -273,9 +337,9 @@ class SelkiesKubernetesContractTests(unittest.TestCase):
             item for item in plan["resources"] if item["kind"] == "Deployment"
         )
         container = deployment["spec"]["template"]["spec"]["containers"][0]
-        self.assertNotIn("command", container)
-        self.assertNotIn("securityContext", container)
-        self.assertFalse(
+        self.assertEqual(container["command"], ["/init"])
+        self.assertEqual(container["securityContext"]["runAsUser"], 0)
+        self.assertTrue(
             any(
                 v["name"] == "cage-config"
                 for v in deployment["spec"]["template"]["spec"]["volumes"]

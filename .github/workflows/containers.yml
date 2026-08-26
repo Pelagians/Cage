@@ -33,16 +33,13 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.catalog.outputs.matrix }}
-      desktop_matrix: ${{ steps.catalog.outputs.desktop_matrix }}
     steps:
       - uses: actions/checkout@v4
       - name: Generate build matrix from runtime catalog
         id: catalog
         run: |
           MATRIX="$(python3 -m runtime.catalog --ci-matrix)"
-          DESKTOP_MATRIX="$(python3 -m runtime.catalog --ci-desktop-matrix)"
           echo "matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
-          echo "desktop_matrix=${DESKTOP_MATRIX}" >> "$GITHUB_OUTPUT"
           echo "Runtime catalog matrix:"
           echo "${MATRIX}" | python3 -m json.tool
 
@@ -75,34 +72,3 @@ jobs:
             ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.sha }}-${{ matrix.tag }}
           build-args: |
             ${{ matrix.build_arg }}
-
-  build-desktop:
-    runs-on: ubuntu-latest
-    needs: catalog
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.catalog.outputs.desktop_matrix) }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push ${{ matrix.provider }}:${{ matrix.version }} Selkies desktop
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ${{ matrix.desktop_dockerfile }}
-          platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: |
-            ${{ matrix.desktop_published_ref }}
-            ${{ matrix.desktop_published_alias_refs }}
-            ${{ env.REGISTRY }}/${{ matrix.desktop_image_name }}:${{ github.sha }}-${{ matrix.tag }}
-          build-args: |
-            ${{ matrix.desktop_build_arg }}

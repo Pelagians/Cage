@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Cage Container Build Script
 #
-# Builds one or all Cage Wine/Proton runtime OCI images from
-# runtime/catalog.json.
+# Builds one or all universal Cage Selkies Wine/Proton images from
+# runtime/catalog.json. Each image supports build, headless, and visible modes.
 #
 # Usage:
 #   ./container/build.sh                         # build all CI-enabled catalog entries

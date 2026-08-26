@@ -7,10 +7,10 @@ runner versions before they enter bundle metadata.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 import argparse
 import json
 import shlex
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -103,7 +103,7 @@ def load_catalog(path: Path = CATALOG_PATH) -> dict[str, Any]:
     if data.get("schemaVersion") != "cage.runtime-catalog/v0":
         raise ValueError("runtime catalog schemaVersion must be cage.runtime-catalog/v0")
     if not isinstance(data.get("providers"), dict):
-        raise ValueError("runtime catalog providers must be an object")
+        raise TypeError("runtime catalog providers must be an object")
     return data
 
 
@@ -186,8 +186,7 @@ def ci_matrix() -> dict[str, list[dict[str, str]]]:
             entry = resolve_catalog_version(provider, version)
             if entry is None or not entry.ci_build:
                 continue
-            desktop_supported = entry.provider in {"wine", "staging"}
-            row = {
+            include.append({
                 "provider": entry.provider,
                 "version": entry.version,
                 "requested_version": entry.requested_version,
@@ -200,37 +199,8 @@ def ci_matrix() -> dict[str, list[dict[str, str]]]:
                 "published_alias_refs": "\n".join(entry.published_alias_refs),
                 "local_image": entry.local_image,
                 "runtime_usable": str(entry.runtime_usable).lower(),
-                "desktop_dockerfile": "",
-                "desktop_build_arg": "",
-                "desktop_image_name": "",
-                "desktop_published_ref": "",
-                "desktop_published_alias_refs": "",
-            }
-            if desktop_supported:
-                row.update({
-                    "desktop_dockerfile": (
-                        "container/desktop/wine-staging/Dockerfile"
-                        if entry.provider == "staging"
-                        else "container/desktop/wine/Dockerfile"
-                    ),
-                    "desktop_build_arg": entry.build_arg_line().replace("~bookworm-1", "~trixie-1"),
-                    "desktop_image_name": f"{entry.published_image_name}-selkies",
-                    "desktop_published_ref": f"{entry.default_registry}/{entry.published_image_name}-selkies:{entry.tag}",
-                    "desktop_published_alias_refs": "\n".join(
-                        f"{entry.default_registry}/{entry.published_image_name}-selkies:{tag}"
-                        for tag in entry.publish_tags
-                    ),
-                })
-            include.append(row)
+            })
     return {"include": include}
-
-
-def ci_desktop_matrix() -> dict[str, list[dict[str, str]]]:
-    return {
-        "include": [
-            row for row in ci_matrix()["include"] if row["desktop_dockerfile"]
-        ]
-    }
 
 
 def shell_build_entry(provider: str, version: str) -> str:
@@ -269,8 +239,6 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m runtime.catalog")
     parser.add_argument("--ci-matrix", action="store_true",
                         help="Print GitHub Actions matrix JSON")
-    parser.add_argument("--ci-desktop-matrix", action="store_true",
-                        help="Print the Selkies desktop build matrix JSON")
     parser.add_argument("--shell-build-list", action="store_true",
                         help="Print tab-separated local build entries")
     parser.add_argument("--shell-build-entry", nargs=2,
@@ -282,8 +250,6 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.ci_matrix:
         print(json.dumps(ci_matrix(), separators=(",", ":")))
-    elif args.ci_desktop_matrix:
-        print(json.dumps(ci_desktop_matrix(), separators=(",", ":")))
     elif args.shell_build_list:
         print(shell_build_list())
     elif args.shell_build_entry:

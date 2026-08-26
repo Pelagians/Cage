@@ -1,16 +1,33 @@
 #!/bin/bash
 set -Eeuo pipefail
 
-# LinuxServer's Labwc session runs this file as abc. Cage launch plans are
-# transported as base64 so Docker/Podman never replace the inherited /init.
+run_cage_script() {
+  local encoded="$1" script="$2" status_file="${3:-}"
+  printf '%s' "$encoded" | base64 -d > "$script"
+  chmod 0700 "$script"
+  if [[ "${CAGE_EXIT_WHEN_DONE:-false}" == true ]]; then
+    set +e
+    bash "$script"
+    rc=$?
+    set -e
+    if [[ -n "$status_file" ]]; then
+      printf '%s\n' "$rc" > "$status_file"
+    fi
+    kill -TERM 1
+    exit "$rc"
+  fi
+  exec bash "$script"
+}
+
+# LinuxServer's Labwc session runs this file as abc. Scripts are transported
+# as base64 so Docker/Podman never replace the inherited /init.
+if [[ -n "${CAGE_BUILD_SCRIPT_B64:-}" ]]; then
+  run_cage_script "$CAGE_BUILD_SCRIPT_B64" /tmp/cage-build.sh /opt/cage/logs/container-exit-code
+fi
 if [[ -n "${CAGE_LAUNCH_SCRIPT_B64:-}" ]]; then
-  launch_script=/tmp/cage-launch.sh
-  printf '%s' "$CAGE_LAUNCH_SCRIPT_B64" | base64 -d > "$launch_script"
-  chmod 0700 "$launch_script"
-  exec bash "$launch_script"
+  run_cage_script "$CAGE_LAUNCH_SCRIPT_B64" /tmp/cage-launch.sh
 fi
 
-# Runnable application OCI images install this launcher and inherit /init.
 if [[ -n "${CAGE_APP_LAUNCHER:-}" && -x "${CAGE_APP_LAUNCHER}" ]]; then
   exec "${CAGE_APP_LAUNCHER}"
 fi

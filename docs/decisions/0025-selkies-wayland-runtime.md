@@ -13,10 +13,10 @@ Cage must remain an application packager/runtime substrate. Nereus—not Cage—
 
 ## Decision
 
-1. Existing catalog runtime images remain the build/headless substrate and retain build-only Xvfb. A separate sibling desktop image family inherits the digest-pinned LinuxServer Selkies Debian Trixie base and retains its `/init` and s6 lifecycle.
+1. Every catalog image inherits the digest-pinned LinuxServer Selkies Debian Trixie base and retains `/init` and s6. Build, headless, and visible modes are supervised modes of the same image; the retired display stack and sibling image family are removed.
 2. Wayland with Labwc is the only desktop-session architecture.
 3. `graphics` supports `headless` and `selkies`. Headless uses the same session without publishing a browser endpoint; Selkies publishes HTTPS container port `3001` only.
-4. Recipes may set `runtime.wineGraphics` to `xwayland` or `wayland`. The value is normalized into the manifest and execution graph. Native Wayland is admitted only for Wine Stable and Wine Staging. No UMU/GE-Proton desktop image is published until its upstream artifacts and launch path are independently pinned and proven.
+4. Recipes may set `runtime.wineGraphics` to `xwayland` or `wayland`. Native Wayland is admitted only for Wine Stable and Wine Staging. UMU/GE-Proton is included in the universal Selkies family using XWayland compatibility until its native Wayland path is proven.
 5. Wine driver selection uses `HKCU\Software\Wine\Drivers`, value `Graphics`, with `x11` or `wayland`—not an invented environment-only driver contract.
 6. PixelFlux is an internal loopback adapter for screenshots and bounded GUI-input fallback. It is not exposed as a Service or public control API.
 7. Headless application images retain the catalog runtime entrypoint and use `CMD`; Selkies application images inherit desktop `/init` and set `CAGE_APP_LAUNCHER` instead of replacing `ENTRYPOINT`.
@@ -37,7 +37,7 @@ Cage does not adopt task-worker, compatibility-pack, tenant, approval, or contro
 ## Consequences
 
 - Port `3001` replaces the former multi-port visible-session path.
-- Desktop images use the Selkies Debian Trixie parent and corresponding Trixie WineHQ package identities, while build/headless images keep their proven Bookworm pins.
+- All catalog images use the Selkies Debian Trixie parent. Wine package identities use the corresponding Trixie pins; UMU and GE-Proton consume checksum-bound release assets.
 - Interactive Kubernetes sessions require an explicit root-init security exception. This needs architecture/security review before deployment.
 - A passing XWayland application is not evidence that native Wine Wayland works. Acceptance evidence must report both modes separately.
 

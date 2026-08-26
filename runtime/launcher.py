@@ -88,27 +88,21 @@ def build_run_plan(
         )
 
     session_contract = str(runtime.get("sessionContract") or "")
-    if mode == "selkies" and session_contract != "cage.selkies-wayland/v1":
+    if session_contract != "cage.selkies-wayland/v1":
         raise RunError(
-            "runtime image is not qualified for Cage Selkies/Wayland sessions "
-            f"(sessionContract={session_contract or 'missing'}); publish and pin a producer-owned "
-            "desktop runtime with sessionContract=cage.selkies-wayland/v1"
+            "runtime image is not qualified as a universal Selkies Cage image "
+            f"(sessionContract={session_contract or 'missing'}); publish and pin one producer-owned "
+            "image with sessionContract=cage.selkies-wayland/v1"
         )
 
-    graph_network = runtime["network"] if "network" in runtime else "none"
+    graph_network = runtime.get("network", "none")
     selected_network = network if network is not None else graph_network
     if isinstance(selkies_port, bool) or not isinstance(selkies_port, int) or not 1 <= selkies_port <= 65535:
         raise RunError("selkies port must be between 1 and 65535")
     _validate_network_mode(selected_network)
     _validate_graphics_network(mode, selected_network)
 
-    image = (
-        str(runtime.get("desktopImage") or "")
-        if mode == "selkies"
-        else _runtime_image(runtime)
-    )
-    if not image:
-        raise RunError("runtime does not declare a Selkies desktop image")
+    image = _runtime_image(runtime)
     launch_command = _launch_command(runtime, launch, [item["winePath"] for item in file_arguments])
     runner_cache = _runner_cache_plan(runtime, runner_cache_dir, require_runner=require_runner, engine=selected_engine)
     script = _launch_script(
@@ -353,12 +347,9 @@ def _container_argv(
         argv.extend(["-e", f"{key}={value}"])
     if graphics == "selkies":
         argv.extend(["-p", f"127.0.0.1:{selkies_port}:3001"])
-    if graphics == "selkies":
-        # The separate desktop image owns ENTRYPOINT=/init.
-        argv.append(image)
-    else:
-        # Existing build/headless runtime images retain their command-exec entrypoint.
-        argv.extend([image, "bash", "-lc", script])
+    # Every catalog image inherits LinuxServer /init. Launch scripts are
+    # transported through the supervised Wayland session in every mode.
+    argv.append(image)
     return argv
 
 
@@ -392,9 +383,8 @@ def _container_environment(graphics: str, wine_graphics: str, script: str) -> di
         "PIXELFLUX_WAYLAND": "true",
         "RESTART_APP": "false",
     }
-    if graphics != "selkies":
-        for key in ("CAGE_LAUNCH_SCRIPT_B64", "START_DOCKER", "PIXELFLUX_WAYLAND", "RESTART_APP"):
-            environment.pop(key, None)
+    if graphics == "headless":
+        environment["CAGE_EXIT_WHEN_DONE"] = "true"
     return environment
 
 

@@ -21,7 +21,7 @@ from artifact.inspection import verify_bundle, verify_prefix_materialization
 from core.chocolatey.assets import load_asset_bytes
 from builder.pipeline import generate_build_script
 from core.manifest import Manifest
-from runtime.providers import required_cfw_runtime_image, resolve_manifest_runtime, resolve_runtime
+from runtime.providers import required_cfw_runtime_artifact, required_cfw_runtime_image, resolve_manifest_runtime, resolve_runtime
 from runtime.runner_cache import ensure_runner
 
 
@@ -578,6 +578,11 @@ def execute_inside_container(
 
     # Resolve image reference. A CFW prepared runtime binds the build to the
     # exact producer image digest; explicit caller overrides may not replace it.
+    required_cfw_artifact = required_cfw_runtime_artifact(manifest)
+    if required_cfw_artifact is not None and required_cfw_artifact.get("sessionContract") != "cage.selkies-wayland/v1":
+        raise RuntimeError(
+            "CFW runtime is not a universal Selkies Cage image; publish and pin a qualified producer runtime"
+        )
     required_cfw_image = required_cfw_runtime_image(manifest)
     if required_cfw_image and manifest.runtime.runner:
         raise RuntimeError("CFW prepared runtimes cannot use runtime.runner; the producer image owns Wine identity")
@@ -619,7 +624,19 @@ def execute_inside_container(
         _volume_mount(host_bundle, "/opt/cage", engine=engine),
         _volume_mount(host_workspace, "/workspace", engine=engine, read_only=True),
     ]
-    environment: dict[str, str] = {"CAGE_RUNTIME_IMAGE": img}
+    build_wrapper = "set -euo pipefail\nexec bash /opt/cage/build/run.sh\n"
+    environment: dict[str, str] = {
+        "CAGE_RUNTIME_IMAGE": img,
+        "PUID": str(os.getuid()),
+        "PGID": str(os.getgid()),
+        "CAGE_BUILD_SCRIPT_B64": base64.b64encode(build_wrapper.encode("utf-8")).decode("ascii"),
+        "CAGE_SESSION_MODE": "build",
+        "CAGE_WINE_GRAPHICS": "xwayland",
+        "CAGE_EXIT_WHEN_DONE": "true",
+        "START_DOCKER": "false",
+        "PIXELFLUX_WAYLAND": "true",
+        "RESTART_APP": "false",
+    }
     environment.update(runtime.environment or {})
     if runner_cache:
         mounts.append(runner_cache["mount"])
@@ -641,9 +658,9 @@ def execute_inside_container(
         cmd.extend(["-e", f"{key}={value}"])
     # Ensure shared memory is large enough for Wine
     cmd.extend(["--shm-size", "2g"])
+    # Preserve the universal image's inherited LinuxServer /init. The Labwc
+    # autostart consumes CAGE_BUILD_SCRIPT_B64 and records the real task code.
     cmd.append(img)
-    # Pass through xvfb-entrypoint.sh (which starts Xvfb, then execs CMD)
-    cmd.extend(["bash", "/opt/cage/build/run.sh"])
 
     # ---- Execute ----
     log_lines: list[str] = []
@@ -668,8 +685,16 @@ def execute_inside_container(
         log_text = "\n".join(log_lines)
         (bundle_path / "logs" / "build.log").write_text(log_text, encoding="utf-8")
 
-        container_success = result.returncode == 0
-        exit_code = result.returncode
+        status_receipt = bundle_path / "logs" / "container-exit-code"
+        if status_receipt.is_file():
+            try:
+                exit_code = int(status_receipt.read_text(encoding="utf-8").strip())
+            except ValueError:
+                exit_code = result.returncode
+            status_receipt.unlink(missing_ok=True)
+        else:
+            exit_code = result.returncode
+        container_success = exit_code == 0
         prefix_size = None
         prefix_file_count = None
         runnable = False

@@ -54,7 +54,6 @@ container = [
   "docker-compose.yml",
   "common/*.sh",
   "runtimes/*/Dockerfile",
-  "desktop/*/Dockerfile",
   "selkies/root/defaults/*",
   "selkies/root/custom-cont-init.d/*",
   "selkies/root/usr/local/libexec/*",

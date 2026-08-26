@@ -89,13 +89,13 @@ Real build/run execution keeps runner archives host-cached but container-execute
 
 ### 12. Run planning and execution
 
-`runtime/launcher.py` implements the current `cage run` path. It consumes verified bundle output, emits `cage.run-plan/v0` for dry runs, and executes the plan with Podman/Docker when not in dry-run mode. Headless mode uses the catalog runtime and its build/headless X display without host ports. The separate Selkies desktop image requires `--network bridge` and publishes only the browser HTTPS endpoint on container port `3001` to host loopback. PixelFlux remains loopback-only inside the container. Bundles are mounted read-only and prefixes are copied before launch so runtime mutation affects state, not the sealed artifact. If a graph requests `runtime.runner`, run planning records runner cache status and real execution requires a populated cache so the selected Wine runner can be mounted into the container.
+`runtime/launcher.py` implements the current `cage run` path. It consumes verified bundle output, emits `cage.run-plan/v0` for dry runs, and executes the plan with Podman/Docker when not in dry-run mode. Every mode uses the same catalog Selkies image and inherited `/init` lifecycle. Headless mode publishes no host ports. Visible Selkies mode requires `--network bridge` and publishes only the browser HTTPS endpoint on container port `3001` to host loopback. PixelFlux remains loopback-only inside the container. Bundles are mounted read-only and prefixes are copied before launch so runtime mutation affects state, not the sealed artifact. If a graph requests `runtime.runner`, run planning records runner cache status and real execution requires a populated cache so the selected Wine runner can be mounted into the container.
 
 ### 13. OCI application export
 
 `artifact/oci.py` implements `cage export oci`. It consumes a verified bundle, emits `cage.oci-export-plan/v0` in dry-run mode, stages a build context with a copied bundle plus `metadata/artifact.json`, generates a runnable app `Containerfile`, and builds with Podman/Docker when not in dry-run mode.
 
-Headless exported images are based on the graph-resolved catalog runtime; interactive exports use the graph-resolved sibling Selkies desktop image. Both embed the bundle at `/opt/cage/bundle`. Runtime state and exports are separate at `/var/lib/cage/state` and `/exports`.
+Headless and interactive exports use the same graph-resolved universal Selkies runtime and inherit `/init`. Both embed the bundle at `/opt/cage/bundle`. Runtime state and exports are separate at `/var/lib/cage/state` and `/exports`.
 
 When `--push` is used, export records repo digest identity from image inspection. `cage image verify` then compares OCI labels to embedded `metadata/artifact.json` so registry/scheduler-visible labels cannot silently drift from Cage artifact semantics.
 

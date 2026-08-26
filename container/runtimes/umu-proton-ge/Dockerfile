@@ -1,78 +1,65 @@
-# syntax=docker/dockerfile:1
-# Cage UMU + GE-Proton OCI Base
-#
-# Produces the cage/umu-proton-ge:<tag> image — GloriousEggroll's
-# GE-Proton runner stack, built from community releases and launched through the UMU capability contract.
-#
-# Build:
-#   docker build \
-#     --build-arg GE_PROTON_TAG=GE-Proton9-27 \
-#     --build-arg GE_PROTON_SHA256=replace-with-actual-sha256 \
-#     --build-arg UMU_LAUNCHER_REF=1.4.0 \
-#     -t cage/umu-proton-ge:GE-Proton9-27 \
-#     -f container/providers/umu-proton-ge/Dockerfile .
+# syntax=docker/dockerfile:1.7
+# Universal Cage UMU + GE-Proton image: build, headless, and Selkies session modes.
+ARG SELKIES_BASE_IMAGE=ghcr.io/linuxserver/baseimage-selkies:debiantrixie@sha256:ac7fd6d182238b4a99e66554c5e75be48a714e2a0c9da81bd18e171ff9ba3dd5
+ARG GE_PROTON_TAG=GE-Proton11-1
+ARG UMU_LAUNCHER_VERSION=1.4.0
 
-ARG GE_PROTON_TAG=GE-Proton9-27
-ARG GE_PROTON_URL=https://github.com/GloriousEggroll/proton-ge-custom/releases/download/${GE_PROTON_TAG}/${GE_PROTON_TAG}.tar.gz
-ARG GE_PROTON_SHA256=unverified
-ARG UMU_LAUNCHER_REF=1.4.0
-
-FROM debian:bookworm-slim AS base
+FROM ${SELKIES_BASE_IMAGE}
+ARG GE_PROTON_TAG
+ARG UMU_LAUNCHER_VERSION
+ARG UMU_DEB_SHA256=3de80fdcffdc5daabd65e7c9567aff4b8beeecc238eae11529fe737c0b4083f7
 
 RUN set -eux; \
-    dpkg --add-architecture i386; \
-    apt-get update -qq; \
-    apt-get install -y -qq --no-install-recommends \
-        ca-certificates curl \
-        xvfb x11-utils xauth \
-        cabextract p7zip-full unzip bzip2 xz-utils \
-        python3 \
-    ; \
-    rm -rf /var/lib/apt/lists/*
+    case "${GE_PROTON_TAG}" in \
+      GE-Proton11-1) GE_DIGEST=ce6dd663ea01725a31805ed5c165723a253cdf0945a6642907330742ae2de5e4; GE_ALGO=sha256sum ;; \
+      GE-Proton10-34) GE_DIGEST=51c580b66a833c73998fe00f0717eeac57197654040a2f2ed5189e3ee68d773d; GE_ALGO=sha256sum ;; \
+      GE-Proton9-27) GE_DIGEST=86a2b2962a2509104201b3532bc829d058d666bc8220417f71bd4af660b6d05781e9f684b3982339d695a5fd4babe19e97ec42a82a78311faf99fc1257280623; GE_ALGO=sha512sum ;; \
+      *) echo "Unsupported unpinned GE-Proton release: ${GE_PROTON_TAG}" >&2; exit 2 ;; \
+    esac; \
+    apt-get update -o Acquire::Retries=5; \
+    apt-get install --no-install-recommends -y \
+      ca-certificates curl cabextract p7zip-full unzip bzip2 xz-utils fontconfig python3; \
+    curl -fsSL -o /tmp/proton-ge.tar.gz \
+      "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/${GE_PROTON_TAG}/${GE_PROTON_TAG}.tar.gz"; \
+    printf '%s  %s\n' "${GE_DIGEST}" /tmp/proton-ge.tar.gz | "${GE_ALGO}" -c -; \
+    install -d -m 0755 /opt/proton-ge; \
+    tar -xzf /tmp/proton-ge.tar.gz -C /opt/proton-ge --strip-components=1; \
+    curl -fsSL -o /tmp/umu.deb \
+      "https://github.com/Open-Wine-Components/umu-launcher/releases/download/${UMU_LAUNCHER_VERSION}/python3-umu-launcher_${UMU_LAUNCHER_VERSION}-1_amd64_debian-13.deb"; \
+    printf '%s  %s\n' "${UMU_DEB_SHA256}" /tmp/umu.deb | sha256sum -c -; \
+    apt-get install --no-install-recommends -y /tmp/umu.deb; \
+    command -v umu-run; \
+    /usr/bin/umu-run --help >/tmp/umu-run-help.txt; \
+    rm -rf /tmp/proton-ge.tar.gz /tmp/umu.deb /var/lib/apt/lists/*
 
-FROM base AS ge-download
-ARG GE_PROTON_TAG GE_PROTON_URL GE_PROTON_SHA256
-
-WORKDIR /tmp
-RUN set -eux; \
-    echo "Downloading ${GE_PROTON_TAG}..."; \
-    curl -fsSL -o proton-ge.tar.gz "${GE_PROTON_URL}"; \
-    if [ "${GE_PROTON_SHA256}" != "unverified" ]; then \
-        echo "${GE_PROTON_SHA256}  proton-ge.tar.gz" | sha256sum -c -; \
-    else \
-        echo "WARNING: GE-Proton SHA256 not provided — skipping integrity check"; \
-    fi; \
-    mkdir -p /opt/proton-ge; \
-    tar -xzf proton-ge.tar.gz -C /opt/proton-ge --strip-components=1; \
-    rm proton-ge.tar.gz
-
-FROM debian:bookworm-slim AS umu-build
-ARG UMU_LAUNCHER_REF
-RUN set -eux; \
-    apt-get update -qq; \
-    apt-get install -y -qq --no-install-recommends \
-        ca-certificates git python3 python3-venv \
-    ; \
-    python3 -m venv /opt/umu; \
-    /opt/umu/bin/pip install --no-cache-dir --upgrade pip; \
-    /opt/umu/bin/pip install --no-cache-dir "git+https://github.com/Open-Wine-Components/umu-launcher.git@${UMU_LAUNCHER_REF}"; \
-    test -x /opt/umu/bin/umu-run; \
-    /opt/umu/bin/umu-run --help >/tmp/umu-run-help.txt; \
-    rm -rf /var/lib/apt/lists/* /root/.cache
-
-FROM ge-download AS final
-COPY --from=umu-build /opt/umu /opt/umu
-RUN set -eux; \
-    ln -s /opt/umu/bin/umu-run /usr/local/bin/umu-run; \
-    /usr/local/bin/umu-run --help >/tmp/umu-run-help.txt
-ENV CAGE_ROOT=/opt/cage WINEPREFIX=/opt/cage/prefix \
+ENV CAGE_ROOT=/opt/cage \
+    WINEPREFIX=/opt/cage/prefix \
     STEAM_COMPAT_DATA_PATH=/opt/cage/prefix \
     STEAM_COMPAT_CLIENT_INSTALL_PATH=/opt/cage \
     PROTONPATH=/opt/proton-ge \
-    PATH=/opt/umu/bin:$PATH \
-    WINEDEBUG=-all DISPLAY=:99
-COPY container/common/xvfb-entrypoint.sh /usr/local/bin/xvfb-entrypoint.sh
-RUN chmod +x /usr/local/bin/xvfb-entrypoint.sh
+    WINEDEBUG=-all \
+    START_DOCKER=false \
+    PIXELFLUX_WAYLAND=true \
+    RESTART_APP=false \
+    CAGE_WINE_GRAPHICS=xwayland \
+    PATH=/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+COPY container/selkies/root/ /
+COPY container/common/wine-env.sh /opt/cage/common/wine-env.sh
+COPY runtime/pixelflux.py /usr/local/bin/cage-pixelflux
+RUN set -eux; \
+    chmod 0755 /defaults/autostart_wayland \
+      /custom-cont-init.d/10-cage-session \
+      /usr/local/libexec/cage-select-wine-graphics \
+      /usr/local/bin/cage-pixelflux; \
+    bash -n /defaults/autostart_wayland; \
+    bash -n /custom-cont-init.d/10-cage-session; \
+    bash -n /usr/local/libexec/cage-select-wine-graphics; \
+    python3 -m py_compile /usr/local/bin/cage-pixelflux; \
+    test -x /lsiopy/bin/selkies; \
+    test -f /defaults/labwc.xml; \
+    test -x /opt/proton-ge/files/bin/wine; \
+    test -f /opt/proton-ge/files/lib64/wine/x86_64-unix/winex11.so
+
 WORKDIR /opt/cage
-ENTRYPOINT ["/usr/local/bin/xvfb-entrypoint.sh"]
-CMD ["/bin/bash"]
+EXPOSE 3001

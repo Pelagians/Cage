@@ -114,7 +114,7 @@ class ExecutionGraphTests(unittest.TestCase):
         self.assertEqual(graph["runnerRuntime"]["network"], "none")
         self.assertEqual(graph["runnerRuntime"]["sessionContract"], "cage.selkies-wayland/v1")
         self.assertEqual(
-            {k: v for k, v in graph["runnerRuntime"].items() if k not in {"network", "sessionContract", "desktopImage", "localDesktopImage"}},
+            {k: v for k, v in graph["runnerRuntime"].items() if k not in {"network", "sessionContract"}},
             graph["builderRuntime"],
         )
         self.assertEqual(graph["graphics"]["defaultMode"], "headless")

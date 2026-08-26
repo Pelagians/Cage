@@ -59,13 +59,7 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str =
         'name': manifest.get('name'),
         'version': manifest.get('version'),
     })
-    base_image = (
-        str(runtime.get('desktopImage') or '')
-        if graphics == 'selkies'
-        else _runtime_image(runtime)
-    )
-    if not base_image:
-        raise OCIExportError('runner runtime does not declare a Selkies desktop image')
+    base_image = _runtime_image(runtime)
     if graphics == 'headless' and str((graph.get('graphics') or {}).get('wineGraphics') or 'xwayland') == 'wayland':
         raise OCIExportError('native Wine Wayland requires graphics selkies')
     artifact_metadata = _artifact_metadata(
@@ -581,11 +575,9 @@ def _containerfile(
         f'ENV {key}={_docker_quote(value)}\n'
         for key, value in sorted((environment or {}).items())
     )
-    lifecycle = (
-        f'ENV CAGE_APP_LAUNCHER={APP_LAUNCHER}\n'
-        if graphics == 'selkies'
-        else f'CMD ["{APP_LAUNCHER}"]\n'
-    )
+    lifecycle = f'ENV CAGE_APP_LAUNCHER={APP_LAUNCHER}\n'
+    if graphics == 'headless':
+        lifecycle += 'ENV CAGE_EXIT_WHEN_DONE=true\n'
     return (
         f'FROM {base_image}\n\n'
         f'{label_lines}\n\n'

@@ -10,12 +10,14 @@ services:
   wine:
     build:
       context: ..
-      dockerfile: container/providers/wine/Dockerfile
+      dockerfile: container/runtimes/wine/Dockerfile
       args:
-        WINE_PACKAGE_VERSION: "11.0.0.0~bookworm-1"
+        WINE_PACKAGE_VERSION: "11.0.0.0~trixie-1"
     image: cage/wine:11.0-dev
     environment:
       WINEFS: builder
+      CAGE_SESSION_MODE: headless
+      CAGE_WINE_GRAPHICS: xwayland
     volumes:
       - ..:/workspace
     working_dir: /workspace
@@ -25,12 +27,14 @@ services:
   wine-staging:
     build:
       context: ..
-      dockerfile: container/providers/wine-staging/Dockerfile
+      dockerfile: container/runtimes/wine-staging/Dockerfile
       args:
-        WINE_PACKAGE_VERSION: "11.10~bookworm-1"
+        WINE_PACKAGE_VERSION: "11.10~trixie-1"
     image: cage/wine-staging:11.10-dev
     environment:
       WINEFS: builder
+      CAGE_SESSION_MODE: headless
+      CAGE_WINE_GRAPHICS: xwayland
     volumes:
       - ..:/workspace
     working_dir: /workspace
@@ -40,12 +44,14 @@ services:
   umu-proton-ge:
     build:
       context: ..
-      dockerfile: container/providers/umu-proton-ge/Dockerfile
+      dockerfile: container/runtimes/umu-proton-ge/Dockerfile
       args:
         GE_PROTON_TAG: "GE-Proton11-1"
     image: cage/umu-proton-ge:GE-Proton11-1-dev
     environment:
       WINEFS: builder
+      CAGE_SESSION_MODE: headless
+      CAGE_WINE_GRAPHICS: xwayland
     volumes:
       - ..:/workspace
     working_dir: /workspace

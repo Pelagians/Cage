@@ -26,6 +26,8 @@ from runtime.launcher import build_run_plan
 from tests.bundle_fixtures import materialize_runnable_prefix
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
 APP = {
     "schemaVersion": "cage.app/v0",
     "name": "phase1-app",
@@ -700,9 +702,16 @@ class ExecutorVerificationTests(unittest.TestCase):
                 self.assertFalse(_write_host_chocolatey_package_evidence(manifest, bundle))
 
     def test_container_success_fails_when_host_cannot_bind_package_bytes(self):
+        qualified = {
+            **json.loads((ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.3-wine-11.0.json").read_text()),
+            "sessionContract": "cage.selkies-wayland/v1",
+        }
         manifest = Manifest.from_dict({
             **APP,
-            "modules": [{"type": "chocolatey", "install": {"packages": ["7zip"]}}],
+            "modules": [{
+                "type": "chocolatey",
+                "install": {"packages": ["7zip"], "runtimeArtifact": qualified},
+            }],
         })
         with tempfile.TemporaryDirectory() as tmp:
             bundle = create_bundle(manifest, Path(tmp), dry_run=False)
@@ -859,7 +868,6 @@ class BuildSourcePreflightTests(unittest.TestCase):
                     "wineVersions": ["wine-11.0"],
                     "environment": {"WINEDLLOVERRIDES": ""},
                     "sessionContract": "cage.selkies-wayland/v1",
-                    "selkiesImage": "ghcr.io/pelagians/cage-wine-selkies@sha256:" + "e" * 64,
                 },
             }}],
         }

@@ -271,25 +271,24 @@ def _deployment(
             {'name': 'cage-exports', 'mountPath': EXPORTS_ROOT},
         ],
     }
-    volumes = [state_volume, exports_volume]
+    volumes = [state_volume, exports_volume, config_volume]
+    container['env'].extend([
+        {'name': 'PUID', 'value': '1000'},
+        {'name': 'PGID', 'value': '1000'},
+    ])
+    container['command'] = ['/init']
+    container['securityContext'] = {
+        'runAsUser': 0,
+        'runAsGroup': 0,
+        'runAsNonRoot': False,
+        'allowPrivilegeEscalation': False,
+        'privileged': False,
+        'capabilities': {'drop': ['ALL'], 'add': ['CHOWN', 'SETGID', 'SETUID']},
+        'seccompProfile': {'type': 'RuntimeDefault'},
+    }
+    container['volumeMounts'].append({'name': 'cage-config', 'mountPath': '/config'})
     if graphics == 'selkies':
-        container['env'].extend([
-            {'name': 'PUID', 'value': '1000'},
-            {'name': 'PGID', 'value': '1000'},
-        ])
-        container['command'] = ['/init']
         container['ports'] = [{'name': 'https', 'containerPort': 3001, 'protocol': 'TCP'}]
-        container['securityContext'] = {
-            'runAsUser': 0,
-            'runAsGroup': 0,
-            'runAsNonRoot': False,
-            'allowPrivilegeEscalation': False,
-            'privileged': False,
-            'capabilities': {'drop': ['ALL'], 'add': ['CHOWN', 'SETGID', 'SETUID']},
-            'seccompProfile': {'type': 'RuntimeDefault'},
-        }
-        container['volumeMounts'].append({'name': 'cage-config', 'mountPath': '/config'})
-        volumes.append(config_volume)
 
     return {
         'apiVersion': 'apps/v1',
