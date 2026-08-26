@@ -306,6 +306,25 @@ class SelkiesImageContractTests(unittest.TestCase):
         self.assertIn("Graphics", selector.read_text(encoding="utf-8"))
         self.assertIn("CAGE_LAUNCH_SCRIPT_B64", autostart.read_text(encoding="utf-8"))
 
+    def test_build_execution_is_a_native_s6_task_not_labwc_autostart(self):
+        autostart = (
+            ROOT / "container/selkies/root/defaults/autostart_wayland"
+        ).read_text(encoding="utf-8")
+        task = ROOT / "container/selkies/root/etc/s6-overlay/s6-rc.d/svc-cage-task/run"
+        registration = (
+            ROOT
+            / "container/selkies/root/etc/s6-overlay/s6-rc.d/user/contents.d/svc-cage-task"
+        )
+        self.assertNotIn("CAGE_BUILD_SCRIPT_B64", autostart)
+        self.assertTrue(task.is_file())
+        task_text = task.read_text(encoding="utf-8")
+        self.assertIn("CAGE_BUILD_SCRIPT_B64", task_text)
+        self.assertIn("wayland-1", task_text)
+        self.assertIn("s6-setuidgid abc", task_text)
+        self.assertIn("container-exit-code", task_text)
+        self.assertIn("kill -TERM 1", task_text)
+        self.assertTrue(registration.is_file())
+
     def test_universal_image_exposes_requalification_identity(self):
         text = (ROOT / "container/runtimes/wine/Dockerfile").read_text(encoding="utf-8")
         self.assertIn("org.pelagian.cage.session-contract=", text)
@@ -315,8 +334,13 @@ class SelkiesImageContractTests(unittest.TestCase):
         autostart = (
             ROOT / "container/selkies/root/defaults/autostart_wayland"
         ).read_text(encoding="utf-8")
-        watcher = ROOT / "container/selkies/root/etc/s6-overlay/s6-rc.d/svc-cage-shutdown/run"
-        registration = ROOT / "container/selkies/root/etc/s6-overlay/s6-rc.d/user/contents.d/svc-cage-shutdown"
+        watcher = (
+            ROOT / "container/selkies/root/etc/s6-overlay/s6-rc.d/svc-cage-shutdown/run"
+        )
+        registration = (
+            ROOT
+            / "container/selkies/root/etc/s6-overlay/s6-rc.d/user/contents.d/svc-cage-shutdown"
+        )
         self.assertIn("shutdown-request", autostart)
         self.assertTrue(watcher.is_file())
         self.assertIn("kill -TERM 1", watcher.read_text(encoding="utf-8"))

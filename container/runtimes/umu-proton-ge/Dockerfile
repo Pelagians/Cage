@@ -54,6 +54,7 @@ RUN set -eux; \
     chmod 0755 /defaults/autostart_wayland \
       /custom-cont-init.d/10-cage-session \
       /etc/s6-overlay/s6-rc.d/svc-cage-shutdown/run \
+    /etc/s6-overlay/s6-rc.d/svc-cage-task/run \
       /usr/local/libexec/cage-select-wine-graphics \
       /usr/local/bin/cage-pixelflux; \
     bash -n /defaults/autostart_wayland; \

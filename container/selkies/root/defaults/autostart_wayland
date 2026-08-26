@@ -22,9 +22,6 @@ run_cage_script() {
 
 # LinuxServer's Labwc session runs this file as abc. Scripts are transported
 # as base64 so Docker/Podman never replace the inherited /init.
-if [[ -n "${CAGE_BUILD_SCRIPT_B64:-}" ]]; then
-  run_cage_script "$CAGE_BUILD_SCRIPT_B64" /tmp/cage-build.sh /opt/cage/logs/container-exit-code
-fi
 if [[ -n "${CAGE_LAUNCH_SCRIPT_B64:-}" ]]; then
   run_cage_script "$CAGE_LAUNCH_SCRIPT_B64" /tmp/cage-launch.sh
 fi

@@ -1,0 +1,30 @@
+#!/usr/bin/with-contenv bash
+set -Eeuo pipefail
+
+if [[ -z "${CAGE_BUILD_SCRIPT_B64:-}" ]]; then
+  exec sleep infinity
+fi
+
+# Build mode is supervised directly by s6 rather than depending on Labwc's
+# autostart hook. Wait until the Selkies Wayland compositor is live so CI
+# proves the universal session contract before executing the task as abc.
+socket="${XDG_RUNTIME_DIR:-/config/.XDG}/${WAYLAND_DISPLAY:-wayland-1}"
+echo "[svc-cage-task] Waiting for Selkies socket at ${socket}..."
+while [[ ! -S "$socket" ]]; do
+  sleep 0.2
+done
+
+script=/tmp/cage-build.sh
+printf '%s' "$CAGE_BUILD_SCRIPT_B64" | base64 -d > "$script"
+chown abc:abc "$script"
+chmod 0700 "$script"
+
+set +e
+s6-setuidgid abc bash "$script"
+rc=$?
+set -e
+s6-setuidgid abc bash -c 'printf "%s\n" "$1" > /opt/cage/logs/container-exit-code' _ "$rc"
+printf '%s
+' "$rc" > /var/lib/cage/state/task-exit-code
+kill -TERM 1
+exit "$rc"
