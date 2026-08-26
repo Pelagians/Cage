@@ -60,7 +60,11 @@ RUN set -eux; \
     test -x /lsiopy/bin/selkies; \
     test -f /defaults/labwc.xml; \
     test -x /opt/proton-ge/files/bin/wine; \
-    test -f /opt/proton-ge/files/lib64/wine/x86_64-unix/winex11.so
+    if test -f /opt/proton-ge/files/lib64/wine/x86_64-unix/winex11.so; then \
+      :; \
+    else \
+      test -f /opt/proton-ge/files/lib/wine/x86_64-unix/winex11.so; \
+    fi
 
 WORKDIR /opt/cage
 EXPOSE 3001

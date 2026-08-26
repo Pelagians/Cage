@@ -265,6 +265,13 @@ class SelkiesImageContractTests(unittest.TestCase):
         apt_update = text.index("apt-get update")
         self.assertLess(add_arch, apt_update)
 
+    def test_umu_image_accepts_both_proven_ge_proton_driver_layouts(self):
+        text = (ROOT / "container/runtimes/umu-proton-ge/Dockerfile").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("files/lib64/wine/x86_64-unix/winex11.so", text)
+        self.assertIn("files/lib/wine/x86_64-unix/winex11.so", text)
+
     def test_umu_selkies_image_pins_ge_proton_and_umu_release_assets(self):
         text = (ROOT / "container/runtimes/umu-proton-ge/Dockerfile").read_text(
             encoding="utf-8"
