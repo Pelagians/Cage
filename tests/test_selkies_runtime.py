@@ -178,7 +178,7 @@ class ProducerRuntimeQualificationTests(unittest.TestCase):
         )
         artifact = json.loads(
             (
-                ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.3-wine-11.0.json"
+                ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.4-wine-11.0.json"
             ).read_text(encoding="utf-8")
         )
         artifact["sessionContract"] = "cage.selkies-wayland/v1"
@@ -196,7 +196,7 @@ class ProducerRuntimeQualificationTests(unittest.TestCase):
         )
         artifact = json.loads(
             (
-                ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.3-wine-11.0.json"
+                ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.4-wine-11.0.json"
             ).read_text(encoding="utf-8")
         )
         artifact["selkiesImage"] = (

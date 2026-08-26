@@ -251,15 +251,15 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertEqual(DEFAULT_CFW_RUNTIME_ARTIFACT["id"], DEFAULT_CFW_RUNTIME_PROFILE_ID)
         self.assertEqual(
             DEFAULT_CFW_RUNTIME_ARTIFACT["manifestSha256"],
-            "4c5da877a30a560368d0885541e26710cf5039d6ee5f51859c6468763f3fded6",
+            "5f2b6a586f7cde0897295ab600ee26607bfe5a21225a623832e89d3ff1a4df8c",
         )
         self.assertEqual(
             DEFAULT_CFW_RUNTIME_ARTIFACT["wineImage"],
-            "ghcr.io/pelagians/cage-wine@sha256:5ef0537cc730d4033c9a50a369043df825afaa54c05035453aadbaf96060d148",
+            "ghcr.io/pelagians/cage-wine@sha256:7ad192e00a251523f3a071d3ffa422789b010c359d18cd45227d9f89165f6b92",
         )
         for field in ("url", "evidenceUrl", "manifestUrl"):
             self.assertIn("github.com/noahgiroux/CFW/releases/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
-            self.assertIn("/cfw-runtime-v1.0.3/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
+            self.assertIn("/cfw-runtime-v1.0.4/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
 
     def test_multiple_chocolatey_modules_are_rejected_before_duplicate_seeding(self):
         data = {

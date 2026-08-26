@@ -704,7 +704,7 @@ class ExecutorVerificationTests(unittest.TestCase):
 
     def test_container_success_fails_when_host_cannot_bind_package_bytes(self):
         qualified = {
-            **json.loads((ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.3-wine-11.0.json").read_text()),
+            **json.loads((ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.4-wine-11.0.json").read_text()),
             "sessionContract": "cage.selkies-wayland/v1",
         }
         manifest = Manifest.from_dict({
