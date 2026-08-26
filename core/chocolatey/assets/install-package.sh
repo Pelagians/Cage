@@ -1,5 +1,6 @@
 set -eu
 echo "[cage] Install Chocolatey packages"
+wine_prefix="${WINEPREFIX:-$HOME/.wine}"
 choco_exe="${CFW_CHOCOLATEY_PREFIX_PATH:?CFW Chocolatey interface is missing}"
 choco_exe_win="${CFW_CHOCOLATEY_WINDOWS_PATH:?CFW Chocolatey interface is missing}"
 choco_launcher=("${CFW_CHOCOLATEY_PACKAGE_LAUNCHER:?CFW Chocolatey package launcher is missing}" "$choco_exe_win")
@@ -36,6 +37,13 @@ if [ "$policy_status" != "passed" ]; then
   exit 70
 fi
 echo "[cage] Installing Chocolatey packages: {{PACKAGE_ARGS}}"
+choco_working_directory="$wine_prefix/drive_c"
+test -d "$choco_working_directory"
+cd "$choco_working_directory"
+# Selkies desktop interposers are native Linux session concerns and include
+# 64-bit-only libraries that must not be inherited by Wine's 32-bit children.
+unset LD_PRELOAD
+
 set +e
 timeout "${CAGE_CHOCOLATEY_INSTALL_TIMEOUT:-1800s}" "${choco_launcher[@]}" install \
   {{PACKAGE_ARGS}} -y --use-system-powershell{{SOURCE_ARG}}

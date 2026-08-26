@@ -10,6 +10,13 @@ mkdir -p "$probe_dir" "$(dirname "$diagnostic_json")"
 export ChocolateyInstall='C:\ProgramData\chocolatey'
 export ChocolateyToolsLocation='C:\tools'
 
+choco_working_directory="$wine_prefix/drive_c"
+test -d "$choco_working_directory"
+cd "$choco_working_directory"
+# Selkies desktop interposers are native Linux session concerns and include
+# 64-bit-only libraries that must not be inherited by Wine's 32-bit children.
+unset LD_PRELOAD
+
 set +e
 test -f "$choco_exe"; canonical_choco_rc="$?"
 timeout --kill-after=15s "${CAGE_CHOCOLATEY_VERIFY_TIMEOUT:-300s}" "${choco_launcher[@]}" --version > "$probe_dir/choco-version.log" 2>&1; choco_version_rc="$?"

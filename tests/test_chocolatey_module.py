@@ -379,6 +379,15 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertNotIn("unset WINEDLLOVERRIDES", (assets / name).read_text(encoding="utf-8"))
 
+    def test_chocolatey_commands_use_windows_working_directory_without_desktop_preloads(self):
+        assets = Path(__file__).resolve().parents[1] / "core/chocolatey/assets"
+        for name in ("verify-chocolatey.sh", "feature-policy.sh", "smoke-lifecycle.sh", "install-package.sh"):
+            with self.subTest(name=name):
+                source = (assets / name).read_text(encoding="utf-8")
+                self.assertIn('choco_working_directory="$wine_prefix/drive_c"', source)
+                self.assertIn('cd "$choco_working_directory"', source)
+                self.assertIn("unset LD_PRELOAD", source)
+
     def test_chocolatey_rejects_shell_like_package_names(self):
         with self.assertRaises(Exception) as ctx:
             _manifest(["7zip; rm -rf /"])
