@@ -614,11 +614,10 @@ def execute_inside_container(
     # exact producer image digest; explicit caller overrides may not replace it.
     required_cfw_artifact = required_cfw_runtime_artifact(manifest)
     required_cfw_image = required_cfw_runtime_image(manifest)
-    requalification_identity = None
     if requalify_cfw_runtime:
         if required_cfw_artifact is None or not image_ref:
             raise RuntimeError("CFW requalification requires a prepared runtime and explicit candidate image")
-        requalification_identity = _verify_cfw_requalification_image(engine, image_ref)
+        _verify_cfw_requalification_image(engine, image_ref)
     elif required_cfw_artifact is not None and required_cfw_artifact.get("sessionContract") != "cage.selkies-wayland/v1":
         raise RuntimeError(
             "CFW runtime is not a universal Selkies Cage image; publish and pin a qualified producer runtime"
@@ -677,6 +676,8 @@ def execute_inside_container(
         "RESTART_APP": "false",
     }
     environment.update(runtime.environment or {})
+    if requalify_cfw_runtime and required_cfw_image:
+        environment["CAGE_CFW_PRODUCER_IMAGE"] = required_cfw_image
     if runner_cache:
         mounts.append(runner_cache["mount"])
         environment.update(runner_cache["environment"])
@@ -697,8 +698,8 @@ def execute_inside_container(
         cmd.extend(["-e", f"{key}={value}"])
     # Ensure shared memory is large enough for Wine
     cmd.extend(["--shm-size", "2g"])
-    # Preserve the universal image's inherited LinuxServer /init. The Labwc
-    # autostart consumes CAGE_BUILD_SCRIPT_B64 and records the real task code.
+    # Preserve the universal image's inherited LinuxServer /init. The native
+    # Cage s6 task consumes CAGE_BUILD_SCRIPT_B64 and records the real task code.
     cmd.append(img)
 
     # ---- Execute ----

@@ -944,6 +944,10 @@ class CfwRequalificationTests(unittest.TestCase):
         self.assertEqual(identity["entrypoint"], ["/init"])
         self.assertEqual(identity["sessionContract"], "cage.selkies-wayland/v1")
 
+    def test_executor_binds_prepared_prefix_to_producer_while_running_candidate(self):
+        source = (ROOT / "builder/executor.py").read_text(encoding="utf-8")
+        self.assertIn('environment["CAGE_CFW_PRODUCER_IMAGE"] = required_cfw_image', source)
+
     def test_candidate_rejects_missing_universal_contract(self):
         class Completed:
             returncode = 0

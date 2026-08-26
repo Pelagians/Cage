@@ -347,6 +347,18 @@ def _profile_fields(profile_path: Path) -> None:
     print(",".join(profile["wineVersions"]))
 
 
+def _producer_image_identity(environment: dict[str, str]) -> str:
+    """Return the producer image binding for prepared-prefix provenance.
+
+    During explicit requalification the executing image is a separately
+    inspected candidate, while the imported prefix remains bound to the
+    published producer image recorded by CFW.
+    """
+    return environment.get("CAGE_CFW_PRODUCER_IMAGE") or environment.get(
+        "CAGE_RUNTIME_IMAGE", ""
+    )
+
+
 def _verify_extract(profile_path: Path, manifest_path: Path, evidence_path: Path, archive_path: Path, prefix: Path) -> None:
     profile = _read_json(profile_path)
     manifest = _read_json(manifest_path)
@@ -358,7 +370,7 @@ def _verify_extract(profile_path: Path, manifest_path: Path, evidence_path: Path
     _require(_sha256(evidence_path) == evidence_binding.get("sha256"),
              "CFW runtime evidence does not match manifest")
     observed_wine = subprocess.run(["wine", "--version"], text=True, capture_output=True, check=True).stdout.strip()
-    validate_records(profile, manifest, evidence, observed_wine, os.environ.get("CAGE_RUNTIME_IMAGE", ""))
+    validate_records(profile, manifest, evidence, observed_wine, _producer_image_identity(os.environ))
     chocolatey_path = manifest["interfaces"][REQUIRED_INTERFACE]["prefixRelativePath"]
     extract_prepared_prefix(archive_path, prefix, required_files=(chocolatey_path,))
 
