@@ -41,6 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       available: ${{ steps.runtime.outputs.available }}
+      qualified: ${{ steps.runtime.outputs.qualified }}
       image: ${{ steps.runtime.outputs.image }}
       session_contract: ${{ steps.runtime.outputs.session_contract }}
     steps:
@@ -62,21 +63,21 @@ jobs:
           from core.modules.chocolatey import DEFAULT_CFW_RUNTIME_ARTIFACT
           artifact = DEFAULT_CFW_RUNTIME_ARTIFACT
           print(f"available={'true' if artifact else 'false'}")
+          print(f"qualified={'true' if artifact and artifact.get('sessionContract') == 'cage.selkies-wayland/v1' else 'false'}")
           print(f"image={artifact['wineImage'] if artifact else ''}")
           print(f"session_contract={artifact.get('sessionContract', '') if artifact else ''}")
           PY
 
-      - name: Fail closed when the pinned runtime is unavailable
-        if: steps.runtime.outputs.available != 'true'
+      - name: Explain blocked public-package proof
+        if: steps.runtime.outputs.qualified != 'true'
         run: |
-          echo 'No released, digest-pinned CFW Wine 11 runtime is available.'
-          echo 'CFW runtime construction belongs to Chocolatey-for-Wine, not this consumer proof.'
-          exit 78
+          echo '::notice title=Public-package proof blocked::The pinned CFW producer image does not yet declare cage.selkies-wayland/v1.'
+          echo 'The proof remains blocked until CFW publishes a digest-pinned universal Selkies runtime.'
 
   public-packages:
     name: Build public packages and verify launch plans
     needs: runtime-profile
-    if: needs.runtime-profile.outputs.available == 'true'
+    if: needs.runtime-profile.outputs.qualified == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:

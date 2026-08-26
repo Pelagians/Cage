@@ -16,6 +16,7 @@ RUN set -eux; \
       GE-Proton9-27) GE_DIGEST=86a2b2962a2509104201b3532bc829d058d666bc8220417f71bd4af660b6d05781e9f684b3982339d695a5fd4babe19e97ec42a82a78311faf99fc1257280623; GE_ALGO=sha512sum ;; \
       *) echo "Unsupported unpinned GE-Proton release: ${GE_PROTON_TAG}" >&2; exit 2 ;; \
     esac; \
+    dpkg --add-architecture i386; \
     apt-get update -o Acquire::Retries=5; \
     apt-get install --no-install-recommends -y \
       ca-certificates curl cabextract p7zip-full unzip bzip2 xz-utils fontconfig python3; \

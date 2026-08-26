@@ -1,8 +1,11 @@
 """CI workflow contract tests."""
+
 from __future__ import annotations
 
-from pathlib import Path
 import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class CiWorkflowTests(unittest.TestCase):
@@ -21,3 +24,20 @@ class CiWorkflowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UniversalCfwWorkflowTests(unittest.TestCase):
+    def test_lifecycle_runs_only_for_universal_cfw_runtime(self):
+        text = (ROOT / ".github/workflows/chocolatey-smoke.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("qualified:", text)
+        self.assertIn("sessionContract", text)
+        self.assertIn("needs.runtime-profile.outputs.qualified == 'true'", text)
+
+    def test_public_package_proof_runs_only_for_universal_cfw_runtime(self):
+        text = (
+            ROOT / ".github/workflows/chocolatey-public-package-proof.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("qualified:", text)
+        self.assertIn("needs.runtime-profile.outputs.qualified == 'true'", text)

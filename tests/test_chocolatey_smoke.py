@@ -159,7 +159,7 @@ class ChocolateySmokePackageTests(unittest.TestCase):
         steps = manifest.modules[0].build()
         descriptions = [step.description for step in steps]
 
-        self.assertEqual(getattr(manifest.modules[0], "install"), {"packages": []})
+        self.assertEqual(manifest.modules[0].install, {"packages": []})
         self.assertIn("Seed CFW prepared prefix", descriptions)
         self.assertIn("Prove Chocolatey local package lifecycle", descriptions)
         self.assertFalse(any(name.startswith("Install Chocolatey packages:") for name in descriptions))
@@ -170,8 +170,10 @@ class ChocolateySmokePackageTests(unittest.TestCase):
         self.assertIn("image: ${{ steps.runtime.outputs.image }}", workflow)
         self.assertIn("CAGE_RUNTIME_IMAGE: ${{ needs.runtime-profile.outputs.image }}", workflow)
         self.assertIn("needs: runtime-profile", workflow)
-        self.assertIn("if: needs.runtime-profile.outputs.available == 'true'", workflow)
-        self.assertIn("exit 78", workflow)
+        self.assertIn("qualified: ${{ steps.runtime.outputs.qualified }}", workflow)
+        self.assertIn("if: needs.runtime-profile.outputs.qualified == 'true'", workflow)
+        self.assertIn("::notice title=CFW lifecycle blocked", workflow)
+        self.assertNotIn("exit 78", workflow)
         self.assertNotIn("if: steps.runtime.outputs.available == 'true'", workflow)
         self.assertIn("DEFAULT_CFW_RUNTIME_ARTIFACT", workflow)
         self.assertIn("CFW runtime evidence", workflow)

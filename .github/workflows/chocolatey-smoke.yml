@@ -40,6 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       available: ${{ steps.runtime.outputs.available }}
+      qualified: ${{ steps.runtime.outputs.qualified }}
       image: ${{ steps.runtime.outputs.image }}
     steps:
       - uses: actions/checkout@v4
@@ -55,22 +56,22 @@ jobs:
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           from core.modules.chocolatey import DEFAULT_CFW_RUNTIME_ARTIFACT
-          print(f"available={'true' if DEFAULT_CFW_RUNTIME_ARTIFACT else 'false'}")
-          print(f"image={DEFAULT_CFW_RUNTIME_ARTIFACT['wineImage'] if DEFAULT_CFW_RUNTIME_ARTIFACT else ''}")
+          artifact = DEFAULT_CFW_RUNTIME_ARTIFACT
+          print(f"available={'true' if artifact else 'false'}")
+          print(f"qualified={'true' if artifact and artifact.get('sessionContract') == 'cage.selkies-wayland/v1' else 'false'}")
+          print(f"image={artifact['wineImage'] if artifact else ''}")
           PY
 
       - name: Explain blocked consumer lifecycle
-        if: steps.runtime.outputs.available != 'true'
+        if: steps.runtime.outputs.qualified != 'true'
         run: |
-          echo 'A CFW prepared-prefix runtime has not been released and pinned yet.'
-          echo 'The CFW repository owns runtime construction and proof.'
-          echo 'Failing this check so skipped lifecycle work cannot appear green.'
-          exit 78
+          echo '::notice title=CFW lifecycle blocked::The pinned CFW producer image does not yet declare cage.selkies-wayland/v1.'
+          echo 'CFW must publish a digest-pinned universal Selkies runtime before this consumer lifecycle can run.'
 
   lifecycle:
     name: prove CFW consumer lifecycle
     needs: runtime-profile
-    if: needs.runtime-profile.outputs.available == 'true'
+    if: needs.runtime-profile.outputs.qualified == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:

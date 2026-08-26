@@ -257,6 +257,14 @@ class SelkiesImageContractTests(unittest.TestCase):
         self.assertTrue(all("desktop_dockerfile" not in row for row in rows))
         self.assertTrue(all(Path(row["dockerfile"]).is_file() for row in rows))
 
+    def test_umu_image_enables_i386_before_apt_resolution(self):
+        text = (ROOT / "container/runtimes/umu-proton-ge/Dockerfile").read_text(
+            encoding="utf-8"
+        )
+        add_arch = text.index("dpkg --add-architecture i386")
+        apt_update = text.index("apt-get update")
+        self.assertLess(add_arch, apt_update)
+
     def test_umu_selkies_image_pins_ge_proton_and_umu_release_assets(self):
         text = (ROOT / "container/runtimes/umu-proton-ge/Dockerfile").read_text(
             encoding="utf-8"
