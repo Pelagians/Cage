@@ -132,7 +132,7 @@ jobs:
           cage build recipes/7zip.cage.yaml \
             --output dist-7zip \
             --engine docker \
-            --image-tag "$CAGE_RUNTIME_IMAGE" \
+            --runtime-image "$CAGE_RUNTIME_IMAGE" \
             --requalify-cfw-runtime \
             --module-cache-dir "$CAGE_MODULE_CACHE" \
             --build-timeout "$CAGE_BUILD_TIMEOUT" 2>&1 | tee logs/7zip-build.log
@@ -178,7 +178,7 @@ jobs:
           cage build recipes/notepadplusplus.cage.yaml \
             --output dist-notepadplusplus \
             --engine docker \
-            --image-tag "$CAGE_RUNTIME_IMAGE" \
+            --runtime-image "$CAGE_RUNTIME_IMAGE" \
             --requalify-cfw-runtime \
             --module-cache-dir "$CAGE_MODULE_CACHE" \
             --build-timeout "$CAGE_BUILD_TIMEOUT" 2>&1 | tee logs/notepadplusplus-build.log

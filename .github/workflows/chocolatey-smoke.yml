@@ -105,7 +105,7 @@ jobs:
           cage build tests/fixtures/chocolatey-bootstrap-smoke.cage.yaml \
             --output dist \
             --engine docker \
-            --image-tag "$CAGE_RUNTIME_IMAGE" \
+            --runtime-image "$CAGE_RUNTIME_IMAGE" \
             --requalify-cfw-runtime \
             --module-cache-dir /tmp/cage-module-cache \
             --build-timeout 7200 2>&1 | tee /tmp/cage-chocolatey-smoke.log

@@ -210,7 +210,7 @@ def cmd_build(args):
             return 1
 
     binding = resolve_manifest_runtime(manifest)
-    base_image = binding.oci_image or get_image_ref(
+    base_image = getattr(args, "runtime_image", None) or binding.oci_image or get_image_ref(
         manifest.runtime.provider, manifest.runtime.version)
 
     if args.dry_run:
@@ -575,6 +575,8 @@ def build_parser():
                         "Auto-detect if omitted.")
     p.add_argument("--build-timeout", "--timeout", dest="build_timeout", type=int, default=7200,
                    help="Max seconds for container build and generated Wine phase timeout (default: 7200)")
+    p.add_argument("--runtime-image",
+                   help="Explicit container image used to execute the build")
     p.add_argument("--image-tag",
                    help="Optional OCI output tag (e.g. myapp:latest)")
     p.add_argument("--runner-cache-dir",

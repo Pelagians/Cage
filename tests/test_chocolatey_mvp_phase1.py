@@ -953,3 +953,19 @@ class CfwRequalificationTests(unittest.TestCase):
         with patch("builder.executor.subprocess.run", return_value=Completed()):
             with self.assertRaisesRegex(RuntimeError, "session contract"):
                 _verify_cfw_requalification_image("docker", "candidate:test")
+
+
+class CfwRequalificationCliTests(unittest.TestCase):
+    def test_build_parser_separates_candidate_runtime_from_output_image_tag(self):
+        args = build_parser().parse_args([
+            "build",
+            "recipe.cage.yaml",
+            "--runtime-image",
+            "cage-wine-cfw-candidate:test",
+            "--image-tag",
+            "application:test",
+            "--requalify-cfw-runtime",
+        ])
+        self.assertEqual(args.runtime_image, "cage-wine-cfw-candidate:test")
+        self.assertEqual(args.image_tag, "application:test")
+        self.assertTrue(args.requalify_cfw_runtime)
