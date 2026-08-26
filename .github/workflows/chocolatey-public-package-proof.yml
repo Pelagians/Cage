@@ -81,6 +81,11 @@ jobs:
     timeout-minutes: 180
     env:
       CAGE_RUNTIME_IMAGE: cage-wine-cfw-candidate:${{ github.sha }}
+      # Diagnostic bounds: fail fast enough to capture the live Wine/managed-host process tree.
+      CAGE_CHOCOLATEY_VERIFY_TIMEOUT: '60s'
+      CAGE_CHOCOLATEY_VERIFY_SETTLE_TIMEOUT: '30s'
+      CAGE_CHOCOLATEY_FEATURE_TIMEOUT: '60s'
+      CAGE_CHOCOLATEY_FEATURE_SETTLE_TIMEOUT: '30s'
       CAGE_MODULE_CACHE: ${{ github.workspace }}/.cage-module-cache
       CAGE_BUILD_TIMEOUT: '7200'
 

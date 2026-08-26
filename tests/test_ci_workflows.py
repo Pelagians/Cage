@@ -27,6 +27,16 @@ if __name__ == "__main__":
 
 
 class UniversalCfwWorkflowTests(unittest.TestCase):
+    def test_cfw_proofs_bound_readiness_before_live_process_capture(self):
+        for name in ("chocolatey-smoke.yml", "chocolatey-public-package-proof.yml"):
+            text = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+            self.assertIn("CAGE_CHOCOLATEY_VERIFY_TIMEOUT: '60s'", text)
+            self.assertIn("CAGE_CHOCOLATEY_VERIFY_SETTLE_TIMEOUT: '30s'", text)
+        lifecycle = (ROOT / ".github/workflows/chocolatey-smoke.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("choco-live-process-tree.log", lifecycle)
+
     def test_lifecycle_runs_only_for_universal_cfw_runtime(self):
         text = (ROOT / ".github/workflows/chocolatey-smoke.yml").read_text(
             encoding="utf-8"
