@@ -306,6 +306,23 @@ class SelkiesImageContractTests(unittest.TestCase):
         self.assertIn("Graphics", selector.read_text(encoding="utf-8"))
         self.assertIn("CAGE_LAUNCH_SCRIPT_B64", autostart.read_text(encoding="utf-8"))
 
+    def test_universal_image_exposes_requalification_identity(self):
+        text = (ROOT / "container/runtimes/wine/Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("org.pelagian.cage.session-contract=", text)
+        self.assertIn("cage.selkies-wayland/v1", text)
+
+    def test_abc_requests_root_supervisor_shutdown_through_state_receipt(self):
+        autostart = (
+            ROOT / "container/selkies/root/defaults/autostart_wayland"
+        ).read_text(encoding="utf-8")
+        watcher = ROOT / "container/selkies/root/custom-services.d/cage-shutdown/run"
+        self.assertIn("shutdown-request", autostart)
+        self.assertTrue(watcher.is_file())
+        self.assertIn(
+            "s6-svscanctl -t /run/service", watcher.read_text(encoding="utf-8")
+        )
+        self.assertNotIn("kill -TERM 1", autostart)
+
     def test_init_does_not_chown_the_caller_bundle_mount(self):
         init = (
             ROOT / "container/selkies/root/custom-cont-init.d/10-cage-session"

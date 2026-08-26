@@ -1,0 +1,10 @@
+#!/usr/bin/with-contenv bash
+set -Eeuo pipefail
+request=/var/lib/cage/state/shutdown-request
+while true; do
+  if [[ -f "$request" ]]; then
+    rm -f "$request"
+    exec s6-svscanctl -t /run/service
+  fi
+  sleep 0.2
+done

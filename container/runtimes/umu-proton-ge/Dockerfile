@@ -45,12 +45,15 @@ ENV CAGE_ROOT=/opt/cage \
     CAGE_WINE_GRAPHICS=xwayland \
     PATH=/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+LABEL org.pelagian.cage.session-contract="cage.selkies-wayland/v1"
+
 COPY container/selkies/root/ /
 COPY container/common/wine-env.sh /opt/cage/common/wine-env.sh
 COPY runtime/pixelflux.py /usr/local/bin/cage-pixelflux
 RUN set -eux; \
     chmod 0755 /defaults/autostart_wayland \
       /custom-cont-init.d/10-cage-session \
+      /custom-services.d/cage-shutdown/run \
       /usr/local/libexec/cage-select-wine-graphics \
       /usr/local/bin/cage-pixelflux; \
     bash -n /defaults/autostart_wayland; \

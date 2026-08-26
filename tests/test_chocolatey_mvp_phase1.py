@@ -18,6 +18,7 @@ from builder.executor import (
     _resolve_public_chocolatey_package_receipt,
     _write_host_chocolatey_package_evidence,
     execute_inside_container,
+    _verify_cfw_requalification_image,
 )
 from builder.pipeline import generate_build_script
 from cage.cli import build_parser, cmd_build
@@ -929,3 +930,26 @@ class BuildSourcePreflightTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CfwRequalificationTests(unittest.TestCase):
+    def test_candidate_requires_universal_init_and_contract_label(self):
+        class Completed:
+            returncode = 0
+            stdout = '["/init"]\ncage.selkies-wayland/v1\n'
+            stderr = ""
+
+        with patch("builder.executor.subprocess.run", return_value=Completed()):
+            identity = _verify_cfw_requalification_image("docker", "cage-wine-cfw-candidate:test")
+        self.assertEqual(identity["entrypoint"], ["/init"])
+        self.assertEqual(identity["sessionContract"], "cage.selkies-wayland/v1")
+
+    def test_candidate_rejects_missing_universal_contract(self):
+        class Completed:
+            returncode = 0
+            stdout = '["/init"]\n\n'
+            stderr = ""
+
+        with patch("builder.executor.subprocess.run", return_value=Completed()):
+            with self.assertRaisesRegex(RuntimeError, "session contract"):
+                _verify_cfw_requalification_image("docker", "candidate:test")

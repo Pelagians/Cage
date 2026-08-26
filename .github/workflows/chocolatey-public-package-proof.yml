@@ -77,11 +77,10 @@ jobs:
   public-packages:
     name: Build public packages and verify launch plans
     needs: runtime-profile
-    if: needs.runtime-profile.outputs.qualified == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
-      CAGE_RUNTIME_IMAGE: ${{ needs.runtime-profile.outputs.image }}
+      CAGE_RUNTIME_IMAGE: cage-wine-cfw-candidate:${{ github.sha }}
       CAGE_MODULE_CACHE: ${{ github.workspace }}/.cage-module-cache
       CAGE_BUILD_TIMEOUT: '7200'
 
@@ -108,8 +107,13 @@ jobs:
           restore-keys: |
             cage-chocolatey-modules-${{ runner.os }}-
 
-      - name: Pull pinned CFW Wine 11 image
-        run: docker pull "$CAGE_RUNTIME_IMAGE"
+      - name: Build universal Wine 11 CFW candidate
+        run: |
+          docker build \
+            --file container/runtimes/wine/Dockerfile \
+            --build-arg 'WINE_PACKAGE_VERSION=11.0.0.0~trixie-1' \
+            --tag "$CAGE_RUNTIME_IMAGE" \
+            .
 
       - name: Inspect recipes before building
         shell: bash
@@ -129,6 +133,7 @@ jobs:
             --output dist-7zip \
             --engine docker \
             --image-tag "$CAGE_RUNTIME_IMAGE" \
+            --requalify-cfw-runtime \
             --module-cache-dir "$CAGE_MODULE_CACHE" \
             --build-timeout "$CAGE_BUILD_TIMEOUT" 2>&1 | tee logs/7zip-build.log
           rc=${PIPESTATUS[0]}
@@ -174,6 +179,7 @@ jobs:
             --output dist-notepadplusplus \
             --engine docker \
             --image-tag "$CAGE_RUNTIME_IMAGE" \
+            --requalify-cfw-runtime \
             --module-cache-dir "$CAGE_MODULE_CACHE" \
             --build-timeout "$CAGE_BUILD_TIMEOUT" 2>&1 | tee logs/notepadplusplus-build.log
           rc=${PIPESTATUS[0]}

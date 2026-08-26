@@ -248,6 +248,7 @@ def cmd_build(args):
         workspace=workspace,
         runner_cache_dir=Path(args.runner_cache_dir) if args.runner_cache_dir else None,
         module_cache_dir=Path(args.module_cache_dir) if args.module_cache_dir else None,
+        requalify_cfw_runtime=getattr(args, "requalify_cfw_runtime", False),
     )
 
     # Write build result to bundle metadata
@@ -580,6 +581,8 @@ def build_parser():
                    help="Runner cache directory for runtime.runner archives")
     p.add_argument("--module-cache-dir",
                    help="Module payload cache directory for downloads used during builds")
+    p.add_argument("--requalify-cfw-runtime", action="store_true",
+                   help="Test a prepared CFW prefix against an explicit universal candidate image")
     p.set_defaults(func=cmd_build)
 
     # run

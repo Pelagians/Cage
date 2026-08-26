@@ -33,11 +33,15 @@ class UniversalCfwWorkflowTests(unittest.TestCase):
         )
         self.assertIn("qualified:", text)
         self.assertIn("sessionContract", text)
-        self.assertIn("needs.runtime-profile.outputs.qualified == 'true'", text)
+        self.assertIn("docker build", text)
+        self.assertIn("--requalify-cfw-runtime", text)
+        self.assertNotIn("needs.runtime-profile.outputs.qualified == 'true'", text)
 
     def test_public_package_proof_runs_only_for_universal_cfw_runtime(self):
         text = (
             ROOT / ".github/workflows/chocolatey-public-package-proof.yml"
         ).read_text(encoding="utf-8")
         self.assertIn("qualified:", text)
-        self.assertIn("needs.runtime-profile.outputs.qualified == 'true'", text)
+        self.assertIn("docker build", text)
+        self.assertIn("--requalify-cfw-runtime", text)
+        self.assertNotIn("needs.runtime-profile.outputs.qualified == 'true'", text)

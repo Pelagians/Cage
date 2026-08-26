@@ -87,6 +87,39 @@ def _run_container_command(cmd: list[str], *, timeout: int) -> _CommandResult:
     return _CommandResult(proc.returncode or 0, "".join(lines), "")
 
 
+
+
+def _verify_cfw_requalification_image(engine: str, image_ref: str) -> dict[str, Any]:
+    """Verify an explicitly built candidate has the universal Cage lifecycle."""
+    result = subprocess.run(
+        [
+            engine,
+            "image",
+            "inspect",
+            "--format",
+            '{{json .Config.Entrypoint}}\n{{index .Config.Labels "org.pelagian.cage.session-contract"}}',
+            image_ref,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"cannot inspect CFW requalification candidate {image_ref}: {result.stderr.strip()}")
+    lines = result.stdout.splitlines()
+    try:
+        entrypoint = json.loads(lines[0])
+    except (IndexError, json.JSONDecodeError) as exc:
+        raise RuntimeError("CFW requalification candidate has unreadable entrypoint metadata") from exc
+    session_contract = lines[1].strip() if len(lines) > 1 else ""
+    if entrypoint != ["/init"]:
+        raise RuntimeError("CFW requalification candidate must preserve entrypoint /init")
+    if session_contract != "cage.selkies-wayland/v1":
+        raise RuntimeError("CFW requalification candidate is missing the universal session contract label")
+    return {"entrypoint": entrypoint, "sessionContract": session_contract, "image": image_ref}
+
+
 @dataclass
 class BuildResult:
     """Result of a real container-executed Cage build."""
@@ -556,6 +589,7 @@ def execute_inside_container(
     runner_cache_dir: Path | str | None = None,
     module_cache_dir: Path | str | None = None,
     stop_before: str | None = None,
+    requalify_cfw_runtime: bool = False,
 ) -> BuildResult:
     """Run the Cage build inside the runtime provider's Docker/Podman container.
 
@@ -579,14 +613,19 @@ def execute_inside_container(
     # Resolve image reference. A CFW prepared runtime binds the build to the
     # exact producer image digest; explicit caller overrides may not replace it.
     required_cfw_artifact = required_cfw_runtime_artifact(manifest)
-    if required_cfw_artifact is not None and required_cfw_artifact.get("sessionContract") != "cage.selkies-wayland/v1":
+    required_cfw_image = required_cfw_runtime_image(manifest)
+    requalification_identity = None
+    if requalify_cfw_runtime:
+        if required_cfw_artifact is None or not image_ref:
+            raise RuntimeError("CFW requalification requires a prepared runtime and explicit candidate image")
+        requalification_identity = _verify_cfw_requalification_image(engine, image_ref)
+    elif required_cfw_artifact is not None and required_cfw_artifact.get("sessionContract") != "cage.selkies-wayland/v1":
         raise RuntimeError(
             "CFW runtime is not a universal Selkies Cage image; publish and pin a qualified producer runtime"
         )
-    required_cfw_image = required_cfw_runtime_image(manifest)
     if required_cfw_image and manifest.runtime.runner:
         raise RuntimeError("CFW prepared runtimes cannot use runtime.runner; the producer image owns Wine identity")
-    if image_ref and required_cfw_image and image_ref != required_cfw_image:
+    if image_ref and required_cfw_image and image_ref != required_cfw_image and not requalify_cfw_runtime:
         raise RuntimeError(
             f"requested runtime image {image_ref} does not match pinned CFW image {required_cfw_image}"
         )
@@ -663,6 +702,8 @@ def execute_inside_container(
     cmd.append(img)
 
     # ---- Execute ----
+    status_receipt = bundle_path / "logs" / "container-exit-code"
+    status_receipt.unlink(missing_ok=True)
     log_lines: list[str] = []
     log_lines.append(f"[cage] Engine: {engine}")
     log_lines.append(f"[cage] Image:  {img}")
@@ -685,7 +726,6 @@ def execute_inside_container(
         log_text = "\n".join(log_lines)
         (bundle_path / "logs" / "build.log").write_text(log_text, encoding="utf-8")
 
-        status_receipt = bundle_path / "logs" / "container-exit-code"
         if status_receipt.is_file():
             try:
                 exit_code = int(status_receipt.read_text(encoding="utf-8").strip())

@@ -71,11 +71,10 @@ jobs:
   lifecycle:
     name: prove CFW consumer lifecycle
     needs: runtime-profile
-    if: needs.runtime-profile.outputs.qualified == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      CAGE_RUNTIME_IMAGE: ${{ needs.runtime-profile.outputs.image }}
+      CAGE_RUNTIME_IMAGE: cage-wine-cfw-candidate:${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -89,15 +88,13 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e .
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull Wine runtime
-        run: docker pull "$CAGE_RUNTIME_IMAGE"
+      - name: Build universal Wine 11 CFW candidate
+        run: |
+          docker build \
+            --file container/runtimes/wine/Dockerfile \
+            --build-arg 'WINE_PACKAGE_VERSION=11.0.0.0~trixie-1' \
+            --tag "$CAGE_RUNTIME_IMAGE" \
+            .
 
       - name: Run local Chocolatey package lifecycle
         id: smoke
@@ -109,6 +106,7 @@ jobs:
             --output dist \
             --engine docker \
             --image-tag "$CAGE_RUNTIME_IMAGE" \
+            --requalify-cfw-runtime \
             --module-cache-dir /tmp/cage-module-cache \
             --build-timeout 7200 2>&1 | tee /tmp/cage-chocolatey-smoke.log
           rc=${PIPESTATUS[0]}
