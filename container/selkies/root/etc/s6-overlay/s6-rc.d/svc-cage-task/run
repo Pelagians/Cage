@@ -14,16 +14,17 @@ while [[ ! -S "$socket" ]]; do
   sleep 0.2
 done
 
-script=/tmp/cage-build.sh
+script=/run/cage-task/build.sh
+install -d -o root -g root -m 0755 /run/cage-task
+rm -f -- "$script"
+install -o abc -g abc -m 0500 /dev/null "$script"
 printf '%s' "$CAGE_BUILD_SCRIPT_B64" | base64 -d > "$script"
-chown abc:abc "$script"
-chmod 0700 "$script"
 
 set +e
 s6-setuidgid abc bash "$script"
 rc=$?
 set -e
-s6-setuidgid abc bash -c 'printf "%s\n" "$1" > /opt/cage/logs/container-exit-code' _ "$rc"
+printf '%s\n' "$rc" > /opt/cage/logs/container-exit-code
 printf '%s
 ' "$rc" > /var/lib/cage/state/task-exit-code
 kill -TERM 1

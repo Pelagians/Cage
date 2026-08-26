@@ -321,7 +321,11 @@ class SelkiesImageContractTests(unittest.TestCase):
         self.assertIn("CAGE_BUILD_SCRIPT_B64", task_text)
         self.assertIn("wayland-1", task_text)
         self.assertIn("s6-setuidgid abc", task_text)
+        self.assertIn("/run/cage-task/build.sh", task_text)
+        self.assertNotIn("/tmp/cage-build.sh", task_text)
+        self.assertIn("install -d -o root -g root -m 0755 /run/cage-task", task_text)
         self.assertIn("container-exit-code", task_text)
+        self.assertNotIn("s6-setuidgid abc bash -c", task_text)
         self.assertIn("kill -TERM 1", task_text)
         self.assertTrue(registration.is_file())
 
