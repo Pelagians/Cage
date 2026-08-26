@@ -315,12 +315,12 @@ class SelkiesImageContractTests(unittest.TestCase):
         autostart = (
             ROOT / "container/selkies/root/defaults/autostart_wayland"
         ).read_text(encoding="utf-8")
-        watcher = ROOT / "container/selkies/root/custom-services.d/cage-shutdown"
+        watcher = ROOT / "container/selkies/root/etc/s6-overlay/s6-rc.d/svc-cage-shutdown/run"
+        registration = ROOT / "container/selkies/root/etc/s6-overlay/s6-rc.d/user/contents.d/svc-cage-shutdown"
         self.assertIn("shutdown-request", autostart)
         self.assertTrue(watcher.is_file())
-        self.assertIn(
-            "s6-svscanctl -t /run/service", watcher.read_text(encoding="utf-8")
-        )
+        self.assertIn("kill -TERM 1", watcher.read_text(encoding="utf-8"))
+        self.assertTrue(registration.is_file())
         self.assertNotIn("kill -TERM 1", autostart)
 
     def test_init_does_not_chown_the_caller_bundle_mount(self):

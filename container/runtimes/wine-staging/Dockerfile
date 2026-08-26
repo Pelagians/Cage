@@ -41,7 +41,7 @@ COPY runtime/pixelflux.py /usr/local/bin/cage-pixelflux
 RUN set -eux; \
     chmod 0755 /defaults/autostart_wayland \
       /custom-cont-init.d/10-cage-session \
-      /custom-services.d/cage-shutdown \
+      /etc/s6-overlay/s6-rc.d/svc-cage-shutdown/run \
       /usr/local/libexec/cage-select-wine-graphics \
       /usr/local/bin/cage-pixelflux; \
     bash -n /defaults/autostart_wayland; \

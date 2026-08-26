@@ -4,7 +4,8 @@ request=/var/lib/cage/state/shutdown-request
 while true; do
   if [[ -f "$request" ]]; then
     rm -f "$request"
-    exec s6-svscanctl -t /run/service
+    kill -TERM 1
+    exit 0
   fi
   sleep 0.2
 done
