@@ -10,7 +10,7 @@ from artifact.bundle import create_bundle
 from artifact.graph import build_execution_graph
 from artifact.kube import create_kube_export_plan
 from artifact.oci import create_oci_export_plan
-from core.manifest import Manifest, ManifestError, load_manifest
+from core.manifest import Manifest, ManifestError
 from runtime.launcher import build_run_plan
 from tests.bundle_fixtures import materialize_runnable_prefix
 
@@ -170,7 +170,7 @@ class SelkiesRunPlanTests(unittest.TestCase):
 
 
 class ProducerRuntimeQualificationTests(unittest.TestCase):
-    def test_future_cfw_release_can_declare_selkies_session_contract(self):
+    def test_cfw_release_declares_selkies_session_contract(self):
         import yaml
 
         data = yaml.safe_load(
@@ -181,7 +181,6 @@ class ProducerRuntimeQualificationTests(unittest.TestCase):
                 ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.5-wine-11.0.json"
             ).read_text(encoding="utf-8")
         )
-        artifact["sessionContract"] = "cage.selkies-wayland/v1"
         data["modules"][0]["install"]["runtimeArtifact"] = artifact
         graph = build_execution_graph(Manifest.from_dict(data))
         self.assertEqual(
@@ -209,7 +208,19 @@ class ProducerRuntimeQualificationTests(unittest.TestCase):
             Manifest.from_dict(data)
 
     def test_unqualified_cfw_runtime_fails_closed_before_launch(self):
-        manifest = load_manifest(ROOT / "recipes/notepadplusplus.cage.yaml")
+        import yaml
+
+        data = yaml.safe_load(
+            (ROOT / "recipes/notepadplusplus.cage.yaml").read_text(encoding="utf-8")
+        )
+        artifact = json.loads(
+            (
+                ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.5-wine-11.0.json"
+            ).read_text(encoding="utf-8")
+        )
+        artifact.pop("sessionContract")
+        data["modules"][0]["install"]["runtimeArtifact"] = artifact
+        manifest = Manifest.from_dict(data)
         with tempfile.TemporaryDirectory() as tmp:
             bundle = create_bundle(manifest, Path(tmp), dry_run=True)
             for graphics in ("headless", "selkies"):

@@ -5,6 +5,7 @@
   "manifestUrl": "https://github.com/noahgiroux/CFW/releases/download/cfw-runtime-v1.0.5/cfw-runtime-manifest-wine-11.0.json",
   "manifestSha256": "bad21b4be7cdaddfcb9cbe8deb2f730aeeb30a0e9bceea0055e879fffed61651",
   "wineImage": "ghcr.io/pelagians/cage-wine@sha256:7ad192e00a251523f3a071d3ffa422789b010c359d18cd45227d9f89165f6b92",
+  "sessionContract": "cage.selkies-wayland/v1",
   "wineVersions": [
     "wine-11.0"
   ],

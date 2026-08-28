@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
@@ -50,10 +51,22 @@ class UniversalCfwWorkflowTests(unittest.TestCase):
         self.assertNotIn("needs.runtime-profile.outputs.qualified == 'true'", text)
 
     def test_public_package_proof_runs_only_for_universal_cfw_runtime(self):
+        profile = json.loads(
+            (
+                ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.5-wine-11.0.json"
+            ).read_text(encoding="utf-8")
+        )
         text = (
             ROOT / ".github/workflows/chocolatey-public-package-proof.yml"
         ).read_text(encoding="utf-8")
+        self.assertEqual(profile["sessionContract"], "cage.selkies-wayland/v1")
         self.assertIn("qualified:", text)
-        self.assertIn("docker build", text)
-        self.assertIn("--requalify-cfw-runtime", text)
-        self.assertNotIn("needs.runtime-profile.outputs.qualified == 'true'", text)
+        self.assertIn("if: needs.runtime-profile.outputs.qualified == 'true'", text)
+        self.assertIn("needs.runtime-profile.outputs.image", text)
+        self.assertIn("strategy:", text)
+        self.assertIn("fail-fast: false", text)
+        self.assertIn("package: 7zip", text)
+        self.assertIn("package: notepadplusplus", text)
+        self.assertIn("cage run --dry-run", text)
+        self.assertNotIn("docker build", text)
+        self.assertNotIn("--requalify-cfw-runtime", text)
