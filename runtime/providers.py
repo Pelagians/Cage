@@ -1,5 +1,6 @@
 """Pluggable runtime provider abstraction with runtime catalog binding."""
 from __future__ import annotations
+
 from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
@@ -172,6 +173,7 @@ def required_cfw_runtime_artifact(manifest) -> dict[str, Any] | None:
                 normalized["wineImage"],
                 tuple(normalized["wineVersions"]),
                 tuple(sorted(normalized["environment"].items())),
+                normalized.get("sessionContract"),
             ))
     if len(identities) > 1:
         raise ManifestError("Chocolatey modules declare conflicting CFW prepared runtimes")
@@ -198,6 +200,7 @@ def resolve_manifest_runtime(manifest) -> RuntimeBinding:
         digest=image.rsplit("@sha256:", 1)[1],
         environment=dict(artifact["environment"]),
     )
+
 
 
 def list_providers() -> list[str]:

@@ -39,7 +39,7 @@ CAGE_GRAPHICS=headless
 
 ## Boundary
 
-This is a manifest emitter, not an operator. Cage must not create namespaces, apply resources, manage tenants, own approvals, or become VIC's production automation authority. VIC or a human/operator may consume the generated YAML later.
+This is a manifest emitter, not an operator. Cage must not create namespaces, apply resources, manage tenants, own approvals, or become Nereus's production automation authority. Nereus or a human/operator may consume the generated YAML later.
 
 ## Reasoning
 
@@ -49,9 +49,9 @@ Earlier phases made artifact identity stable enough for Kubernetes: bundles can 
 
 - Generate manifests from mutable image tags by default.
 - Run `kubectl apply` from Cage.
-- Add VIC tenancy/session/policy concepts to Cage manifests.
+- Add Nereus tenancy, session, or policy concepts to Cage manifests.
 - Require a live cluster for manifest generation.
 
 ## Review triggers
 
-Review when Cage adds manifest validation, Helm/Kustomize output, Services/Ingress for visible sessions, multi-container sidecars, or VIC-specific orchestration integrations.
+Review when Cage adds manifest validation, Helm/Kustomize output, Services/Ingress for visible sessions, multi-container sidecars, or downstream-specific orchestration integrations.

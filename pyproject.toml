@@ -53,7 +53,10 @@ container = [
   "build.sh",
   "docker-compose.yml",
   "common/*.sh",
-  "providers/*/Dockerfile",
+  "runtimes/*/Dockerfile",
+  "selkies/root/defaults/*",
+  "selkies/root/custom-cont-init.d/*",
+  "selkies/root/usr/local/libexec/*",
 ]
 
 [tool.cage]

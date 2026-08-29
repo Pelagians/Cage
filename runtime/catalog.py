@@ -7,10 +7,10 @@ runner versions before they enter bundle metadata.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 import argparse
 import json
 import shlex
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -103,7 +103,7 @@ def load_catalog(path: Path = CATALOG_PATH) -> dict[str, Any]:
     if data.get("schemaVersion") != "cage.runtime-catalog/v0":
         raise ValueError("runtime catalog schemaVersion must be cage.runtime-catalog/v0")
     if not isinstance(data.get("providers"), dict):
-        raise ValueError("runtime catalog providers must be an object")
+        raise TypeError("runtime catalog providers must be an object")
     return data
 
 

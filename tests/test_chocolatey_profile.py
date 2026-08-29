@@ -76,7 +76,7 @@ class ChocolateyRuntimeProfileTests(unittest.TestCase):
         self.assertNotIn("install-powershell51", module_source)
         self.assertNotIn("install-native-mscoree", module_source)
         self.assertNotIn("install-dpx-helper", module_source)
-        self.assertLess(len(module_source.splitlines()), 340)
+        self.assertLess(len(module_source.splitlines()), 360)
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('"core.chocolatey.assets"', pyproject)
         self.assertIn('"*.sh"', pyproject)

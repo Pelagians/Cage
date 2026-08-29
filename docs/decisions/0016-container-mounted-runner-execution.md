@@ -7,7 +7,7 @@ Status: accepted
 
 Phase 6F added downloadable Wine runner aliases such as `pol-4.3` and `pol-8.2`. On 7040, those PlayOnLinux/Phoenicis-hosted x86 Wine archives download and extract successfully, but running `bin/wine` directly on the host reports `cannot execute: required file not found`. Cage diagnostics classify this as `missing-elf-interpreter` for `/lib/ld-linux.so.2`.
 
-That host failure should not block VIC/Cage evidence when the target runtime container carries the required 32-bit loader and libraries.
+That host failure should not block Nereus/Cage evidence when the target runtime container carries the required 32-bit loader and libraries.
 
 ## Decision
 
@@ -30,4 +30,4 @@ Dry-run planning reports `runnerCache.status` as `present` or `missing` without 
 
 ## Review trigger
 
-Revisit this if Cage starts embedding runners into application OCI images, supporting per-runner container images, or scheduling runner caches through VIC-managed shared volumes.
+Revisit this if Cage starts embedding runners into application OCI images, supporting per-runner container images, or scheduling runner caches through downstream-managed shared volumes.

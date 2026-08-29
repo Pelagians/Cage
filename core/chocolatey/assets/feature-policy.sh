@@ -1,5 +1,6 @@
 set -eu
 echo "[cage] Verify Chocolatey feature policy"
+wine_prefix="${WINEPREFIX:-$HOME/.wine}"
 choco_exe_win="${CFW_CHOCOLATEY_WINDOWS_PATH:?CFW Chocolatey interface is missing}"
 choco_launcher=("${CFW_CHOCOLATEY_QUERY_LAUNCHER:?CFW Chocolatey query launcher is missing}" "$choco_exe_win")
 metadata_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/metadata"
@@ -14,6 +15,13 @@ if [ "$powershell_host_policy" != "disabled" ] || [ "$allow_global_confirmation_
   echo "[cage] ERROR: unsupported Chocolatey feature policy in runtime profile" >&2
   exit 64
 fi
+
+choco_working_directory="$wine_prefix/drive_c"
+test -d "$choco_working_directory"
+cd "$choco_working_directory"
+# Selkies desktop interposers are native Linux session concerns and include
+# 64-bit-only libraries that must not be inherited by Wine's 32-bit children.
+unset LD_PRELOAD
 
 set +e
 timeout "${CAGE_CHOCOLATEY_FEATURE_TIMEOUT:-120s}" "${choco_launcher[@]}" feature list --limit-output > "$feature_list_log" 2>&1

@@ -1,4 +1,5 @@
 """Tests for Cage bundle runtime execution planning."""
+
 from __future__ import annotations
 
 import json
@@ -12,7 +13,6 @@ from artifact.bundle import create_bundle
 from core.manifest import Manifest
 from runtime.launcher import RunError, build_run_plan
 
-
 VALID = {
     "schemaVersion": "cage.app/v0",
     "name": "sample",
@@ -20,7 +20,11 @@ VALID = {
     "runtime": {"provider": "wine", "version": "9.0"},
     "modules": [
         {"type": "winetricks", "verbs": ["corefonts"]},
-        {"type": "portable", "source": "file://app.zip", "target": "C:/Program Files/App"},
+        {
+            "type": "portable",
+            "source": "file://app.zip",
+            "target": "C:/Program Files/App",
+        },
     ],
     "launch": {
         "entrypoint": "C:/Program Files/App/App.exe",
@@ -33,14 +37,15 @@ VALID = {
 
 
 class Phase3ExecutionPlanTests(unittest.TestCase):
-
     def _bundle(self, tmp: str) -> Path:
         return create_bundle(Manifest.from_dict(VALID), Path(tmp), dry_run=True)
 
     def test_build_run_plan_uses_verified_graph_contract(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = self._bundle(tmp)
-            plan = build_run_plan(bundle, graphics="headless", engine="podman", allow_non_runnable=True)
+            plan = build_run_plan(
+                bundle, graphics="headless", engine="podman", allow_non_runnable=True
+            )
 
         self.assertEqual(plan["schemaVersion"], "cage.run-plan/v0")
         self.assertEqual(plan["graphics"]["mode"], "headless")
@@ -49,7 +54,10 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertEqual(plan["runtime"]["image"], "ghcr.io/pelagians/cage-wine:9.0")
         self.assertEqual(plan["launch"]["entrypoint"], "C:/Program Files/App/App.exe")
         self.assertEqual(plan["container"]["engine"], "podman")
-        self.assertIn("/opt/cage/bundle/metadata/graph.json", plan["container"]["environment"]["CAGE_GRAPH"])
+        self.assertIn(
+            "/opt/cage/bundle/metadata/graph.json",
+            plan["container"]["environment"]["CAGE_GRAPH"],
+        )
         self.assertIn("wine", plan["launchCommand"])
         self.assertIn("--profile", plan["launchCommand"])
         self.assertEqual(plan["verification"]["valid"], True)
@@ -59,7 +67,12 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
             bundle = self._bundle(tmp)
             (bundle / "metadata" / "graph.json").unlink()
             with self.assertRaises(RunError) as cm:
-                build_run_plan(bundle, graphics="headless", engine="podman", allow_non_runnable=True)
+                build_run_plan(
+                    bundle,
+                    graphics="headless",
+                    engine="podman",
+                    allow_non_runnable=True,
+                )
 
         self.assertIn("missing required file: metadata/graph.json", str(cm.exception))
 
@@ -79,7 +92,9 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = self._bundle(tmp)
             with self.assertRaises(RunError) as cm:
-                build_run_plan(bundle, graphics="wayland", engine="docker", allow_non_runnable=True)
+                build_run_plan(
+                    bundle, graphics="wayland", engine="docker", allow_non_runnable=True
+                )
 
         self.assertIn("graphics mode 'wayland' must be one of", str(cm.exception))
 
@@ -91,40 +106,45 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
             graph["graphics"]["supportedModes"] = ["headless"]
             graph_path.write_text(json.dumps(graph, indent=2), encoding="utf-8")
             with self.assertRaises(RunError) as cm:
-                build_run_plan(bundle, graphics="vnc", engine="docker", allow_non_runnable=True)
+                build_run_plan(
+                    bundle, graphics="selkies", engine="docker", allow_non_runnable=True
+                )
 
         self.assertIn("graph graphics must include defaultMode", str(cm.exception))
 
-    def test_vnc_run_plan_publishes_loopback_vnc_and_novnc_ports(self):
+    def test_selkies_run_plan_publishes_loopback_https_port(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = self._bundle(tmp)
             plan = build_run_plan(
                 bundle,
-                graphics="vnc",
+                graphics="selkies",
                 engine="docker",
                 network="bridge",
-                vnc_port=5901,
-                novnc_port=6081,
-            allow_non_runnable=True,
+                selkies_port=3002,
+                allow_non_runnable=True,
             )
 
         argv = plan["container"]["argv"]
-        self.assertIn("127.0.0.1:5901:5900", argv)
-        self.assertIn("127.0.0.1:6081:6080", argv)
-        self.assertIn("x11vnc", plan["container"]["script"])
-        self.assertIn("websockify", plan["container"]["script"])
+        self.assertIn("127.0.0.1:3002:3001", argv)
+        self.assertNotIn("5900", " ".join(argv))
+        self.assertNotIn("6080", " ".join(argv))
+        self.assertEqual(argv[-1], plan["runtime"]["image"])
 
     def test_run_plan_inherits_producer_image_dll_policy_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
             bundle = self._bundle(tmp)
-            plan = build_run_plan(bundle, graphics="headless", engine="docker", allow_non_runnable=True)
+            plan = build_run_plan(
+                bundle, graphics="headless", engine="docker", allow_non_runnable=True
+            )
 
         env = plan["container"]["environment"]
         argv = plan["container"]["argv"]
         self.assertNotIn("WINEDLLOVERRIDES", env)
         self.assertFalse(any(value.startswith("WINEDLLOVERRIDES=") for value in argv))
 
-    def test_wineconsole_entrypoints_use_native_helper_and_strip_legacy_backend_option(self):
+    def test_wineconsole_entrypoints_use_native_helper_and_strip_legacy_backend_option(
+        self,
+    ):
         data = dict(VALID)
         data["launch"] = {
             "entrypoint": "C:/windows/system32/wineconsole.exe",
@@ -137,7 +157,9 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as tmp:
             bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=True)
-            plan = build_run_plan(bundle, graphics="headless", engine="docker", allow_non_runnable=True)
+            plan = build_run_plan(
+                bundle, graphics="headless", engine="docker", allow_non_runnable=True
+            )
 
         self.assertEqual(
             plan["launchCommand"],
@@ -176,29 +198,24 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertEqual(payload["graphics"]["mode"], "headless")
         self.assertEqual(payload["container"]["engine"], "podman")
 
-
     def test_umu_proton_ge_run_plan_uses_umu_launcher(self):
         data = dict(VALID)
         data["runtime"] = {"provider": "umu-proton-ge", "version": "GE-Proton9-27"}
         with tempfile.TemporaryDirectory() as tmp:
             bundle = create_bundle(Manifest.from_dict(data), Path(tmp), dry_run=True)
-            plan = build_run_plan(bundle, graphics="headless", engine="podman", allow_non_runnable=True)
+            plan = build_run_plan(
+                bundle, graphics="headless", engine="podman", allow_non_runnable=True
+            )
 
         self.assertEqual(plan["runtime"]["provider"], "umu-proton-ge")
         self.assertEqual(plan["runtime"]["launcher"], "umu")
-        self.assertEqual(plan["runtime"]["image"], "ghcr.io/pelagians/cage-umu-proton-ge:GE-Proton9-27")
+        self.assertEqual(
+            plan["runtime"]["image"],
+            "ghcr.io/pelagians/cage-umu-proton-ge:GE-Proton9-27",
+        )
         self.assertIn("umu-run", plan["launchCommand"])
 
-
-    def test_umu_proton_ge_image_installs_umu_launcher(self):
-        root = Path(__file__).resolve().parents[1]
-        dockerfile = (root / "container/runtimes/umu-proton-ge/Dockerfile").read_text(encoding="utf-8")
-        self.assertIn("umu-launcher", dockerfile)
-        self.assertIn("umu-run", dockerfile)
-        self.assertIn("UMU_LAUNCHER_REF", dockerfile)
-        self.assertIn("test -x /opt/umu/bin/umu-run", dockerfile)
-
-    def test_runtime_container_images_include_vnc_helpers(self):
+    def test_runtime_container_images_use_selkies_without_legacy_vnc_helpers(self):
         root = Path(__file__).resolve().parents[1]
         dockerfiles = [
             "container/runtimes/wine/Dockerfile",
@@ -207,36 +224,43 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         ]
         for rel in dockerfiles:
             with self.subTest(rel=rel):
-                dockerfile = (root / rel).read_text(encoding="utf-8")
-                self.assertIn("x11vnc", dockerfile)
-                self.assertIn("websockify", dockerfile)
-                self.assertIn("novnc", dockerfile)
+                dockerfile = (root / rel).read_text(encoding="utf-8").lower()
+                self.assertIn("baseimage-selkies", dockerfile)
+                self.assertIn("pixelflux", dockerfile)
+                self.assertIn("expose 3001", dockerfile)
+                for obsolete in ("x11vnc", "websockify", "novnc", "xvfb"):
+                    self.assertNotIn(obsolete, dockerfile)
 
-    def test_vnc_launcher_accepts_debian_novnc_assets(self):
+    def test_builder_maps_abc_to_the_host_user_for_bundle_writes(self):
+        root = Path(__file__).resolve().parents[1]
+        executor = (root / "builder/executor.py").read_text(encoding="utf-8")
+        self.assertIn('"PUID": str(os.getuid())', executor)
+        self.assertIn('"PGID": str(os.getgid())', executor)
+
+    def test_builder_uses_universal_selkies_init_instead_of_image_command(self):
+        root = Path(__file__).resolve().parents[1]
+        executor = (root / "builder/executor.py").read_text(encoding="utf-8")
+        self.assertIn("CAGE_BUILD_SCRIPT_B64", executor)
+        self.assertNotIn('cmd.extend(["bash", "/opt/cage/build/run.sh"])', executor)
+        self.assertNotIn("xvfb-entrypoint", executor.lower())
+
+    def test_selkies_launcher_preserves_inherited_init(self):
         root = Path(__file__).resolve().parents[1]
         launcher = (root / "runtime/launcher.py").read_text(encoding="utf-8")
-
-        self.assertIn("/usr/share/novnc", launcher)
+        self.assertIn("CAGE_LAUNCH_SCRIPT_B64", launcher)
+        self.assertIn("argv.append(image)", launcher)
 
     def test_default_wine_image_does_not_ship_build_toolchains(self):
         root = Path(__file__).resolve().parents[1]
-        dockerfile = (root / "container/runtimes/wine/Dockerfile").read_text(encoding="utf-8")
+        dockerfile = (root / "container/runtimes/wine/Dockerfile").read_text(
+            encoding="utf-8"
+        )
 
         self.assertNotIn("build-essential", dockerfile)
         self.assertNotIn("gcc-mingw-w64", dockerfile)
         self.assertNotIn("rustup", dockerfile)
         self.assertNotIn("cargo", dockerfile)
         self.assertNotIn("/root/.cargo", dockerfile)
-
-    def test_umu_final_image_does_not_ship_git_or_pip_install_tooling(self):
-        root = Path(__file__).resolve().parents[1]
-        dockerfile = (root / "container/runtimes/umu-proton-ge/Dockerfile").read_text(encoding="utf-8")
-        final_stage = dockerfile.split("FROM ge-download AS final", 1)[1]
-
-        self.assertNotIn(" git ", final_stage)
-        self.assertNotIn("python3-venv", final_stage)
-        self.assertNotIn("pip install", final_stage)
-        self.assertIn("COPY --from=umu-build /opt/umu /opt/umu", dockerfile)
 
 
 if __name__ == "__main__":

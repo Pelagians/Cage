@@ -22,7 +22,7 @@ class PublicChocolateyRecipeTests(unittest.TestCase):
         self.assertEqual(recipe["name"], "7zip")
         self.assertEqual(
             recipe["runtime"],
-            {"provider": "wine", "version": "11.0", "network": "none"},
+            {"provider": "wine", "version": "11.0", "network": "none", "wineGraphics": "xwayland"},
         )
         self.assertNotIn("compatibility", recipe)
         self.assertNotIn("runner", recipe["runtime"])
@@ -33,7 +33,7 @@ class PublicChocolateyRecipeTests(unittest.TestCase):
     def test_public_notepadplusplus_recipe_is_pinned_to_cfw_wine_11(self):
         recipe = self._recipe("notepadplusplus.cage.yaml")
 
-        self.assertEqual(recipe["runtime"], {"provider": "wine", "version": "11.0", "network": "none"})
+        self.assertEqual(recipe["runtime"], {"provider": "wine", "version": "11.0", "network": "none", "wineGraphics": "xwayland"})
         self.assertNotIn("compatibility", recipe)
         self.assertNotIn("runner", recipe["runtime"])
 

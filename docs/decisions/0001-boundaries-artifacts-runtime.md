@@ -6,18 +6,18 @@ Status: accepted (amended by Decision 0002)
 
 ## Decision
 
-Cage is an open-source reproducible environment compiler for Wine-based Windows execution environments. It produces immutable execution bundles from declarative manifests. Runtime selection uses a pluggable provider abstraction for Wine Stable, Wine Staging, and Proton-GE. VIC is a downstream consumer and must not be a dependency or internal concern.
+Cage is an open-source reproducible environment compiler for Wine-based Windows execution environments. It produces immutable execution bundles from declarative manifests. Runtime selection uses a pluggable provider abstraction for Wine Stable, Wine Staging, and Proton-GE. Nereus is a downstream consumer and must not be a dependency or internal concern.
 
 ## Reasoning
 
-This separates build-time environment construction from production orchestration and keeps Cage useful outside VIC.
+This separates build-time environment construction from production orchestration and keeps Cage useful outside Nereus.
 
 ## Rejected alternatives
 
-- Put Cage logic directly inside VIC.
+- Put Cage logic directly inside Nereus.
 - Make Kubernetes the core builder substrate.
 - Hardcode Wine/Proton variants in builder phases.
 
 ## Review triggers
 
-Review if Cage needs a remote build service API, OCI packaging becomes mandatory, VIC integration starts requiring builder internals, or a new runtime class needs first-class support.
+Review if Cage needs a remote build service API, OCI packaging becomes mandatory, Nereus integration starts requiring builder internals, or a new runtime class needs first-class support.

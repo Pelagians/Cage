@@ -210,7 +210,7 @@ def cmd_build(args):
             return 1
 
     binding = resolve_manifest_runtime(manifest)
-    base_image = binding.oci_image or get_image_ref(
+    base_image = getattr(args, "runtime_image", None) or binding.oci_image or get_image_ref(
         manifest.runtime.provider, manifest.runtime.version)
 
     if args.dry_run:
@@ -248,6 +248,7 @@ def cmd_build(args):
         workspace=workspace,
         runner_cache_dir=Path(args.runner_cache_dir) if args.runner_cache_dir else None,
         module_cache_dir=Path(args.module_cache_dir) if args.module_cache_dir else None,
+        requalify_cfw_runtime=getattr(args, "requalify_cfw_runtime", False),
     )
 
     # Write build result to bundle metadata
@@ -307,8 +308,7 @@ def cmd_run(args):
         bundle,
         graphics=args.graphics,
         engine=args.engine,
-        vnc_port=args.vnc_port,
-        novnc_port=args.novnc_port,
+        selkies_port=args.selkies_port,
         container_name=args.name,
         entrypoint=args.entrypoint,
         files=args.files,
@@ -426,7 +426,7 @@ def cmd_bundle_verify(args):
 def cmd_export_oci(args):
     bundle = resolve_bundle_reference(args.bundle, index_path=args.artifact_index)
     if args.dry_run:
-        plan = create_oci_export_plan(bundle, tag=args.tag)
+        plan = create_oci_export_plan(bundle, tag=args.tag, graphics=args.graphics)
         print(json.dumps(plan, indent=2, sort_keys=True))
         return 0
 
@@ -437,6 +437,7 @@ def cmd_export_oci(args):
         context_dir=Path(args.context_dir) if args.context_dir else None,
         timeout=args.timeout,
         push=args.push,
+        graphics=args.graphics,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result.get("success") else 1
@@ -444,6 +445,13 @@ def cmd_export_oci(args):
 
 def cmd_export_kube(args):
     bundle = resolve_bundle_reference(args.bundle, index_path=args.artifact_index)
+    image_verification = None
+    if args.graphics == "selkies":
+        image_verification = verify_oci_image_metadata(args.image, engine=args.engine)
+        if not image_verification.get("valid"):
+            raise KubeExportError(
+                "Selkies Kubernetes export requires cage image verify to pass for --image"
+            )
     if args.dry_run:
         plan = create_kube_export_plan(
             bundle,
@@ -456,6 +464,7 @@ def cmd_export_kube(args):
             replicas=args.replicas,
             graphics=args.graphics,
             allow_mutable_tag=args.allow_mutable_tag,
+            image_verification=image_verification,
         )
         print(json.dumps(plan, indent=2, sort_keys=True))
         return 0
@@ -474,6 +483,7 @@ def cmd_export_kube(args):
         replicas=args.replicas,
         graphics=args.graphics,
         allow_mutable_tag=args.allow_mutable_tag,
+        image_verification=image_verification,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
@@ -565,12 +575,16 @@ def build_parser():
                         "Auto-detect if omitted.")
     p.add_argument("--build-timeout", "--timeout", dest="build_timeout", type=int, default=7200,
                    help="Max seconds for container build and generated Wine phase timeout (default: 7200)")
+    p.add_argument("--runtime-image",
+                   help="Explicit container image used to execute the build")
     p.add_argument("--image-tag",
                    help="Optional OCI output tag (e.g. myapp:latest)")
     p.add_argument("--runner-cache-dir",
                    help="Runner cache directory for runtime.runner archives")
     p.add_argument("--module-cache-dir",
                    help="Module payload cache directory for downloads used during builds")
+    p.add_argument("--requalify-cfw-runtime", action="store_true",
+                   help="Test a prepared CFW prefix against an explicit universal candidate image")
     p.set_defaults(func=cmd_build)
 
     # run
@@ -578,7 +592,7 @@ def build_parser():
     p.add_argument("bundle", help="Path to Cage bundle directory or app name from artifact index")
     p.add_argument("--artifact-index", default=None,
                    help="Artifact index path for resolving app names (default: dist/.cage/artifacts.json)")
-    p.add_argument("--graphics", choices=["headless", "vnc"],
+    p.add_argument("--graphics", choices=["headless", "selkies"],
                    help="Graphics mode; defaults to metadata/graph.json defaultMode")
     p.add_argument("--engine", default=None,
                    help="Container engine (podman, docker). Auto-detect if omitted.")
@@ -588,10 +602,8 @@ def build_parser():
                    help="Runtime container network mode; defaults to bundle runtime.network")
     p.add_argument("--entrypoint", help="Named suite entrypoint id to run")
     p.add_argument("files", nargs="*", help="Host files to pass to the selected application entrypoint")
-    p.add_argument("--vnc-port", type=int, default=5900,
-                   help="Host loopback VNC port for --graphics vnc")
-    p.add_argument("--novnc-port", type=int, default=6080,
-                   help="Host loopback noVNC/websockify port for --graphics vnc")
+    p.add_argument("--selkies-port", type=int, default=3001,
+                   help="Host loopback HTTPS port for --graphics selkies")
     p.add_argument("--name", help="Optional container name")
     p.add_argument("--timeout", type=int, default=None,
                    help="Optional max seconds for the run process")
@@ -749,7 +761,7 @@ def build_parser():
     cp.add_argument("manifest", help="Path to Cage manifest")
     cp.add_argument("--workspace", help="Workspace root for relative local sources (default: cwd)")
     cp.add_argument("--output", default="dist", help="Output directory for evidence bundles")
-    cp.add_argument("--graphics", choices=["headless", "vnc"], default="headless", help="Graphics mode for run-plan/run evidence")
+    cp.add_argument("--graphics", choices=["headless", "selkies"], default="headless", help="Graphics mode for run-plan/run evidence")
     cp.add_argument("--network", choices=["none", "bridge", "host"], help="Runtime network mode for run-plan/run evidence")
     cp.add_argument("--engine", default=None, help="Container engine name to record/use in evidence")
     cp.add_argument("--mode", choices=["dry-run", "build", "run"], default="dry-run", help="Evidence mode: dry-run, real build, or real build+run")
@@ -777,6 +789,8 @@ def build_parser():
                     help="Artifact index path for resolving app names (default: dist/.cage/artifacts.json)")
     ep.add_argument("--tag", required=True, help="Output OCI image tag")
     ep.add_argument("--dry-run", action="store_true", help="Print the OCI export plan without building")
+    ep.add_argument("--graphics", choices=["headless", "selkies"], default="headless",
+                    help="Application image session target")
     ep.add_argument("--engine", default=None, help="Container build engine (podman, docker). Auto-detect if omitted.")
     ep.add_argument("--context-dir", help="Optional build context directory to materialize")
     ep.add_argument("--timeout", type=int, default=600, help="Max seconds for image build/push commands")
@@ -788,12 +802,13 @@ def build_parser():
     ep.add_argument("--artifact-index", default=None,
                     help="Artifact index path for resolving app names (default: dist/.cage/artifacts.json)")
     ep.add_argument("--image", required=True, help="Digest-pinned OCI image ref, e.g. ghcr.io/org/app@sha256:...")
+    ep.add_argument("--engine", default=None, help="Container engine used to verify Selkies image metadata")
     ep.add_argument("--namespace", default="default", help="Kubernetes namespace for generated resources")
     ep.add_argument("--name", help="Kubernetes resource base name; defaults to sanitized app name")
     ep.add_argument("--state-size", default="10Gi", help="State PVC size when PVCs are enabled")
     ep.add_argument("--exports-size", default="10Gi", help="Exports PVC size when PVCs are enabled")
     ep.add_argument("--replicas", type=int, default=1, help="Deployment replica count")
-    ep.add_argument("--graphics", choices=["headless", "vnc"], default="headless", help="CAGE_GRAPHICS value")
+    ep.add_argument("--graphics", choices=["headless", "selkies"], default="headless", help="CAGE_GRAPHICS value")
     ep.add_argument("--no-pvc", action="store_true", help="Use emptyDir volumes instead of PVCs")
     ep.add_argument("--allow-mutable-tag", action="store_true", help="Allow tag-only image refs instead of requiring @sha256")
     ep.add_argument("--output", help="Write Kubernetes YAML to this file; required unless --dry-run")

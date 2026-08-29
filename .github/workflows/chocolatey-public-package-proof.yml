@@ -37,188 +37,141 @@ permissions:
 
 jobs:
   runtime-profile:
-    name: Resolve pinned CFW Wine 11 runtime
+    name: Resolve released qualified CFW Wine runtime
     runs-on: ubuntu-latest
     outputs:
       available: ${{ steps.runtime.outputs.available }}
+      qualified: ${{ steps.runtime.outputs.qualified }}
       image: ${{ steps.runtime.outputs.image }}
+      session_contract: ${{ steps.runtime.outputs.session_contract }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-
       - name: Resolve released CFW runtime profile
         id: runtime
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY' >> "$GITHUB_OUTPUT"
+          import re
           from core.modules.chocolatey import DEFAULT_CFW_RUNTIME_ARTIFACT
           artifact = DEFAULT_CFW_RUNTIME_ARTIFACT
+          image = artifact.get('wineImage', '')
+          contract = artifact.get('sessionContract', '')
+          qualified = bool(re.fullmatch(r'ghcr\.io/pelagians/cage-wine@sha256:[0-9a-f]{64}', image)) and contract == 'cage.selkies-wayland/v1'
           print(f"available={'true' if artifact else 'false'}")
-          print(f"image={artifact['wineImage'] if artifact else ''}")
+          print(f"qualified={'true' if qualified else 'false'}")
+          print(f"image={image}")
+          print(f"session_contract={contract}")
           PY
 
-      - name: Fail closed when the pinned runtime is unavailable
-        if: steps.runtime.outputs.available != 'true'
-        run: |
-          echo 'No released, digest-pinned CFW Wine 11 runtime is available.'
-          echo 'CFW runtime construction belongs to Chocolatey-for-Wine, not this consumer proof.'
-          exit 78
+  blocked:
+    name: Report blocked package proof
+    needs: runtime-profile
+    if: needs.runtime-profile.outputs.qualified != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo '::notice title=Public-package proof blocked::No released CFW runtime profile with a digest-pinned image and sessionContract=cage.selkies-wayland/v1 is available.'
+          echo 'Package installation and launch-plan evidence are intentionally not run until CFW qualification is published.'
 
   public-packages:
-    name: Build public packages and verify launch plans
+    name: ${{ matrix.package }} public package proof
     needs: runtime-profile
-    if: needs.runtime-profile.outputs.available == 'true'
+    if: needs.runtime-profile.outputs.qualified == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: 7zip
+            recipe: recipes/7zip.cage.yaml
+          - package: notepadplusplus
+            recipe: recipes/notepadplusplus.cage.yaml
     env:
       CAGE_RUNTIME_IMAGE: ${{ needs.runtime-profile.outputs.image }}
+      CAGE_CHOCOLATEY_VERIFY_TIMEOUT: '60s'
+      CAGE_CHOCOLATEY_VERIFY_SETTLE_TIMEOUT: '30s'
+      CAGE_CHOCOLATEY_FEATURE_TIMEOUT: '60s'
+      CAGE_CHOCOLATEY_FEATURE_SETTLE_TIMEOUT: '30s'
       CAGE_MODULE_CACHE: ${{ github.workspace }}/.cage-module-cache
       CAGE_BUILD_TIMEOUT: '7200'
-
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-
       - name: Install Cage
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e .
-
       - name: Restore shared Chocolatey module cache
         uses: actions/cache@v4
         with:
           path: .cage-module-cache
           key: cage-chocolatey-modules-${{ runner.os }}-${{ hashFiles('core/chocolatey/assets/**', 'core/modules/chocolatey.py') }}
-          restore-keys: |
-            cage-chocolatey-modules-${{ runner.os }}-
-
-      - name: Pull pinned CFW Wine 11 image
-        run: docker pull "$CAGE_RUNTIME_IMAGE"
-
-      - name: Inspect recipes before building
+          restore-keys: cage-chocolatey-modules-${{ runner.os }}-
+      - name: Inspect recipe before building
+        run: |
+          set -euo pipefail
+          mkdir -p evidence logs
+          cage inspect "${{ matrix.recipe }}" > "evidence/${{ matrix.package }}-recipe-inspection.json"
+      # title=7zip public package proof failed
+      # title=Notepad++ public package proof failed
+      - name: Build package and verify bundle and launch plan
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p evidence
-          cage inspect recipes/7zip.cage.yaml > evidence/7zip-recipe-inspection.json
-          cage inspect recipes/notepadplusplus.cage.yaml > evidence/notepadplusplus-recipe-inspection.json
-
-      - name: Build 7zip and verify its launch plan against the public Chocolatey feed
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist-7zip evidence logs
+          output="dist-${{ matrix.package }}"
+          mkdir -p "$output" evidence logs
           set +e
-          cage build recipes/7zip.cage.yaml \
-            --output dist-7zip \
-            --engine docker \
-            --image-tag "$CAGE_RUNTIME_IMAGE" \
+          cage build "${{ matrix.recipe }}" --output "$output" --engine docker \
+            --runtime-image "$CAGE_RUNTIME_IMAGE" \
             --module-cache-dir "$CAGE_MODULE_CACHE" \
-            --build-timeout "$CAGE_BUILD_TIMEOUT" 2>&1 | tee logs/7zip-build.log
+            --build-timeout "$CAGE_BUILD_TIMEOUT" \
+            2>&1 | tee "logs/${{ matrix.package }}-build.log"
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -ne 0 ]; then
-            bundle="$(find dist-7zip -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
-            {
-              echo '--- build tail ---'
-              tail -100 logs/7zip-build.log || true
-              for name in chocolatey-package-evidence.json chocolatey-diagnostic.json chocolatey-feature-policy.json chocolatey-smoke.json; do
-                echo "--- $name ---"
-                if [ -n "$bundle" ]; then
-                  cat "$bundle/metadata/$name" 2>/dev/null || echo unavailable
-                else
-                  echo 'bundle unavailable'
-                fi
-              done
-            } > logs/7zip-failure-summary.log
-            summary="$(tail -240 logs/7zip-failure-summary.log)"
-            summary="${summary//'%'/'%25'}"
-            summary="${summary//$'\n'/'%0A'}"
-            summary="${summary//$'\r'/'%0D'}"
-            echo "::error title=7zip public package proof failed::exit=$rc%0A${summary}"
+            bundle="$(find "$output" -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
+            { echo '--- build tail ---'; tail -100 "logs/${{ matrix.package }}-build.log" || true;               for name in chocolatey-package-evidence.json chocolatey-diagnostic.json chocolatey-feature-policy.json chocolatey-smoke.json; do
+                echo "--- $name ---"; [ -n "$bundle" ] && cat "$bundle/metadata/$name" 2>/dev/null || echo unavailable; done; } > "logs/${{ matrix.package }}-failure-summary.log"
+            summary="$(tail -240 "logs/${{ matrix.package }}-failure-summary.log")"
+            summary="${summary//'%'/'%25'}"; summary="${summary//$'\n'/'%0A'}"; summary="${summary//$'\r'/'%0D'}"
+            echo "::error title=${{ matrix.package }} public package proof failed::exit=$rc%0A${summary}"
             exit "$rc"
           fi
-          bundle="$(find dist-7zip -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
+          bundle="$(find "$output" -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
           test -n "$bundle"
-          cage bundle inspect "$bundle" > evidence/7zip-bundle-inspection.json
-          cage bundle verify "$bundle" > evidence/7zip-bundle-verification.json
+          cage bundle inspect "$bundle" > "evidence/${{ matrix.package }}-bundle-inspection.json"
+          cage bundle verify "$bundle" > "evidence/${{ matrix.package }}-bundle-verification.json"
           test -s "$bundle/metadata/chocolatey-package-evidence.json"
-          cp "$bundle/metadata/chocolatey-package-evidence.json" evidence/7zip-package-evidence.json
-          cage run --dry-run --graphics headless "$bundle" > evidence/7zip-launch-plan-evidence.json
-          test -s evidence/7zip-launch-plan-evidence.json
-          tar -czf evidence/7zip-bundle.tar.gz -C "$(dirname "$bundle")" "$(basename "$bundle")"
-
-      - name: Build Notepad++ and verify its launch plan against the public Chocolatey feed
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist-notepadplusplus evidence logs
-          set +e
-          cage build recipes/notepadplusplus.cage.yaml \
-            --output dist-notepadplusplus \
-            --engine docker \
-            --image-tag "$CAGE_RUNTIME_IMAGE" \
-            --module-cache-dir "$CAGE_MODULE_CACHE" \
-            --build-timeout "$CAGE_BUILD_TIMEOUT" 2>&1 | tee logs/notepadplusplus-build.log
-          rc=${PIPESTATUS[0]}
-          set -e
-          if [ "$rc" -ne 0 ]; then
-            bundle="$(find dist-notepadplusplus -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
-            {
-              echo '--- build tail ---'
-              tail -100 logs/notepadplusplus-build.log || true
-              for name in chocolatey-package-evidence.json chocolatey-diagnostic.json chocolatey-feature-policy.json chocolatey-smoke.json; do
-                echo "--- $name ---"
-                if [ -n "$bundle" ]; then
-                  cat "$bundle/metadata/$name" 2>/dev/null || echo unavailable
-                else
-                  echo 'bundle unavailable'
-                fi
-              done
-            } > logs/notepadplusplus-failure-summary.log
-            summary="$(tail -240 logs/notepadplusplus-failure-summary.log)"
-            summary="${summary//'%'/'%25'}"
-            summary="${summary//$'\n'/'%0A'}"
-            summary="${summary//$'\r'/'%0D'}"
-            echo "::error title=Notepad++ public package proof failed::exit=$rc%0A${summary}"
-            exit "$rc"
-          fi
-          bundle="$(find dist-notepadplusplus -mindepth 1 -maxdepth 1 -type d ! -name .cage -print -quit)"
-          test -n "$bundle"
-          cage bundle inspect "$bundle" > evidence/notepadplusplus-bundle-inspection.json
-          cage bundle verify "$bundle" > evidence/notepadplusplus-bundle-verification.json
-          test -s "$bundle/metadata/chocolatey-package-evidence.json"
-          cp "$bundle/metadata/chocolatey-package-evidence.json" evidence/notepadplusplus-package-evidence.json
-          cage run --dry-run --graphics headless "$bundle" > evidence/notepadplusplus-launch-plan-evidence.json
-          test -s evidence/notepadplusplus-launch-plan-evidence.json
-          tar -czf evidence/notepadplusplus-bundle.tar.gz -C "$(dirname "$bundle")" "$(basename "$bundle")"
-
-      - name: Upload public-package proof evidence
+          cp "$bundle/metadata/chocolatey-package-evidence.json" "evidence/${{ matrix.package }}-package-evidence.json"
+          cage run --dry-run --graphics headless "$bundle" > "evidence/${{ matrix.package }}-launch-plan-evidence.json"
+          test -s "evidence/${{ matrix.package }}-launch-plan-evidence.json"
+          tar -czf "evidence/${{ matrix.package }}-bundle.tar.gz" -C "$(dirname "$bundle")" "$(basename "$bundle")"
+      - name: Upload package proof evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: chocolatey-public-package-proof-${{ github.sha }}
+          name: chocolatey-public-package-proof-${{ matrix.package }}-${{ github.sha }}
           if-no-files-found: error
           retention-days: 14
           path: |
             evidence/**
+            evidence/7zip-bundle.tar.gz
+            evidence/notepadplusplus-bundle.tar.gz
             logs/**
-            dist-7zip/**/logs/**
-            dist-7zip/**/metadata/**
+            dist-${{ matrix.package }}/**/logs/**
+            dist-${{ matrix.package }}/**/metadata/**
+            !dist-${{ matrix.package }}/**/prefix/**
             !dist-7zip/**/prefix/**
-            dist-notepadplusplus/**/logs/**
-            dist-notepadplusplus/**/metadata/**
             !dist-notepadplusplus/**/prefix/**

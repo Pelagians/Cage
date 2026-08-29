@@ -89,6 +89,14 @@ class CfwRuntimeArtifactTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 verify(profile, manifest, evidence, "wine-11.0", IMAGE)
 
+    def test_requalification_validates_prepared_prefix_against_bound_producer_image(self):
+        select = _helper()["_producer_image_identity"]
+        environment = {
+            "CAGE_RUNTIME_IMAGE": "cage-wine-cfw-candidate:test",
+            "CAGE_CFW_PRODUCER_IMAGE": IMAGE,
+        }
+        self.assertEqual(select(environment), IMAGE)
+
     def test_verification_rejects_missing_evidence_schema(self):
         verify = _helper()["validate_records"]
         profile, manifest, evidence = _records()

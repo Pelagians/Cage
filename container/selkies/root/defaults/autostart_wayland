@@ -1,0 +1,42 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+run_cage_script() {
+  local encoded="$1" script="$2" status_file="${3:-}"
+  printf '%s' "$encoded" | base64 -d > "$script"
+  chmod 0700 "$script"
+  if [[ "${CAGE_EXIT_WHEN_DONE:-false}" == true ]]; then
+    set +e
+    bash "$script"
+    rc=$?
+    set -e
+    if [[ -n "$status_file" ]]; then
+      printf '%s\n' "$rc" > "$status_file"
+    fi
+    printf '%s\n' "$rc" > /var/lib/cage/state/task-exit-code
+    : > /var/lib/cage/state/shutdown-request
+    exit "$rc"
+  fi
+  exec bash "$script"
+}
+
+# LinuxServer's Labwc session runs this file as abc. Scripts are transported
+# as base64 so Docker/Podman never replace the inherited /init.
+if [[ -n "${CAGE_LAUNCH_SCRIPT_B64:-}" ]]; then
+  run_cage_script "$CAGE_LAUNCH_SCRIPT_B64" /tmp/cage-launch.sh
+fi
+
+if [[ -n "${CAGE_APP_LAUNCHER:-}" && -x "${CAGE_APP_LAUNCHER}" ]]; then
+  if [[ "${CAGE_EXIT_WHEN_DONE:-false}" == true ]]; then
+    set +e
+    "${CAGE_APP_LAUNCHER}"
+    rc=$?
+    set -e
+    printf '%s\n' "$rc" > /var/lib/cage/state/task-exit-code
+    : > /var/lib/cage/state/shutdown-request
+    exit "$rc"
+  fi
+  exec "${CAGE_APP_LAUNCHER}"
+fi
+
+exec sleep infinity

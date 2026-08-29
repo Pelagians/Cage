@@ -8,7 +8,7 @@ Source evidence: private BYO legacy-installer probes recorded outside public Cag
 
 Deprecated thread: ADRs 0018–0023 preserve the manual reconstruction, wrapper, and direct-fork experiments. [ADR 0024](decisions/0024-cfw-prepared-runtime-provider.md) is current: CFW publishes the behaviorally proven prepared runtime, while Cage verifies and consumes it without rebuilding compatibility internals.
 
-Hard business installers need more than a generic `wine setup.exe` path. A private BYO Office 2010 probe in `vic-legacy` exposed generic Cage platform gaps around media staging, prepared-prefix reuse, visible installer debugging, and failure summarization. This document turns those lessons into public Cage development slices without adding proprietary recipes, payloads, activation flows, or customer-specific logic to Cage.
+Hard business installers need more than a generic `wine setup.exe` path. A private BYO Office 2010 probe in a customer/private repository exposed generic Cage platform gaps around media staging, prepared-prefix reuse, visible installer debugging, and failure summarization. This document turns those lessons into public Cage development slices without adding proprietary recipes, payloads, activation flows, or customer-specific logic to Cage.
 
 ## Boundaries
 
@@ -21,7 +21,7 @@ Cage should implement reusable primitives only:
 - redacted failure evidence collection
 - runtime/profile matrix execution
 
-Cage must not ship Office recipes, Office containers, Office payloads, product keys, activated prefixes, KMS emulators, cracked/pre-activated media handling, or activation-bypass automation. Proprietary/customer recipes and evidence notes belong in `vic-legacy` or customer/private repositories.
+Cage must not ship Office recipes, Office containers, Office payloads, product keys, activated prefixes, KMS emulators, cracked/pre-activated media handling, or activation-bypass automation. Proprietary/customer recipes and evidence notes belong in customer/private repositories.
 
 ## Proposed implementation slices
 
@@ -106,7 +106,7 @@ Acceptance criteria:
 
 ### Slice 4: visible installer debug command
 
-Goal: replace hand-written Podman/noVNC debug scripts with a supported path.
+Goal: replace ad hoc interactive installer-debug scripts with a supported path.
 
 Candidate CLI:
 
@@ -114,7 +114,7 @@ Candidate CLI:
 cage debug installer <bundle> \
   --media <path> \
   --command "setup.exe /config ProPlus.WW/config.xml" \
-  --graphics vnc \
+  --graphics selkies \
   --network bridge
 ```
 
@@ -127,10 +127,10 @@ Likely files:
 
 Acceptance criteria:
 
-- Starts VNC/noVNC with loopback-only ports by default.
-- Prints the noVNC URL and the exact container name.
+- Starts Selkies HTTPS with loopback-only ports by default.
+- Prints the Selkies HTTPS URL and the exact container name.
 - Mounts bundle writable as attempt state and source media read-only.
-- Captures x11vnc/websockify logs, installer stdout/stderr, and Wine temp logs.
+- Captures Selkies session logs, installer stdout/stderr, and Wine temp logs.
 - Handles nonzero installer exit codes without losing the return code to shell `errexit`/`pipefail` behavior.
 - Supports optional runner-cache mounting.
 
@@ -193,7 +193,7 @@ Acceptance criteria:
 ## Recommended next development order
 
 1. **Slice 3: checkpoint inspect/resume** — next recommended slice; makes slow dependency work reusable.
-2. **Slice 4: visible installer debug command** — removes ad hoc noVNC scripts once the evidence/reporting contracts are in place.
+2. **Slice 4: visible installer debug command** — removes ad hoc debug scripts once the evidence/reporting contracts are in place.
 3. **Slice 2: installer script linter** — small but useful guardrail; can be done earlier if touching install parsing.
 4. **Slice 6: runtime/profile matrix runner** — best after failure summaries are stable.
 

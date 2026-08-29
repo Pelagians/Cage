@@ -18,6 +18,7 @@ from builder.executor import (
     _resolve_public_chocolatey_package_receipt,
     _write_host_chocolatey_package_evidence,
     execute_inside_container,
+    _verify_cfw_requalification_image,
 )
 from builder.pipeline import generate_build_script
 from cage.cli import build_parser, cmd_build
@@ -25,6 +26,8 @@ from core.manifest import Manifest
 from runtime.launcher import build_run_plan
 from tests.bundle_fixtures import materialize_runnable_prefix
 
+
+ROOT = Path(__file__).resolve().parents[1]
 
 APP = {
     "schemaVersion": "cage.app/v0",
@@ -700,9 +703,16 @@ class ExecutorVerificationTests(unittest.TestCase):
                 self.assertFalse(_write_host_chocolatey_package_evidence(manifest, bundle))
 
     def test_container_success_fails_when_host_cannot_bind_package_bytes(self):
+        qualified = {
+            **json.loads((ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.5-wine-11.0.json").read_text()),
+            "sessionContract": "cage.selkies-wayland/v1",
+        }
         manifest = Manifest.from_dict({
             **APP,
-            "modules": [{"type": "chocolatey", "install": {"packages": ["7zip"]}}],
+            "modules": [{
+                "type": "chocolatey",
+                "install": {"packages": ["7zip"], "runtimeArtifact": qualified},
+            }],
         })
         with tempfile.TemporaryDirectory() as tmp:
             bundle = create_bundle(manifest, Path(tmp), dry_run=False)
@@ -858,6 +868,7 @@ class BuildSourcePreflightTests(unittest.TestCase):
                     "wineImage": image,
                     "wineVersions": ["wine-11.0"],
                     "environment": {"WINEDLLOVERRIDES": ""},
+                    "sessionContract": "cage.selkies-wayland/v1",
                 },
             }}],
         }
@@ -919,3 +930,46 @@ class BuildSourcePreflightTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CfwRequalificationTests(unittest.TestCase):
+    def test_candidate_requires_universal_init_and_contract_label(self):
+        class Completed:
+            returncode = 0
+            stdout = '["/init"]\ncage.selkies-wayland/v1\n'
+            stderr = ""
+
+        with patch("builder.executor.subprocess.run", return_value=Completed()):
+            identity = _verify_cfw_requalification_image("docker", "cage-wine-cfw-candidate:test")
+        self.assertEqual(identity["entrypoint"], ["/init"])
+        self.assertEqual(identity["sessionContract"], "cage.selkies-wayland/v1")
+
+    def test_executor_binds_prepared_prefix_to_producer_while_running_candidate(self):
+        source = (ROOT / "builder/executor.py").read_text(encoding="utf-8")
+        self.assertIn('environment["CAGE_CFW_PRODUCER_IMAGE"] = required_cfw_image', source)
+
+    def test_candidate_rejects_missing_universal_contract(self):
+        class Completed:
+            returncode = 0
+            stdout = '["/init"]\n\n'
+            stderr = ""
+
+        with patch("builder.executor.subprocess.run", return_value=Completed()):
+            with self.assertRaisesRegex(RuntimeError, "session contract"):
+                _verify_cfw_requalification_image("docker", "candidate:test")
+
+
+class CfwRequalificationCliTests(unittest.TestCase):
+    def test_build_parser_separates_candidate_runtime_from_output_image_tag(self):
+        args = build_parser().parse_args([
+            "build",
+            "recipe.cage.yaml",
+            "--runtime-image",
+            "cage-wine-cfw-candidate:test",
+            "--image-tag",
+            "application:test",
+            "--requalify-cfw-runtime",
+        ])
+        self.assertEqual(args.runtime_image, "cage-wine-cfw-candidate:test")
+        self.assertEqual(args.image_tag, "application:test")
+        self.assertTrue(args.requalify_cfw_runtime)

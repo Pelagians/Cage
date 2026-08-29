@@ -1,0 +1,19 @@
+#!/usr/bin/with-contenv bash
+set -Eeuo pipefail
+
+# Create only Cage-owned roots. Never recursively chown the read-only bundle or
+# other caller-supplied mounts beneath them.
+install -d -o abc -g abc -m 0755 \
+  /config \
+  /config/.config \
+  /config/.config/labwc \
+  /var/lib/cage \
+  /var/lib/cage/state \
+  /opt/cage/logs \
+  /tmp/cage-prefix \
+  /exports
+install -o abc -g abc -m 0755 \
+  /defaults/autostart_wayland \
+  /config/.config/labwc/autostart
+chown abc:abc /config /config/.config /config/.config/labwc \
+  /var/lib/cage /var/lib/cage/state /opt/cage/logs /tmp/cage-prefix /exports

@@ -32,7 +32,7 @@ Initial built-in aliases:
 - Cage does not need a `pol` provider.
 - The runtime image catalog remains responsible for container images.
 - The runner cache is responsible for archive acquisition/provenance/diagnostics.
-- Office-shaped recipes remain private under `vic-legacy` or customer repositories; public Cage only ships generic primitives.
+- Office-shaped recipes remain private under customer/private repositories; public Cage only ships generic primitives.
 - Real execution still needs a runtime/container environment that contains the 32-bit loader and libraries required by the selected runner.
 
 ## Review trigger

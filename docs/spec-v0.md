@@ -99,7 +99,7 @@ filesystem:
     mode: merge
 ```
 
-This is the preferred direction for pre-installed file directories. BYO prefix import may be useful for Bottles/Crossover experiments later, but reproducible source materialization from installers/media/files is the core Cage question. Proprietary app recipes should live in private/customer repositories such as `vic-legacy`, not in public Cage.
+This is the preferred direction for pre-installed file directories. BYO prefix import may be useful for Bottles/Crossover experiments later, but reproducible source materialization from installers/media/files is the core Cage question. Proprietary app recipes should live in private/customer repositories such as `customer-private`, not in public Cage.
 
 Suite apps can declare multiple entrypoints and file associations:
 
@@ -213,7 +213,7 @@ The graph should not become a general runtime scheduler. Runtime should be borin
 
 `cage bundle inspect <bundle>` prints a machine-readable summary of the bundle, including application identity, resolved builder/runner runtimes, graphics contract, launch contract, graph node/edge counts, provenance, and required file presence.
 
-`cage bundle verify <bundle>` validates the v0 bundle contract and exits `0` only when the bundle is valid. Verification checks required files, JSON parseability, supported manifest schema versions, provenance/graph schema versions, graph application identity, runtime consistency across `runtime/runtime.json`, `builderRuntime`, and `runnerRuntime`, launch consistency, exact-runtime compatibility policy, graphics support for `headless` and `vnc`, and required graph nodes.
+`cage bundle verify <bundle>` validates the v0 bundle contract and exits `0` only when the bundle is valid. Verification checks required files, JSON parseability, supported manifest schema versions, provenance/graph schema versions, graph application identity, runtime consistency across `runtime/runtime.json`, `builderRuntime`, and `runnerRuntime`, launch consistency, exact-runtime compatibility policy, graphics support for `headless` and `selkies`, and required graph nodes.
 
 ## Bundle run contract
 
@@ -221,7 +221,7 @@ The graph should not become a general runtime scheduler. Runtime should be borin
 
 `cage run --dry-run <bundle>` prints a `cage.run-plan/v0` document containing the selected runtime image, runtime network mode, graphics mode, selected suite entrypoint, optional host-file routing, optional runner-cache mount, launch command, container environment, and container argv without starting the container. `--entrypoint <id>` selects a named `entrypoints[]` item. `--network none|bridge|host` overrides the bundle's `runnerRuntime.network` intent for that run; if the manifest does not declare network intent, the selected run default is `none`, which emits `--net none` in the container argv so Win32 applications are air-gapped by default. Additional positional file paths are mounted read-only under `/mnt/cage-inputs/<n>` and passed to Wine as `Z:\mnt\cage-inputs\<n>\<name>` arguments.
 
-`--graphics headless` runs through the runtime image Xvfb entrypoint without publishing ports and is compatible with all network modes. `--graphics vnc` requires `--network bridge`; that is the only local container mode where Docker/Podman host port publishing can bind VNC/noVNC access to host loopback (`127.0.0.1:<vnc-port>:5900` and `127.0.0.1:<novnc-port>:6080`). The VNC helpers still listen inside the container, so bridge-mode VNC should not be attached to an untrusted/shared container network. VNC is rejected with `network: none` because the ports would be unusable, and with `network: host` because the container's unauthenticated `x11vnc`/`websockify` listeners could be exposed on host interfaces.
+`--graphics headless` runs through the universal catalog Selkies runtime and inherited `/init` without publishing ports and is compatible with all network modes. `--graphics selkies` requires `--network bridge`; that is the only local container mode where Docker/Podman host port publishing can bind Selkies HTTPS access to host loopback (`127.0.0.1:<selkies-port>:3001`). The Selkies HTTPS service listens inside the container, so bridge-mode sessions should not be attached to an untrusted/shared container network. Selkies is rejected with `network: none` because the published endpoint would be unusable, and with `network: host` because host-loopback publication would no longer bound exposure.
 
 The v0 runner mounts the bundle read-only at `/opt/cage/bundle`, copies `prefix/` to `/tmp/cage-prefix`, sets `WINEPREFIX` to that copy, then launches the application entrypoint. When a cached runner is mounted, it lives at `/opt/cage-runner` and is selected through `PATH`/`CAGE_RUNNER_BIN`. This preserves the sealed artifact while allowing Wine to mutate runtime state.
 

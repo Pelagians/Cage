@@ -1,200 +1,47 @@
 # Cage Container Architecture
 
-## Overview
+## One universal runtime image per catalog entry
 
-Cage runtime provider containers are the **OCI execution substrate** for Wine/Proton-family prefix construction. Each provider type maps to a Dockerfile that produces an OCI image containing:
+Every image selected by `runtime/catalog.json` inherits the digest-pinned LinuxServer Selkies Debian Trixie base. There is no parallel build/headless or desktop image family.
 
-- The Wine/Proton-family runtime binaries
-- Xvfb for headless display emulation (required by many Windows installers)
-- x11vnc, websockify, and noVNC assets for `cage run --graphics vnc`
-- Helper tools (winetricks, cabextract, 7zip, etc.)
-- The Cage entrypoint chain
+The nine catalog entries cover Wine Stable, Wine Staging, and UMU + GE-Proton. Each image:
 
-These images are the **base layer** on which Cage builds prefixes, installs dependencies, and seals the final execution bundle.
+- preserves LinuxServer `/init` and the s6 lifecycle;
+- starts the Wayland/Labwc session as `abc` after bounded root initialization;
+- includes Selkies HTTPS on container port `3001`;
+- includes internal PixelFlux support;
+- supports build, headless application, and visible interactive modes through environment-delivered supervised scripts;
+- contains no retired virtual-display or browser-proxy session contract.
 
-## Layered Model
-
-```
-┌──────────────────────────────────────────────┐
-│              Application Layer                │  ← OCI layer added by
-│  installed app + configured prefix            │    `cage build`
-├──────────────────────────────────────────────┤
-│              Dependency Layer                 │  ← OCI layer added by
-│  winetricks verbs, components, registry       │    builder pipeline
-├──────────────────────────────────────────────┤
-│              Prefix Foundation                │  ← OCI layer added by
-│  wineboot init, drive_c, registry hive        │    builder pipeline
-├──────────────────────────────────────────────┤
-│          Cage Runtime Base                │  ← This repo's container
-│ Wine/UMU+GE-Proton + Xvfb/VNC + tools/entrypoints  │    (Dockerfiles)
-├──────────────────────────────────────────────┤
-│          Base OS Layer                        │  ← Debian Bookworm Slim
-│  libc, libstdc++, basic runtime deps          │
-└──────────────────────────────────────────────┘
+```text
+recipe
+  -> one catalog runtime image
+  -> build script through /init + Labwc
+  -> sealed bundle
+  -> headless or visible run through the same image and /init
+  -> optional OCI application image inheriting the same /init
 ```
 
-## Runtime Catalog and Provider Images
+## Graphics modes
 
-`runtime/catalog.json` is the authoritative runtime catalog. It declares
-which provider/version pairs Cage supports, which Dockerfile/build arg
-builds each base image, which local tag is used for development, and which
-published GHCR image Forge should pull during normal builds.
+`runtime.wineGraphics: xwayland` selects Wine's X11 driver under Selkies' XWayland compatibility service. `wayland` selects Wine's native Wayland driver and is limited to Wine Stable and Wine Staging. UMU + GE-Proton uses XWayland until its native Wayland path is independently proven.
 
-GitHub Actions does **not** hardcode runtime versions. The workflow runs
-`python3 -m runtime.catalog --ci-matrix` and builds every catalog entry
-where `ciBuild` is true.
+Both `cage run --graphics headless` and `--graphics selkies` preserve `/init`. Headless mode does not publish a host port; visible mode requires bridge networking and binds `127.0.0.1:<port>:3001`.
 
-| Provider | Local Image | Published Image | Source | Build Arg |
-|---|---|---|---|---|
-| Wine Stable | `cage/wine:<version>` | `ghcr.io/pelagians/cage-wine:<version>` | Pinned WineHQ apt (`.deb`) | `WINE_PACKAGE_VERSION` |
-| Wine Staging | `cage/wine-staging:<version>` | `ghcr.io/pelagians/cage-wine-staging:<version>` | Pinned WineHQ apt (`.deb`) | `WINE_PACKAGE_VERSION` |
-| UMU + GE-Proton | `cage/umu-proton-ge:<tag>` | `ghcr.io/pelagians/cage-umu-proton-ge:<tag>` | GE-Proton GitHub release + UMU launcher | `GE_PROTON_TAG` |
+## Producer-owned CFW runtimes
 
+A CFW runtime is also one image. A producer release must bind its digest-pinned `wineImage` to:
 
-### Runner aliases and pinning
-
-The catalog may accept aliases such as `latest`, `stable`, `previous`,
-`legacy`, and `baseline`, but CI builds pinned versions only. Alias tags are
-published only from the pinned matrix entry that owns the alias to avoid
-parallel jobs racing on `:latest`. Resolved bundle metadata preserves both the
-recipe request and the concrete runtime selection.
-
-Current curated build matrix:
-
-| Provider | Pinned versions | Alias tags |
-| --- | --- | --- |
-| `wine` | `11.0`, `10.0`, `9.0` | `latest`, `stable`, `previous`, `legacy` |
-| `staging` | `11.10`, `11.9`, `11.0` | `latest`, `staging-latest`, `previous`, `baseline` |
-| `umu-proton-ge` | `GE-Proton11-1`, `GE-Proton10-34`, `GE-Proton9-27` | `latest`, `previous`, `legacy` |
-
-### Wine Stable / Staging
-
-Built from official WineHQ Debian packages pinned by exact package version. Architecture: amd64 + i386 (via multiarch). Dockerfiles pin the WineHQ metapackage plus the matching root, amd64, and i386 packages so older exact package pins resolve under apt 3/buildx.
-
-```
-Dockerfile structure:
-  Stage 1 (base)      — Debian Bookworm Slim + i386 multiarch
-  Stage 2 (winehq)    — WineHQ repo + winehq-stable/staging
-  Stage 3 (tools)     — winetricks, cabextract, 7zip, Xvfb
-  Stage 4 (final)     — entrypoint, env vars, workdir
+```yaml
+sessionContract: cage.selkies-wayland/v1
 ```
 
-### UMU + GE-Proton
+The removed `selkiesImage` sibling field is rejected. Existing immutable pre-Selkies CFW artifacts fail closed until CFW republishes them from the universal image.
 
-`cage/umu-proton-ge` is the active Proton-family runtime today. It installs
-UMU as the launcher (`umu-run`) and downloads the selected GE-Proton runner
-release from GitHub into `/opt/proton-ge`. Valve Proton is intentionally not an
-active v0 provider because upstream GitHub releases are source-only; add it
-later only with a real runnable binary acquisition path.
+## Kubernetes
 
-```
-Dockerfile structure:
-  Stage 1 (base)      — Debian Bookworm Slim + i386 multiarch where needed
-  Stage 2 (download)  — curl GE-Proton release tarball + optional checksum verify
-  Stage 3 (extract)   — tar to /opt/proton-ge
-  Stage 4 (UMU)       — install pinned umu-launcher and expose umu-run
-  Stage 5 (final)     — entrypoint, STEAM_COMPAT env, workdir
-```
+All generated application images inherit `/init`, so all exported Deployments retain the narrow LinuxServer initialization security context and `/config` volume. Visible Selkies export additionally requires exact live OCI verification, one replica, a ClusterIP service on `3001`, and default-deny ingress. Nereus owns admission and any authenticated ingress policy.
 
-## Entrypoint Chain
+## Live acceptance gates
 
-The entrypoint in every image is `xvfb-entrypoint.sh`:
-
-`xvfb-entrypoint.sh` is a Bash script, not a POSIX `/bin/sh` script, because
-it uses strict-mode `pipefail`. Keep the shebang aligned with that contract so
-Debian/Ubuntu images do not invoke it under `dash` and fail before Wine starts.
-
-1. Start Xvfb on `:99` (configurable via `DISPLAY`)
-2. Wait for X server readiness (up to 3 seconds)
-3. Set `WINEPREFIX`, `WINEDLLOVERRIDES`, `WINEARCH`
-4. Create prefix directory if `WINEFS=builder`
-5. Execute the provided command (builder or `cage run` launcher script)
-
-For `cage run --graphics vnc --network bridge`, the launcher script starts `x11vnc` against
-the Xvfb display and starts `websockify` for browser/noVNC access. Docker/Podman host port publishing binds access to host loopback; the helpers still listen inside the container, so do not attach bridge-mode VNC runs to untrusted/shared container networks.
-
-## Bind Mounts and SELinux
-
-On SELinux-enforcing hosts such as Fedora/myOS, rootless Podman bind mounts need
-a shared SELinux label option. Cage emits Podman mounts with `z` while
-keeping Docker syntax unchanged:
-
-- writable build bundle: `HOST:/opt/cage:z`
-- read-only workspace: `HOST:/workspace:ro,z`
-- read-only run bundle: `HOST:/opt/cage/bundle:ro,z`
-- read-only cached runner: `HOST:/opt/cage-runner:ro,z`
-
-Without this label, the container can see a bind-mounted path such as
-`/opt/cage/build/run.sh` but fail to read it with `Permission denied`.
-
-## CLI Integration
-
-```bash
-# List available build definitions
-cage container list
-
-# Build current Wine Stable through the mutable alias
-cage container build wine latest
-
-# Build and push a pinned Wine Stable runtime
-cage container build wine 11.0 --engine docker --registry ghcr.io/myorg --push
-
-# Get the resolved published OCI image reference for a provider+alias
-cage container ref wine latest
-# → ghcr.io/pelagians/cage-wine:11.0
-
-# Plan a build — includes resolved OCI image
-cage plan examples/minimal.cage.json
-
-# Build an execution bundle (dry-run)
-cage build examples/minimal.cage.json --dry-run
-
-# Inspect and verify bundle contract before run/export/kube generation
-cage bundle inspect dist/notepad-plus-plus-portable-0.1.0
-cage bundle verify dist/notepad-plus-plus-portable-0.1.0
-
-# Preview and execute a verified bundle
-cage run --dry-run --graphics headless dist/notepad-plus-plus-portable-0.1.0
-cage run --graphics headless dist/notepad-plus-plus-portable-0.1.0
-cage run --graphics vnc --network bridge --vnc-port 5900 --novnc-port 6080 dist/notepad-plus-plus-portable-0.1.0
-
-# Export the verified bundle as a runnable application OCI image
-cage export oci dist/notepad-plus-plus-portable-0.1.0 \
-  --tag ghcr.io/pelagians/cage-app-notepad-plus-plus:0.1.0 \
-  --dry-run
-cage export oci dist/notepad-plus-plus-portable-0.1.0 \
-  --tag ghcr.io/pelagians/cage-app-notepad-plus-plus:0.1.0
-```
-
-## Runtime Binding
-
-When a manifest is resolved, `RuntimeBinding.oci_image` contains the published GHCR image reference and `RuntimeBinding.local_oci_image` contains the local developer tag. Both are produced from `runtime/catalog.json` through `runtime/providers.py`.
-
-The `plan` and `build` CLI commands automatically resolve the catalog-backed OCI image reference and include it in their output. `build` also writes `metadata/graph.json` so later `run`/OCI/kube commands can consume the resolved runtime and launch contract without reinterpreting the manifest. `cage run` consumes that graph, verifies exact runtime consistency, mounts the bundle read-only, copies the prefix to an ephemeral runtime prefix, and launches through the catalog-resolved runtime image.
-
-For real builds, Cage streams container output to stderr as it arrives and
-persists the same output to `logs/build.log`. Stdout remains reserved for
-machine-readable command results such as `cage compat test` JSON, so shell
-pipelines like `| tee result.json` stay valid while the operator still sees
-long-running Wine/winetricks/installer progress.
-
-`cage export oci` also consumes the graph. It uses `runnerRuntime.image` as the application image base, writes `metadata/artifact.json` into a staged bundle copy, adds `cage-app-launch`, and builds a runnable image whose mutable paths are `/var/lib/cage/state` and `/exports`.
-
-## Consumption by VIC (future)
-
-When VIC consumes Cage artifacts:
-
-1. VIC pulls the catalog-resolved published base image, e.g. `ghcr.io/pelagians/cage-wine:<resolved-version>`
-2. VIC pulls the Cage-produced bundle OCI image (with prefix + app layer)
-3. VIC launches the combined image with the VIC runtime contract
-4. The container starts with Xvfb, enters the entrypoint, and VIC interacts via STDIO
-
-Cage produces sealed, immutable OCI artifacts. VIC handles orchestration and lifecycle.
-
-## Building Without Docker
-
-The container images are optional during development. The `cage build --dry-run` mode creates the bundle contract without requiring any container runtime. Real prefix construction requires the container images to be built or pulled.
-
-For CI environments without Docker, use `podman` (Docker-compatible CLI) or `buildah` for rootless builds.
-
-See `container/build.sh` for the complete build automation script.
+CI must build all nine image entries. Runtime acceptance must prove `/init`, s6, `abc` ownership, build completion receipts, headless completion, Selkies HTTPS, XWayland for all providers, native Wayland for Wine/ Staging, PixelFlux, reconnect, and a republished CFW/Notepad++ flow.

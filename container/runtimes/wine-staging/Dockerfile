@@ -1,61 +1,59 @@
-# syntax=docker/dockerfile:1
-# Cage Wine Staging OCI Base
-#
-# Produces the cage/wine-staging:<version> image — Wine Staging
-# variant with the staging patchset applied on top of the stable release.
-#
-# Build:
-#   docker build \
-#     --build-arg WINE_PACKAGE_VERSION=11.10~bookworm-1 \
-#     -t cage/wine-staging:11.10 \
-#     -f container/providers/wine-staging/Dockerfile .
-
-ARG WINE_PACKAGE_VERSION=11.10~bookworm-1
-
-# ---- Stage 1: Base system ----
-FROM debian:bookworm-slim AS base
-
+# syntax=docker/dockerfile:1.7
+# Universal Cage Wine Staging image: build, headless, and Selkies session modes.
+ARG SELKIES_BASE_IMAGE=ghcr.io/linuxserver/baseimage-selkies:debiantrixie@sha256:ac7fd6d182238b4a99e66554c5e75be48a714e2a0c9da81bd18e171ff9ba3dd5
+ARG WINE_PACKAGE_VERSION=11.10~trixie-1
+FROM ${SELKIES_BASE_IMAGE}
+ARG WINE_PACKAGE_VERSION
+ARG WINETRICKS_COMMIT=5a59ea07513b24093bd90fad943ecf9543cf05bc
+ARG WINETRICKS_SHA256=f35c29737ca08a583569e6a3752d52fbe23333c5acfad5f16c4177d25eaf3f4b
 RUN set -eux; \
     dpkg --add-architecture i386; \
-    apt-get update -qq; \
-    apt-get install -y -qq --no-install-recommends \
-        ca-certificates curl gnupg \
-        xvfb x11-utils xauth x11vnc websockify novnc \
-        cabextract p7zip-full unzip bzip2 xz-utils \
-        fontconfig python3 \
-    ; \
-    rm -rf /var/lib/apt/lists/*
+    apt-get update -o Acquire::Retries=5; \
+    apt-get install --no-install-recommends -y ca-certificates curl gnupg cabextract p7zip-full unzip bzip2 xz-utils fontconfig python3; \
+    install -d -m 0755 /etc/apt/keyrings; \
+    curl -fsSL https://dl.winehq.org/wine-builds/winehq.key | gpg --dearmor -o /etc/apt/keyrings/winehq-archive.key; \
+    curl -fsSL https://dl.winehq.org/wine-builds/debian/dists/trixie/winehq-trixie.sources -o /etc/apt/sources.list.d/winehq.sources; \
+    apt-get update -o Acquire::Retries=5; \
+    apt-get install --no-install-recommends -y \
+      "winehq-staging=${WINE_PACKAGE_VERSION}" \
+      "wine-staging=${WINE_PACKAGE_VERSION}" \
+      "wine-staging-amd64=${WINE_PACKAGE_VERSION}" \
+      "wine-staging-i386:i386=${WINE_PACKAGE_VERSION}"; \
+    curl -fsSL "https://raw.githubusercontent.com/Winetricks/winetricks/${WINETRICKS_COMMIT}/src/winetricks" -o /usr/local/bin/winetricks; \
+    printf '%s  %s\n' "${WINETRICKS_SHA256}" /usr/local/bin/winetricks | sha256sum -c -; \
+    chmod 0755 /usr/local/bin/winetricks; \
+    wine --version; winetricks --version
+ENV CAGE_ROOT=/opt/cage \
+    WINEPREFIX=/opt/cage/prefix \
+    WINEARCH=win64 \
+    WINEDEBUG=-all \
+    START_DOCKER=false \
+    PIXELFLUX_WAYLAND=true \
+    RESTART_APP=false \
+    CAGE_WINE_GRAPHICS=xwayland \
+    PATH=/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# ---- Stage 2: WineHQ staging install ----
-FROM base AS wine-install
-ARG WINE_PACKAGE_VERSION
+LABEL org.pelagian.cage.session-contract="cage.selkies-wayland/v1"
 
-RUN set -eux; \
-    curl -fsSL https://dl.winehq.org/wine-builds/winehq.key | \
-        gpg --dearmor -o /etc/apt/keyrings/winehq-archive.key; \
-    DISTRO=$(dpkg-status -f '${VERSION_CODENAME}' /etc/os-release 2>/dev/null || echo "bookworm"); \
-    curl -fsSL "https://dl.winehq.org/wine-builds/debian/dists/${DISTRO}/winehq-${DISTRO}.sources" \
-        -o /etc/apt/sources.list.d/winehq.sources; \
-    apt-get update -qq; \
-    apt-get install -y -qq --no-install-recommends \
-        "winehq-staging=${WINE_PACKAGE_VERSION}" \
-        "wine-staging=${WINE_PACKAGE_VERSION}" \
-        "wine-staging-amd64=${WINE_PACKAGE_VERSION}" \
-        "wine-staging-i386:i386=${WINE_PACKAGE_VERSION}" \
-    ; \
-    curl -fsSL "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks" \
-        -o /usr/local/bin/winetricks; \
-    chmod +x /usr/local/bin/winetricks; \
-    wine --version; \
-    winetricks --version; \
-    rm -rf /var/lib/apt/lists/*
-
-FROM wine-install
-ENV CAGE_ROOT=/opt/cage WINEPREFIX=/opt/cage/prefix WINEARCH=win64 \
-    WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" DISPLAY=:99
-COPY container/common/xvfb-entrypoint.sh /usr/local/bin/xvfb-entrypoint.sh
+COPY container/selkies/root/ /
 COPY container/common/wine-env.sh /opt/cage/common/wine-env.sh
-RUN chmod +x /usr/local/bin/xvfb-entrypoint.sh && fc-cache -fv 2>/dev/null || true
+COPY runtime/pixelflux.py /usr/local/bin/cage-pixelflux
+RUN set -eux; \
+    chmod 0755 /defaults/autostart_wayland \
+      /custom-cont-init.d/10-cage-session \
+      /etc/s6-overlay/s6-rc.d/svc-cage-shutdown/run \
+    /etc/s6-overlay/s6-rc.d/svc-cage-task/run \
+      /usr/local/libexec/cage-select-wine-graphics \
+      /usr/local/bin/cage-pixelflux; \
+    bash -n /defaults/autostart_wayland; \
+    bash -n /custom-cont-init.d/10-cage-session; \
+    bash -n /usr/local/libexec/cage-select-wine-graphics; \
+    python3 -m py_compile /usr/local/bin/cage-pixelflux; \
+    test -x /lsiopy/bin/selkies; \
+    test -f /defaults/labwc.xml; \
+    find /opt /usr/lib -name winewayland.so -print -quit | grep -q .; \
+    find /opt /usr/lib -name winex11.so -print -quit | grep -q .; \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /opt/cage
-ENTRYPOINT ["/usr/local/bin/xvfb-entrypoint.sh"]
-CMD ["/bin/bash"]
+EXPOSE 3001

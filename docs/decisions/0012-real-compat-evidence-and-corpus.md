@@ -45,4 +45,4 @@ This is not automatic runtime selection, not a global compatibility database, an
 
 ## Review triggers
 
-Review this decision when adding remote source fetching/cache, corpus result aggregation, runtime recommendation logic, VM fallback, or VIC-managed compatibility testing.
+Review this decision when adding remote source fetching/cache, corpus result aggregation, runtime recommendation logic, VM fallback, or downstream-managed compatibility testing.

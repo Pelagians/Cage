@@ -21,28 +21,28 @@
       "notes": "Wine Stable OCI base \u2014 built from pinned WineHQ packages.",
       "versions": {
         "11.0": {
-          "buildValue": "11.0.0.0~bookworm-1",
+          "buildValue": "11.0.0.0~trixie-1",
           "tag": "11.0",
           "runnerVersion": "11.0",
-          "packageVersion": "11.0.0.0~bookworm-1",
+          "packageVersion": "11.0.0.0~trixie-1",
           "channel": "stable",
           "ciBuild": true,
           "runtimeUsable": true
         },
         "10.0": {
-          "buildValue": "10.0.0.0~bookworm-1",
+          "buildValue": "10.0.0.0~trixie-1",
           "tag": "10.0",
           "runnerVersion": "10.0",
-          "packageVersion": "10.0.0.0~bookworm-1",
+          "packageVersion": "10.0.0.0~trixie-1",
           "channel": "previous",
           "ciBuild": true,
           "runtimeUsable": true
         },
         "9.0": {
-          "buildValue": "9.0.0.0~bookworm-1",
+          "buildValue": "9.0.0.0~trixie-1",
           "tag": "9.0",
           "runnerVersion": "9.0",
-          "packageVersion": "9.0.0.0~bookworm-1",
+          "packageVersion": "9.0.0.0~trixie-1",
           "channel": "legacy",
           "ciBuild": true,
           "runtimeUsable": true
@@ -68,28 +68,28 @@
       "notes": "Wine Staging OCI base \u2014 built from pinned WineHQ staging packages.",
       "versions": {
         "11.10": {
-          "buildValue": "11.10~bookworm-1",
+          "buildValue": "11.10~trixie-1",
           "tag": "11.10",
           "runnerVersion": "11.10",
-          "packageVersion": "11.10~bookworm-1",
+          "packageVersion": "11.10~trixie-1",
           "channel": "staging-latest",
           "ciBuild": true,
           "runtimeUsable": true
         },
         "11.9": {
-          "buildValue": "11.9~bookworm-1",
+          "buildValue": "11.9~trixie-1",
           "tag": "11.9",
           "runnerVersion": "11.9",
-          "packageVersion": "11.9~bookworm-1",
+          "packageVersion": "11.9~trixie-1",
           "channel": "previous",
           "ciBuild": true,
           "runtimeUsable": true
         },
         "11.0": {
-          "buildValue": "11.0.0~bookworm-1",
+          "buildValue": "11.0.0~trixie-1",
           "tag": "11.0",
           "runnerVersion": "11.0",
-          "packageVersion": "11.0.0~bookworm-1",
+          "packageVersion": "11.0.0~trixie-1",
           "channel": "baseline",
           "ciBuild": true,
           "runtimeUsable": true

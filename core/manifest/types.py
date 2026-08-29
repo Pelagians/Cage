@@ -8,7 +8,7 @@ from .constants import (
     RUNTIME_FIELDS, LAUNCH_FIELDS,
     DEPENDENCY_FIELDS, INSTALL_FIELDS, FILESYSTEM_FIELDS,
     SOURCE_FIELDS, ENTRYPOINT_FIELDS, FILE_ASSOCIATION_FIELDS,
-    ALLOWED_RUNTIME_PROVIDERS, ALLOWED_RUNTIME_NETWORK_MODES,
+    ALLOWED_RUNTIME_PROVIDERS, ALLOWED_RUNTIME_NETWORK_MODES, ALLOWED_WINE_GRAPHICS_MODES,
     ALLOWED_DEPENDENCY_KINDS, ALLOWED_INSTALL_KINDS,
     ALLOWED_SOURCE_TYPES, ALLOWED_SOURCE_POLICIES,
     ALLOWED_FILE_MAPPING_MODES, CHOCO_ARG_RE,
@@ -25,6 +25,7 @@ class RuntimeSpec:
     digest: str | None = None
     runner: str | None = None
     network: str = "none"
+    wine_graphics: str = "xwayland"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]):
@@ -36,6 +37,11 @@ class RuntimeSpec:
         network = _optional_str(data, "network") or "none"
         if network not in ALLOWED_RUNTIME_NETWORK_MODES:
             raise ManifestError("runtime.network must be one of: " + ", ".join(sorted(ALLOWED_RUNTIME_NETWORK_MODES)))
+        wine_graphics = _optional_str(data, "wineGraphics") or "xwayland"
+        if wine_graphics not in ALLOWED_WINE_GRAPHICS_MODES:
+            raise ManifestError("runtime.wineGraphics must be one of: " + ", ".join(sorted(ALLOWED_WINE_GRAPHICS_MODES)))
+        if wine_graphics == "wayland" and provider not in {"wine", "staging"}:
+            raise ManifestError("runtime.wineGraphics native Wayland is supported only by wine and staging providers")
         return cls(
             provider,
             version,
@@ -44,6 +50,7 @@ class RuntimeSpec:
             _optional_str(data, "digest"),
             _optional_str(data, "runner"),
             network,
+            wine_graphics,
         )
 
     def to_dict(self):
@@ -55,6 +62,7 @@ class RuntimeSpec:
             "digest": self.digest,
             "runner": self.runner,
             "network": self.network,
+            "wineGraphics": self.wine_graphics,
         })
 
 

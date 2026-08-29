@@ -37,6 +37,13 @@ PY
 smoke_feed="$(winepath -w "$smoke_feed_host")"
 
 # Remove any state from an interrupted prior proof before measuring this run.
+choco_working_directory="$wine_prefix/drive_c"
+test -d "$choco_working_directory"
+cd "$choco_working_directory"
+# Selkies desktop interposers are native Linux session concerns and include
+# 64-bit-only libraries that must not be inherited by Wine's 32-bit children.
+unset LD_PRELOAD
+
 set +e
 timeout "${CAGE_CHOCOLATEY_SMOKE_TIMEOUT:-600s}" "${choco_package_launcher[@]}" uninstall \
   cage-chocolatey-smoke --source "$smoke_feed" --limit-output --no-progress \

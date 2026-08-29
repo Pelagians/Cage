@@ -23,7 +23,7 @@ _WINE_IMAGE_RE = re.compile(r"^ghcr\.io/pelagians/cage-wine@sha256:[0-9a-f]{64}$
 _RUNTIME_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _WINE_VERSION_RE = re.compile(r"^wine-[0-9]+(?:\.[0-9]+){1,2}$")
 _UNSAFE_SOURCE_RE = re.compile(r"[\x00-\x1f\x7f$`';&|<>]")
-_DEFAULT_CFW_RUNTIME_ASSET = "cfw-runtime-v1.0.3-wine-11.0.json"
+_DEFAULT_CFW_RUNTIME_ASSET = "cfw-runtime-v1.0.5-wine-11.0.json"
 DEFAULT_CFW_RUNTIME_ARTIFACT: dict[str, Any] = json.loads(load_asset(_DEFAULT_CFW_RUNTIME_ASSET))
 DEFAULT_CFW_RUNTIME_PROFILE_ID = DEFAULT_CFW_RUNTIME_ARTIFACT["id"]
 CFW_RUNTIME_PROVIDER = "cfw-chocolatey-runtime"
@@ -49,6 +49,7 @@ _RUNTIME_FIELDS = {
     "wineImage",
     "wineVersions",
     "environment",
+    "sessionContract",
 }
 
 
@@ -173,6 +174,11 @@ class ChocolateyModule(ModuleBase):
         wine_versions = runtime.get("wineVersions")
         if wine_versions != ["wine-11.0"]:
             raise ModuleError("Chocolatey Phase 1 supports exactly Wine 11 (wine-11.0)")
+        session_contract = runtime.get("sessionContract")
+        if session_contract is not None and session_contract != "cage.selkies-wayland/v1":
+            raise ModuleError(
+                "chocolatey runtimeArtifact.sessionContract must be cage.selkies-wayland/v1"
+            )
         environment = runtime.get("environment")
         if environment != {"WINEDLLOVERRIDES": ""}:
             raise ModuleError(
@@ -188,6 +194,9 @@ class ChocolateyModule(ModuleBase):
             "wineImage": runtime["wineImage"],
             "wineVersions": ["wine-11.0"],
             "environment": {"WINEDLLOVERRIDES": ""},
+            **({
+                "sessionContract": session_contract,
+            } if session_contract else {}),
         }
 
     def build(self) -> list[BuildStep]:

@@ -24,18 +24,36 @@ python3 -m cage build recipes/notepadplusplus.cage.yaml \
 python3 -m cage bundle verify dist/notepadplusplus-0.1.0
 ```
 
-## Run with noVNC
+## Run with Selkies
 
 ```bash
 python3 -m cage run dist/notepadplusplus-0.1.0 \
-  --graphics vnc \
+  --graphics selkies \
   --network bridge
 ```
 
 Then open:
 
 ```text
-http://127.0.0.1:6080
+https://127.0.0.1:3001
 ```
 
 If the actual Chocolatey package installs Notepad++ somewhere other than `C:/Program Files/Notepad++/notepad++.exe`, update `launch.entrypoint` after collecting the install result.
+
+
+## Selkies migration acceptance status
+
+The recipe and Chocolatey module remain the canonical Notepad++ acceptance path. The currently pinned producer-owned CFW runtime does **not** declare `sessionContract: cage.selkies-wayland/v1`, so Cage fails closed before launch or OCI application export rather than pretending that image inherits `/init`.
+
+Required evidence after CFW publishes and Cage pins a qualified runtime:
+
+| Check | XWayland | Native Wine Wayland |
+| --- | --- | --- |
+| CFW prepared-prefix import and package receipt verification | NOT RUN | NOT RUN |
+| Notepad++ process and visible window | NOT RUN | NOT RUN |
+| PixelFlux PNG screenshot | NOT RUN | NOT RUN |
+| Bounded click/type fallback | NOT RUN | NOT RUN |
+| Selkies HTTPS reconnect | NOT RUN | NOT RUN |
+| Clean bounded shutdown | NOT RUN | NOT RUN |
+
+XWayland success must not be reported as native-Wayland success. The producer image release, updated immutable digest, and live matrix are merge gates for declaring the migration complete.

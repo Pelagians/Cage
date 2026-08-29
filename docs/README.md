@@ -53,6 +53,8 @@ Architecture Decision Records (ADRs) in chronological order:
 - [Legacy Installer Debugging Backlog](legacy-installer-debugging-backlog.md)
 - [Production Hardening Roadmap](production-hardening-roadmap.md)
 
-## VIC Integration
+## Nereus Integration
 
-- [VIC Boundary](vic-boundary.md) - How Cage fits into VIC ecosystem
+- [Nereus Boundary](nereus-boundary.md) - How Cage fits into Nereus ecosystem
+
+- [ADR 0025: Selkies Wayland application sessions](decisions/0025-selkies-wayland-runtime.md)

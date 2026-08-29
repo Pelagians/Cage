@@ -1,0 +1,18 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+case "${CAGE_WINE_GRAPHICS:-xwayland}" in
+  wayland) driver=wayland ;;
+  xwayland) driver=x11 ;;
+  *) echo "unsupported CAGE_WINE_GRAPHICS: ${CAGE_WINE_GRAPHICS}" >&2; exit 64 ;;
+esac
+
+if ! command -v wine >/dev/null 2>&1; then
+  if [[ "$driver" == x11 ]]; then
+    exit 0
+  fi
+  echo "native Wayland selection requires a Wine provider with the wine helper on PATH" >&2
+  exit 69
+fi
+
+wine reg add 'HKCU\Software\Wine\Drivers' /v Graphics /t REG_SZ /d "$driver" /f >/dev/null

@@ -34,6 +34,7 @@ def _cfw_runtime():
         "manifestSha256": "a" * 64,
         "wineImage": "ghcr.io/pelagians/cage-wine@sha256:" + "d" * 64,
         "wineVersions": ["wine-11.0"], "environment": {"WINEDLLOVERRIDES": ""},
+        "sessionContract": "cage.selkies-wayland/v1",
     }
 
 
@@ -62,6 +63,7 @@ class RunnerExecutionBuildTests(unittest.TestCase):
                         "manifestSha256": "a" * 64,
                         "wineImage": "ghcr.io/pelagians/cage-wine@sha256:" + "d" * 64,
                         "wineVersions": ["wine-11.0"], "environment": {"WINEDLLOVERRIDES": ""},
+                        "sessionContract": "cage.selkies-wayland/v1",
                     },
                 },
             }],
@@ -120,6 +122,7 @@ class RunnerExecutionBuildTests(unittest.TestCase):
                         "manifestSha256": "a" * 64,
                         "wineImage": pinned_image,
                         "wineVersions": ["wine-11.0"], "environment": {"WINEDLLOVERRIDES": ""},
+                        "sessionContract": "cage.selkies-wayland/v1",
                     },
                 },
             }],

@@ -218,7 +218,7 @@ class RealCompatibilityEvidenceTests(unittest.TestCase):
         self.assertTrue(payload["dryRun"])
 
 
-    def test_cli_compat_vnc_requires_and_accepts_bridge_network(self):
+    def test_cli_compat_selkies_requires_and_accepts_bridge_network(self):
         repo = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -237,7 +237,7 @@ class RealCompatibilityEvidenceTests(unittest.TestCase):
                     "--mode",
                     "dry-run",
                     "--graphics",
-                    "vnc",
+                    "selkies",
                     "--network",
                     "bridge",
                     "--engine",
@@ -252,7 +252,7 @@ class RealCompatibilityEvidenceTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         payload = json.loads(proc.stdout)
         self.assertEqual(payload["classification"], "dry-run-planned")
-        self.assertEqual(payload["runPlan"]["graphics"]["mode"], "vnc")
+        self.assertEqual(payload["runPlan"]["graphics"]["mode"], "selkies")
         self.assertEqual(payload["runPlan"]["runtime"]["network"], "bridge")
         self.assertEqual(payload["runPlan"]["container"]["network"], "bridge")
 
