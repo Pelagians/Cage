@@ -1,11 +1,18 @@
 #!/bin/bash
-set -Eeuo pipefail
 
-# Labwc reads this file through a shell, so its shebang cannot import the s6
-# container environment. Re-enter once through with-contenv in the same session.
-if [[ "${CAGE_CONTENV_LOADED:-false}" != true ]]; then
-  exec /usr/bin/with-contenv env CAGE_CONTENV_LOADED=true bash /config/.config/labwc/autostart
+# Labwc runs this file as `sh ~/.config/labwc/autostart`, so the preamble must
+# be POSIX shell. Import the s6/container environment, then restore the client
+# session selected by Labwc before entering the Bash-only launch path.
+if [ "${CAGE_CONTENV_LOADED:-false}" != true ]; then
+  exec /usr/bin/with-contenv env \
+    CAGE_CONTENV_LOADED=true \
+    DISPLAY="${DISPLAY:-}" \
+    WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
+    XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}" \
+    bash /config/.config/labwc/autostart
 fi
+
+set -Eeuo pipefail
 
 run_cage_script() {
   local encoded="$1" script="$2" status_file="${3:-}"

@@ -13,7 +13,7 @@ install -d -o abc -g abc -m 0755 \
   /tmp/cage-prefix \
   /exports
 install -o abc -g abc -m 0755 \
-  /defaults/autostart_wayland \
+  /defaults/autostart \
   /config/.config/labwc/autostart
 chown abc:abc /config /config/.config /config/.config/labwc \
   /var/lib/cage /var/lib/cage/state /opt/cage/logs /tmp/cage-prefix /exports

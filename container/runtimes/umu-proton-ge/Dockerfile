@@ -51,13 +51,13 @@ COPY container/selkies/root/ /
 COPY container/common/wine-env.sh /opt/cage/common/wine-env.sh
 COPY runtime/pixelflux.py /usr/local/bin/cage-pixelflux
 RUN set -eux; \
-    chmod 0755 /defaults/autostart_wayland \
+    chmod 0755 /defaults/autostart \
       /custom-cont-init.d/10-cage-session \
       /etc/s6-overlay/s6-rc.d/svc-cage-shutdown/run \
     /etc/s6-overlay/s6-rc.d/svc-cage-task/run \
       /usr/local/libexec/cage-select-wine-graphics \
       /usr/local/bin/cage-pixelflux; \
-    bash -n /defaults/autostart_wayland; \
+    bash -n /defaults/autostart; \
     bash -n /custom-cont-init.d/10-cage-session; \
     bash -n /usr/local/libexec/cage-select-wine-graphics; \
     python3 -m py_compile /usr/local/bin/cage-pixelflux; \

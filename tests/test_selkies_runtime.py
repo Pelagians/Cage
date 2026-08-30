@@ -306,12 +306,23 @@ class SelkiesImageContractTests(unittest.TestCase):
             self.assertIn(digest, text)
 
     def test_selkies_overlay_defines_labwc_and_s6_startup(self):
-        autostart = ROOT / "container/selkies/root/defaults/autostart_wayland"
+        autostart = ROOT / "container/selkies/root/defaults/autostart"
         init = ROOT / "container/selkies/root/custom-cont-init.d/10-cage-session"
         labwc = ROOT / "container/selkies/root/defaults/labwc.xml"
         self.assertTrue(autostart.is_file())
         self.assertTrue(init.is_file())
         self.assertTrue(labwc.is_file())
+        init_text = init.read_text(encoding="utf-8")
+        self.assertIn("/defaults/autostart", init_text)
+        self.assertNotIn("autostart_wayland", init_text)
+        for rel in (
+            "container/runtimes/wine/Dockerfile",
+            "container/runtimes/wine-staging/Dockerfile",
+            "container/runtimes/umu-proton-ge/Dockerfile",
+        ):
+            dockerfile_text = (ROOT / rel).read_text(encoding="utf-8")
+            self.assertIn("/defaults/autostart", dockerfile_text)
+            self.assertNotIn("autostart_wayland", dockerfile_text)
         selector = (
             ROOT / "container/selkies/root/usr/local/libexec/cage-select-wine-graphics"
         )
@@ -320,8 +331,8 @@ class SelkiesImageContractTests(unittest.TestCase):
         self.assertIn("Graphics", selector.read_text(encoding="utf-8"))
         self.assertIn("CAGE_LAUNCH_SCRIPT_B64", autostart.read_text(encoding="utf-8"))
 
-    def test_labwc_shell_reexec_imports_container_environment_before_launch(self):
-        source = (ROOT / "container/selkies/root/defaults/autostart_wayland").read_text(
+    def test_labwc_shell_reexec_preserves_inner_session_environment(self):
+        source = (ROOT / "container/selkies/root/defaults/autostart").read_text(
             encoding="utf-8"
         )
         with tempfile.TemporaryDirectory() as tmp:
@@ -329,9 +340,14 @@ class SelkiesImageContractTests(unittest.TestCase):
             autostart = root / "autostart"
             launch = root / "cage-launch.sh"
             marker = root / "launched"
+            outer_marker = root / "outer"
             with_contenv = root / "with-contenv"
             with_contenv.write_text(
                 "#!/bin/bash\n"
+                "export DISPLAY=:1 WAYLAND_DISPLAY=wayland-1 "
+                "XDG_RUNTIME_DIR=/config/.XDG\n"
+                "printf '%s|%s|%s' \"$DISPLAY\" \"$WAYLAND_DISPLAY\" "
+                "\"$XDG_RUNTIME_DIR\" > \"$TEST_OUTER_MARKER\"\n"
                 "export CAGE_LAUNCH_SCRIPT_B64=\"$TEST_CAGE_LAUNCH_SCRIPT_B64\"\n"
                 "exec \"$@\"\n",
                 encoding="utf-8",
@@ -344,15 +360,26 @@ class SelkiesImageContractTests(unittest.TestCase):
                 encoding="utf-8",
             )
             encoded = base64.b64encode(
-                f"printf launched > {marker}\n".encode()
+                (
+                    f"printf '%s|%s|%s' \"$DISPLAY\" \"$WAYLAND_DISPLAY\" "
+                    f"\"$XDG_RUNTIME_DIR\" > {marker}\n"
+                ).encode()
             ).decode("ascii")
             environment = dict(os.environ)
             environment.pop("CAGE_LAUNCH_SCRIPT_B64", None)
             environment.pop("CAGE_CONTENV_LOADED", None)
-            environment["TEST_CAGE_LAUNCH_SCRIPT_B64"] = encoded
+            environment.update(
+                {
+                    "DISPLAY": ":0",
+                    "WAYLAND_DISPLAY": "wayland-0",
+                    "XDG_RUNTIME_DIR": "/config/.XDG",
+                    "TEST_CAGE_LAUNCH_SCRIPT_B64": encoded,
+                    "TEST_OUTER_MARKER": str(outer_marker),
+                }
+            )
 
             result = subprocess.run(
-                ["bash", str(autostart)],
+                ["sh", str(autostart)],
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -361,7 +388,14 @@ class SelkiesImageContractTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(marker.read_text(encoding="utf-8"), "launched")
+            self.assertEqual(
+                outer_marker.read_text(encoding="utf-8"),
+                ":1|wayland-1|/config/.XDG",
+            )
+            self.assertEqual(
+                marker.read_text(encoding="utf-8"),
+                ":0|wayland-0|/config/.XDG",
+            )
 
     def test_container_ci_smokes_actual_labwc_environment_import(self):
         workflow = (ROOT / ".github/workflows/containers.yml").read_text(
@@ -373,9 +407,9 @@ class SelkiesImageContractTests(unittest.TestCase):
         self.assertIn("labwc-environment-imported", workflow)
 
     def test_build_execution_is_a_native_s6_task_not_labwc_autostart(self):
-        autostart = (
-            ROOT / "container/selkies/root/defaults/autostart_wayland"
-        ).read_text(encoding="utf-8")
+        autostart = (ROOT / "container/selkies/root/defaults/autostart").read_text(
+            encoding="utf-8"
+        )
         task = ROOT / "container/selkies/root/etc/s6-overlay/s6-rc.d/svc-cage-task/run"
         registration = (
             ROOT
@@ -405,9 +439,9 @@ class SelkiesImageContractTests(unittest.TestCase):
         self.assertIn("cage.selkies-wayland/v1", text)
 
     def test_abc_requests_root_supervisor_shutdown_through_state_receipt(self):
-        autostart = (
-            ROOT / "container/selkies/root/defaults/autostart_wayland"
-        ).read_text(encoding="utf-8")
+        autostart = (ROOT / "container/selkies/root/defaults/autostart").read_text(
+            encoding="utf-8"
+        )
         watcher = (
             ROOT / "container/selkies/root/etc/s6-overlay/s6-rc.d/svc-cage-shutdown/run"
         )
