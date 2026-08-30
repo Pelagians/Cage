@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 import shlex
 import shutil
@@ -116,6 +117,8 @@ def build_run_plan(
     if mode == "headless" and wine_graphics == "wayland":
         raise RunError("native Wine Wayland requires graphics selkies")
     environment = _container_environment(mode, wine_graphics, script)
+    environment["PUID"] = str(os.getuid())
+    environment["PGID"] = str(os.getgid())
     environment.update(dict(runtime.get("environment") or {}))
     environment.update(compatibility_env)
     if runner_cache and runner_cache.get("status") == "present":
@@ -337,7 +340,10 @@ def _container_argv(
     network: str,
     file_mounts: list[str] | None = None,
 ) -> list[str]:
-    argv = [engine, "run", "--rm", "--net", network]
+    argv = [engine, "run", "--rm"]
+    if engine == "podman":
+        argv.extend(["--userns=keep-id", "--user", "0:0"])
+    argv.extend(["--net", network])
     if container_name:
         argv.extend(["--name", container_name])
     argv.extend(["-v", _volume_mount(bundle, BUNDLE_MOUNT, engine=engine, read_only=True)])

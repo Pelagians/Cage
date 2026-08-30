@@ -689,6 +689,8 @@ def execute_inside_container(
     cmd = [
         engine, "run", "--rm",
     ]
+    if engine == "podman":
+        cmd.extend(["--userns=keep-id", "--user", "0:0"])
     build_network = getattr(getattr(manifest, "build", None), "network", "none") or "none"
     if build_network != "none":
         cmd.extend(["--net", build_network])
