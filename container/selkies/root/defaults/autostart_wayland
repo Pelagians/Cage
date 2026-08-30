@@ -1,6 +1,12 @@
 #!/bin/bash
 set -Eeuo pipefail
 
+# Labwc reads this file through a shell, so its shebang cannot import the s6
+# container environment. Re-enter once through with-contenv in the same session.
+if [[ "${CAGE_CONTENV_LOADED:-false}" != true ]]; then
+  exec /usr/bin/with-contenv env CAGE_CONTENV_LOADED=true bash /config/.config/labwc/autostart
+fi
+
 run_cage_script() {
   local encoded="$1" script="$2" status_file="${3:-}"
   printf '%s' "$encoded" | base64 -d > "$script"

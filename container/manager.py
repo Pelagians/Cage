@@ -4,6 +4,7 @@ Uses runtime/catalog.json as the source of truth for available runtime
 container builds and image references.
 """
 from __future__ import annotations
+import shutil
 import subprocess
 from dataclasses import dataclass
 from typing import Any
@@ -12,6 +13,23 @@ from runtime.catalog import (
     list_catalog_providers,
     resolve_catalog_version,
 )
+
+
+def normalize_engine(engine: str) -> str:
+    """Return the real engine behind a Docker-compatible CLI."""
+    if engine != "docker":
+        return engine
+    path = shutil.which(engine)
+    if path:
+        try:
+            result = subprocess.run(
+                [path, "--version"], capture_output=True, text=True, timeout=5
+            )
+            if "podman" in result.stdout.lower():
+                return "podman"
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+    return engine
 
 
 @dataclass

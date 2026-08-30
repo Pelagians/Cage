@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -59,6 +60,12 @@ class ModuleCacheExecutionTests(unittest.TestCase):
 
         self.assertTrue(result.success)
         argv = run.call_args.args[0]
+        self.assertEqual(
+            argv[3:6],
+            ["--userns=keep-id", "--user", "0:0"],
+        )
+        self.assertIn(f"PUID={os.getuid()}", argv)
+        self.assertIn(f"PGID={os.getgid()}", argv)
         self.assertIn(f"{cache.resolve()}:/opt/cage-module-cache:z", argv)
         self.assertIn("CAGE_MODULE_CACHE_DIR=/opt/cage-module-cache", argv)
         self.assertIn(f"CAGE_RUNTIME_IMAGE={runtime_image}", argv)
@@ -132,6 +139,10 @@ class ModuleCacheExecutionTests(unittest.TestCase):
                 )
 
         argv = run.call_args.args[0]
+        self.assertNotIn("--userns=keep-id", argv)
+        self.assertNotIn("--user", argv)
+        self.assertIn(f"PUID={os.getuid()}", argv)
+        self.assertIn(f"PGID={os.getgid()}", argv)
         self.assertIn("--net", argv)
         self.assertEqual(argv[argv.index("--net") + 1], "host")
 

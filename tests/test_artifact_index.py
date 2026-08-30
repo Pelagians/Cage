@@ -16,6 +16,7 @@ from artifact.index import (
     register_bundle,
     resolve_artifact,
 )
+from artifact.inspection import verify_bundle
 from core.manifest import Manifest
 
 APP = {
@@ -66,7 +67,27 @@ class ArtifactIndexModuleTests(unittest.TestCase):
         self.assertEqual(versioned["application"]["version"], "1.2.3")
 
     def test_default_index_path_lives_under_output_directory(self):
-        self.assertEqual(default_index_path(Path("dist")), Path("dist/.cage/artifacts.json"))
+        self.assertEqual(
+            default_index_path(Path("dist")),
+            Path("dist").resolve() / ".cage" / "artifacts.json",
+        )
+
+    def test_bundle_and_index_use_canonical_output_root_through_symlinked_parent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            real_output = root / "real-output"
+            real_output.mkdir()
+            linked_output = root / "linked-output"
+            linked_output.symlink_to(real_output, target_is_directory=True)
+
+            bundle = _make_bundle(linked_output)
+            index_path = default_index_path(linked_output)
+            entry = register_bundle(bundle, index_path=index_path)
+
+            self.assertEqual(bundle, real_output / "indexed-demo-1.2.3")
+            self.assertEqual(index_path, real_output / ".cage" / "artifacts.json")
+            self.assertEqual(Path(entry["bundle"]), bundle)
+            self.assertTrue(verify_bundle(bundle)["valid"])
 
 
 class ArtifactIndexCLITests(unittest.TestCase):

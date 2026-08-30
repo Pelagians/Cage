@@ -18,6 +18,7 @@ from typing import Any
 
 from artifact.bundle import update_bundle_execution_metadata
 from artifact.inspection import verify_bundle, verify_prefix_materialization
+from container.manager import normalize_engine
 from core.chocolatey.assets import load_asset_bytes
 from builder.pipeline import generate_build_script
 from core.manifest import Manifest
@@ -167,19 +168,7 @@ def _find_engine(prefer: str | None = None) -> str:
     for cmd in candidates:
         path = shutil.which(cmd)
         if path is not None:
-            if cmd == "docker":
-                # Podman 5+ ships a Docker CLI emulation binary. Detect it
-                # so SELinux mount labels (':z') are applied correctly.
-                try:
-                    r = subprocess.run(
-                        [path, "--version"],
-                        capture_output=True, text=True, timeout=5,
-                    )
-                    if "podman" in r.stdout.lower():
-                        return "podman"
-                except (FileNotFoundError, subprocess.TimeoutExpired):
-                    pass
-            return cmd
+            return normalize_engine(cmd)
     msg = "No container engine found. Install Docker or Podman, or use --dry-run."
     raise RuntimeError(msg)
 
@@ -676,6 +665,9 @@ def execute_inside_container(
         "RESTART_APP": "false",
     }
     environment.update(runtime.environment or {})
+    if engine == "podman":
+        environment["PUID"] = str(os.getuid())
+        environment["PGID"] = str(os.getgid())
     if requalify_cfw_runtime and required_cfw_image:
         environment["CAGE_CFW_PRODUCER_IMAGE"] = required_cfw_image
     if runner_cache:

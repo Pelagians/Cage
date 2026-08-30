@@ -23,7 +23,7 @@ STATUS_STATES = {
 
 
 def bundle_path_for(manifest: Manifest, output_dir: Path) -> Path:
-    return output_dir / _safe_name(f"{manifest.name}-{manifest.version}")
+    return output_dir.resolve() / _safe_name(f"{manifest.name}-{manifest.version}")
 
 
 def create_bundle(manifest: Manifest, output_dir: Path, *,

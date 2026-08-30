@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
 import copy
 import json
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -316,6 +319,58 @@ class SelkiesImageContractTests(unittest.TestCase):
         self.assertIn("Software\\Wine\\Drivers", selector.read_text(encoding="utf-8"))
         self.assertIn("Graphics", selector.read_text(encoding="utf-8"))
         self.assertIn("CAGE_LAUNCH_SCRIPT_B64", autostart.read_text(encoding="utf-8"))
+
+    def test_labwc_shell_reexec_imports_container_environment_before_launch(self):
+        source = (ROOT / "container/selkies/root/defaults/autostart_wayland").read_text(
+            encoding="utf-8"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            autostart = root / "autostart"
+            launch = root / "cage-launch.sh"
+            marker = root / "launched"
+            with_contenv = root / "with-contenv"
+            with_contenv.write_text(
+                "#!/bin/bash\n"
+                "export CAGE_LAUNCH_SCRIPT_B64=\"$TEST_CAGE_LAUNCH_SCRIPT_B64\"\n"
+                "exec \"$@\"\n",
+                encoding="utf-8",
+            )
+            with_contenv.chmod(0o755)
+            autostart.write_text(
+                source.replace("/usr/bin/with-contenv", str(with_contenv))
+                .replace("/config/.config/labwc/autostart", str(autostart))
+                .replace("/tmp/cage-launch.sh", str(launch)),
+                encoding="utf-8",
+            )
+            encoded = base64.b64encode(
+                f"printf launched > {marker}\n".encode()
+            ).decode("ascii")
+            environment = dict(os.environ)
+            environment.pop("CAGE_LAUNCH_SCRIPT_B64", None)
+            environment.pop("CAGE_CONTENV_LOADED", None)
+            environment["TEST_CAGE_LAUNCH_SCRIPT_B64"] = encoded
+
+            result = subprocess.run(
+                ["bash", str(autostart)],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                env=environment,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(marker.read_text(encoding="utf-8"), "launched")
+
+    def test_container_ci_smokes_actual_labwc_environment_import(self):
+        workflow = (ROOT / ".github/workflows/containers.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("load: ${{ github.event_name == 'pull_request' }}", workflow)
+        self.assertIn("Smoke actual Labwc environment import", workflow)
+        self.assertIn("CAGE_LABWC_SESSION_SENTINEL=actual-s6-environment", workflow)
+        self.assertIn("labwc-environment-imported", workflow)
 
     def test_build_execution_is_a_native_s6_task_not_labwc_autostart(self):
         autostart = (

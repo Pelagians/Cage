@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from artifact.bundle import create_bundle
 from core.manifest import Manifest
-from runtime.launcher import RunError, build_run_plan
+from runtime.launcher import RunError, build_run_plan, execute_run_plan
 
 VALID = {
     "schemaVersion": "cage.app/v0",
@@ -54,6 +56,12 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertEqual(plan["runtime"]["image"], "ghcr.io/pelagians/cage-wine:9.0")
         self.assertEqual(plan["launch"]["entrypoint"], "C:/Program Files/App/App.exe")
         self.assertEqual(plan["container"]["engine"], "podman")
+        self.assertEqual(
+            plan["container"]["argv"][3:6],
+            ["--userns=keep-id", "--user", "0:0"],
+        )
+        self.assertEqual(plan["container"]["environment"]["PUID"], str(os.getuid()))
+        self.assertEqual(plan["container"]["environment"]["PGID"], str(os.getgid()))
         self.assertIn(
             "/opt/cage/bundle/metadata/graph.json",
             plan["container"]["environment"]["CAGE_GRAPH"],
@@ -87,6 +95,64 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertIn("not runnable", message)
         self.assertIn("dry-run-placeholder", message)
         self.assertIn("state=planned", message)
+
+    def test_docker_run_plan_preserves_identity_without_podman_flags(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            plan = build_run_plan(
+                self._bundle(tmp),
+                graphics="headless",
+                engine="docker",
+                allow_non_runnable=True,
+            )
+
+        argv = plan["container"]["argv"]
+        self.assertNotIn("--userns=keep-id", argv)
+        self.assertNotIn("--user", argv)
+        self.assertEqual(plan["container"]["environment"]["PUID"], str(os.getuid()))
+        self.assertEqual(plan["container"]["environment"]["PGID"], str(os.getgid()))
+
+    def test_docker_emulation_run_plan_uses_podman_identity(self):
+        class Version:
+            stdout = "podman version 5.4.2"
+
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "container.manager.shutil.which", return_value="/usr/bin/docker"
+        ), patch("container.manager.subprocess.run", return_value=Version()):
+            plan = build_run_plan(
+                self._bundle(tmp),
+                graphics="headless",
+                engine="docker",
+                allow_non_runnable=True,
+            )
+
+        self.assertEqual(plan["container"]["engine"], "podman")
+        self.assertEqual(
+            plan["container"]["argv"][3:6],
+            ["--userns=keep-id", "--user", "0:0"],
+        )
+        self.assertEqual(plan["container"]["environment"]["PUID"], str(os.getuid()))
+        self.assertEqual(plan["container"]["environment"]["PGID"], str(os.getgid()))
+
+    def test_timeout_bytes_are_returned_as_json_serializable_text(self):
+        plan = {
+            "bundle": "/tmp/example",
+            "graphics": {"mode": "selkies"},
+            "runtime": {"image": "example@sha256:" + "a" * 64},
+            "container": {"argv": ["podman", "run", "example"]},
+        }
+        timeout = subprocess.TimeoutExpired(
+            plan["container"]["argv"],
+            5,
+            output=b"partial stdout\xff",
+            stderr=b"partial stderr\xfe",
+        )
+
+        with patch("runtime.launcher.subprocess.run", side_effect=timeout):
+            result = execute_run_plan(plan, timeout=5)
+
+        self.assertEqual(result["stdout"], "partial stdout\ufffd")
+        self.assertEqual(result["stderr"], "partial stderr\ufffd")
+        json.dumps(result)
 
     def test_build_run_plan_rejects_invalid_graphics_mode(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from artifact.inspection import verify_bundle
+from container.manager import normalize_engine
 from core.compatibility import compatibility_environment
 from runtime.runner_cache import DEFAULT_CACHE_DIR, diagnose_runner
 
@@ -71,7 +72,7 @@ def build_run_plan(
     suite_entrypoints = list(graph.get("entrypoints") or [])
     file_associations = list(graph.get("fileAssociations") or [])
     selected_entrypoint, launch = _select_launch(launch, suite_entrypoints, entrypoint)
-    selected_engine = engine or _find_engine()
+    selected_engine = normalize_engine(engine) if engine else _find_engine()
     file_arguments = _file_arguments(files or [], engine=selected_engine)
     graphics_contract = dict(graph.get("graphics") or {})
     compatibility_policy = dict((graph.get("compatibility") or {}).get("requestedPolicy") or {})
@@ -123,6 +124,9 @@ def build_run_plan(
     environment.update(compatibility_env)
     if runner_cache and runner_cache.get("status") == "present":
         environment.update(runner_cache["environment"])
+    if selected_engine == "podman":
+        environment["PUID"] = str(os.getuid())
+        environment["PGID"] = str(os.getgid())
     argv = _container_argv(
         selected_engine,
         bundle,
@@ -227,6 +231,8 @@ def execute_run_plan(plan: dict[str, Any], *, timeout: int | None = None) -> dic
             "or use --dry-run to inspect the planned command."
         ) from exc
     except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout.decode("utf-8", errors="replace") if isinstance(exc.stdout, bytes) else exc.stdout or ""
+        stderr = exc.stderr.decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else exc.stderr
         return {
             "schemaVersion": RUN_RESULT_SCHEMA_VERSION,
             "success": False,
@@ -234,8 +240,8 @@ def execute_run_plan(plan: dict[str, Any], *, timeout: int | None = None) -> dic
             "bundle": plan.get("bundle"),
             "graphics": plan.get("graphics", {}).get("mode"),
             "runtimeImage": plan.get("runtime", {}).get("image"),
-            "stdout": exc.stdout or "",
-            "stderr": exc.stderr or f"cage run timed out after {timeout}s",
+            "stdout": stdout,
+            "stderr": stderr or f"cage run timed out after {timeout}s",
             "error": f"timed out after {timeout}s",
         }
 
@@ -308,7 +314,7 @@ def _find_engine() -> str:
     """Prefer Podman for Cage run, then fall back to Docker."""
     for candidate in ("podman", "docker"):
         if shutil.which(candidate):
-            return candidate
+            return normalize_engine(candidate)
     raise RunError("No container engine found. Install Podman or Docker, or use --dry-run.")
 
 

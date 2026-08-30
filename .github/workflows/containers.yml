@@ -91,9 +91,36 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
           tags: |
             ${{ github.event_name != 'workflow_dispatch' && matrix.published_ref || '' }}
             ${{ github.event_name != 'workflow_dispatch' && matrix.published_alias_refs || '' }}
             ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.sha }}-${{ matrix.tag }}
           build-args: |
             ${{ matrix.build_arg }}
+
+      - name: Smoke actual Labwc environment import
+        if: github.event_name == 'pull_request'
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.sha }}-${{ matrix.tag }}
+        run: |
+          set -Eeuo pipefail
+          output="$RUNNER_TEMP/cage-labwc-${{ matrix.provider }}-${{ matrix.version }}"
+          mkdir -p "$output"
+          script='test "${CAGE_LABWC_SESSION_SENTINEL:-}" = actual-s6-environment && printf "%s\n" "$CAGE_LABWC_SESSION_SENTINEL" > /exports/labwc-environment-imported'
+          encoded="$(printf '%s' "$script" | base64 -w0)"
+          timeout 120 docker run --rm \
+            --shm-size 2g \
+            -e PUID="$(id -u)" \
+            -e PGID="$(id -g)" \
+            -e CAGE_SESSION_MODE=selkies \
+            -e CAGE_WINE_GRAPHICS=xwayland \
+            -e CAGE_LAUNCH_SCRIPT_B64="$encoded" \
+            -e CAGE_LABWC_SESSION_SENTINEL=actual-s6-environment \
+            -e CAGE_EXIT_WHEN_DONE=true \
+            -e START_DOCKER=false \
+            -e PIXELFLUX_WAYLAND=true \
+            -e RESTART_APP=false \
+            -v "$output:/exports" \
+            "$IMAGE"
+          test "$(<"$output/labwc-environment-imported")" = actual-s6-environment
