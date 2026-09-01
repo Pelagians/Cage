@@ -22,6 +22,20 @@ recipe
   -> optional OCI application image inheriting the same /init
 ```
 
+## Pelagian Shell consumer boundary
+
+The current catalog images still derive directly from LinuxServer Selkies and copy `container/selkies/root/`. The accepted follow-up dependency is:
+
+```text
+LinuxServer Selkies -> Pelagian Shell -> Cage catalog runtime
+```
+
+After Cage qualifies an immutable `ghcr.io/pelagians/pelagian-shell@sha256:...` input, that migration should remove the duplicated generic substrate: the direct Selkies `FROM`, generic Labwc baseline/theme, generic session initialization, and generic port-3001 streaming defaults.
+
+Cage must retain its own Wine/Proton packages, Wine graphics selector, `CAGE_*` launch contract, s6 build/task/shutdown services, `/var/lib/cage` state and receipts, `/exports`, bundle handling, and application-specific runtime policy. Pelagian Shell does not install Wine, execute Cage tasks, or own Cage's artifact lifecycle.
+
+This document records the boundary only. The runtime switch remains blocked on a digest-pinned Pelagian Shell release plus Cage's existing nine-image and live Wine/XWayland/Wayland qualification gates.
+
 ## Graphics modes
 
 `runtime.wineGraphics: xwayland` selects Wine's X11 driver under Selkies' XWayland compatibility service. `wayland` selects Wine's native Wayland driver and is limited to Wine Stable and Wine Staging. UMU + GE-Proton uses XWayland until its native Wayland path is independently proven.
