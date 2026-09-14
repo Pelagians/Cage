@@ -2,7 +2,7 @@
 
 ## One universal runtime image per catalog entry
 
-Every image selected by `runtime/catalog.json` inherits the digest-pinned LinuxServer Selkies Debian Trixie base. There is no parallel build/headless or desktop image family.
+Every image selected by `runtime/catalog.json` inherits the digest-pinned Pelagian Shell image, which owns the LinuxServer Selkies/Labwc substrate. There is no parallel build/headless or desktop image family.
 
 The nine catalog entries cover Wine Stable, Wine Staging, and UMU + GE-Proton. Each image:
 
@@ -24,17 +24,17 @@ recipe
 
 ## Pelagian Shell consumer boundary
 
-The current catalog images still derive directly from LinuxServer Selkies and copy `container/selkies/root/`. The accepted follow-up dependency is:
+The catalog images use the dependency:
 
 ```text
 LinuxServer Selkies -> Pelagian Shell -> Cage catalog runtime
 ```
 
-After Cage qualifies an immutable `ghcr.io/pelagians/pelagian-shell@sha256:...` input, that migration should remove the duplicated generic substrate: the direct Selkies `FROM`, generic Labwc baseline/theme, generic session initialization, and generic port-3001 streaming defaults.
+Cage pins the exact Pelagian Shell digest in each runtime Dockerfile and records it in OCI labels. Cage's overlay contains only its consumer-owned launch hook, Wine graphics selector, task supervision, state, and receipts; the generic Labwc baseline, theme, and streaming defaults remain inherited.
 
 Cage must retain its own Wine/Proton packages, Wine graphics selector, `CAGE_*` launch contract, s6 build/task/shutdown services, `/var/lib/cage` state and receipts, `/exports`, bundle handling, and application-specific runtime policy. Pelagian Shell does not install Wine, execute Cage tasks, or own Cage's artifact lifecycle.
 
-This document records the boundary only. The runtime switch remains blocked on a digest-pinned Pelagian Shell release plus Cage's existing nine-image and live Wine/XWayland/Wayland qualification gates.
+Changing the Shell digest requires Cage's existing nine-image and live Wine/XWayland/Wayland qualification gates, followed by CFW requalification against the new Cage Wine digest.
 
 ## Graphics modes
 

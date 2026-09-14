@@ -18,6 +18,10 @@ from runtime.launcher import build_run_plan
 from tests.bundle_fixtures import materialize_runnable_prefix
 
 ROOT = Path(__file__).resolve().parents[1]
+PELAGIAN_SHELL_IMAGE = (
+    "ghcr.io/pelagians/pelagian-shell@sha256:"
+    "286b429c20b2515d35f8021112df32808b3cdd7e02e10c43154282412305e3cf"
+)
 APP = {
     "schemaVersion": "cage.app/v0",
     "name": "selkies-demo",
@@ -240,7 +244,7 @@ class ProducerRuntimeQualificationTests(unittest.TestCase):
 
 
 class SelkiesImageContractTests(unittest.TestCase):
-    def test_all_catalog_runtime_images_use_one_selkies_image_contract(self):
+    def test_all_catalog_runtime_images_derive_from_pelagian_shell(self):
         for rel in (
             "container/runtimes/wine/Dockerfile",
             "container/runtimes/wine-staging/Dockerfile",
@@ -248,12 +252,19 @@ class SelkiesImageContractTests(unittest.TestCase):
         ):
             with self.subTest(rel=rel):
                 text = (ROOT / rel).read_text(encoding="utf-8")
-                self.assertRegex(
+                self.assertIn(f"ARG PELAGIAN_SHELL_IMAGE={PELAGIAN_SHELL_IMAGE}", text)
+                self.assertIn("FROM ${PELAGIAN_SHELL_IMAGE}", text)
+                self.assertIn(
+                    'io.pelagians.cage.pelagian-shell-image="${PELAGIAN_SHELL_IMAGE}"',
                     text,
-                    r"ARG SELKIES_BASE_IMAGE=ghcr\.io/linuxserver/baseimage-selkies:[^\s]+@sha256:[0-9a-f]{64}",
                 )
-                self.assertIn("FROM ${SELKIES_BASE_IMAGE}", text)
+                self.assertNotIn("baseimage-selkies", text)
                 self.assertIn("COPY container/selkies/root/ /", text)
+                self.assertIn(
+                    "COPY container/selkies/root/defaults/autostart "
+                    "/defaults/autostart_wayland",
+                    text,
+                )
                 self.assertIn("EXPOSE 3001", text)
                 self.assertNotIn("xvfb", text.lower())
                 self.assertNotIn("ENTRYPOINT", text)
@@ -305,13 +316,13 @@ class SelkiesImageContractTests(unittest.TestCase):
         ):
             self.assertIn(digest, text)
 
-    def test_selkies_overlay_defines_labwc_and_s6_startup(self):
+    def test_cage_overlay_keeps_launch_and_s6_but_not_generic_labwc(self):
         autostart = ROOT / "container/selkies/root/defaults/autostart"
         init = ROOT / "container/selkies/root/custom-cont-init.d/10-cage-session"
         labwc = ROOT / "container/selkies/root/defaults/labwc.xml"
         self.assertTrue(autostart.is_file())
         self.assertTrue(init.is_file())
-        self.assertTrue(labwc.is_file())
+        self.assertFalse(labwc.exists())
         init_text = init.read_text(encoding="utf-8")
         self.assertIn("/defaults/autostart", init_text)
         self.assertNotIn("autostart_wayland", init_text)
@@ -322,7 +333,7 @@ class SelkiesImageContractTests(unittest.TestCase):
         ):
             dockerfile_text = (ROOT / rel).read_text(encoding="utf-8")
             self.assertIn("/defaults/autostart", dockerfile_text)
-            self.assertNotIn("autostart_wayland", dockerfile_text)
+            self.assertIn("/defaults/autostart_wayland", dockerfile_text)
         selector = (
             ROOT / "container/selkies/root/usr/local/libexec/cage-select-wine-graphics"
         )
