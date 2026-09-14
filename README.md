@@ -543,7 +543,7 @@ Cage's design draws from the broader Wine/Proton ecosystem:
 | [umu-launcher](https://github.com/Open-Wine-Components/umu-launcher) | Runtime download/verify pipeline, SHA256 verification, file-locking pattern, Proton version management |
 | [umu-protonfixes](https://github.com/Open-Wine-Components/umu-protonfixes) | Verb/component catalog (`*.verb`), game engine detection, store-agnostic fix layering |
 | [Steam Runtime](https://github.com/valvesoftware/steam-runtime) | Layer composition model, build-runtime.py pattern, template-based manifest generation |
-| [LinuxServer Selkies](https://github.com/linuxserver/docker-baseimage-selkies) | `/init`/s6 lifecycle, browser streaming, Wayland/Labwc, and PixelFlux integration |
+| [Pelagian Shell](https://github.com/Pelagians/pelagian-shell) | Digest-pinned `/init`/s6 lifecycle, Selkies streaming, and generic Wayland/Labwc substrate |
 | [docker-wine](https://github.com/scottyhardy/docker-wine) | Container ergonomics: UID/GID mapping, display modes, Wayland/Labwc/RDP/audio concerns; Cage does not adopt its mutable desktop-container goal |
 | [LSW](https://github.com/barrersoftware/lsw) | Foundation-first compatibility architecture and path/registry translation awareness; Cage does not adopt its no-Wine/kernel/PE-loader goal |
 
