@@ -1,15 +1,15 @@
 #!/bin/bash
 
-# Labwc runs this file as `sh ~/.config/labwc/autostart`, so the preamble must
-# be POSIX shell. Import the s6/container environment, then restore the client
-# session selected by Labwc before entering the Bash-only launch path.
+# Pelagian Shell runs this hook as the desktop user. Import the s6/container
+# environment, then restore the client session selected by Labwc before entering
+# the Bash-only launch path.
 if [ "${CAGE_CONTENV_LOADED:-false}" != true ]; then
   exec /usr/bin/with-contenv env \
     CAGE_CONTENV_LOADED=true \
     DISPLAY="${DISPLAY:-}" \
     WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
     XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}" \
-    bash /config/.config/labwc/autostart
+    bash /usr/local/bin/pelagian-shell-consumer
 fi
 
 set -Eeuo pipefail
@@ -33,7 +33,7 @@ run_cage_script() {
   exec bash "$script"
 }
 
-# LinuxServer's Labwc session runs this file as abc. Scripts are transported
+# Pelagian Shell's Labwc session runs this file as abc. Scripts are transported
 # as base64 so Docker/Podman never replace the inherited /init.
 if [[ -n "${CAGE_LAUNCH_SCRIPT_B64:-}" ]]; then
   run_cage_script "$CAGE_LAUNCH_SCRIPT_B64" /tmp/cage-launch.sh

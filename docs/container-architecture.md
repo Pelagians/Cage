@@ -2,11 +2,11 @@
 
 ## One universal runtime image per catalog entry
 
-Every image selected by `runtime/catalog.json` inherits the digest-pinned Pelagian Shell image, which owns the LinuxServer Selkies/Labwc substrate. There is no parallel build/headless or desktop image family.
+Every image selected by `runtime/catalog.json` inherits one immutable Pelagian Shell digest. There is no parallel build/headless or desktop image family.
 
 The nine catalog entries cover Wine Stable, Wine Staging, and UMU + GE-Proton. Each image:
 
-- preserves LinuxServer `/init` and the s6 lifecycle;
+- preserves Pelagian Shell's inherited `/init` and s6 lifecycle;
 - starts the Wayland/Labwc session as `abc` after bounded root initialization;
 - includes Selkies HTTPS on container port `3001`;
 - includes internal PixelFlux support;
@@ -24,17 +24,17 @@ recipe
 
 ## Pelagian Shell consumer boundary
 
-The catalog images use the dependency:
+The catalog images use the accepted dependency:
 
 ```text
 LinuxServer Selkies -> Pelagian Shell -> Cage catalog runtime
 ```
 
-Cage pins the exact Pelagian Shell digest in each runtime Dockerfile and records it in OCI labels. Cage's overlay contains only its consumer-owned launch hook, Wine graphics selector, task supervision, state, and receipts; the generic Labwc baseline, theme, and streaming defaults remain inherited.
+Each Dockerfile pins `ghcr.io/pelagians/pelagian-shell@sha256:...` directly. Cage no longer copies a generic Labwc baseline or replaces Shell autostart. It installs only `/usr/local/bin/pelagian-shell-consumer` for Cage application launch; Pelagian Shell owns session initialization, Labwc policy, theme, and streaming defaults.
 
 Cage must retain its own Wine/Proton packages, Wine graphics selector, `CAGE_*` launch contract, s6 build/task/shutdown services, `/var/lib/cage` state and receipts, `/exports`, bundle handling, and application-specific runtime policy. Pelagian Shell does not install Wine, execute Cage tasks, or own Cage's artifact lifecycle.
 
-Changing the Shell digest requires Cage's existing nine-image and live Wine/XWayland/Wayland qualification gates, followed by CFW requalification against the new Cage Wine digest.
+The existing nine-image and live Wine/XWayland/Wayland qualification gates still apply to every published Cage runtime.
 
 ## Graphics modes
 
@@ -54,7 +54,7 @@ The removed `selkiesImage` sibling field is rejected. Existing immutable pre-Sel
 
 ## Kubernetes
 
-All generated application images inherit `/init`, so all exported Deployments retain the narrow LinuxServer initialization security context and `/config` volume. Visible Selkies export additionally requires exact live OCI verification, one replica, a ClusterIP service on `3001`, and default-deny ingress. Nereus owns admission and any authenticated ingress policy.
+All generated application images inherit `/init`, so all exported Deployments retain the narrow Pelagian Shell initialization security context and `/config` volume. Visible Selkies export additionally requires exact live OCI verification, one replica, a ClusterIP service on `3001`, and default-deny ingress. Nereus owns admission and any authenticated ingress policy.
 
 ## Live acceptance gates
 

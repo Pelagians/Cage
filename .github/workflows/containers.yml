@@ -118,9 +118,6 @@ jobs:
             -e CAGE_LAUNCH_SCRIPT_B64="$encoded" \
             -e CAGE_LABWC_SESSION_SENTINEL=actual-s6-environment \
             -e CAGE_EXIT_WHEN_DONE=true \
-            -e START_DOCKER=false \
-            -e PIXELFLUX_WAYLAND=true \
-            -e RESTART_APP=false \
             -v "$output:/exports" \
             "$IMAGE"
           test "$(<"$output/labwc-environment-imported")" = actual-s6-environment

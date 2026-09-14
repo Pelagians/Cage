@@ -660,9 +660,6 @@ def execute_inside_container(
         "CAGE_SESSION_MODE": "build",
         "CAGE_WINE_GRAPHICS": "xwayland",
         "CAGE_EXIT_WHEN_DONE": "true",
-        "START_DOCKER": "false",
-        "PIXELFLUX_WAYLAND": "true",
-        "RESTART_APP": "false",
     }
     environment.update(runtime.environment or {})
     if engine == "podman":
@@ -692,7 +689,7 @@ def execute_inside_container(
         cmd.extend(["-e", f"{key}={value}"])
     # Ensure shared memory is large enough for Wine
     cmd.extend(["--shm-size", "2g"])
-    # Preserve the universal image's inherited LinuxServer /init. The native
+    # Preserve the universal image's inherited Pelagian Shell /init. The native
     # Cage s6 task consumes CAGE_BUILD_SCRIPT_B64 and records the real task code.
     cmd.append(img)
 

@@ -281,22 +281,6 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         )
         self.assertIn("umu-run", plan["launchCommand"])
 
-    def test_runtime_container_images_use_pelagian_shell_without_legacy_vnc_helpers(self):
-        root = Path(__file__).resolve().parents[1]
-        dockerfiles = [
-            "container/runtimes/wine/Dockerfile",
-            "container/runtimes/wine-staging/Dockerfile",
-            "container/runtimes/umu-proton-ge/Dockerfile",
-        ]
-        for rel in dockerfiles:
-            with self.subTest(rel=rel):
-                dockerfile = (root / rel).read_text(encoding="utf-8").lower()
-                self.assertIn("ghcr.io/pelagians/pelagian-shell@sha256:", dockerfile)
-                self.assertNotIn("baseimage-selkies", dockerfile)
-                self.assertIn("pixelflux", dockerfile)
-                self.assertIn("expose 3001", dockerfile)
-                for obsolete in ("x11vnc", "websockify", "novnc", "xvfb"):
-                    self.assertNotIn(obsolete, dockerfile)
 
     def test_builder_maps_abc_to_the_host_user_for_bundle_writes(self):
         root = Path(__file__).resolve().parents[1]

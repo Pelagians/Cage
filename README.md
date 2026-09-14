@@ -529,7 +529,7 @@ container/
 │   ├── wine/Dockerfile               # Wine Stable: build, headless, interactive
 │   ├── wine-staging/Dockerfile       # Wine Staging: build, headless, interactive
 │   └── umu-proton-ge/Dockerfile      # UMU + GE-Proton: build, headless, interactive
-└── selkies/root/                     # Shared /init, s6, Labwc, and Wayland overlay
+└── selkies/root/                     # Cage s6/task, app hook, and graphics overlay
 ```
 
 ## Reference Repos
@@ -543,7 +543,7 @@ Cage's design draws from the broader Wine/Proton ecosystem:
 | [umu-launcher](https://github.com/Open-Wine-Components/umu-launcher) | Runtime download/verify pipeline, SHA256 verification, file-locking pattern, Proton version management |
 | [umu-protonfixes](https://github.com/Open-Wine-Components/umu-protonfixes) | Verb/component catalog (`*.verb`), game engine detection, store-agnostic fix layering |
 | [Steam Runtime](https://github.com/valvesoftware/steam-runtime) | Layer composition model, build-runtime.py pattern, template-based manifest generation |
-| [Pelagian Shell](https://github.com/Pelagians/pelagian-shell) | Digest-pinned `/init`/s6 lifecycle, Selkies streaming, and generic Wayland/Labwc substrate |
+| [Pelagian Shell](https://github.com/Pelagians/pelagian-shell) | Immutable `/init`/s6, Selkies streaming, Wayland/Labwc, and consumer-hook substrate |
 | [docker-wine](https://github.com/scottyhardy/docker-wine) | Container ergonomics: UID/GID mapping, display modes, Wayland/Labwc/RDP/audio concerns; Cage does not adopt its mutable desktop-container goal |
 | [LSW](https://github.com/barrersoftware/lsw) | Foundation-first compatibility architecture and path/registry translation awareness; Cage does not adopt its no-Wine/kernel/PE-loader goal |
 
@@ -576,7 +576,7 @@ Cage/
 │   ├── docker-compose.yml       # Local dev compose
 │   ├── common/                  # Shared Wine environment
 │   ├── runtimes/                # Universal Selkies catalog images
-│   └── selkies/                 # Shared /init/s6/Wayland/Labwc overlay
+│   └── selkies/                 # Cage s6/task, app hook, and graphics overlay
 ├── artifact/
 │   ├── bundle.py                # Bundle writer (sealed artifact)
 │   ├── graph.py                 # Resolved execution graph writer

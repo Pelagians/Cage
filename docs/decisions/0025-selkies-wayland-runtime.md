@@ -13,14 +13,14 @@ Cage must remain an application packager/runtime substrate. Nereus—not Cage—
 
 ## Decision
 
-1. Every catalog image inherits the digest-pinned LinuxServer Selkies Debian Trixie base and retains `/init` and s6. Build, headless, and visible modes are supervised modes of the same image; the retired display stack and sibling image family are removed.
+1. Every catalog image inherits one digest-pinned Pelagian Shell image and retains `/init` and s6. Build, headless, and visible modes are supervised modes of the same image; the retired display stack and sibling image family are removed.
 2. Wayland with Labwc is the only desktop-session architecture.
 3. `graphics` supports `headless` and `selkies`. Headless uses the same session without publishing a browser endpoint; Selkies publishes HTTPS container port `3001` only.
 4. Recipes may set `runtime.wineGraphics` to `xwayland` or `wayland`. Native Wayland is admitted only for Wine Stable and Wine Staging. UMU/GE-Proton is included in the universal Selkies family using XWayland compatibility until its native Wayland path is proven.
 5. Wine driver selection uses `HKCU\Software\Wine\Drivers`, value `Graphics`, with `x11` or `wayland`—not an invented environment-only driver contract.
 6. PixelFlux is an internal loopback adapter for screenshots and bounded GUI-input fallback. It is not exposed as a Service or public control API.
 7. Headless application images retain the catalog runtime entrypoint and use `CMD`; Selkies application images inherit desktop `/init` and set `CAGE_APP_LAUNCHER` instead of replacing `ENTRYPOINT`.
-8. Kubernetes Selkies exports require exact live OCI metadata verification, enforce one replica, and add a ClusterIP Service on `3001` behind default-deny ingress. LinuxServer initialization starts as root with only `CHOWN`, `SETGID`, and `SETUID`; privilege escalation and privileged mode remain disabled, all other capabilities are dropped, and services subsequently run as `abc` using `PUID`/`PGID`.
+8. Kubernetes Selkies exports require exact live OCI metadata verification, enforce one replica, and add a ClusterIP Service on `3001` behind default-deny ingress. Pelagian Shell's inherited initialization starts as root with only `CHOWN`, `SETGID`, and `SETUID`; privilege escalation and privileged mode remain disabled, all other capabilities are dropped, and services subsequently run as `abc` using `PUID`/`PGID`.
 
 ## Preserved contracts
 
@@ -37,7 +37,7 @@ Cage does not adopt task-worker, compatibility-pack, tenant, approval, or contro
 ## Consequences
 
 - Port `3001` replaces the former multi-port visible-session path.
-- All catalog images use the Selkies Debian Trixie parent. Wine package identities use the corresponding Trixie pins; UMU and GE-Proton consume checksum-bound release assets.
+- All catalog images use the same immutable Pelagian Shell parent. Wine package identities use the corresponding Debian Trixie pins; UMU and GE-Proton consume checksum-bound release assets.
 - Interactive Kubernetes sessions require an explicit root-init security exception. This needs architecture/security review before deployment.
 - A passing XWayland application is not evidence that native Wine Wayland works. Acceptance evidence must report both modes separately.
 
@@ -48,7 +48,7 @@ Routing build scripts through `/init` would break Cage's existing command-exec b
 ## Rejected alternatives
 
 - **Keep both desktop architectures:** rejected because it doubles lifecycle and security surface.
-- **Override `/init` with a Cage shell entrypoint:** rejected because it bypasses LinuxServer initialization and user/permission handling.
+- **Override `/init` with a Cage shell entrypoint:** rejected because it bypasses Pelagian Shell initialization and user/permission handling.
 - **Expose PixelFlux externally:** rejected because bounded internal input fallback is not production control authority.
 - **Assume every Proton runtime supports native Wayland:** rejected until the exact runner and launch path are behaviorally proven.
 

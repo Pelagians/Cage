@@ -359,7 +359,7 @@ def _container_argv(
         argv.extend(["-e", f"{key}={value}"])
     if graphics == "selkies":
         argv.extend(["-p", f"127.0.0.1:{selkies_port}:3001"])
-    # Every catalog image inherits LinuxServer /init. Launch scripts are
+    # Every catalog image inherits Pelagian Shell /init. Launch scripts are
     # transported through the supervised Wayland session in every mode.
     argv.append(image)
     return argv
@@ -391,9 +391,6 @@ def _container_environment(graphics: str, wine_graphics: str, script: str) -> di
         "CAGE_SESSION_MODE": graphics,
         "CAGE_WINE_GRAPHICS": wine_graphics,
         "CAGE_LAUNCH_SCRIPT_B64": encoded_script,
-        "START_DOCKER": "false",
-        "PIXELFLUX_WAYLAND": "true",
-        "RESTART_APP": "false",
     }
     if graphics == "headless":
         environment["CAGE_EXIT_WHEN_DONE"] = "true"

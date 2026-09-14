@@ -4,6 +4,7 @@ import base64
 import copy
 import json
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -18,10 +19,6 @@ from runtime.launcher import build_run_plan
 from tests.bundle_fixtures import materialize_runnable_prefix
 
 ROOT = Path(__file__).resolve().parents[1]
-PELAGIAN_SHELL_IMAGE = (
-    "ghcr.io/pelagians/pelagian-shell@sha256:"
-    "286b429c20b2515d35f8021112df32808b3cdd7e02e10c43154282412305e3cf"
-)
 APP = {
     "schemaVersion": "cage.app/v0",
     "name": "selkies-demo",
@@ -244,7 +241,12 @@ class ProducerRuntimeQualificationTests(unittest.TestCase):
 
 
 class SelkiesImageContractTests(unittest.TestCase):
-    def test_all_catalog_runtime_images_derive_from_pelagian_shell(self):
+    def test_all_catalog_runtime_images_use_one_selkies_image_contract(self):
+        expected_base = (
+            "ghcr.io/pelagians/pelagian-shell@sha256:"
+            "91caa1525db1ecd98e94074e4008510311a41aa718abf7b41935e391fbde4619"
+        )
+        bases = set()
         for rel in (
             "container/runtimes/wine/Dockerfile",
             "container/runtimes/wine-staging/Dockerfile",
@@ -252,22 +254,35 @@ class SelkiesImageContractTests(unittest.TestCase):
         ):
             with self.subTest(rel=rel):
                 text = (ROOT / rel).read_text(encoding="utf-8")
-                self.assertIn(f"ARG PELAGIAN_SHELL_IMAGE={PELAGIAN_SHELL_IMAGE}", text)
-                self.assertIn("FROM ${PELAGIAN_SHELL_IMAGE}", text)
-                self.assertIn(
-                    'io.pelagians.cage.pelagian-shell-image="${PELAGIAN_SHELL_IMAGE}"',
+                match = re.search(
+                    r"^FROM (ghcr\.io/pelagians/pelagian-shell@sha256:[0-9a-f]{64})$",
                     text,
+                    re.MULTILINE,
                 )
-                self.assertNotIn("baseimage-selkies", text)
+                self.assertIsNotNone(match)
+                assert match is not None
+                bases.add(match.group(1))
                 self.assertIn("COPY container/selkies/root/ /", text)
                 self.assertIn(
-                    "COPY container/selkies/root/defaults/autostart "
-                    "/defaults/autostart_wayland",
+                    f'io.pelagians.cage.pelagian-shell-image="{expected_base}"',
                     text,
                 )
-                self.assertIn("EXPOSE 3001", text)
+                self.assertIn("pelagian-shellctl status", text)
+                self.assertIn("pelagian-layoutd status", text)
+                self.assertNotIn("SELKIES_BASE_IMAGE", text)
+                self.assertNotIn("baseimage-selkies", text)
+                self.assertNotIn("EXPOSE 3001", text)
+                for inherited_default in (
+                    "START_DOCKER",
+                    "PIXELFLUX_WAYLAND",
+                    "RESTART_APP",
+                    "PATH=/lsiopy/bin",
+                ):
+                    self.assertNotIn(inherited_default, text)
                 self.assertNotIn("xvfb", text.lower())
                 self.assertNotIn("ENTRYPOINT", text)
+
+        self.assertEqual(bases, {expected_base})
 
         self.assertFalse((ROOT / "container/desktop").exists())
 
@@ -316,24 +331,24 @@ class SelkiesImageContractTests(unittest.TestCase):
         ):
             self.assertIn(digest, text)
 
-    def test_cage_overlay_keeps_launch_and_s6_but_not_generic_labwc(self):
-        autostart = ROOT / "container/selkies/root/defaults/autostart"
+    def test_selkies_overlay_uses_shell_consumer_hook_and_cage_s6_services(self):
+        autostart = ROOT / "container/selkies/root/usr/local/bin/pelagian-shell-consumer"
         init = ROOT / "container/selkies/root/custom-cont-init.d/10-cage-session"
         labwc = ROOT / "container/selkies/root/defaults/labwc.xml"
         self.assertTrue(autostart.is_file())
         self.assertTrue(init.is_file())
         self.assertFalse(labwc.exists())
         init_text = init.read_text(encoding="utf-8")
-        self.assertIn("/defaults/autostart", init_text)
-        self.assertNotIn("autostart_wayland", init_text)
+        self.assertNotIn("autostart", init_text)
         for rel in (
             "container/runtimes/wine/Dockerfile",
             "container/runtimes/wine-staging/Dockerfile",
             "container/runtimes/umu-proton-ge/Dockerfile",
         ):
             dockerfile_text = (ROOT / rel).read_text(encoding="utf-8")
-            self.assertIn("/defaults/autostart", dockerfile_text)
-            self.assertIn("/defaults/autostart_wayland", dockerfile_text)
+            self.assertIn("/usr/local/bin/pelagian-shell-consumer", dockerfile_text)
+            self.assertNotIn("/defaults/autostart", dockerfile_text)
+            self.assertNotIn("autostart_wayland", dockerfile_text)
         selector = (
             ROOT / "container/selkies/root/usr/local/libexec/cage-select-wine-graphics"
         )
@@ -342,8 +357,39 @@ class SelkiesImageContractTests(unittest.TestCase):
         self.assertIn("Graphics", selector.read_text(encoding="utf-8"))
         self.assertIn("CAGE_LAUNCH_SCRIPT_B64", autostart.read_text(encoding="utf-8"))
 
+    def test_runtime_environment_does_not_override_shell_owned_defaults(self):
+        for rel in ("builder/executor.py", "runtime/launcher.py"):
+            with self.subTest(rel=rel):
+                text = (ROOT / rel).read_text(encoding="utf-8")
+                for inherited_default in (
+                    '"START_DOCKER"',
+                    '"PIXELFLUX_WAYLAND"',
+                    '"RESTART_APP"',
+                ):
+                    self.assertNotIn(inherited_default, text)
+
+        workflow = (ROOT / ".github/workflows/containers.yml").read_text(
+            encoding="utf-8"
+        )
+        for inherited_default in (
+            "-e START_DOCKER=",
+            "-e PIXELFLUX_WAYLAND=",
+            "-e RESTART_APP=",
+        ):
+            self.assertNotIn(inherited_default, workflow)
+
+    def test_docs_describe_pelagian_shell_as_the_runtime_owner(self):
+        architecture = (ROOT / "docs/container-architecture.md").read_text(
+            encoding="utf-8"
+        )
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("immutable Pelagian Shell", architecture)
+        self.assertIn("/usr/local/bin/pelagian-shell-consumer", architecture)
+        self.assertNotIn("still derive directly from LinuxServer Selkies", architecture)
+        self.assertIn("Pelagian Shell", readme)
+
     def test_labwc_shell_reexec_preserves_inner_session_environment(self):
-        source = (ROOT / "container/selkies/root/defaults/autostart").read_text(
+        source = (ROOT / "container/selkies/root/usr/local/bin/pelagian-shell-consumer").read_text(
             encoding="utf-8"
         )
         with tempfile.TemporaryDirectory() as tmp:
@@ -366,7 +412,7 @@ class SelkiesImageContractTests(unittest.TestCase):
             with_contenv.chmod(0o755)
             autostart.write_text(
                 source.replace("/usr/bin/with-contenv", str(with_contenv))
-                .replace("/config/.config/labwc/autostart", str(autostart))
+                .replace("/usr/local/bin/pelagian-shell-consumer", str(autostart))
                 .replace("/tmp/cage-launch.sh", str(launch)),
                 encoding="utf-8",
             )
@@ -418,7 +464,7 @@ class SelkiesImageContractTests(unittest.TestCase):
         self.assertIn("labwc-environment-imported", workflow)
 
     def test_build_execution_is_a_native_s6_task_not_labwc_autostart(self):
-        autostart = (ROOT / "container/selkies/root/defaults/autostart").read_text(
+        autostart = (ROOT / "container/selkies/root/usr/local/bin/pelagian-shell-consumer").read_text(
             encoding="utf-8"
         )
         task = ROOT / "container/selkies/root/etc/s6-overlay/s6-rc.d/svc-cage-task/run"
@@ -450,7 +496,7 @@ class SelkiesImageContractTests(unittest.TestCase):
         self.assertIn("cage.selkies-wayland/v1", text)
 
     def test_abc_requests_root_supervisor_shutdown_through_state_receipt(self):
-        autostart = (ROOT / "container/selkies/root/defaults/autostart").read_text(
+        autostart = (ROOT / "container/selkies/root/usr/local/bin/pelagian-shell-consumer").read_text(
             encoding="utf-8"
         )
         watcher = (
