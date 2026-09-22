@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'container/**'
+      - 'tests/*shell*'
       - 'runtime/catalog.json'
       - 'runtime/catalog.py'
       - 'runtime/providers.py'
@@ -14,6 +15,7 @@ on:
   pull_request:
     paths:
       - 'container/**'
+      - 'tests/*shell*'
       - 'runtime/catalog.json'
       - 'runtime/catalog.py'
       - 'runtime/providers.py'
@@ -46,6 +48,8 @@ jobs:
       matrix: ${{ steps.catalog.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Generate build matrix from runtime catalog
         id: catalog
         env:
@@ -76,6 +80,8 @@ jobs:
       matrix: ${{ fromJSON(needs.catalog.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
@@ -95,14 +101,14 @@ jobs:
           tags: |
             ${{ github.event_name != 'workflow_dispatch' && matrix.published_ref || '' }}
             ${{ github.event_name != 'workflow_dispatch' && matrix.published_alias_refs || '' }}
-            ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.sha }}-${{ matrix.tag }}
+            ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.event.pull_request.head.sha || github.sha }}-${{ matrix.tag }}
           build-args: |
             ${{ matrix.build_arg }}
 
       - name: Smoke actual Labwc environment import
         if: github.event_name == 'pull_request'
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.sha }}-${{ matrix.tag }}
+          IMAGE: ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.event.pull_request.head.sha || github.sha }}-${{ matrix.tag }}
         run: |
           set -Eeuo pipefail
           output="$RUNNER_TEMP/cage-labwc-${{ matrix.provider }}-${{ matrix.version }}"
@@ -121,3 +127,21 @@ jobs:
             -v "$output:/exports" \
             "$IMAGE"
           test "$(<"$output/labwc-environment-imported")" = actual-s6-environment
+
+      - name: Smoke Wine window and Shell geometry
+        if: github.event_name == 'pull_request' && matrix.provider != 'umu-proton-ge'
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.event.pull_request.head.sha || github.sha }}-${{ matrix.tag }}
+        run: CONTAINER_ENGINE=docker tests/smoke-shell-runtime.sh "$IMAGE"
+
+      - name: Smoke Wine with rootless Podman
+        if: github.event_name == 'pull_request' && matrix.provider == 'wine' && matrix.version == '11.0'
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.event.pull_request.head.sha || github.sha }}-${{ matrix.tag }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes podman uidmap slirp4netns fuse-overlayfs
+          test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
+          docker save "$IMAGE" | podman load
+          CONTAINER_ENGINE=podman tests/smoke-shell-runtime.sh "$IMAGE"

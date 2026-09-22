@@ -59,3 +59,25 @@ All generated application images inherit `/init`, so all exported Deployments re
 ## Live acceptance gates
 
 CI must build all nine image entries. Runtime acceptance must prove `/init`, s6, `abc` ownership, build completion receipts, headless completion, Selkies HTTPS, XWayland for all providers, native Wayland for Wine/ Staging, PixelFlux, reconnect, and a republished CFW/Notepad++ flow.
+
+### Live Shell qualification
+
+The consumer pins the Shell image published from
+`Pelagians/pelagian-shell@3a17b6be5e3d8f27dc53ff00566dc56b90c4fa27`
+(Shell PR #6). The smoke viewer is fetched from that same commit and verified
+against its SHA-256 before execution. CI starts the inherited `/init`, decodes
+1920x1080 streamed frames, and checks the real application window through Labwc
+IPC: healthy reconciliation, maximized usable-area geometry, visible titlebar,
+and no fullscreen state. Multiwindow reflow and dialog policy remain owned and
+qualified by the Shell repository.
+
+Wine and Wine Staging matrix entries launch Notepad using the XWayland driver;
+Wine 11.0 also runs under rootless Podman. Use
+`CONTAINER_ENGINE=docker tests/smoke-shell-runtime.sh IMAGE` to repeat the check.
+The legacy-apps Shell profile enables Wine defaults, imported only after Cage
+selects its writable runtime prefix. The source bundle remains untouched.
+
+UMU/Proton entries retain the real-session environment import gate. This does
+not qualify a UMU game launch or native Wine Wayland. The immutable Chocolatey
+runtime artifacts retain their separately qualified digest and must be rebuilt
+and qualified before their trust records can be advanced.

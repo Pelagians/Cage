@@ -16,3 +16,7 @@ if ! command -v wine >/dev/null 2>&1; then
 fi
 
 wine reg add 'HKCU\Software\Wine\Drivers' /v Graphics /t REG_SZ /d "$driver" /f >/dev/null
+
+# Called after Cage has selected/copied the writable runtime prefix. Shell owns
+# the visual defaults; importing them here never modifies the bundle source.
+pelagian-shell-apply-wine-defaults

@@ -21,4 +21,4 @@ def test_manual_container_publication_is_single_row_and_immutable():
         "github.event_name != 'workflow_dispatch' && matrix.published_alias_refs || ''"
         in workflow
     )
-    assert "${{ github.sha }}-${{ matrix.tag }}" in workflow
+    assert "${{ github.event.pull_request.head.sha || github.sha }}-${{ matrix.tag }}" in workflow
