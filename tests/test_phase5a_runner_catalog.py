@@ -66,23 +66,22 @@ class Phase5ARunnerCatalogTests(unittest.TestCase):
         self.assertEqual(plan["runtime"]["version"], "11.0")
         self.assertEqual(plan["runtime"]["image"], "ghcr.io/pelagians/cage-wine:11.0")
 
-    def test_wine_dockerfiles_pin_package_versions_from_catalog_build_arg(self):
+    def test_wine_channels_share_a_pinned_package_build(self):
         root = Path(__file__).resolve().parents[1]
         wine = (root / "container/runtimes/wine/Dockerfile").read_text(encoding="utf-8")
-        staging = (root / "container/runtimes/wine-staging/Dockerfile").read_text(
-            encoding="utf-8"
-        )
-
+        from runtime.catalog import resolve_catalog_version
+        staging = resolve_catalog_version("staging", "latest")
+        self.assertIsNotNone(staging)
+        assert staging is not None
+        self.assertEqual(staging.dockerfile, "container/runtimes/wine/Dockerfile")
+        self.assertEqual(staging.build_arg_line(), "WINE_PACKAGE_VERSION=11.10~trixie-1")
         self.assertIn("ARG WINE_PACKAGE_VERSION=11.0.0.0~trixie-1", wine)
-        self.assertIn("winehq-stable=${WINE_PACKAGE_VERSION}", wine)
-        self.assertIn("wine-stable=${WINE_PACKAGE_VERSION}", wine)
-        self.assertIn("wine-stable-amd64=${WINE_PACKAGE_VERSION}", wine)
-        self.assertIn("wine-stable-i386:i386=${WINE_PACKAGE_VERSION}", wine)
-        self.assertIn("ARG WINE_PACKAGE_VERSION=11.10~trixie-1", staging)
-        self.assertIn("winehq-staging=${WINE_PACKAGE_VERSION}", staging)
-        self.assertIn("wine-staging=${WINE_PACKAGE_VERSION}", staging)
-        self.assertIn("wine-staging-amd64=${WINE_PACKAGE_VERSION}", staging)
-        self.assertIn("wine-staging-i386:i386=${WINE_PACKAGE_VERSION}", staging)
+        self.assertIn("ARG WINE_CHANNEL=stable", wine)
+        self.assertIn("stable|staging", wine)
+        self.assertIn("winehq-${WINE_CHANNEL}=${WINE_PACKAGE_VERSION}", wine)
+        self.assertIn("wine-${WINE_CHANNEL}-i386:i386=${WINE_PACKAGE_VERSION}", wine)
+        self.assertIn("--build-arg WINE_CHANNEL=staging", (root / "container/build.sh").read_text())
+        self.assertIn('"WINE_CHANNEL=staging"', (root / "container/manager.py").read_text())
 
 
 if __name__ == "__main__":

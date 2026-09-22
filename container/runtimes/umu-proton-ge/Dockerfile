@@ -3,7 +3,7 @@
 ARG GE_PROTON_TAG=GE-Proton11-1
 ARG UMU_LAUNCHER_VERSION=1.4.0
 
-FROM ghcr.io/pelagians/pelagian-shell@sha256:083dc52c943c0a92d5a9b15a25e9798fc2967b95fd6f2ccbca4e3bbb2c91b1bb
+FROM ghcr.io/pelagians/pelagian-shell@sha256:73a5d952d3dd47eb2467d656ca4665cb2bde18fe811a320deaeeaf9f4459fd92
 ARG GE_PROTON_TAG
 ARG UMU_LAUNCHER_VERSION
 ARG UMU_DEB_SHA256=3de80fdcffdc5daabd65e7c9567aff4b8beeecc238eae11529fe737c0b4083f7
@@ -42,7 +42,7 @@ ENV PELAGIAN_SHELL_PROFILE=legacy-apps \
     CAGE_WINE_GRAPHICS=xwayland
 
 LABEL org.pelagian.cage.session-contract="cage.selkies-wayland/v1" \
-    io.pelagians.cage.pelagian-shell-image="ghcr.io/pelagians/pelagian-shell@sha256:083dc52c943c0a92d5a9b15a25e9798fc2967b95fd6f2ccbca4e3bbb2c91b1bb"
+    io.pelagians.cage.pelagian-shell-image="ghcr.io/pelagians/pelagian-shell@sha256:73a5d952d3dd47eb2467d656ca4665cb2bde18fe811a320deaeeaf9f4459fd92"
 
 COPY container/selkies/root/ /
 COPY container/common/wine-env.sh /opt/cage/common/wine-env.sh

@@ -526,8 +526,7 @@ container/
 ├── common/
 │   └── wine-env.sh                   # Standard Wine environment
 ├── runtimes/                         # Universal Selkies runtime family
-│   ├── wine/Dockerfile               # Wine Stable: build, headless, interactive
-│   ├── wine-staging/Dockerfile       # Wine Staging: build, headless, interactive
+│   ├── wine/Dockerfile               # Wine Stable/Staging: channel build argument
 │   └── umu-proton-ge/Dockerfile      # UMU + GE-Proton: build, headless, interactive
 └── selkies/root/                     # Cage s6/task, app hook, and graphics overlay
 ```

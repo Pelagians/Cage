@@ -244,12 +244,12 @@ class SelkiesImageContractTests(unittest.TestCase):
     def test_all_catalog_runtime_images_use_one_selkies_image_contract(self):
         expected_base = (
             "ghcr.io/pelagians/pelagian-shell@sha256:"
-            "083dc52c943c0a92d5a9b15a25e9798fc2967b95fd6f2ccbca4e3bbb2c91b1bb"
+            "73a5d952d3dd47eb2467d656ca4665cb2bde18fe811a320deaeeaf9f4459fd92"
         )
         bases = set()
         for rel in (
             "container/runtimes/wine/Dockerfile",
-            "container/runtimes/wine-staging/Dockerfile",
+            "container/runtimes/wine/Dockerfile",
             "container/runtimes/umu-proton-ge/Dockerfile",
         ):
             with self.subTest(rel=rel):
@@ -342,7 +342,7 @@ class SelkiesImageContractTests(unittest.TestCase):
         self.assertNotIn("autostart", init_text)
         for rel in (
             "container/runtimes/wine/Dockerfile",
-            "container/runtimes/wine-staging/Dockerfile",
+            "container/runtimes/wine/Dockerfile",
             "container/runtimes/umu-proton-ge/Dockerfile",
         ):
             dockerfile_text = (ROOT / rel).read_text(encoding="utf-8")

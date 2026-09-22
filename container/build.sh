@@ -27,6 +27,9 @@ build_entry() {
         --build-arg "$build_arg"
         --tag "${local_image}:${tag}"
     )
+    if [[ "$provider" == staging ]]; then
+        cmd+=(--build-arg WINE_CHANNEL=staging)
+    fi
 
     if [ -n "$REGISTRY" ]; then
         cmd+=(--tag "${REGISTRY}/${image_name}:${tag}")

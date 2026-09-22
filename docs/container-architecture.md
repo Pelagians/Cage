@@ -58,14 +58,20 @@ All generated application images inherit `/init`, so all exported Deployments re
 
 ## Live acceptance gates
 
-CI must build all nine image entries. Runtime acceptance must prove `/init`, s6, `abc` ownership, build completion receipts, headless completion, Selkies HTTPS, XWayland for all providers, native Wayland for Wine/ Staging, PixelFlux, reconnect, and a republished CFW/Notepad++ flow.
+The runtime catalog has nine image entries. CI builds the affected entries on
+source changes and the full matrix on a manual catalog qualification. Runtime
+acceptance must prove `/init`, s6, `abc` ownership, build completion receipts,
+headless completion, Selkies HTTPS, XWayland for all providers, native Wayland
+for Wine/Staging, PixelFlux, reconnect, and a separately qualified CFW/Notepad++
+flow. Release tags move only after the candidate digest passes its runtime gates.
 
 ### Live Shell qualification
 
 The consumer pins the Shell image published from
-`Pelagians/pelagian-shell@3a17b6be5e3d8f27dc53ff00566dc56b90c4fa27`
-(Shell PR #6). The smoke viewer is fetched from that same commit and verified
-against its SHA-256 before execution. CI starts the inherited `/init`, decodes
+`Pelagians/pelagian-shell@fe25c6756d7976322be97ece671ca8f9f9e5c7f7`
+(Shell PR #7). CI checks out the shared conformance harness at
+`a9c6100aabc0cb79deb43910e92639f9b92b4a3d` and verifies the viewer's
+SHA-256 before execution. CI starts the inherited `/init`, decodes
 1920x1080 streamed frames, and checks the real application window through Labwc
 IPC: healthy reconciliation, maximized usable-area geometry, visible titlebar,
 and no fullscreen state. Multiwindow reflow and dialog policy remain owned and
