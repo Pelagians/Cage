@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # Universal Cage Wine Staging image: build, headless, and Selkies session modes.
 ARG WINE_PACKAGE_VERSION=11.10~trixie-1
-FROM ghcr.io/pelagians/pelagian-shell@sha256:91caa1525db1ecd98e94074e4008510311a41aa718abf7b41935e391fbde4619
+FROM ghcr.io/pelagians/pelagian-shell@sha256:083dc52c943c0a92d5a9b15a25e9798fc2967b95fd6f2ccbca4e3bbb2c91b1bb
 ARG WINE_PACKAGE_VERSION
 ARG WINETRICKS_COMMIT=5a59ea07513b24093bd90fad943ecf9543cf05bc
 ARG WINETRICKS_SHA256=f35c29737ca08a583569e6a3752d52fbe23333c5acfad5f16c4177d25eaf3f4b
@@ -22,14 +22,15 @@ RUN set -eux; \
     printf '%s  %s\n' "${WINETRICKS_SHA256}" /usr/local/bin/winetricks | sha256sum -c -; \
     chmod 0755 /usr/local/bin/winetricks; \
     wine --version; winetricks --version
-ENV CAGE_ROOT=/opt/cage \
+ENV PELAGIAN_SHELL_PROFILE=legacy-apps \
+    CAGE_ROOT=/opt/cage \
     WINEPREFIX=/opt/cage/prefix \
     WINEARCH=win64 \
     WINEDEBUG=-all \
     CAGE_WINE_GRAPHICS=xwayland
 
 LABEL org.pelagian.cage.session-contract="cage.selkies-wayland/v1" \
-    io.pelagians.cage.pelagian-shell-image="ghcr.io/pelagians/pelagian-shell@sha256:91caa1525db1ecd98e94074e4008510311a41aa718abf7b41935e391fbde4619"
+    io.pelagians.cage.pelagian-shell-image="ghcr.io/pelagians/pelagian-shell@sha256:083dc52c943c0a92d5a9b15a25e9798fc2967b95fd6f2ccbca4e3bbb2c91b1bb"
 
 COPY container/selkies/root/ /
 COPY container/common/wine-env.sh /opt/cage/common/wine-env.sh

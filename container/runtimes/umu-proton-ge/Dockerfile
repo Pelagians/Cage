@@ -3,7 +3,7 @@
 ARG GE_PROTON_TAG=GE-Proton11-1
 ARG UMU_LAUNCHER_VERSION=1.4.0
 
-FROM ghcr.io/pelagians/pelagian-shell@sha256:91caa1525db1ecd98e94074e4008510311a41aa718abf7b41935e391fbde4619
+FROM ghcr.io/pelagians/pelagian-shell@sha256:083dc52c943c0a92d5a9b15a25e9798fc2967b95fd6f2ccbca4e3bbb2c91b1bb
 ARG GE_PROTON_TAG
 ARG UMU_LAUNCHER_VERSION
 ARG UMU_DEB_SHA256=3de80fdcffdc5daabd65e7c9567aff4b8beeecc238eae11529fe737c0b4083f7
@@ -32,7 +32,8 @@ RUN set -eux; \
     /usr/bin/umu-run --help >/tmp/umu-run-help.txt; \
     rm -rf /tmp/proton-ge.tar.gz /tmp/umu.deb /var/lib/apt/lists/*
 
-ENV CAGE_ROOT=/opt/cage \
+ENV PELAGIAN_SHELL_PROFILE=legacy-apps \
+    CAGE_ROOT=/opt/cage \
     WINEPREFIX=/opt/cage/prefix \
     STEAM_COMPAT_DATA_PATH=/opt/cage/prefix \
     STEAM_COMPAT_CLIENT_INSTALL_PATH=/opt/cage \
@@ -41,7 +42,7 @@ ENV CAGE_ROOT=/opt/cage \
     CAGE_WINE_GRAPHICS=xwayland
 
 LABEL org.pelagian.cage.session-contract="cage.selkies-wayland/v1" \
-    io.pelagians.cage.pelagian-shell-image="ghcr.io/pelagians/pelagian-shell@sha256:91caa1525db1ecd98e94074e4008510311a41aa718abf7b41935e391fbde4619"
+    io.pelagians.cage.pelagian-shell-image="ghcr.io/pelagians/pelagian-shell@sha256:083dc52c943c0a92d5a9b15a25e9798fc2967b95fd6f2ccbca4e3bbb2c91b1bb"
 
 COPY container/selkies/root/ /
 COPY container/common/wine-env.sh /opt/cage/common/wine-env.sh

@@ -1,6 +1,9 @@
 """Tests for Cage installability and console entrypoints."""
 from __future__ import annotations
 
+import shutil
+import tempfile
+import zipfile
 import subprocess
 import sys
 import tomllib
@@ -21,6 +24,28 @@ class InstallPackagingTests(unittest.TestCase):
             self.assertIn(package, includes)
         self.assertIn("catalog.json", data["tool"]["setuptools"]["package-data"]["runtime"])
         self.assertNotIn("License :: OSI Approved :: MIT License", data["project"].get("classifiers", []))
+
+    def test_wheel_contains_complete_selkies_overlay(self):
+        # Build outside the working tree so a stale build/ or egg-info manifest
+        # cannot hide missing package-data entries.
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "source"
+            shutil.copytree(ROOT, source, ignore=shutil.ignore_patterns(
+                ".git", ".venv", "__pycache__", "build", "dist", "*.egg-info",
+            ))
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "wheel", ".", "--no-deps",
+                 "--no-build-isolation", "--wheel-dir", str(Path(temporary) / "wheels")],
+                cwd=source, text=True, capture_output=True, timeout=120,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            wheel = next((Path(temporary) / "wheels").glob("cage-*.whl"))
+            with zipfile.ZipFile(wheel) as archive:
+                for path in (ROOT / "container/selkies/root").rglob("*"):
+                    if path.is_file():
+                        name = path.relative_to(ROOT).as_posix()
+                        self.assertIn(name, archive.namelist())
+                        self.assertEqual(archive.read(name), path.read_bytes())
 
     def test_package_cli_module_is_importable(self):
         from cage.cli import build_parser, main

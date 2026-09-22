@@ -57,6 +57,11 @@ container = [
   "selkies/root/defaults/*",
   "selkies/root/custom-cont-init.d/*",
   "selkies/root/usr/local/libexec/*",
+  "selkies/root/usr/local/bin/*",
+  "selkies/root/etc/s6-overlay/s6-rc.d/*/run",
+  "selkies/root/etc/s6-overlay/s6-rc.d/*/type",
+  "selkies/root/etc/s6-overlay/s6-rc.d/*/dependencies.d/*",
+  "selkies/root/etc/s6-overlay/s6-rc.d/user/contents.d/*",
 ]
 
 [tool.cage]
