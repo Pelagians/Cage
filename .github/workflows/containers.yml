@@ -46,35 +46,38 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.catalog.outputs.matrix }}
+      any: ${{ steps.catalog.outputs.any }}
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Generate build matrix from runtime catalog
         id: catalog
         env:
           EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE: ${{ github.event.before }}
           CANDIDATE_PROVIDER: ${{ inputs.candidate_provider }}
           CANDIDATE_VERSION: ${{ inputs.candidate_version }}
         run: |
-          MATRIX="$(python3 -m runtime.catalog --ci-matrix)"
+          set -euo pipefail
+          base=''
           if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
-            MATRIX="$(printf '%s' "$MATRIX" | python3 -c '
-          import json, os, sys
-          matrix = json.load(sys.stdin)
-          rows = [row for row in matrix["include"] if row["provider"] == os.environ["CANDIDATE_PROVIDER"] and row["version"] == os.environ["CANDIDATE_VERSION"]]
-          if len(rows) != 1:
-              raise SystemExit(f"expected exactly one candidate row, found {len(rows)}")
-          print(json.dumps({"include": rows}, separators=(",", ":")))
-          ' )"
+            MATRIX="$(python3 -m runtime.ci_selection --candidate-provider "$CANDIDATE_PROVIDER" --candidate-version "$CANDIDATE_VERSION")"
+          else
+            if [[ "$EVENT_NAME" == pull_request ]]; then base="$PR_BASE"; else base="$PUSH_BASE"; fi
+            MATRIX="$(python3 -m runtime.ci_selection --base "$base")"
           fi
           echo "matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
+          if [[ "$MATRIX" == '{"include":[]}' ]]; then echo 'any=false' >> "$GITHUB_OUTPUT"; else echo 'any=true' >> "$GITHUB_OUTPUT"; fi
           echo "Runtime catalog matrix:"
           echo "${MATRIX}" | python3 -m json.tool
 
   build:
     runs-on: ubuntu-latest
     needs: catalog
+    if: needs.catalog.outputs.any == 'true'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.catalog.outputs.matrix) }}
@@ -91,24 +94,36 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push ${{ matrix.provider }}:${{ matrix.version }}
+      - name: Build candidate ${{ matrix.provider }}:${{ matrix.version }}
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           push: ${{ github.event_name != 'pull_request' }}
           load: ${{ github.event_name == 'pull_request' }}
-          tags: |
-            ${{ github.event_name != 'workflow_dispatch' && matrix.published_ref || '' }}
-            ${{ github.event_name != 'workflow_dispatch' && matrix.published_alias_refs || '' }}
-            ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.event.pull_request.head.sha || github.sha }}-${{ matrix.tag }}
+          tags: ${{ github.event_name == 'pull_request' && format('{0}/{1}:{2}-{3}', env.REGISTRY, matrix.image_name, github.event.pull_request.head.sha, matrix.tag) || format('{0}/{1}:candidate-{2}-{3}-{4}', env.REGISTRY, matrix.image_name, github.run_id, github.run_attempt, matrix.tag) }}
           build-args: |
             ${{ matrix.build_arg }}
+            WINE_CHANNEL=${{ matrix.provider == 'staging' && 'staging' || 'stable' }}
+
+      - name: Select exact image under test
+        id: image
+        env:
+          LOCAL_TAG: ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.event.pull_request.head.sha }}-${{ matrix.tag }}
+        run: |
+          set -euo pipefail
+          if [[ '${{ github.event_name }}' == pull_request ]]; then
+            image="$LOCAL_TAG"
+          else
+            image='${{ env.REGISTRY }}/${{ matrix.image_name }}@${{ steps.build.outputs.digest }}'
+            docker pull "$image"
+          fi
+          echo "image=$image" >> "$GITHUB_OUTPUT"
 
       - name: Smoke actual Labwc environment import
-        if: github.event_name == 'pull_request'
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.event.pull_request.head.sha || github.sha }}-${{ matrix.tag }}
+          IMAGE: ${{ steps.image.outputs.image }}
         run: |
           set -Eeuo pipefail
           output="$RUNNER_TEMP/cage-labwc-${{ matrix.provider }}-${{ matrix.version }}"
@@ -129,19 +144,37 @@ jobs:
           test "$(<"$output/labwc-environment-imported")" = actual-s6-environment
 
       - name: Smoke Wine window and Shell geometry
-        if: github.event_name == 'pull_request' && matrix.provider != 'umu-proton-ge'
+        if: matrix.provider != 'umu-proton-ge'
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.event.pull_request.head.sha || github.sha }}-${{ matrix.tag }}
+          IMAGE: ${{ steps.image.outputs.image }}
         run: CONTAINER_ENGINE=docker tests/smoke-shell-runtime.sh "$IMAGE"
 
       - name: Smoke Wine with rootless Podman
-        if: github.event_name == 'pull_request' && matrix.provider == 'wine' && matrix.version == '11.0'
+        if: matrix.provider == 'wine' && matrix.version == '11.0'
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.event.pull_request.head.sha || github.sha }}-${{ matrix.tag }}
+          IMAGE: ${{ steps.image.outputs.image }}
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install --yes podman uidmap slirp4netns fuse-overlayfs
           test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
-          docker save "$IMAGE" | podman load
-          CONTAINER_ENGINE=podman tests/smoke-shell-runtime.sh "$IMAGE"
+          podman_tag="localhost/cage-shell-smoke:${GITHUB_RUN_ID}"
+          docker tag "$IMAGE" "$podman_tag"
+          docker save "$podman_tag" | podman load
+          CONTAINER_ENGINE=podman tests/smoke-shell-runtime.sh "$podman_tag"
+
+      - name: Promote qualified digest to release tags
+        if: github.event_name == 'push'
+        env:
+          IMAGE_UNDER_TEST: ${{ steps.image.outputs.image }}
+          RELEASE_REF: ${{ matrix.published_ref }}
+          ALIASES: ${{ matrix.published_alias_refs }}
+          COMMIT_TAG: ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.sha }}-${{ matrix.tag }}
+        run: |
+          set -euo pipefail
+          tags=(--tag "$RELEASE_REF" --tag "$COMMIT_TAG")
+          while IFS= read -r alias; do
+            [[ -z "$alias" ]] || tags+=(--tag "$alias")
+          done <<< "$ALIASES"
+          docker buildx imagetools create "${tags[@]}" "$IMAGE_UNDER_TEST"
+          docker buildx imagetools inspect "$RELEASE_REF" >/dev/null

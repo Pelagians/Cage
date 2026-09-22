@@ -3,7 +3,14 @@
 set -Eeuo pipefail
 engine=${CONTAINER_ENGINE:-docker}
 image=${1:?image required}
-root=$(cd "$(dirname "$0")/.." && pwd)
+# Pin the shared test contract separately from the production Shell image.
+shell_revision=a9c6100aabc0cb79deb43910e92639f9b92b4a3d
+shell_source=$(mktemp -d)
+git -C "$shell_source" init -q
+git -C "$shell_source" fetch -q --depth 1 https://github.com/Pelagians/pelagian-shell.git "$shell_revision"
+test "$(git -C "$shell_source" rev-parse FETCH_HEAD)" = "$shell_revision"
+git -C "$shell_source" checkout -q --detach FETCH_HEAD
+conformance="$shell_source/tests/consumer-conformance"
 name="cage-shell-smoke-$$"
 # shellcheck disable=SC2317,SC2329
 cleanup() {
@@ -17,6 +24,7 @@ cleanup() {
     fi
     "$engine" rm -f "$name" >/dev/null 2>&1 || true
     "$engine" volume rm -f "$name-config" >/dev/null 2>&1 || true
+    rm -rf "$shell_source"
     exit "$result"
 }
 trap cleanup EXIT
@@ -39,7 +47,7 @@ encoded=$(printf '%s' "$script" | base64 -w0)
     --env "CAGE_LAUNCH_SCRIPT_B64=$encoded" \
     --env SELKIES_MANUAL_WIDTH=1920 --env SELKIES_MANUAL_HEIGHT=1080 \
     --volume "$name-config:/config" "$image" >/dev/null
-"$engine" cp "$root/tests/verify-shell-session.py" "$name:/tmp/verify-shell-session.py"
-CONTAINER_ENGINE="$engine" "$root/tests/start-shell-stream.sh" "$name"
+"$engine" cp "$conformance/verify-shell-session.py" "$name:/tmp/verify-shell-session.py"
+CONTAINER_ENGINE="$engine" "$conformance/start-shell-stream.sh" "$name" "$shell_source/tests/selkies-smoke-client.py"
 "$engine" exec --user abc "$name" python3 /tmp/verify-shell-session.py notepad
 printf 'Cage Wine shell smoke: PASS image=%s engine=%s\n' "$image" "$engine"

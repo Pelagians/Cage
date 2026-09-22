@@ -27,8 +27,9 @@ services:
   wine-staging:
     build:
       context: ..
-      dockerfile: container/runtimes/wine-staging/Dockerfile
+      dockerfile: container/runtimes/wine/Dockerfile
       args:
+        WINE_CHANNEL: staging
         WINE_PACKAGE_VERSION: "11.10~trixie-1"
     image: cage/wine-staging:11.10-dev
     environment:

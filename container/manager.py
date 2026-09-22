@@ -102,9 +102,11 @@ def build_container(
         if publish_registry else ""
     )
 
+    build_args = ["--build-arg", entry.build_arg_line()]
+    if provider == "staging":
+        build_args.extend(["--build-arg", "WINE_CHANNEL=staging"])
     cmd = [
-        build_cmd, "build",
-        "--build-arg", entry.build_arg_line(),
+        build_cmd, "build", *build_args,
         "-t", local_tag,
         "-f", str(dockerfile),
         str(dockerfile.parents[2].parent),
