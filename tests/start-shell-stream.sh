@@ -18,8 +18,18 @@ for _ in $(seq 1 120); do
     sleep 1
 done
 "$engine" exec --user abc "$name" rm -rf /tmp/pelagian-stream-smoke
-"$engine" exec -d --user abc "$name" sh -c \
-    'exec /lsiopy/bin/python /tmp/selkies-smoke-client.py 1920 1080 > /tmp/pelagian-stream-smoke.log 2>&1'
+# nginx can serve the page before its WebSocket route/backend is ready.
+# Retry only handshake startup failures, never a failed decoded-frame assertion.
+# shellcheck disable=SC2016
+"$engine" exec -d --user abc "$name" sh -c '
+    for attempt in $(seq 1 30); do
+        /lsiopy/bin/python /tmp/selkies-smoke-client.py 1920 1080 > /tmp/pelagian-stream-smoke.log 2>&1
+        test ! -e /tmp/pelagian-stream-smoke/ready || exit 1
+        grep -Eq "HTTP (404|502|503)|ConnectionRefusedError|timed out during opening handshake" /tmp/pelagian-stream-smoke.log || exit 1
+        sleep 1
+    done
+    exit 1
+'
 for _ in $(seq 1 90); do
     if "$engine" exec "$name" test -s /tmp/pelagian-stream-smoke/ready; then
         "$engine" exec "$name" cat /tmp/pelagian-stream-smoke/ready
