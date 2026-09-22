@@ -11,12 +11,22 @@ curl --fail --silent --show-error --retry 3 \
 printf '%s  %s\n' cef81eb602743419b98b3c4bd4387cb1585bd97bc1ba495ab4e893e3ef407a52 "$client" | sha256sum --check --status
 "$engine" cp "$client" "$name:/tmp/selkies-smoke-client.py"
 "$engine" exec "$name" chmod 0644 /tmp/selkies-smoke-client.py
+# Match Shell's own runtime harness: let its initial output mode and adapter
+# settle before the viewer submits a second output configuration.
+ready=false
 for _ in $(seq 1 120); do
-    if "$engine" exec "$name" curl -kfsS --max-time 2 https://127.0.0.1:3001/ >/dev/null 2>&1; then
+    if "$engine" exec "$name" pelagian-layoutd status 2>/dev/null | python3 -c \
+        'import json,sys; s=json.load(sys.stdin); assert s["adapter_connected"] and s["layoutd"] in ("starting", "healthy", "degraded")' 2>/dev/null \
+        && "$engine" exec "$name" curl -kfsS --max-time 2 https://127.0.0.1:3001/ >/dev/null 2>&1; then
+        ready=true
         break
     fi
     sleep 1
 done
+if [[ "$ready" != true ]]; then
+    echo 'Shell adapter and streaming server did not become ready' >&2
+    exit 1
+fi
 "$engine" exec --user abc "$name" rm -rf /tmp/pelagian-stream-smoke
 # nginx can serve the page before its WebSocket route/backend is ready.
 # Retry only handshake startup failures, never a failed decoded-frame assertion.
