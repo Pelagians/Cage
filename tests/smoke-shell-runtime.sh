@@ -4,7 +4,7 @@ set -Eeuo pipefail
 engine=${CONTAINER_ENGINE:-docker}
 image=${1:?image required}
 # Pin the shared test contract separately from the production Shell image.
-shell_revision=a9c6100aabc0cb79deb43910e92639f9b92b4a3d
+shell_revision=${PELAGIAN_SHELL_CONFORMANCE_COMMIT:-0ceaa7c012367e0999c14f7f715726213f138723}
 shell_source=$(mktemp -d)
 git -C "$shell_source" init -q
 git -C "$shell_source" fetch -q --depth 1 https://github.com/Pelagians/pelagian-shell.git "$shell_revision"
@@ -49,5 +49,11 @@ encoded=$(printf '%s' "$script" | base64 -w0)
     --volume "$name-config:/config" "$image" >/dev/null
 "$engine" cp "$conformance/verify-shell-session.py" "$name:/tmp/verify-shell-session.py"
 CONTAINER_ENGINE="$engine" "$conformance/start-shell-stream.sh" "$name" "$shell_source/tests/selkies-smoke-client.py"
+"$engine" exec "$name" sh -c '
+    test "$XDG_RUNTIME_DIR" = /run/pelagian-shell
+    test -S /run/pelagian-shell/labwc.sock
+    test -S /run/pelagian-shell/bus
+    test -S /run/pelagian-shell/wayland-1
+'
 "$engine" exec --user abc "$name" python3 /tmp/verify-shell-session.py notepad
 printf 'Cage Wine shell smoke: PASS image=%s engine=%s\n' "$image" "$engine"
