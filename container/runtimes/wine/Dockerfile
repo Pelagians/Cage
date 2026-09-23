@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # Universal Cage Wine Stable/Staging image: build, headless, and Selkies session modes.
 ARG WINE_PACKAGE_VERSION=11.0.0.0~trixie-1
-FROM ghcr.io/pelagians/pelagian-shell@sha256:73a5d952d3dd47eb2467d656ca4665cb2bde18fe811a320deaeeaf9f4459fd92
+FROM ghcr.io/pelagians/pelagian-shell@sha256:5ad8e46d11bac94a5f7202c0f4cee5872f2f731b8602bac42329d42717d65122
 ARG WINE_PACKAGE_VERSION
 ARG WINE_CHANNEL=stable
 ARG WINETRICKS_COMMIT=5a59ea07513b24093bd90fad943ecf9543cf05bc
@@ -32,7 +32,7 @@ ENV PELAGIAN_SHELL_PROFILE=legacy-apps \
     CAGE_WINE_GRAPHICS=xwayland
 
 LABEL org.pelagian.cage.session-contract="cage.selkies-wayland/v1" \
-    io.pelagians.cage.pelagian-shell-image="ghcr.io/pelagians/pelagian-shell@sha256:73a5d952d3dd47eb2467d656ca4665cb2bde18fe811a320deaeeaf9f4459fd92"
+    io.pelagians.cage.pelagian-shell-image="ghcr.io/pelagians/pelagian-shell@sha256:5ad8e46d11bac94a5f7202c0f4cee5872f2f731b8602bac42329d42717d65122"
 
 COPY container/selkies/root/ /
 COPY container/common/wine-env.sh /opt/cage/common/wine-env.sh
