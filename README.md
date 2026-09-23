@@ -546,6 +546,19 @@ Cage's design draws from the broader Wine/Proton ecosystem:
 | [docker-wine](https://github.com/scottyhardy/docker-wine) | Container ergonomics: UID/GID mapping, display modes, Wayland/Labwc/RDP/audio concerns; Cage does not adopt its mutable desktop-container goal |
 | [LSW](https://github.com/barrersoftware/lsw) | Foundation-first compatibility architecture and path/registry translation awareness; Cage does not adopt its no-Wine/kernel/PE-loader goal |
 
+### Pelagian Shell window and runtime contract
+
+Cage runtime images inherit the digest-pinned Pelagian Shell session policy.
+Ordinary desktop windows receive Shell-owned server decorations, with a visible
+title and close control; Shell owns the one workspace, automatic layout, and
+window classification. Cage owns application launch and runtime setup. Wine
+applications keep their normal Wine/XWayland decoration behavior, and Cage does
+not add Electron adapters or application-specific Labwc rules. Ephemeral
+Wayland, Labwc, and session D-Bus sockets live under `/run/pelagian-shell`;
+Wine prefixes and other persistent application data stay under `/config`.
+
+See the [Pelagian Shell window-chrome contract](https://github.com/Pelagians/pelagian-shell/blob/main/docs/window-chrome.md).
+
 Detailed analysis in [docs/reference-study.md](docs/reference-study.md).
 
 Proposed follow-up work from hard BYO installer probes is tracked in [docs/legacy-installer-debugging-backlog.md](docs/legacy-installer-debugging-backlog.md). Production hardening work for runtime network isolation, BlueBuild-style Chocolatey module support, and the PowerShell wrapper proof recipe is tracked in [docs/production-hardening-roadmap.md](docs/production-hardening-roadmap.md).
