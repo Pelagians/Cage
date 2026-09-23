@@ -244,7 +244,7 @@ class SelkiesImageContractTests(unittest.TestCase):
     def test_all_catalog_runtime_images_use_one_selkies_image_contract(self):
         expected_base = (
             "ghcr.io/pelagians/pelagian-shell@sha256:"
-            "73a5d952d3dd47eb2467d656ca4665cb2bde18fe811a320deaeeaf9f4459fd92"
+            "5ad8e46d11bac94a5f7202c0f4cee5872f2f731b8602bac42329d42717d65122"
         )
         bases = set()
         for rel in (
