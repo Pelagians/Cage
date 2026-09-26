@@ -15,6 +15,7 @@ export class DatabaseInitError extends Error {
 
 export function resolveDbPath(): string {
   const configured = process.env.CLIPWISE_DB_PATH;
+  if (configured?.trim() === ":memory:") return ":memory:";
   return path.resolve(process.cwd(), configured && configured.trim() ? configured : "data/clipwise.db");
 }
 
