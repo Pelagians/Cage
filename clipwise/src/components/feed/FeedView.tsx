@@ -47,7 +47,8 @@ export function FeedView({ initialClips }: { initialClips: FeedClip[] }) {
     const head = base.slice(0, index + 1);
     try {
       const res = await api<{ clips: FeedClip[] }>(`/api/feed?exclude=${encodeURIComponent(head.map((c) => c.id).join(","))}`);
-      setItems([...head, ...res.clips]);
+      // Keep the current head objects (their saved flags may have been updated meanwhile).
+      setItems((prev) => [...prev.slice(0, index + 1), ...res.clips.filter((c) => !head.some((h) => h.id === c.id))]);
       return true;
     } catch {
       return false;
@@ -66,6 +67,13 @@ export function FeedView({ initialClips }: { initialClips: FeedClip[] }) {
       setActive(index);
       pendingScroll.current = index;
       void refreshTail(stored.items, index);
+      // Saves may have changed elsewhere (Saved screen, Watch mode) since this was stored.
+      api<{ clips: { id: string }[] }>("/api/saved")
+        .then((res) => {
+          const saved = new Set(res.clips.map((c) => c.id));
+          setItems((list) => list.map((c) => (c.saved === saved.has(c.id) ? c : { ...c, saved: saved.has(c.id) })));
+        })
+        .catch(() => undefined);
     }
     setReady(true);
   }, [refreshTail]);

@@ -93,6 +93,9 @@ export function WatchView({ initialClip, autoplay }: { initialClip: ClipView; au
   }, []);
 
   const onProgress = useCallback((t: number) => {
+    const c = clipRef.current;
+    // Ignore stale readings from the previous clip right after switching.
+    if (modeRef.current === "segment" && (t < c.startSeconds - 3 || t > c.endSeconds + 3)) return;
     const w = watched.current;
     if (w.last !== null && t > w.last && t - w.last < 2) w.seconds += t - w.last;
     w.last = t;
@@ -116,6 +119,8 @@ export function WatchView({ initialClip, autoplay }: { initialClip: ClipView; au
 
   const goTo = useCallback((target: ClipView) => {
     watched.current = { seconds: 0, last: null, maxPos: target.startSeconds };
+    clipRef.current = target;
+    modeRef.current = "segment";
     setClip(target);
     setMode("segment");
     setPosition(target.startSeconds);

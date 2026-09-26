@@ -17,8 +17,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build",
-    "db:reset": "tsx scripts/db-reset.ts",
-    "db:seed": "tsx scripts/db-seed.ts"
+    "db:reset": "tsx scripts/db-reset.ts"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
