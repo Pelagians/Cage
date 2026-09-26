@@ -15,12 +15,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={show}>
       {children}
-      <div aria-live="polite" className="pointer-events-none fixed inset-x-0 z-[60]" style={{ bottom: "calc(var(--nav-h) + var(--safe-bottom) + 16px)" }}>
+      <div aria-live="polite" className="pointer-events-none fixed inset-x-0 z-[60]" style={{ bottom: "calc(var(--nav-h) + var(--safe-bottom) + 24px)" }}>
         {message && (
           <div
             key={message.key}
             role="status"
-            className="toast absolute left-1/2 max-w-[90vw] -translate-x-1/2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black shadow-lg"
+            className="toast absolute left-1/2 max-w-[92vw] -translate-x-1/2 truncate whitespace-nowrap rounded-full bg-white px-4 py-2 text-sm font-medium text-black shadow-lg"
           >
             {message.text}
           </div>

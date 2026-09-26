@@ -20,7 +20,7 @@ interface Props {
 export function ClipCard({ clip, index, onWatch, onSave, onMore, onLess, near }: Props) {
   const hue = topicHue(clip.topic);
   const [thumbOk, setThumbOk] = useState(true);
-  const channel = clip.source.channel || "YouTube";
+  const channel = clip.source.channel;
 
   return (
     <article
@@ -56,7 +56,7 @@ export function ClipCard({ clip, index, onWatch, onSave, onMore, onLess, near }:
             {clip.topic}
           </span>
           {clip.slot === "explore" && (
-            <span className="rounded-full bg-white/8 px-2.5 py-1 text-white/55" title="Outside your usual topics">
+            <span className="rounded-full bg-white/8 px-2.5 py-1 text-white/55" title="Outside your usual topics, to keep the feed from becoming a bubble">
               Explore
             </span>
           )}
@@ -68,8 +68,12 @@ export function ClipCard({ clip, index, onWatch, onSave, onMore, onLess, near }:
 
           <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/50">
             <span className="font-semibold text-white/80">{formatDuration(clip.durationSeconds)}</span>
-            <span aria-hidden>·</span>
-            <span className="truncate">{channel}</span>
+            {channel && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="truncate">{channel}</span>
+              </>
+            )}
           </div>
           {clip.tags.length > 0 && (
             <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="Tags">
@@ -90,7 +94,6 @@ export function ClipCard({ clip, index, onWatch, onSave, onMore, onLess, near }:
           <button type="button" onClick={onWatch} className="btn btn-light h-14 flex-1 text-base" aria-label={`Watch ${clip.title}`}>
             <PlayIcon size={20} />
             Watch
-            <span className="font-normal text-black/55">{formatDuration(clip.durationSeconds)}</span>
           </button>
           <CardAction label={clip.saved ? "Saved" : "Save"} onClick={onSave} active={clip.saved}>
             <BookmarkIcon filled={clip.saved} />

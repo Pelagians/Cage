@@ -54,6 +54,10 @@ body {
   outline: none;
   transition: border-color 120ms;
 }
+.field::placeholder {
+  font-weight: 400;
+  color: rgb(255 255 255 / 0.3);
+}
 .field:focus {
   border-color: rgb(244 193 82 / 0.6);
 }

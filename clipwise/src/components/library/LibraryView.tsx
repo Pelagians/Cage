@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import type { ClipView, SourceVideo } from "@/lib/types";
 import { formatDuration } from "@/lib/domain/time";
 import { api, ApiError } from "@/lib/client/api";
-import { sessionStore } from "@/lib/client/session";
+import { clearFeedCache } from "@/lib/client/session";
 import { useToast } from "../Toast";
 import { ClipRow } from "../ClipRow";
 import { EmptyState } from "../States";
@@ -19,7 +19,7 @@ export function LibraryView({ sources, clips }: { sources: (SourceVideo & { clip
     if (!window.confirm(`Delete “${s.title}” and its ${s.clipCount} clip(s)?`)) return;
     try {
       await api(`/api/sources/${s.id}`, { method: "DELETE" });
-      sessionStore.write("clipwise.feed", null);
+      clearFeedCache();
       toast("Video deleted");
       router.refresh();
     } catch (err) {

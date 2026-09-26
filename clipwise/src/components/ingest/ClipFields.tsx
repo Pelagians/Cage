@@ -38,12 +38,13 @@ export function ClipFields({ values, errors = {}, onChange, topics = [], idPrefi
           maxLength={140}
           aria-invalid={!!errors.title}
           onChange={(e) => onChange({ title: e.target.value })}
-          placeholder="Why Rome couldn't pay its army"
+          placeholder="What's the idea?"
         />
       </Field>
       <Field label="Hook" error={errors.hook} htmlFor={`${idPrefix}-hook`}>
         <textarea
           id={`${idPrefix}-hook`}
+          rows={3}
           className="field min-h-[4.5rem] resize-y"
           value={values.hook}
           maxLength={400}
@@ -60,7 +61,7 @@ export function ClipFields({ values, errors = {}, onChange, topics = [], idPrefi
             value={values.start}
             aria-invalid={!!errors.start}
             onChange={(e) => onChange({ start: e.target.value })}
-            placeholder="3:15"
+            placeholder="m:ss"
           />
         </Field>
         <Field
@@ -76,7 +77,7 @@ export function ClipFields({ values, errors = {}, onChange, topics = [], idPrefi
             value={values.end}
             aria-invalid={!!errors.end}
             onChange={(e) => onChange({ end: e.target.value })}
-            placeholder="4:44"
+            placeholder="m:ss"
           />
         </Field>
       </div>
@@ -88,7 +89,7 @@ export function ClipFields({ values, errors = {}, onChange, topics = [], idPrefi
             list={listId}
             value={values.topic}
             onChange={(e) => onChange({ topic: e.target.value })}
-            placeholder="Economic History"
+            placeholder="e.g. Economics"
           />
           <datalist id={listId}>
             {topics.map((t) => (

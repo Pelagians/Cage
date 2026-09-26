@@ -2,7 +2,8 @@ import { z } from "zod";
 import { json, readJson, route } from "@/lib/server/api";
 import { validateClipDraft } from "@/lib/domain/validation";
 import { createClip } from "@/lib/repo/clips";
-import { InputError, upsertYouTubeSource } from "@/lib/repo/sources";
+import { getSourceByYouTubeId, InputError, upsertYouTubeSource } from "@/lib/repo/sources";
+import { extractYouTubeId } from "@/lib/domain/youtube";
 
 const Body = z.object({
   url: z.string().trim().min(1).max(500),
@@ -30,7 +31,10 @@ const Body = z.object({
 /** Save approved clips (all-or-nothing) and the SourceVideo they belong to. */
 export const POST = route(async (req, { db }) => {
   const body = Body.parse(await readJson(req));
-  const validated = body.clips.map((c) => ({ c, r: validateClipDraft(c, { videoDurationSeconds: body.durationSeconds }) }));
+  const videoId = extractYouTubeId(body.url);
+  const existing = videoId ? getSourceByYouTubeId(db, videoId) : null;
+  const duration = existing?.durationSeconds ?? body.durationSeconds;
+  const validated = body.clips.map((c) => ({ c, r: validateClipDraft(c, { videoDurationSeconds: duration }) }));
   const bad = validated.filter((v) => !v.r.ok);
   if (bad.length) {
     const fields: Record<string, string> = {};

@@ -296,7 +296,8 @@ test("unavailable embedded video shows a friendly error", async ({ page }) => {
   await page.goto(`/watch/${clip.id}`);
   await expect(page.getByTestId("player-error")).toContainText("doesn't allow this video to be embedded");
   await expect(page.getByRole("link", { name: "Open on YouTube" }).first()).toBeVisible();
-  await page.request.delete(`/api/sources/${source.id}`, { headers: { origin: "http://127.0.0.1:3100" } });
+  const del = await page.request.delete(`/api/sources/${source.id}`, { headers: { origin: "http://127.0.0.1:3100" } });
+  expect(del.status()).toBe(200);
 });
 
 test("validation and error handling on ingest and manual clips", async ({ page }) => {

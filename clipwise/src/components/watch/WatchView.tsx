@@ -39,14 +39,19 @@ export function WatchView({ initialClip, autoplay }: { initialClip: ClipView; au
   const [next, setNext] = useState<ClipView | null>(null);
   const [deeper, setDeeper] = useState<ClipView[]>([]);
   const [deeperOpen, setDeeperOpen] = useState(false);
+  // Bumped to remount the player after a load failure (e.g. the YouTube script didn't load).
+  const [playerKey, setPlayerKey] = useState(0);
   const watched = useRef({ seconds: 0, last: null as number | null, maxPos: initialClip.startSeconds });
   const openedLogged = useRef(new Set<string>());
 
   const clipRef = useRef(clip);
   const modeRef = useRef(mode);
+  const errorRef = useRef(error);
+  const replayRef = useRef(() => {});
   useEffect(() => {
     clipRef.current = clip;
     modeRef.current = mode;
+    errorRef.current = error;
   });
 
   const youtubeId = clip.source.youtubeVideoId;
@@ -83,8 +88,9 @@ export function WatchView({ initialClip, autoplay }: { initialClip: ClipView; au
   }, [waitingToPlay, clip.id]);
   const showTapHint = waitingToPlay && hintDueFor === clip.id;
 
-  const onReady = useCallback((duration: number) => {
+  const onReady = useCallback((duration: number, videoId: string) => {
     const source = clipRef.current.source;
+    if (source.youtubeVideoId !== videoId) return; // clip switched while loading
     const key = `clipwise.meta.${source.id}`;
     if (sessionStore.read(key)) return;
     sessionStore.write(key, true);
@@ -118,6 +124,11 @@ export function WatchView({ initialClip, autoplay }: { initialClip: ClipView; au
   }, []);
 
   const goTo = useCallback((target: ClipView) => {
+    if (target.id === clipRef.current.id) {
+      replayRef.current();
+      return;
+    }
+    if (errorRef.current) setPlayerKey((k) => k + 1);
     watched.current = { seconds: 0, last: null, maxPos: target.startSeconds };
     clipRef.current = target;
     modeRef.current = "segment";
@@ -153,6 +164,11 @@ export function WatchView({ initialClip, autoplay }: { initialClip: ClipView; au
   };
 
   const continueOriginal = () => {
+    const player = playerRef.current;
+    if (player && player.getDuration() > 0 && player.getCurrentTime() >= player.getDuration() - 1) {
+      toast("That was the end of the original video");
+      return;
+    }
     setMode("original");
     void track({ clipId: clip.id, action: "continued_original" });
     playerRef.current?.play();
@@ -164,6 +180,9 @@ export function WatchView({ initialClip, autoplay }: { initialClip: ClipView; au
     setPosition(clip.startSeconds);
     playerRef.current?.restartSegment();
   };
+  useEffect(() => {
+    replayRef.current = replay;
+  });
 
   const toggleSave = async () => {
     const saved = !clip.saved;
@@ -178,11 +197,12 @@ export function WatchView({ initialClip, autoplay }: { initialClip: ClipView; au
   };
 
   const feedback = async (action: "more_like_this" | "less_like_this") => {
-    await track({ clipId: clip.id, action });
+    const id = clip.id;
+    await track({ clipId: id, action });
     toast(action === "more_like_this" ? `More ${clip.topic} in your feed` : `Less ${clip.topic} in your feed`);
     // Refresh the prefetched Next pick so it reflects the new preference.
     api<{ clip: ClipView | null }>(`/api/clips/${clip.id}/next?exclude=${encodeURIComponent(getSeen().join(","))}`)
-      .then((r) => setNext(r.clip))
+      .then((r) => clipRef.current.id === id && setNext(r.clip))
       .catch(() => undefined);
   };
 
@@ -214,9 +234,10 @@ export function WatchView({ initialClip, autoplay }: { initialClip: ClipView; au
       </header>
 
       <div className="mx-auto w-full max-w-4xl">
-        <div className="relative aspect-video w-full overflow-hidden bg-neutral-900 sm:rounded-2xl">
+        <div className="relative mx-auto aspect-video w-full overflow-hidden bg-neutral-900 sm:max-w-[calc(58vh*16/9)] sm:rounded-2xl">
           {youtubeId ? (
             <YouTubePlayer
+              key={playerKey}
               ref={playerRef}
               videoId={youtubeId}
               startSeconds={clip.startSeconds}
@@ -282,10 +303,7 @@ export function WatchView({ initialClip, autoplay }: { initialClip: ClipView; au
           <h1 className="mt-3 text-balance text-2xl font-bold leading-tight tracking-tight sm:text-3xl" data-testid="watch-title">
             {clip.title}
           </h1>
-          {clip.hook && <p className="mt-2 text-pretty text-white/75">{clip.hook}</p>}
-          {clip.summary && <p className="mt-3 text-pretty text-sm leading-relaxed text-white/50">{clip.summary}</p>}
-
-          <div className="mt-5 grid grid-cols-4 gap-2">
+          <div className="mt-4 grid grid-cols-4 gap-2">
             <ActionButton label={clip.saved ? "Saved" : "Save"} active={clip.saved} onClick={() => void toggleSave()}>
               <BookmarkIcon filled={clip.saved} />
             </ActionButton>
@@ -299,6 +317,9 @@ export function WatchView({ initialClip, autoplay }: { initialClip: ClipView; au
               <NextIcon />
             </ActionButton>
           </div>
+          {clip.hook && <p className="mt-4 text-pretty text-white/75">{clip.hook}</p>}
+          {clip.summary && <p className="mt-3 text-pretty text-sm leading-relaxed text-white/50">{clip.summary}</p>}
+
 
           {mode === "original" && (
             <button type="button" onClick={replay} className="btn btn-ghost mt-4 w-full">
@@ -325,7 +346,7 @@ export function WatchView({ initialClip, autoplay }: { initialClip: ClipView; au
                     <NextIcon size={18} /> Next
                   </button>
                   <button type="button" className="btn btn-ghost h-12" onClick={continueOriginal}>
-                    <ContinueIcon size={18} /> Continue original
+                    <ContinueIcon size={18} /> <span className="whitespace-nowrap text-sm">Continue original</span>
                   </button>
                   <button type="button" className="btn btn-ghost h-12" onClick={() => setDeeperOpen(true)} disabled={deeper.length === 0}>
                     <DeeperIcon size={18} /> Go deeper

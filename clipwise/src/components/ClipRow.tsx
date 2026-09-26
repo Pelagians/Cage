@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ClipView } from "@/lib/types";
 import { formatDuration, formatTimestamp } from "@/lib/domain/time";
 import { topicHue } from "@/lib/client/topic-color";
@@ -9,12 +9,18 @@ import { topicHue } from "@/lib/client/topic-color";
 /** Compact clip list row used by Saved and Library. */
 export function ClipRow({ clip, actions }: { clip: ClipView; actions?: React.ReactNode }) {
   const [thumbOk, setThumbOk] = useState(true);
+  const imgRef = useRef<HTMLImageElement>(null);
+  // A server-rendered image can fail before hydration attaches onError; check once mounted.
+  useEffect(() => {
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth === 0) setThumbOk(false);
+  }, []);
   const hue = topicHue(clip.topic);
   return (
     <li className="flex items-center gap-3 rounded-2xl bg-panel p-2.5 pr-3" data-clip-id={clip.id}>
-      <Link href={`/watch/${clip.id}`} className="relative h-16 w-28 shrink-0 overflow-hidden rounded-xl" style={{ background: `hsl(${hue} 40% 20%)` }} aria-label={`Watch ${clip.title}`}>
+      <Link href={`/watch/${clip.id}`} className="relative h-14 w-24 shrink-0 sm:h-16 sm:w-28 overflow-hidden rounded-xl" style={{ background: `hsl(${hue} 40% 20%)` }} aria-label={`Watch ${clip.title}`}>
         {clip.source.thumbnailUrl && thumbOk && (
-          <img src={clip.source.thumbnailUrl} alt="" loading="lazy" onError={() => setThumbOk(false)} className="h-full w-full object-cover opacity-80" />
+          <img ref={imgRef} src={clip.source.thumbnailUrl} alt="" loading="lazy" onError={() => setThumbOk(false)} className="h-full w-full object-cover opacity-80" />
         )}
         <span className="absolute bottom-1 right-1 rounded bg-black/75 px-1 text-[10px] font-semibold tabular-nums">{formatDuration(clip.durationSeconds)}</span>
       </Link>

@@ -6,12 +6,11 @@ import Link from "next/link";
 import type { FeedClip } from "@/lib/recommend/service";
 import { api, ApiError } from "@/lib/client/api";
 import { track, trackLater } from "@/lib/client/interactions";
-import { markSeen, sessionStore } from "@/lib/client/session";
+import { FEED_KEY, markSeen, sessionStore } from "@/lib/client/session";
 import { useToast } from "../Toast";
 import { ClipCard } from "./ClipCard";
 import { RefreshIcon } from "../icons";
 
-const FEED_KEY = "clipwise.feed";
 const RESTORE_MS = 30 * 60 * 1000;
 const impressed = new Set<string>(); // per tab session
 

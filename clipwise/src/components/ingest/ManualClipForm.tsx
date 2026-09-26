@@ -8,7 +8,7 @@ import { formatTimestamp, parseTimestamp } from "@/lib/domain/time";
 import { validateClipDraft } from "@/lib/domain/validation";
 import { extractYouTubeId } from "@/lib/domain/youtube";
 import { api, ApiError } from "@/lib/client/api";
-import { sessionStore } from "@/lib/client/session";
+import { clearFeedCache } from "@/lib/client/session";
 import { useToast } from "../Toast";
 import { ErrorPanel } from "../States";
 import { CheckIcon, PlayIcon, TrashIcon } from "../icons";
@@ -87,7 +87,7 @@ export function ManualClipForm({
     try {
       if (editClip) {
         const res = await api<{ clip: ClipView }>(`/api/clips/${editClip.id}`, { method: "PATCH", body: values });
-        sessionStore.write("clipwise.feed", null);
+        clearFeedCache();
         toast("Clip updated");
         router.push(`/watch/${res.clip.id}`);
         return;
@@ -98,7 +98,7 @@ export function ManualClipForm({
         sid = res.source.id;
       }
       const res = await api<{ clip: ClipView }>("/api/clips", { body: { sourceId: sid, ...values } });
-      sessionStore.write("clipwise.feed", null);
+      clearFeedCache();
       setCreated({ id: res.clip.id, title: res.clip.title });
       toast("Clip saved");
       if (sourceId === NEW) {
@@ -121,7 +121,7 @@ export function ManualClipForm({
     if (!editClip || !window.confirm("Delete this clip? Its history and saved state go with it.")) return;
     try {
       await api(`/api/clips/${editClip.id}`, { method: "DELETE" });
-      sessionStore.write("clipwise.feed", null);
+      clearFeedCache();
       toast("Clip deleted");
       router.push("/library");
     } catch (err) {

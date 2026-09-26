@@ -1,5 +1,6 @@
 import { HttpError, json, readJson, route } from "@/lib/server/api";
-import { validateClipDraft } from "@/lib/domain/validation";
+import { z } from "zod";
+import { validateClipDraft, type ClipDraftInput } from "@/lib/domain/validation";
 import { deleteClip, getClipView, updateClip } from "@/lib/repo/clips";
 import { getSource, InputError } from "@/lib/repo/sources";
 
@@ -16,7 +17,8 @@ export const PATCH = route<Ctx>(async (req, { db, params }) => {
   const existing = getClipView(db, id);
   if (!existing) throw new HttpError(404, "Clip not found.");
   const source = getSource(db, existing.sourceVideoId);
-  const result = validateClipDraft((await readJson(req)) as object, { videoDurationSeconds: source?.durationSeconds });
+  const body = z.object({}).passthrough().parse(await readJson(req)) as ClipDraftInput;
+  const result = validateClipDraft(body, { videoDurationSeconds: source?.durationSeconds });
   if (!result.ok) throw new InputError("Please fix the highlighted fields.", result.errors);
   return json({ clip: updateClip(db, id, result.value) });
 });

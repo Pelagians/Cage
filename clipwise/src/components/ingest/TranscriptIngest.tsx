@@ -7,7 +7,7 @@ import { formatDuration, formatTimestamp, parseTimestamp } from "@/lib/domain/ti
 import { validateClipDraft } from "@/lib/domain/validation";
 import { extractYouTubeId } from "@/lib/domain/youtube";
 import { api, ApiError } from "@/lib/client/api";
-import { sessionStore } from "@/lib/client/session";
+import { clearFeedCache } from "@/lib/client/session";
 import { useToast } from "../Toast";
 import { ErrorPanel } from "../States";
 import { CheckIcon, PlayIcon, TrashIcon } from "../icons";
@@ -100,7 +100,13 @@ export function TranscriptIngest({ topics }: { topics: string[] }) {
     if (!transcript.trim()) errs.transcript = "Paste a timestamped transcript (or use Manual clip instead).";
     if (duration.trim() && durationSeconds === null) errs.duration = "Use a format like 45:10 or 1:02:11.";
     setErrors(errs);
-    if (Object.keys(errs).length) return;
+    if (Object.keys(errs).length) {
+      const first = { url: "ing-url", duration: "ing-duration", transcript: "ing-transcript" }[Object.keys(errs)[0]!];
+      const el = first ? document.getElementById(first) : null;
+      el?.focus();
+      el?.scrollIntoView({ block: "center", behavior: "smooth" });
+      return;
+    }
 
     setBusy(true);
     try {
@@ -165,7 +171,7 @@ export function TranscriptIngest({ topics }: { topics: string[] }) {
           })),
         },
       });
-      sessionStore.write("clipwise.feed", null); // make the feed pick up the new clips
+      clearFeedCache();
       setSaved({ count: res.clips.length, firstClipId: res.clips[0]?.id });
     } catch (err) {
       if (err instanceof ApiError && Object.keys(err.fields).length) {
@@ -276,7 +282,15 @@ export function TranscriptIngest({ topics }: { topics: string[] }) {
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
-                      className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-white/10 disabled:opacity-40"
+                      onClick={() => update(d.id, { approved: !d.approved })}
+                      aria-pressed={d.approved}
+                      className={`flex h-11 items-center gap-1 rounded-full px-3 text-sm font-semibold ${d.approved ? "bg-emerald-400/20 text-emerald-200" : "bg-white/8 text-white/80 hover:bg-white/14"}`}
+                    >
+                      <CheckIcon size={16} /> {d.approved ? "Approved" : "Approve"}
+                    </button>
+                    <button
+                      type="button"
+                      className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-white/10 disabled:opacity-40"
                       disabled={s === null || e === null || e <= s}
                       onClick={() => s !== null && e !== null && setPreview({ start: s, end: e })}
                       aria-label={`Preview clip ${i + 1}`}
@@ -286,7 +300,7 @@ export function TranscriptIngest({ topics }: { topics: string[] }) {
                     </button>
                     <button
                       type="button"
-                      className="flex h-9 w-9 items-center justify-center rounded-full text-white/60 hover:bg-red-500/15 hover:text-red-300"
+                      className="flex h-11 w-11 items-center justify-center rounded-full text-white/60 hover:bg-red-500/15 hover:text-red-300"
                       onClick={() => setDrafts((l) => l.filter((x) => x.id !== d.id))}
                       aria-label={`Delete clip ${i + 1}`}
                       title="Delete"
@@ -297,14 +311,6 @@ export function TranscriptIngest({ topics }: { topics: string[] }) {
                 </div>
                 <ClipFields idPrefix={`cand-${d.id}`} values={d} errors={errs} onChange={(p) => update(d.id, p)} topics={topics} />
                 {d.notes.length > 0 && <p className="mt-2 text-xs text-white/40">{d.notes.join(" ")}</p>}
-                <button
-                  type="button"
-                  onClick={() => update(d.id, { approved: !d.approved })}
-                  aria-pressed={d.approved}
-                  className={`btn mt-3 w-full ${d.approved ? "bg-emerald-400/20 text-emerald-200" : "btn-ghost"}`}
-                >
-                  <CheckIcon size={18} /> {d.approved ? "Approved" : "Approve"}
-                </button>
               </li>
             );
           })}
@@ -378,7 +384,13 @@ export function TranscriptIngest({ topics }: { topics: string[] }) {
           <label htmlFor="ing-transcript" className="text-xs font-medium text-white/60">
             Timestamped transcript
           </label>
-          <button type="button" className="text-xs text-accent hover:underline" onClick={() => setTranscript(SAMPLE)}>
+          <button type="button" className="text-xs text-accent hover:underline" onClick={() => {
+              setTranscript(SAMPLE);
+              if (!url.trim()) {
+                setUrl("https://www.youtube.com/watch?v=qrebO_9bhuM");
+                setTitle((t) => t || "How Inflation Ruined the Roman Economy");
+              }
+            }}>
             Paste a sample
           </button>
         </div>

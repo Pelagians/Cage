@@ -19,6 +19,12 @@ function write(key: string, value: unknown) {
 }
 
 const SEEN = "clipwise.seen";
+export const FEED_KEY = "clipwise.feed";
+
+/** Forget the cached feed so the next visit re-ranks from the server. */
+export function clearFeedCache() {
+  write(FEED_KEY, null);
+}
 
 export function markSeen(id: string) {
   const seen = read<string[]>(SEEN) ?? [];

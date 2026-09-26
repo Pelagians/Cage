@@ -33,7 +33,8 @@ export interface YouTubePlayerProps {
   /** When false (Continue Original), playback runs past endSeconds. */
   boundaryActive: boolean;
   autoplay: boolean;
-  onReady?: (durationSeconds: number) => void;
+  /** Called once per loaded video with the duration the player reports. */
+  onReady?: (durationSeconds: number, videoId: string) => void;
   onProgress?: (seconds: number) => void;
   onPlayingChange?: (playing: boolean) => void;
   onSegmentEnd?: () => void;
@@ -49,6 +50,7 @@ export function YouTubePlayer(props: YouTubePlayerProps) {
   const [ready, setReady] = useState(false);
   const boundary = useRef(new SegmentBoundary(startSeconds, endSeconds));
   const loaded = useRef<{ videoId: string; start: number } | null>(null);
+  const reportedVideo = useRef<string | null>(null);
 
   // Latest props for use inside long-lived callbacks.
   const latest = useRef(props);
@@ -89,12 +91,19 @@ export function YouTubePlayer(props: YouTubePlayerProps) {
             onReady: (e) => {
               if (cancelled) return;
               setReady(true);
-              latest.current.onReady?.(e.target.getDuration());
+              reportedVideo.current = p.videoId;
+              latest.current.onReady?.(e.target.getDuration(), p.videoId);
               if (latest.current.autoplay) e.target.playVideo();
             },
             onStateChange: (e) => {
               if (cancelled) return;
               latest.current.onPlayingChange?.(e.data === PLAYER_STATE.PLAYING);
+              // Videos switched in via loadVideoById report their duration once they play.
+              const current = loaded.current?.videoId;
+              if (e.data === PLAYER_STATE.PLAYING && current && reportedVideo.current !== current) {
+                reportedVideo.current = current;
+                latest.current.onReady?.(e.target.getDuration(), current);
+              }
               if (e.data === PLAYER_STATE.ENDED && boundary.current.videoEnded()) latest.current.onSegmentEnd?.();
             },
             onError: (e) => {

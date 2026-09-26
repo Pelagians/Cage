@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import type { AiSettings, AppSettings } from "@/lib/types";
 import { api, ApiError } from "@/lib/client/api";
-import { sessionStore } from "@/lib/client/session";
+import { clearFeedCache } from "@/lib/client/session";
 import { useToast } from "../Toast";
 import { PageHeader } from "../States";
 import { LibraryIcon } from "../icons";
@@ -28,7 +28,6 @@ export function SettingsView({ initial, dbPath }: { initial: AppSettings; dbPath
     }
   };
 
-  const clearFeedCache = () => sessionStore.write("clipwise.feed", null);
 
   const danger = async (path: string, confirmText: string, done: string) => {
     if (!window.confirm(confirmText)) return;

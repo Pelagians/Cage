@@ -19,10 +19,25 @@ export function json<T>(data: T, status = 200) {
  * Reject cross-site mutations. The app has no accounts, so this is what stops an
  * arbitrary web page from POSTing to localhost:3000 (e.g. to wipe your data).
  */
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
+
+/** Hosts we answer to: loopback, private LAN addresses (npm run dev:lan) and CLIPWISE_ALLOWED_HOSTS. */
+export function isAllowedHost(hostHeader: string | null): boolean {
+  if (!hostHeader) return false;
+  const hostname = hostHeader.replace(/:\d+$/, "").toLowerCase();
+  if (LOOPBACK.has(hostname)) return true;
+  // Private IPv4 ranges only as literal IPs; DNS names could be rebound to 127.0.0.1.
+  if (/^(10\.\d+|192\.168|172\.(1[6-9]|2\d|3[01]))\.\d+\.\d+$/.test(hostname)) return true;
+  const extra = (process.env.CLIPWISE_ALLOWED_HOSTS ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean);
+  return extra.includes(hostname);
+}
+
 function assertSameOrigin(req: NextRequest) {
+  const host = req.headers.get("host");
+  // Blocks DNS-rebinding: a hostile domain resolving to 127.0.0.1 still sends its own Host.
+  if (!isAllowedHost(host)) throw new HttpError(403, "Unknown host. Set CLIPWISE_ALLOWED_HOSTS to allow it.");
   if (req.method === "GET" || req.method === "HEAD") return;
   const origin = req.headers.get("origin");
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
   if (origin) {
     let originHost: string;
     try {
@@ -33,7 +48,8 @@ function assertSameOrigin(req: NextRequest) {
     if (originHost !== host) throw new HttpError(403, "Cross-site request blocked.");
   }
   const type = req.headers.get("content-type") ?? "";
-  if (req.headers.get("content-length") !== "0" && !type.includes("application/json")) {
+  const hasBody = req.headers.has("transfer-encoding") || Number(req.headers.get("content-length") ?? 0) > 0;
+  if (hasBody && !type.includes("application/json")) {
     throw new HttpError(415, "Requests must be JSON.");
   }
 }

@@ -13,6 +13,9 @@ import { tokenize, truncateAtWord } from "./text";
 import { createLlmClient, type LlmClient } from "./providers/llm";
 import { normalizeTags } from "../domain/validation";
 
+/** Upper bound on total AI time per ingest so a slow model can't hang the request. */
+const AI_BUDGET_MS = 120_000;
+
 export interface ClipCandidate extends Enrichment {
   candidateId: string;
   startSeconds: number;
@@ -67,7 +70,12 @@ export async function proposeClips(
   if (llm) {
     if (await llm.ping()) {
       let improved = 0;
+      const deadline = Date.now() + AI_BUDGET_MS;
       for (let i = 0; i < segments.length; i++) {
+        if (Date.now() > deadline) {
+          warnings.push("AI enrichment hit its time budget; remaining clips use heuristics.");
+          break;
+        }
         const better = await enrichWithLlm(llm, segments[i]!, input.videoTitle).catch(() => null);
         if (better) {
           Object.assign(candidates[i]!, better, { enrichedBy: "ai" as const });
