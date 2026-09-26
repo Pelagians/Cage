@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+data/
+.env
+.env.local
+playwright-report/
+test-results/
+.DS_Store
+npm-debug.log*

@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0b0b0d;
+  --color-panel: #151518;
+  --color-panel-2: #1c1c21;
+  --color-line: rgb(255 255 255 / 0.08);
+  --color-accent: #f4c152;
+  --color-accent-ink: #1a1405;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+:root {
+  color-scheme: dark;
+  --nav-h: 60px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html,
+body {
+  background: var(--color-ink);
+  color: #f3f3f5;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  min-height: 100dvh;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Page chrome that respects notches and the bottom nav. */
+.page {
+  margin: 0 auto;
+  max-width: 42rem;
+  padding: calc(1rem + var(--safe-top)) 1rem calc(var(--nav-h) + var(--safe-bottom) + 1.5rem);
+}
+
+.field {
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-line);
+  background: var(--color-panel);
+  padding: 0.7rem 0.85rem;
+  font-size: 16px; /* prevents iOS zoom-on-focus */
+  color: inherit;
+  outline: none;
+  transition: border-color 120ms;
+}
+.field:focus {
+  border-color: rgb(244 193 82 / 0.6);
+}
+.field[aria-invalid="true"] {
+  border-color: rgb(248 113 113 / 0.8);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  border-radius: 999px;
+  padding: 0 1.1rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: transform 80ms, background-color 120ms, opacity 120ms;
+  user-select: none;
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.btn-primary {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+.btn-light {
+  background: #f5f5f7;
+  color: #0b0b0d;
+}
+.btn-ghost {
+  background: rgb(255 255 255 / 0.07);
+  color: #f3f3f5;
+}
+.btn-ghost:hover {
+  background: rgb(255 255 255 / 0.12);
+}
+.btn-danger {
+  background: rgb(239 68 68 / 0.15);
+  color: #fca5a5;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+.toast {
+  animation: toast-in 160ms ease-out;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.fade-up {
+  animation: fade-up 220ms ease-out both;
+}
