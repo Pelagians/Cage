@@ -1,38 +1,40 @@
-"""MSI installer module expander."""
+"""Msi recipe module."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
-from .base import MsiModule, ModuleError
+from .base import ModuleBase, ModuleError
+from ..build_step import BuildStep
 
+@dataclass
+class MsiModule(ModuleBase):
+    """MSI installer module."""
+    type: str = "msi"
+    source: str | None = None
+    sha256: str | None = None
+    silentArgs: str | list[str] | None = None
 
-def expand_msi(module: MsiModule, index: int) -> dict[str, Any]:
-    """Expand msi module into install step."""
-    # Merge defaults with user-provided fields
-    source = module.source
-    sha256 = module.sha256
-    silentArgs = module.silentArgs
-    
-    if module.defaults:
-        source = source or module.defaults.get("source")
-        sha256 = sha256 or module.defaults.get("sha256")
-        silentArgs = silentArgs if silentArgs is not None else module.defaults.get("silentArgs")
-    
-    if not source:
-        raise ModuleError(f"modules[{index}].source is required for msi module")
-    
-    install_step = {
-        "kind": "msi",
-        "source": source,
-    }
-    
-    if sha256:
-        install_step["sha256"] = sha256
-    
-    if silentArgs:
-        if isinstance(silentArgs, list):
-            install_step["args"] = silentArgs
-        else:
-            install_step["args"] = [silentArgs]
-    
-    return {"install": [install_step]}
+    def build(self) -> list[BuildStep]:
+        """Generate build steps for MSI installation."""
+        if not self.source:
+            raise ModuleError("msi module requires 'source' field")
+
+        # Build the silent args string
+        args_str = "/qn"  # Default silent install
+        if self.silentArgs:
+            if isinstance(self.silentArgs, list):
+                args_str = " ".join(["/qn"] + self.silentArgs)
+            else:
+                args_str = f"/qn {self.silentArgs}"
+
+        commands = [
+            f'echo "  Installing MSI: {self.source}"',
+            f"msiexec /i {self.source} {args_str}".strip(),
+        ]
+
+        return [BuildStep(
+            commands=commands,
+            description=f"Install MSI: {self.source}",
+            kind="wine-msiexec",
+        )]

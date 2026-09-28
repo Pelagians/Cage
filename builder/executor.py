@@ -591,11 +591,13 @@ def execute_inside_container(
         workspace:        Host workspace mounted read-only at /workspace.
         runner_cache_dir: Optional runner cache root for runtime.runner archives.
         module_cache_dir: Optional cache root for module payload archives.
-        stop_before: Optional phase boundary for checkpoint prep, currently install-apps.
+        stop_before: Unsupported historical phase boundary; rejected explicitly.
 
     Returns:
         BuildResult with success/failure and metadata.
     """
+    if stop_before is not None:
+        raise ValueError("stop_before is unsupported: no build phase boundary is implemented")
     engine = _find_engine(engine) if engine == "docker" else (engine or _find_engine())
     runtime = resolve_manifest_runtime(manifest)
 
@@ -633,7 +635,6 @@ def execute_inside_container(
         manifest,
         bundle_mount="/opt/cage",
         workspace_mount="/workspace",
-        timeout_per_phase=timeout,
     )
     script_path.parent.mkdir(parents=True, exist_ok=True)
     script_path.write_text(script, encoding="utf-8")
@@ -681,8 +682,7 @@ def execute_inside_container(
     if engine == "podman":
         cmd.extend(["--userns=keep-id", "--user", "0:0"])
     build_network = getattr(getattr(manifest, "build", None), "network", "none") or "none"
-    if build_network != "none":
-        cmd.extend(["--net", build_network])
+    cmd.extend(["--network", build_network])
     for m in mounts:
         cmd.extend(["-v", m])
     for key, value in environment.items():

@@ -1,11 +1,15 @@
 """Chocolatey prepared-runtime module tests."""
 from __future__ import annotations
 
+import os
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from core.manifest import Manifest
+from core.build_step import BuildStep
 from builder.pipeline import generate_build_script
 
 _RUNTIME = {
@@ -154,6 +158,30 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertNotRegex(script, r"PowerShell-[0-9]+(?:\.[0-9]+)+-win-x64\.msi")
         self.assertNotIn("Install Synchro PowerShell layer", descriptions)
         self.assertNotIn("Install Windows PowerShell 5.1 backend", descriptions)
+
+    def test_timed_seed_restores_verified_interface_for_following_steps(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prefix = root / "prefix"
+            (prefix / "drive_c").mkdir(parents=True)
+            interface = root / "build/cfw-interface.env"
+            interface.parent.mkdir()
+            seed = BuildStep(
+                commands=[f"printf 'export CFW_CHOCOLATEY_PREFIX_PATH=%q\\n' 'C:/verified/choco.exe' > '{interface}'"],
+                description="seed", kind="prefix-seed", timeout=5,
+            )
+            fake_seed_script = "\n".join(seed.to_shell_lines())
+            with patch("builder.pipeline.generate_module_script", side_effect=[fake_seed_script, "true"]):
+                script = generate_build_script(_manifest(), bundle_mount=str(root))
+            phase = script.split('echo "[cage] Phase 0: Seeding prepared prefix"', 1)[1].split(
+                'echo "[cage] Phase 1: Adopting prepared Wine prefix"', 1)[0]
+            check = phase + '\nprintf "%s" "$CFW_CHOCOLATEY_PREFIX_PATH" > "$CAGE_BUNDLE_MOUNT/verified"\n'
+            subprocess.run(["bash", "-c", "set -euo pipefail\n" + check], check=True,
+                           env={**os.environ, "WINEPREFIX": str(prefix), "CAGE_BUNDLE_MOUNT": str(root)})
+            self.assertEqual((root / "verified").read_text(), "C:/verified/choco.exe")
+            self.assertFalse(interface.exists())
+            rendered = _commands_for(_manifest().modules[0].build(), "Seed CFW prepared prefix")
+            self.assertLess(rendered.index('python3 "$helper" verify-extract'), rendered.index('cfw_interface_file='))
 
     def test_runtime_artifact_is_strictly_verified(self):
         steps = _manifest().modules[0].build()

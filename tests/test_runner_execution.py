@@ -88,7 +88,6 @@ class RunnerExecutionBuildTests(unittest.TestCase):
         for module in (
             {"type": "winetricks", "verbs": ["corefonts"]},
             {"type": "script", "command": "winecfg -v win7"},
-            {"type": "containerfile", "instructions": ["RUN winetricks corefonts"]},
         ):
             manifest_data = {
                 **RUNNER_MANIFEST,

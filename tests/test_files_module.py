@@ -1,8 +1,14 @@
 """Tests for files module build() method."""
 import unittest
+import hashlib
+import os
+import subprocess
+import tempfile
+from unittest.mock import patch
 from pathlib import Path
 
-from core.manifest import Manifest, load_manifest
+from core.manifest import Manifest, ManifestError, load_manifest
+from core.sources import verify_manifest_sources
 from core.modules import parse_module, FilesModule, ModuleError
 from builder.pipeline import generate_build_script
 
@@ -108,6 +114,57 @@ class FilesModuleUnitTests(unittest.TestCase):
         all_commands = " ".join(" ".join(step.commands) for step in steps)
         self.assertIn("config", all_commands)
         self.assertIn("data", all_commands)
+
+    def test_copy_replaces_target_and_merge_preserves_other_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source ' quoted"
+            source.mkdir()
+            (source / "new.txt").write_text("new")
+            prefix = root / "prefix"
+            copy_target = prefix / "drive_c/App Copy"
+            merge_target = prefix / "drive_c/App Merge"
+            for target in (copy_target, merge_target):
+                target.mkdir(parents=True)
+                (target / "old.txt").write_text("old")
+            module = FilesModule(mappings=[
+                {"source": "./source ' quoted", "target": "C:/App Copy", "mode": "copy"},
+                {"source": "./source ' quoted", "target": "C:/App Merge", "mode": "merge"},
+            ])
+            with patch("core.sources.container_source_path", side_effect=lambda source: str(root / source)):
+                script = "set -e\n" + "\n".join(module.build()[0].commands)
+            subprocess.run(["bash", "-c", script], env={**os.environ, "WINEPREFIX": str(prefix)}, check=True)
+            self.assertFalse((copy_target / "old.txt").exists())
+            self.assertTrue((copy_target / "new.txt").exists())
+            self.assertTrue((merge_target / "old.txt").exists())
+            self.assertTrue((merge_target / "new.txt").exists())
+
+    def test_mapping_hash_is_verified_and_bad_hash_blocks_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "input.txt"
+            source.write_text("input")
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            data = {"schemaVersion": "cage.app/v0", "name": "files", "version": "1",
+                    "runtime": {"provider": "wine", "version": "latest"},
+                    "modules": [{"type": "files", "mappings": [
+                        {"source": "input.txt", "target": "C:/App/input.txt", "sha256": digest}]}]}
+            manifest = Manifest.from_dict(data)
+            integrity = verify_manifest_sources(manifest, workspace=root)
+            self.assertTrue(integrity["valid"])
+            self.assertEqual(integrity["summary"]["verified"], 1)
+            source.write_text("changed")
+            self.assertFalse(verify_manifest_sources(manifest, workspace=root)["valid"])
+            with patch("core.sources.container_source_path", return_value=str(source)):
+                script = "set -e\n" + "\n".join(manifest.modules[0].build()[0].commands)
+            result = subprocess.run(["bash", "-c", script], env={**os.environ, "WINEPREFIX": str(root / "prefix")})
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse((root / "prefix/drive_c/App/input.txt").exists())
+
+    def test_windows_target_rejects_prefix_traversal(self):
+        module = FilesModule(mappings=[{"source": "file", "target": "C:/../outside"}])
+        with self.assertRaisesRegex(ModuleError, "unsafe path"):
+            module.build()
 
 
 class FilesModuleManifestTests(unittest.TestCase):

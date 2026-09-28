@@ -111,8 +111,6 @@ class SuiteEntrypointTests(unittest.TestCase):
 
     def test_file_association_must_reference_known_entrypoint(self):
         """Test that file associations reference valid entrypoints."""
-        # In the new architecture, we don't validate this at parse time
-        # Validation happens at runtime
         data = {
             "schemaVersion": "cage.app/v0",
             "name": "suite-test",
@@ -132,9 +130,8 @@ class SuiteEntrypointTests(unittest.TestCase):
                 }
             ]
         }
-        # This should parse successfully - validation is runtime
-        manifest = Manifest.from_dict(data)
-        self.assertEqual(len(manifest.file_associations), 1)
+        with self.assertRaisesRegex(Exception, "references unknown entrypoint"):
+            Manifest.from_dict(data)
 
 
 class OfficeProfileTests(unittest.TestCase):
@@ -150,9 +147,8 @@ class OfficeProfileTests(unittest.TestCase):
             "profiles": ["office-legacy-32bit"],
             "modules": []
         }
-        # Profiles are stored but not expanded in the new architecture
-        manifest = Manifest.from_dict(data)
-        self.assertEqual(manifest.profiles, ["office-legacy-32bit"])
+        with self.assertRaisesRegex(Exception, "profiles"):
+            Manifest.from_dict(data)
 
     def test_explicit_compatibility_overrides_profile_defaults(self):
         """Test that explicit compatibility overrides profile defaults."""

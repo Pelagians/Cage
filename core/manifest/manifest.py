@@ -1,7 +1,4 @@
-"""Simplified Manifest for module-first architecture.
-
-This is the new Manifest that parses modules directly without expansion.
-"""
+"""Module-first Cage manifest parser."""
 from __future__ import annotations
 
 import json
@@ -22,6 +19,8 @@ from .constants import (
     ALLOWED_WINE_GRAPHICS_MODES,
     ALLOWED_SOURCE_TYPES,
     ALLOWED_SOURCE_POLICIES,
+    ENTRYPOINT_FIELDS,
+    FILE_ASSOCIATION_FIELDS,
 )
 from ..compatibility import CompatibilityPolicyError, normalize_compatibility_policy
 from ..modules import parse_module, ModuleBase, ModuleError
@@ -303,7 +302,7 @@ def _validate_cfw_boundary(
         raise ManifestError("CFW prepared runtimes cannot declare Cage compatibility policy")
     mutating = sorted({
         module.type for module in modules
-        if module.type in {"winetricks", "script", "containerfile"}
+        if module.type in {"winetricks", "script"}
     })
     if mutating:
         raise ManifestError(
@@ -333,7 +332,6 @@ class Manifest:
     exports: list[dict[str, Any]] = field(default_factory=list)
     entrypoints: list[dict[str, Any]] = field(default_factory=list)
     file_associations: list[dict[str, Any]] = field(default_factory=list)
-    profiles: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Manifest:
@@ -414,20 +412,43 @@ class Manifest:
         if not isinstance(exports, list):
             raise ManifestError("exports must be a list")
         
-        # Parse entrypoints
+        # Validate suite metadata before serializing it into artifacts.
         entrypoints = data.get("entrypoints", []) or []
         if not isinstance(entrypoints, list) or not all(isinstance(x, dict) for x in entrypoints):
             raise ManifestError("entrypoints must be a list of objects")
+        ids: set[str] = set()
+        for index, entrypoint in enumerate(entrypoints):
+            _reject_unknown(entrypoint, ENTRYPOINT_FIELDS, f"entrypoints[{index}]")
+            for key in ("id", "name", "executable"):
+                _required_str(entrypoint, f"entrypoints[{index}].{key}")
+            args = entrypoint.get("args", [])
+            env = entrypoint.get("env", {})
+            if not isinstance(args, list) or not all(isinstance(arg, str) for arg in args):
+                raise ManifestError(f"entrypoints[{index}].args must be a list of strings")
+            if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
+                raise ManifestError(f"entrypoints[{index}].env must be an object with string keys and values")
+            _optional_str(entrypoint, "workingDirectory")
+            if entrypoint["id"] in ids:
+                raise ManifestError(f"entrypoints[{index}].id is duplicated: {entrypoint['id']}")
+            ids.add(entrypoint["id"])
         
         # Parse file associations
         file_associations = data.get("fileAssociations", []) or []
         if not isinstance(file_associations, list) or not all(isinstance(x, dict) for x in file_associations):
             raise ManifestError("fileAssociations must be a list of objects")
-        
-        # Parse profiles
-        profiles = data.get("profiles", []) or []
-        if not isinstance(profiles, list) or not all(isinstance(x, str) and x for x in profiles):
-            raise ManifestError("profiles must be a list of non-empty strings")
+        if file_associations and not ids:
+            raise ManifestError("fileAssociations require entrypoints")
+        for index, association in enumerate(file_associations):
+            _reject_unknown(association, FILE_ASSOCIATION_FIELDS, f"fileAssociations[{index}]")
+            ref = _required_str(association, f"fileAssociations[{index}].entrypoint")
+            if ref not in ids:
+                raise ManifestError(f"fileAssociations[{index}].entrypoint references unknown entrypoint: {ref}")
+            extensions = association.get("extensions", [])
+            mime = association.get("mime", [])
+            if not isinstance(extensions, list) or not all(isinstance(x, str) and x.startswith(".") for x in extensions):
+                raise ManifestError(f"fileAssociations[{index}].extensions must be a list of extensions like .docx")
+            if not isinstance(mime, list) or not all(isinstance(x, str) and x for x in mime):
+                raise ManifestError(f"fileAssociations[{index}].mime must be a list of MIME strings")
         
         return cls(
             schema_version=schema_version,
@@ -444,7 +465,6 @@ class Manifest:
             exports=exports,
             entrypoints=entrypoints,
             file_associations=file_associations,
-            profiles=profiles,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -485,8 +505,6 @@ class Manifest:
         if self.file_associations:
             result["fileAssociations"] = self.file_associations
         
-        if self.profiles:
-            result["profiles"] = self.profiles
         
         return result
 

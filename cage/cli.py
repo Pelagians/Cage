@@ -137,8 +137,8 @@ def cmd_failure_analyze(args):
     return 0
 
 def cmd_compat_test(args):
-    if args.stop_before and args.mode == "run":
-        print("cage: compat error: --stop-before is only supported with --mode dry-run or --mode build", file=sys.stderr)
+    if args.stop_before:
+        print("cage: compat error: --stop-before is unsupported: no build phase boundary is implemented", file=sys.stderr)
         return 2
     result = run_compat_test(
         Path(args.manifest),
@@ -773,7 +773,7 @@ def build_parser():
     cp.add_argument("--runner-cache-dir", help="Runner cache directory for runtime.runner archives")
     cp.add_argument("--module-cache-dir", help="Module payload cache directory for downloads used during builds")
     cp.add_argument("--resume-from-bundle", help="Prepared checkpoint bundle or output parent to seed into the new attempt")
-    cp.add_argument("--stop-before", choices=["install-apps"], help="Stop real build before the selected phase and seal a checkpoint")
+    cp.add_argument("--stop-before", choices=["install-apps"], help="Unsupported; retained only to report an explicit error")
     cp.set_defaults(func=cmd_compat_test)
 
     cp = csub.add_parser("corpus", help="Print the default curated compatibility corpus")

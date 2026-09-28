@@ -5,7 +5,6 @@ import re
 from typing import Any
 from dataclasses import dataclass
 
-from .constants import ROOT_FIELDS
 from .errors import ManifestError
 
 @dataclass(frozen=True)
@@ -274,30 +273,6 @@ def _optional_str(data, key):
         return None
     if not isinstance(value, str) or not value.strip():
         raise ManifestError(f"{key} must be a non-empty string when present")
-    return value
-
-
-def _list(value, key):
-    if value is None:
-        return []
-    if not isinstance(value, list) or not all(isinstance(x, dict) for x in value):
-        raise ManifestError(f"{key} must be a list of objects")
-    return value
-
-
-def _string_list(value, key):
-    if value is None:
-        return []
-    if not isinstance(value, list) or not all(isinstance(x, str) and x for x in value):
-        raise ManifestError(f"{key} must be a list of non-empty strings")
-    return value
-
-
-def _object(value, key):
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        raise ManifestError(f"{key} must be an object")
     return value
 
 

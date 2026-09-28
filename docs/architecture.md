@@ -30,7 +30,7 @@ It includes the built prefix, runtime binding, normalized recipe/manifest, launc
 
 ### 2. Recipe schema v0
 
-The primary shareable authoring format is strict YAML (`cage.app/v0`). JSON remains supported for generated, normalized, test, and CLI-driven inputs. The recipe defines application identity, runtime provider, dependencies, install steps, filesystem mappings, compatibility policy, config, registry tweaks, launch entrypoint, state behavior, exports, hashes, and provenance fields.
+The primary shareable authoring format is strict YAML (`cage.app/v0`). JSON remains supported for generated, normalized, test, and CLI-driven inputs. The recipe defines application identity, runtime provider, ordered modules, compatibility policy, launch entrypoint, exports, sources, hashes, and provenance.
 
 ### 3. Runtime abstraction layer
 
@@ -40,7 +40,7 @@ Downloadable runner archives are modeled separately from runtime image providers
 
 ### 4. Builder pipeline
 
-The deterministic pipeline is `init-prefix`, `install-dependencies`, `install-apps`, `apply-layout-and-registry`, `validate`, and `seal-artifact`.
+The pipeline initializes the Wine prefix, executes module build steps in declaration order, writes launch metadata, and exports the prefix. CFW prefix seeding runs before Wine initialization.
 
 ### 5. Compatibility policy layer
 
@@ -61,11 +61,11 @@ This layer intentionally avoids raw loader-order and trace-control schema. Those
 
 `core/manifest.py` now normalizes source declarations with explicit source `type` and legal/source `policy`. This lets recipes distinguish a customer-provided installer, licensed media/ISO, file tree, font pack, or future prefix archive without Cage downloading or redistributing proprietary payloads.
 
-`filesystem.mode: merge` is the first files-module primitive: it layers the contents of a user-provided directory into a Windows target directory, which is the reproducible path for pre-installed app directories such as Office `Program Files` trees. BYO prefix import remains a possible convenience path, but the architectural bias is toward reproducible installers/media/files.
+`modules[].mappings[].mode: merge` is a files-module primitive: it layers the contents of a user-provided directory into a Windows target directory, which is the reproducible path for pre-installed app directories such as Office `Program Files` trees. BYO prefix import remains a possible convenience path, but the architectural bias is toward reproducible installers/media/files.
 
 Suite metadata (`entrypoints[]` and `fileAssociations[]`) records multi-entry app suites without requiring public app-specific recipes. `cage run --entrypoint <id>` can select named entrypoints, and host file arguments are mounted read-only and routed into Wine as `Z:` paths. Office/customer/proprietary recipes belong in customer/private repositories, not in public Cage.
 
-`core/profiles.py` expands reviewable named profiles into concrete compatibility/dependency policy. The initial `office-legacy-32bit` profile captures the current Office/Bottles evidence while preserving the expanded concrete policy in the manifest.
+Recipe profiles are unsupported; recipes declare modules and compatibility policy explicitly.
 
 `core/modules/` implements BlueBuild-style build-time modules as first-class build directives. `type: chocolatey` matches the myOS `type: dnf` YAML style: recipes declare packages under `modules[].install.packages`. CFW produces the immutable prepared compatibility prefix and owns CLR, PowerShell, Synchro, Chocolatey bootstrap, profiles, and Wine policy. Cage validates the detached manifest and evidence, binds the exact producer image, safely replacement-seeds the prefix, verifies producer-owned feature policy without mutating it, proves local package lifecycle behavior, and then installs requested packages. The former standalone `powershell-wrapper` module and Cage-side compatibility bootstrap are removed; ADR 0024 is the current boundary.
 

@@ -1,67 +1,58 @@
-"""Files module expander.
-
-Handles file and directory copying/mapping from host to container.
-Expands into filesystem mappings that are applied in Phase 3 of the build.
-"""
+"""Copy and merge workspace files into a Wine prefix."""
 from __future__ import annotations
 
+from dataclasses import dataclass
+import re
+import shlex
 from typing import Any
 
-from .base import FilesModule, ModuleError
+from .base import ModuleBase, ModuleError
+from ..build_step import BuildStep
 
 
-def expand_files(module: FilesModule, index: int) -> dict[str, Any]:
-    """Expand files module into filesystem mappings.
-    
-    Args:
-        module: FilesModule instance with mappings field
-        index: Module index for error messages
-    
-    Returns:
-        Dict with 'filesystem' key containing list of FilesystemMapping dicts
-    
-    Raises:
-        ModuleError: If mappings are missing or invalid
-    """
-    mappings = module.mappings
-    
-    if not mappings:
-        raise ModuleError(f"modules[{index}].mappings is required for files module")
-    
-    filesystem_entries = []
-    
-    for i, mapping in enumerate(mappings):
-        if not isinstance(mapping, dict):
-            raise ModuleError(f"modules[{index}].mappings[{i}] must be an object")
-        
-        source = mapping.get("source")
-        target = mapping.get("target")
-        
-        if not source:
-            raise ModuleError(f"modules[{index}].mappings[{i}].source is required")
-        
-        if not target:
-            raise ModuleError(f"modules[{index}].mappings[{i}].target is required")
-        
-        entry = {
-            "source": source,
-            "target": target,
-        }
-        
-        # Optional mode (defaults to "copy" in manifest parsing)
-        mode = mapping.get("mode")
-        if mode:
-            if mode not in ("copy", "merge"):
-                raise ModuleError(
-                    f"modules[{index}].mappings[{i}].mode must be 'copy' or 'merge', got '{mode}'"
-                )
-            entry["mode"] = mode
-        
-        # Optional sha256 for source integrity verification
-        sha256 = mapping.get("sha256")
-        if sha256:
-            entry["sha256"] = sha256
-        
-        filesystem_entries.append(entry)
-    
-    return {"filesystem": filesystem_entries}
+@dataclass
+class FilesModule(ModuleBase):
+    type: str = "files"
+    mappings: list[dict[str, Any]] | None = None
+
+    def build(self) -> list[BuildStep]:
+        if not self.mappings:
+            raise ModuleError("files module requires 'mappings' field")
+        from core.sources import container_source_path
+
+        commands: list[str] = []
+        for mapping in self.mappings:
+            source = mapping.get("source")
+            target = mapping.get("target")
+            if not source or not target:
+                raise ModuleError("files module mapping requires 'source' and 'target'")
+            mode = mapping.get("mode", "copy")
+            if mode not in {"copy", "merge"}:
+                raise ModuleError(f"unsupported files mapping mode: {mode}")
+            normalized = target.replace("\\", "/")
+            if not re.match(r"^[Cc]:/", normalized):
+                raise ModuleError("files target must be an absolute C:/ path")
+            parts = normalized[3:].split("/")
+            if not parts or any(part in {"", ".", ".."} for part in parts):
+                raise ModuleError(f"files target contains an unsafe path: {target}")
+            dest = '"$WINEPREFIX"/drive_c/' + shlex.quote('/'.join(parts))
+            src = shlex.quote(container_source_path(source))
+            commands.append(f"test -e {src}")
+            if mapping.get("sha256"):
+                expected = mapping["sha256"]
+                if not re.fullmatch(r"[0-9a-fA-F]{64}", expected):
+                    raise ModuleError("files mapping sha256 must be 64 hexadecimal characters")
+                commands.append(f"test -f {src} && test \"$(sha256sum -- {src} | cut -d ' ' -f1)\" = {shlex.quote(expected.lower())}")
+            if mode == "copy":
+                commands.extend([
+                    f"mkdir -p -- $(dirname -- {dest})",
+                    f"rm -rf -- {dest}",
+                    f"cp -a -- {src} {dest}",
+                ])
+            else:
+                commands.extend([
+                    f"test -d {src}",
+                    f"mkdir -p -- {dest}",
+                    f"cp -a -- {src}/. {dest}/",
+                ])
+        return [BuildStep(commands=commands, description=f"Copy {len(self.mappings)} file(s)", kind="copy-tree")]

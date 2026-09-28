@@ -1,32 +1,31 @@
-"""Winetricks module expander."""
+"""Winetricks recipe module."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
-from .base import WinetricksModule, ModuleError
+from .base import ModuleBase, ModuleError
+from ..build_step import BuildStep
 
+@dataclass
+class WinetricksModule(ModuleBase):
+    """Winetricks verbs module."""
+    type: str = "winetricks"
+    verbs: list[str] | None = None
 
-def expand_winetricks(module: WinetricksModule, index: int) -> dict[str, Any]:
-    """Expand winetricks module into dependencies."""
-    # Merge defaults with user-provided fields
-    verbs = module.verbs
-    
-    if module.defaults:
-        default_verbs = module.defaults.get("verbs", [])
-        if verbs is None:
-            verbs = default_verbs
-        elif default_verbs:
-            # Combine user verbs with default verbs (user first, then defaults)
-            verbs = list(verbs) + [v for v in default_verbs if v not in verbs]
-    
-    if not verbs:
-        raise ModuleError(f"modules[{index}].verbs is required for winetricks module")
-    
-    if not isinstance(verbs, list) or not verbs:
-        raise ModuleError(f"modules[{index}].verbs must be a non-empty list")
-    
-    return {
-        "dependencies": [
-            {"kind": "winetricks", "verbs": verbs}
+    def build(self) -> list[BuildStep]:
+        """Generate build steps for winetricks verbs."""
+        if not self.verbs:
+            raise ModuleError("winetricks module requires 'verbs' field")
+
+        verbs_str = " ".join(self.verbs)
+        commands = [
+            f'echo "  Installing winetricks verbs: {verbs_str}"',
+            f"winetricks -q {verbs_str}",
         ]
-    }
+
+        return [BuildStep(
+            commands=commands,
+            description=f"Install winetricks: {verbs_str}",
+            kind="wine-run",
+        )]

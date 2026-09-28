@@ -130,7 +130,7 @@ def verify_manifest_sources(manifest: Manifest, *, workspace: Path | str | None 
 
     for index, source in enumerate(manifest.sources):
         # For files-type sources, use path; for others, use url
-        ref = source.path if source.path else source.url
+        ref = source.path or source.url or source.source
         add_item(
             location=f"sources[{index}]",
             usage="declared-source",
@@ -141,6 +141,17 @@ def verify_manifest_sources(manifest: Manifest, *, workspace: Path | str | None 
             source_type=source.type,
             source_policy=source.policy,
         )
+
+    # File mappings are inputs too, even when they have no top-level declaration.
+    for index, module in enumerate(manifest.modules):
+        if module.type == "files":
+            for mapping_index, mapping in enumerate(module.mappings or []):
+                add_item(
+                    location=f"modules[{index}].mappings[{mapping_index}].source",
+                    usage="module:files",
+                    source=mapping["source"],
+                    expected_sha256=mapping.get("sha256"),
+                )
 
     # Check modules for source references
     for index, module in enumerate(manifest.modules):
@@ -292,7 +303,7 @@ def audit_manifest_sources(manifest: Manifest, *, workspace: Path | str | None =
 
     for index, source in enumerate(manifest.sources):
         # For files-type sources, use path; for others, use url
-        ref = source.path if source.path else source.url
+        ref = source.path or source.url or source.source
         add_item(
             location=f"sources[{index}]",
             usage="declared-source",
@@ -301,6 +312,15 @@ def audit_manifest_sources(manifest: Manifest, *, workspace: Path | str | None =
             source_type=source.type,
             source_policy=source.policy,
         )
+
+    for index, module in enumerate(manifest.modules):
+        if module.type == "files":
+            for mapping_index, mapping in enumerate(module.mappings or []):
+                add_item(
+                    location=f"modules[{index}].mappings[{mapping_index}].source",
+                    usage="module:files",
+                    source=mapping["source"],
+                )
 
     # Check modules for source references
     for index, module in enumerate(manifest.modules):

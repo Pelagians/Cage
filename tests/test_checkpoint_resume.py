@@ -575,7 +575,7 @@ class CheckpointCompatIntegrationTests(unittest.TestCase):
             )
 
         self.assertNotEqual(proc.returncode, 0)
-        self.assertIn("--stop-before is only supported with --mode dry-run or --mode build", proc.stderr)
+        self.assertIn("--stop-before is unsupported", proc.stderr)
         self.assertNotIn("Traceback", proc.stderr)
 
     def test_compat_test_rejects_stop_before_install_apps_with_run_mode(self):
