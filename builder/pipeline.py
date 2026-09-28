@@ -259,8 +259,13 @@ def generate_build_script(
     if seed_script:
         lines.extend([
             'echo "[cage] Phase 0: Seeding prepared prefix"',
+            'cfw_interface_file="${CAGE_BUNDLE_MOUNT:-/opt/cage}/build/cfw-interface.env"',
+            'rm -f "$cfw_interface_file" "$cfw_interface_file.part"',
             seed_script,
             'test -d "$WINEPREFIX/drive_c" || { echo "[cage] ERROR: prefix seed did not create drive_c" >&2; exit 68; }',
+            'test -f "$cfw_interface_file" || { echo "[cage] ERROR: CFW interface was not materialized" >&2; exit 68; }',
+            'source "$cfw_interface_file"',
+            'rm -f "$cfw_interface_file"',
             'touch "$WINEPREFIX/.cage-prefix-seeded"',
             'echo "[cage]   Prepared prefix seeded"',
             '',

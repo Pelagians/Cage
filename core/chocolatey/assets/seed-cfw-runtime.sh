@@ -118,4 +118,17 @@ cp -f "$manifest" "$WINEPREFIX/.cfw/manifest.json.part"
 mv -f "$WINEPREFIX/.cfw/manifest.json.part" "$WINEPREFIX/.cfw/manifest.json"
 touch "$WINEPREFIX/.cage-prefix-seeded"
 
+# Timed build steps run in a child shell. Pass only the verified interface
+# fields back to the parent script after the manifest and prefix checks pass.
+cfw_interface_file="${CAGE_BUNDLE_MOUNT:-/opt/cage}/build/cfw-interface.env"
+umask 077
+mkdir -p "$(dirname "$cfw_interface_file")"
+{
+  printf 'export CFW_CHOCOLATEY_WINDOWS_PATH=%q\n' "$CFW_CHOCOLATEY_WINDOWS_PATH"
+  printf 'export CFW_CHOCOLATEY_QUERY_LAUNCHER=%q\n' "$CFW_CHOCOLATEY_QUERY_LAUNCHER"
+  printf 'export CFW_CHOCOLATEY_PACKAGE_LAUNCHER=%q\n' "$CFW_CHOCOLATEY_PACKAGE_LAUNCHER"
+  printf 'export CFW_CHOCOLATEY_PREFIX_PATH=%q\n' "$CFW_CHOCOLATEY_PREFIX_PATH"
+} > "$cfw_interface_file.part"
+mv -f "$cfw_interface_file.part" "$cfw_interface_file"
+
 echo "[cage] CFW prepared prefix seeded"
