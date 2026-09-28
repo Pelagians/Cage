@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import shlex
 from typing import Any
 
 
@@ -31,13 +32,26 @@ class BuildStep:
         if self.description:
             lines.append(f"# {self.description}")
 
+        body = []
         for key, value in self.environment.items():
-            lines.append(f"export {key}={_shell_quote(value)}")
+            body.append(f"export {key}={_shell_quote(value)}")
 
         if self.working_dir:
-            lines.append(f"cd {_shell_quote(self.working_dir)}")
+            body.append(f"cd {_shell_quote(self.working_dir)}")
 
-        lines.extend(self.commands)
+        body.extend(self.commands)
+        if self.timeout is not None:
+            if not isinstance(self.timeout, int) or isinstance(self.timeout, bool) or self.timeout <= 0:
+                raise ValueError("BuildStep.timeout must be a positive integer")
+            script = "set -euo pipefail\n" + "\n".join(body)
+            lines.append(
+                f"timeout --signal=TERM --kill-after=15s {self.timeout}s "
+                f"bash -c {shlex.quote(script)}"
+            )
+        elif self.working_dir or self.environment:
+            lines.extend(["(", *body, ")"])
+        else:
+            lines.extend(body)
         return lines
 
     def to_dict(self) -> dict[str, Any]:

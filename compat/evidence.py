@@ -51,10 +51,8 @@ def run_compat_test(
     """
     if mode not in {"dry-run", "build", "run"}:
         raise ValueError("mode must be one of: dry-run, build, run")
-    if stop_before not in {None, "install-apps"}:
-        raise ValueError("stop_before must be one of: install-apps")
-    if stop_before and mode == "run":
-        raise ValueError("stop_before is only supported with dry-run or build mode")
+    if stop_before is not None:
+        raise ValueError("stop_before is unsupported: no build phase boundary is implemented")
 
     manifest_file = Path(manifest_path)
     workspace_path = Path(workspace or Path.cwd()).resolve()
@@ -92,7 +90,6 @@ def run_compat_test(
         "checkpoint": {
             "resumed": False,
             "resumeFromBundle": str(resume_from_bundle) if resume_from_bundle else None,
-            "stopBefore": stop_before,
         },
         "success": False,
         "classification": "not-run",
@@ -117,7 +114,6 @@ def run_compat_test(
         if resolved_resume_bundle:
             checkpoint_resume = seed_bundle_from_checkpoint(resolved_resume_bundle, bundle)
             checkpoint_resume["resumed"] = True
-            checkpoint_resume["stopBefore"] = stop_before
             payload["checkpoint"] = checkpoint_resume
 
         if mode == "dry-run":
@@ -172,8 +168,6 @@ def run_compat_test(
             build_kwargs["runner_cache_dir"] = runner_cache_dir
         if module_cache_dir is not None:
             build_kwargs["module_cache_dir"] = module_cache_dir
-        if stop_before:
-            build_kwargs["stop_before"] = stop_before
         build_result = execute_inside_container(manifest, bundle, **build_kwargs)
         execution = build_result.to_dict()
         (bundle / "metadata" / "execution-result.json").write_text(
@@ -191,7 +185,6 @@ def run_compat_test(
             "artifactIndex": artifact_entry["indexPath"] if artifact_entry else str(default_index_path(output_path)),
             "artifact": artifact_entry,
             "execution": execution,
-            "stopBefore": stop_before,
         }
         payload["bundleVerification"] = verification
 
@@ -221,7 +214,7 @@ def run_compat_test(
 
         if mode == "build":
             payload["success"] = True
-            payload["classification"] = "checkpoint-prepared" if stop_before else "build-passed"
+            payload["classification"] = "build-passed"
             return payload
 
         run_results = []

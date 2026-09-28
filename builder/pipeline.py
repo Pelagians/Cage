@@ -208,7 +208,6 @@ def generate_build_script(
     *,
     bundle_mount: str = "/opt/cage",
     workspace_mount: str = "/workspace",
-    timeout_per_phase: int = 300,
 ) -> str:
     """Generate the real build script."""
     seed_script = generate_module_script(

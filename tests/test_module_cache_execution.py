@@ -143,8 +143,32 @@ class ModuleCacheExecutionTests(unittest.TestCase):
         self.assertNotIn("--user", argv)
         self.assertIn(f"PUID={os.getuid()}", argv)
         self.assertIn(f"PGID={os.getgid()}", argv)
-        self.assertIn("--net", argv)
-        self.assertEqual(argv[argv.index("--net") + 1], "host")
+        self.assertIn("--network", argv)
+        self.assertEqual(argv[argv.index("--network") + 1], "host")
+
+    def test_none_network_is_explicit_for_both_engines(self):
+        for engine in ("docker", "podman"):
+            with self.subTest(engine=engine), tempfile.TemporaryDirectory() as tmpdir:
+                tmp = Path(tmpdir)
+                manifest = Manifest.from_dict(MANIFEST)
+                bundle = create_bundle(manifest, tmp / "dist", dry_run=False)
+
+                class Completed:
+                    returncode = 0
+                    stdout = "container ok"
+                    stderr = ""
+
+                def fake_run(*_args, **_kwargs):
+                    materialize_runnable_prefix(bundle, entrypoint=MANIFEST["launch"]["entrypoint"])
+                    return Completed()
+
+                with patch("builder.executor._find_engine", return_value=engine), patch(
+                    "builder.executor._run_container_command", side_effect=fake_run
+                ) as run, patch("sys.stderr", io.StringIO()):
+                    execute_inside_container(manifest, bundle, engine=engine,
+                        image_ref="local/runtime:test", timeout=5, workspace=tmp)
+                argv = run.call_args.args[0]
+                self.assertEqual(argv[argv.index("--network") + 1], "none")
 
     def test_build_and_compat_cli_accept_module_cache_dir(self):
         parser = build_parser()
