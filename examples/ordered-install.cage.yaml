@@ -1,0 +1,31 @@
+schemaVersion: cage.app/v0
+name: sample-installer
+version: '1.0'
+runtime:
+  provider: wine
+  version: '11.0'
+modules:
+  - type: install
+    source: sources/sample-app.msi
+    installer: msi
+    args:
+      - /qn
+      - /norestart
+  - type: files
+    mappings:
+      - source: config/app.ini
+        target: C:/Program Files/Sample App/app.ini
+        mode: copy
+  - type: registry
+    changes:
+      - action: set
+        key: 'HKCU\Software\Sample App'
+        name: ShowWelcome
+        type: dword
+        value: 0
+  - type: check
+    file:
+      path: C:/Program Files/Sample App/app.exe
+      exists: true
+launch:
+  entrypoint: C:/Program Files/Sample App/app.exe

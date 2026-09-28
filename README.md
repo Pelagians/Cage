@@ -239,7 +239,9 @@ modules:
         mode: merge
 ```
 
-`mode: merge` copies the contents of the source directory into the target directory. That supports BlueBuild-style customer-provided folders such as `Program Files` trees without treating an entire Wine prefix as the source of truth. Installers/ISOs use `exe`, `msi`, or `iso` modules and optional `sources[]` declarations; BYO prefix import is still possible later as a convenience path, but reproducibility should be proven from installers/media/files first.
+`mode: merge` copies the contents of the source directory into the target directory. Installers use the unified `install` module with an EXE or MSI mechanism. ISO media exposure and safe extraction are separate ordered operations; the recipe identifies the installer explicitly. See [ordered modules and artifact construction](docs/ordered-modules.md) for schemas, path rules, and Linux state capture.
+
+Small sequencing examples: [MSI, files, registry, check](examples/ordered-install.cage.yaml), [Chocolatey interleaving](examples/chocolatey-interleaved.cage.yaml), [Linux customization](examples/linux-customization.cage.yaml), [read-only ISO media](examples/iso-install.cage.yaml), and [archive extraction](examples/extract-install.cage.yaml). Their `sources/` inputs are placeholders for your own verified media.
 
 Use `media stage` to copy or extract local BYO media into a normalized workspace tree before writing/running recipes:
 

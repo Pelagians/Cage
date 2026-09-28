@@ -50,20 +50,19 @@ Strict YAML rules:
 
 `profiles` is unsupported. Declare required modules and compatibility policy explicitly.
 
-`modules` is a BlueBuild-style build-time module list. The first implemented module is `type: chocolatey`, patterned after myOS `type: dnf` layers: recipes declare packages under `modules[].install.packages`, and the module produces ordered build steps. Example:
+`modules` is an ordered application build list. Chocolatey declares package actions at their recipe positions while its CFW foundation is resolved once before application modules. Example:
 
 ```yaml
 modules:
   - type: chocolatey
-    install:
-      packages:
-        - firefox
-        - 7zip.install
+    packages:
+      - firefox
+      - 7zip.install
 ```
 
-The Chocolatey module is a small consumer of one immutable CFW prepared-runtime release. Cage verifies the pinned detached manifest, evidence, prefix archive, source/installer/input provenance, and exact digest-pinned Wine producer image before safely replacement-seeding the prefix. CFW owns CLR, PowerShell, Synchro, Chocolatey bootstrap, profiles, and compatibility policy; Cage only verifies producer-declared proofs and interfaces, performs a bounded prefix update, proves a local package lifecycle, installs requested packages, and exports the application artifact. A missing released runtime fails the real lifecycle check rather than appearing green. Package names and runtime-profile fields are validated before build-script generation. `packageSource` may select an HTTPS Chocolatey package feed; the ambiguous legacy `source` and `bootstrap` fields are rejected.
+The Chocolatey module is a small consumer of one immutable CFW prepared-runtime release. Cage verifies the pinned detached manifest, evidence, prefix archive, source/installer/input provenance, and exact digest-pinned Wine producer image before adopting the prepared prefix. CFW owns CLR, PowerShell, Synchro, Chocolatey bootstrap, profiles, and compatibility policy; Cage verifies producer-declared proofs and interfaces, proves a local package lifecycle, installs requested packages in order, and exports the application artifact. A missing released runtime fails the real lifecycle check rather than appearing green. Package names and runtime-profile fields are validated before build-script generation. `packageSource` may select an HTTPS Chocolatey package feed; the ambiguous legacy `source` and `bootstrap` fields are rejected.
 
-Root-level `dependencies`, `install`, `filesystem`, `registry`, and `state` are not recipe fields. Use module types `exe`, `msi`, `iso`, `winetricks`, `portable`, `files`, `script`, or `chocolatey` as appropriate. `script` is the explicit shell escape hatch. The `files` module supports `copy` (replace the target) and `merge` (copy directory contents into the target); file mappings can declare SHA-256 hashes.
+Root-level `dependencies`, `install`, `filesystem`, and `registry` are not recipe fields. Use ordered module types `install`, `iso`, `extract`, `registry`, `dll`, `check`, `winetricks`, `portable`, `files`, `script`, or `chocolatey` as appropriate. `script` is the explicit shell escape hatch and requires declared Linux outputs. The `files` module supports `copy` (replace the target) and `merge` (copy directory contents into the target); file mappings can declare SHA-256 hashes. See [ordered module schemas](ordered-modules.md).
 
 `config` remains supported for legacy/provider-level configuration. New harder-app recipes should prefer first-class `compatibility` policy for architecture, Windows version, graphics backend, DLL policy, and compatibility environment.
 
