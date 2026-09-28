@@ -10,15 +10,18 @@ from typing import Any
 
 from .base import (
     ModuleBase, ModuleError, parse_module,
-    ExeModule, MsiModule, IsoModule,
-    WinetricksModule, PortableModule, FilesModule, ScriptModule, ContainerfileModule,
 )
 from .chocolatey import ChocolateyModule
 from ..build_step import BuildStep
 
 
-# ModuleSpec is an alias for ModuleBase for backward compatibility
-ModuleSpec = ModuleBase
+from .exe import ExeModule
+from .msi import MsiModule
+from .iso import IsoModule
+from .winetricks import WinetricksModule
+from .portable import PortableModule
+from .files import FilesModule
+from .script import ScriptModule
 
 
 def collect_build_steps(modules: list[ModuleBase]) -> list[tuple[int, ModuleBase, list[BuildStep]]]:
@@ -81,7 +84,6 @@ def generate_module_script(
 
 
 __all__ = [
-    "ModuleSpec",
     "ModuleBase",
     "ModuleError",
     "parse_module",
@@ -96,5 +98,4 @@ __all__ = [
     "PortableModule",
     "FilesModule",
     "ScriptModule",
-    "ContainerfileModule",
 ]

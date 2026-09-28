@@ -1,15 +1,4 @@
-"""Module expansion system for Cage recipes.
-
-Modules allow recipes to express high-level intent (install this EXE, use Chocolatey,
-apply winetricks verbs) and have Cage automatically expand them into the low-level
-dependencies, install steps, filesystem mappings, and registry tweaks needed.
-
-Module composition: Modules can nest other modules via the `modules` field, allowing
-reusable module definitions with defaults.
-
-Module defaults: Each module type can define default values that are merged with
-user-provided fields before expansion.
-"""
+"""Shared module parsing and build primitives."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -70,10 +59,9 @@ MODULE_FIELDS: dict[str, set[str]] = {
     "msi": {"type", "defaults", "source", "sha256", "silentArgs"},
     "iso": {"type", "defaults", "source", "autorun"},
     "winetricks": {"type", "defaults", "verbs"},
-    "portable": {"type", "defaults", "source", "target", "config"},
+    "portable": {"type", "defaults", "source", "target"},
     "files": {"type", "defaults", "mappings"},
     "script": {"type", "defaults", "command", "working_directory", "workingDirectory"},
-    "containerfile": {"type", "defaults", "instructions"},
 }
 
 FILES_MAPPING_FIELDS = {"source", "target", "sha256", "mode"}
@@ -118,7 +106,11 @@ def _validate_files_mappings(mappings: Any, location: str) -> None:
         _reject_unknown_module_fields(mapping, FILES_MAPPING_FIELDS, mapping_location)
         _required_str(mapping, "source", mapping_location)
         _required_str(mapping, "target", mapping_location)
-        _optional_str(mapping, "sha256", mapping_location)
+        sha = _optional_str(mapping, "sha256", mapping_location)
+        if sha is not None:
+            import re
+            if not re.fullmatch(r"[0-9a-fA-F]{64}", sha):
+                raise ModuleError(f"{mapping_location}.sha256 must be 64 hexadecimal characters")
         mode = mapping.get("mode", "copy")
         if mode not in FILES_MAPPING_MODES:
             raise ModuleError(f"{mapping_location}.mode must be one of: " + ", ".join(sorted(FILES_MAPPING_MODES)))
@@ -151,259 +143,20 @@ def _validate_common_module_data(module_type: str, data: dict[str, Any], index: 
     elif module_type == "portable":
         _optional_str(data, "source", location)
         _optional_str(data, "target", location)
-        _optional_str(data, "config", location)
     elif module_type == "files" and data.get("mappings") is not None:
         _validate_files_mappings(data["mappings"], location)
     elif module_type == "script":
         _optional_str(data, "command", location)
         _optional_str(data, "working_directory", location)
         _optional_str(data, "workingDirectory", location)
-    elif module_type == "containerfile" and data.get("instructions") is not None:
-        _string_list(data["instructions"], f"{location}.instructions")
+        if "working_directory" in data and "workingDirectory" in data:
+            raise ModuleError(f"{location} cannot specify both working-directory spellings")
     elif module_type == "chocolatey":
         install = data.get("install")
         if install is not None and not isinstance(install, dict):
             raise ModuleError(f"{location}.install must be an object")
         _optional_str(data, "packageSource", location)
 
-
-@dataclass
-class ExeModule(ModuleBase):
-    """EXE installer module."""
-    type: str = "exe"
-    source: str | None = None
-    sha256: str | None = None
-    silentArgs: str | list[str] | None = None
-    
-    def build(self) -> list[BuildStep]:
-        """Generate build steps for EXE installation."""
-        if not self.source:
-            raise ModuleError("exe module requires 'source' field")
-        
-        # Build the silent args string
-        args_str = ""
-        if self.silentArgs:
-            if isinstance(self.silentArgs, list):
-                args_str = " ".join(self.silentArgs)
-            else:
-                args_str = self.silentArgs
-        
-        commands = [
-            f'echo "  Installing {self.source}"',
-            f"wine {self.source} {args_str}".strip(),
-        ]
-        
-        return [BuildStep(
-            commands=commands,
-            description=f"Install EXE: {self.source}",
-            kind="wine-run",
-        )]
-
-
-@dataclass
-class MsiModule(ModuleBase):
-    """MSI installer module."""
-    type: str = "msi"
-    source: str | None = None
-    sha256: str | None = None
-    silentArgs: str | list[str] | None = None
-    
-    def build(self) -> list[BuildStep]:
-        """Generate build steps for MSI installation."""
-        if not self.source:
-            raise ModuleError("msi module requires 'source' field")
-        
-        # Build the silent args string
-        args_str = "/qn"  # Default silent install
-        if self.silentArgs:
-            if isinstance(self.silentArgs, list):
-                args_str = " ".join(["/qn"] + self.silentArgs)
-            else:
-                args_str = f"/qn {self.silentArgs}"
-        
-        commands = [
-            f'echo "  Installing MSI: {self.source}"',
-            f"msiexec /i {self.source} {args_str}".strip(),
-        ]
-        
-        return [BuildStep(
-            commands=commands,
-            description=f"Install MSI: {self.source}",
-            kind="wine-msiexec",
-        )]
-
-
-@dataclass
-class IsoModule(ModuleBase):
-    """ISO mount and run module."""
-    type: str = "iso"
-    source: str | None = None
-    autorun: bool | None = None
-    
-    def build(self) -> list[BuildStep]:
-        """Generate build steps for ISO mounting and execution."""
-        if not self.source:
-            raise ModuleError("iso module requires 'source' field")
-        
-        commands = [
-            f'echo "  Mounting ISO: {self.source}"',
-            f"MOUNT_POINT=$(mktemp -d)",
-            f"mount -o loop {self.source} $MOUNT_POINT",
-        ]
-        
-        if self.autorun:
-            commands.extend([
-                'echo "  Running autorun"',
-                "wine $MOUNT_POINT/setup.exe || wine $MOUNT_POINT/autorun.exe",
-            ])
-        
-        commands.extend([
-            "umount $MOUNT_POINT",
-            "rmdir $MOUNT_POINT",
-        ])
-        
-        return [BuildStep(
-            commands=commands,
-            description=f"Mount and run ISO: {self.source}",
-            kind="raw-shell",
-        )]
-
-
-@dataclass
-class WinetricksModule(ModuleBase):
-    """Winetricks verbs module."""
-    type: str = "winetricks"
-    verbs: list[str] | None = None
-    
-    def build(self) -> list[BuildStep]:
-        """Generate build steps for winetricks verbs."""
-        if not self.verbs:
-            raise ModuleError("winetricks module requires 'verbs' field")
-        
-        verbs_str = " ".join(self.verbs)
-        commands = [
-            f'echo "  Installing winetricks verbs: {verbs_str}"',
-            f"winetricks -q {verbs_str}",
-        ]
-        
-        return [BuildStep(
-            commands=commands,
-            description=f"Install winetricks: {verbs_str}",
-            kind="wine-run",
-        )]
-
-
-@dataclass
-class PortableModule(ModuleBase):
-    """Portable app staging module."""
-    type: str = "portable"
-    source: str | None = None
-    target: str | None = None
-    config: str | None = None
-    
-    def build(self) -> list[BuildStep]:
-        """Generate build steps for portable app extraction."""
-        if not self.source:
-            raise ModuleError("portable module requires 'source' field")
-        if not self.target:
-            raise ModuleError("portable module requires 'target' field")
-        
-        commands = [
-            f'echo "  Extracting portable app to {self.target}"',
-            f"mkdir -p {self.target}",
-            f"unzip -o {self.source} -d {self.target}",
-        ]
-        
-        if self.config:
-            commands.append(f'echo "  Applying config: {self.config}"')
-            # Config application would be handled here
-        
-        return [BuildStep(
-            commands=commands,
-            description=f"Extract portable: {self.source} → {self.target}",
-            kind="extract",
-        )]
-
-
-@dataclass
-class FilesModule(ModuleBase):
-    """File copying module."""
-    type: str = "files"
-    mappings: list[dict[str, Any]] | None = None
-    
-    def build(self) -> list[BuildStep]:
-        """Generate build steps for file copying."""
-        if not self.mappings:
-            raise ModuleError("files module requires 'mappings' field")
-        
-        commands = []
-        for mapping in self.mappings:
-            source = mapping.get("source")
-            target = mapping.get("target")
-            if not source or not target:
-                raise ModuleError("files module mapping requires 'source' and 'target'")
-            
-            commands.append(f'echo "  Copying {source} → {target}"')
-            commands.append(f"mkdir -p $(dirname {target})")
-            commands.append(f"cp -r {source} {target}")
-        
-        return [BuildStep(
-            commands=commands,
-            description=f"Copy {len(self.mappings)} file(s)",
-            kind="copy-tree",
-        )]
-
-
-@dataclass
-class ScriptModule(ModuleBase):
-    """Script execution module."""
-    type: str = "script"
-    command: str | None = None
-    working_directory: str | None = None
-    
-    def build(self) -> list[BuildStep]:
-        """Generate build steps for script execution."""
-        if not self.command:
-            raise ModuleError("script module requires 'command' field")
-        
-        commands = [
-            f'echo "  Running script: {self.command[:50]}..."',
-            self.command,
-        ]
-        
-        return [BuildStep(
-            commands=commands,
-            description=f"Run script: {self.command[:50]}...",
-            working_dir=self.working_directory,
-            kind="raw-shell",
-            unsafe=True,
-            metadata={"escapeHatch": "script"},
-        )]
-
-
-@dataclass
-class ContainerfileModule(ModuleBase):
-    """Containerfile escape hatch module."""
-    type: str = "containerfile"
-    instructions: list[str] | None = None
-    
-    def build(self) -> list[BuildStep]:
-        """Generate build steps for raw containerfile instructions."""
-        if not self.instructions:
-            raise ModuleError("containerfile module requires 'instructions' field")
-        
-        commands = [
-            'echo "  Executing containerfile instructions"',
-        ]
-        commands.extend(self.instructions)
-        
-        return [BuildStep(
-            commands=commands,
-            description=f"Execute {len(self.instructions)} containerfile instruction(s)",
-            kind="raw-shell",
-            unsafe=True,
-            metadata={"escapeHatch": "containerfile"},
-        )]
 
 
 def parse_module(data: dict[str, Any], index: int = 0) -> ModuleBase:
@@ -423,6 +176,13 @@ def parse_module(data: dict[str, Any], index: int = 0) -> ModuleBase:
         ModuleError: If module type is unknown or required fields are missing
     """
     from .chocolatey import ChocolateyModule
+    from .exe import ExeModule
+    from .msi import MsiModule
+    from .iso import IsoModule
+    from .winetricks import WinetricksModule
+    from .portable import PortableModule
+    from .files import FilesModule
+    from .script import ScriptModule
 
     if not isinstance(data, dict):
         raise ModuleError(f"modules[{index}] must be an object")
@@ -487,7 +247,6 @@ def parse_module(data: dict[str, Any], index: int = 0) -> ModuleBase:
             defaults=defaults,
             source=merged_data.get("source"),
             target=merged_data.get("target"),
-            config=merged_data.get("config"),
         )
     elif module_type == "files":
         return FilesModule(
@@ -503,12 +262,6 @@ def parse_module(data: dict[str, Any], index: int = 0) -> ModuleBase:
             command=merged_data.get("command"),
             working_directory=working_directory,
         )
-    elif module_type == "containerfile":
-        return ContainerfileModule(
-            type=module_type,
-            defaults=defaults,
-            instructions=merged_data.get("instructions"),
-        )
     else:
         raise ModuleError(f"modules[{index}] unknown module type: {module_type}")
 
@@ -517,13 +270,4 @@ __all__ = [
     "ModuleError",
     "ModuleBase",
     "parse_module",
-    "ChocolateyModule",
-    "ExeModule",
-    "MsiModule",
-    "IsoModule",
-    "WinetricksModule",
-    "PortableModule",
-    "FilesModule",
-    "ScriptModule",
-    "ContainerfileModule",
 ]

@@ -1,38 +1,40 @@
-"""EXE installer module expander."""
+"""Exe recipe module."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
-from .base import ExeModule, ModuleError
+from .base import ModuleBase, ModuleError
+from ..build_step import BuildStep
 
+@dataclass
+class ExeModule(ModuleBase):
+    """EXE installer module."""
+    type: str = "exe"
+    source: str | None = None
+    sha256: str | None = None
+    silentArgs: str | list[str] | None = None
 
-def expand_exe(module: ExeModule, index: int) -> dict[str, Any]:
-    """Expand exe module into install step."""
-    # Merge defaults with user-provided fields
-    source = module.source
-    sha256 = module.sha256
-    silentArgs = module.silentArgs
-    
-    if module.defaults:
-        source = source or module.defaults.get("source")
-        sha256 = sha256 or module.defaults.get("sha256")
-        silentArgs = silentArgs if silentArgs is not None else module.defaults.get("silentArgs")
-    
-    if not source:
-        raise ModuleError(f"modules[{index}].source is required for exe module")
-    
-    install_step = {
-        "kind": "exe",
-        "source": source,
-    }
-    
-    if sha256:
-        install_step["sha256"] = sha256
-    
-    if silentArgs:
-        if isinstance(silentArgs, list):
-            install_step["args"] = silentArgs
-        else:
-            install_step["args"] = [silentArgs]
-    
-    return {"install": [install_step]}
+    def build(self) -> list[BuildStep]:
+        """Generate build steps for EXE installation."""
+        if not self.source:
+            raise ModuleError("exe module requires 'source' field")
+
+        # Build the silent args string
+        args_str = ""
+        if self.silentArgs:
+            if isinstance(self.silentArgs, list):
+                args_str = " ".join(self.silentArgs)
+            else:
+                args_str = self.silentArgs
+
+        commands = [
+            f'echo "  Installing {self.source}"',
+            f"wine {self.source} {args_str}".strip(),
+        ]
+
+        return [BuildStep(
+            commands=commands,
+            description=f"Install EXE: {self.source}",
+            kind="wine-run",
+        )]
