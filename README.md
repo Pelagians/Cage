@@ -2,7 +2,7 @@
 
 **Application-first packager and runner for Wine/Proton-family software.**
 
-Cage takes an application recipe and builds a reproducible application
+Cage takes an application recipe and builds an application
 artifact for Wine/Proton-family runtimes. Users should think “I am packaging
 Notepad++,” not “I am building a Wine prefix.” Wine prefixes, runtime images,
 launch scripts, bundle directories, and OCI layers are implementation details
@@ -39,7 +39,7 @@ application recipe (YAML, CLI-generated, or normalized JSON)
        ▼
 ┌──────────────────────────────────────────────────┐
 │              Builder Pipeline                      │
-│ resolve → install deps/app → config/registry → seal │
+│ resolve → module build steps → export prefix   │
 └──────────────────────────────────────────────────┘
        │
        ▼
@@ -103,24 +103,9 @@ python3 -m cage --help
 # Build from the user/business-facing YAML recipe format
 cage build examples/notepad-plus-plus.cage.yaml --dry-run
 
-# JSON remains supported for generated or CLI-normalized inputs
-cage build examples/minimal.cage.json --dry-run
-
 # Inspect or verify the lower-level bundle when debugging/automating
 cage bundle inspect dist/notepad-plus-plus-8.6.0
 cage bundle verify dist/notepad-plus-plus-8.6.0
-
-# Locate/reuse prepared-prefix checkpoints for slow legacy installer debugging
-cage debug checkpoint inspect dist/office-prep-output
-cage debug checkpoint resume dist/office-prep-output \
-  --output dist/attempts \
-  --name office-install-attempt-001
-cage compat test examples/notepad-plus-plus.cage.yaml \
-  --mode build \
-  --stop-before install-apps
-cage compat test examples/notepad-plus-plus.cage.yaml \
-  --mode build \
-  --resume-from-bundle dist/attempts/office-install-attempt-001
 
 # Resolve built application artifacts by name from the local index
 cage artifacts list
@@ -161,8 +146,8 @@ normalized, or CLI-driven workflows. YAML is intentionally strict: unknown
 fields, duplicate keys, anchors, aliases, and merge keys are rejected so
 recipes normalize into one clear object model.
 
-A recipe describes an application: provider/version, dependencies, config,
-registry tweaks, Wine config, launch command, state behavior, and exports. It
+A recipe describes an application: provider/version, ordered modules,
+compatibility policy, launch command, sources, and exports. It
 does not ask users to manage Wine prefixes directly.
 
 
@@ -246,13 +231,15 @@ sources:
     path: sources/vendor-suite/Program Files/Vendor Suite
     policy: bring-your-own-files
 
-filesystem:
-  - source: sources/vendor-suite/Program Files/Vendor Suite
-    target: C:/Program Files/Vendor Suite
-    mode: merge
+modules:
+  - type: files
+    mappings:
+      - source: sources/vendor-suite/Program Files/Vendor Suite
+        target: C:/Program Files/Vendor Suite
+        mode: merge
 ```
 
-`mode: merge` copies the contents of the source directory into the target directory. That supports BlueBuild-style customer-provided folders such as `Program Files` trees without treating an entire Wine prefix as the source of truth. Installers/ISOs remain modeled through `install[]` and `sources[]`; BYO prefix import is still possible later as a convenience path, but reproducibility should be proven from installers/media/files first.
+`mode: merge` copies the contents of the source directory into the target directory. That supports BlueBuild-style customer-provided folders such as `Program Files` trees without treating an entire Wine prefix as the source of truth. Installers/ISOs use `exe`, `msi`, or `iso` modules and optional `sources[]` declarations; BYO prefix import is still possible later as a convenience path, but reproducibility should be proven from installers/media/files first.
 
 Use `media stage` to copy or extract local BYO media into a normalized workspace tree before writing/running recipes:
 
@@ -292,7 +279,7 @@ Before spending time in Wine, verify that recipe sources are actually present an
 cage sources verify examples/notepad-plus-plus.cage.yaml --workspace .
 ```
 
-The output is `schemaVersion: cage.source-integrity/v0` and reports every declared source, install source, filesystem overlay, resolved local path, sha256 result, warning, and error. v0 builds consume local workspace files; remote URLs are recorded as provenance but must be materialized locally for install/filesystem steps.
+The output is `schemaVersion: cage.source-integrity/v0` and reports every declared source, module source, file mapping, resolved local path, sha256 result, warning, and error. v0 builds consume local workspace files; remote URLs are recorded as provenance but must be materialized locally for module steps.
 
 For BYO media, run a separate policy audit before spending time in Wine:
 
@@ -354,7 +341,7 @@ cage compat corpus
 
 It emits `schemaVersion: cage.compat-corpus/v0` with starter apps/tier labels such as Notepad++, 7-Zip, PuTTY, WinSCP, DB Browser for SQLite, .NET sample, COM sample, Office BYO installer/files candidates, and blocked driver-required app classes.
 
-The bundled Notepad++ recipe remains a contract fixture until `sources/notepad-plus-plus.exe` and `overlays/notepad-plus-plus/config.xml` are provided. `sources verify` / `compat test` should report that clearly instead of failing later inside Wine.
+The beginner Notepad++ recipe in `examples/` uses Chocolatey and a host-network build. `recipes/notepadplusplus.cage.yaml` is the separate bridge-network CFW proof used by the runtime tests.
 
 ## Local Artifact Index
 

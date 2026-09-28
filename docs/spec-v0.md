@@ -1,6 +1,6 @@
 # Cage Application Recipe and Artifact Spec v0
 
-Status: proposed application-first v0 contract.
+Status: current module-first v0 contract.
 
 ## Product model
 
@@ -44,13 +44,13 @@ Strict YAML rules:
 
 `runtime.runner` is optional and selects a downloadable runner archive alias within the provider. Phase 6F adds `pol-8.2`, `pol-4.3`, and `pol-3.0.3` as Wine runner aliases backed by PlayOnLinux/Phoenicis-hosted upstream Wine x86 tarballs. These are not a separate PlayOnLinux provider; they are cacheable Wine runner archives with pinned URL/SHA-256 provenance. Resolved runtime metadata records `runner`, `runnerVersion`, `runnerSource`, `runnerUrl`, `runnerSha256`, and `runnerArch` when a recipe requests a downloadable runner. A recipe consuming a CFW prepared runtime must not set `runtime.runner`: its Wine binary is bound to the exact producer image digest.
 
-`runtime.network` is optional and defaults to `none`. Supported values are `none`, `bridge`, and `host`. This field records runtime network intent for the sealed application artifact, not build-container networking: build containers keep default networking so installers, Winetricks verbs, Chocolatey, Git, and other build-time tooling can download dependencies. The resolved execution graph records network intent under `runnerRuntime.network`, and `cage run --network <mode>` can override it at operator run time.
+`runtime.network` is optional and defaults to `none`. Supported values are `none`, `bridge`, and `host`. This field records runtime network intent for the sealed application artifact, not build-container networking: build containers use explicit `build.network` (`none` by default, or `bridge`/`host` when downloads are needed). The resolved execution graph records network intent under `runnerRuntime.network`, and `cage run --network <mode>` can override it at operator run time.
 
 `sources` records upstream/local source provenance plus BYO/legal source policy. Supported source `type` values include `installer`, `iso`, `archive`, `files`, `prefix`, `font`, and `other`. Supported source `policy` values include `bring-your-own-files`, `bring-your-own-installer`, `bring-your-own-licensed-media`, `bring-your-own-prefix`, `redistributable`, and fixture/external marker policies. v0 source integrity verifies local `file://` and relative workspace paths plus declared `sha256` values for file sources; remote URLs are recorded but not fetched by the dependency-light verifier.
 
-`profiles` expands named, reviewable compatibility/dependency defaults into concrete recipe fields. The first implemented profile is `office-legacy-32bit`, which adds `win32`, `win7`, Office legacy DLL policy, and the Winetricks verbs from current Office/Bottles evidence. Explicit recipe fields override profile defaults.
+`profiles` is unsupported. Declare required modules and compatibility policy explicitly.
 
-`modules` is a BlueBuild-style build-time module list. The first implemented module is `type: chocolatey`, patterned after myOS `type: dnf` layers: recipes declare packages under `modules[].install.packages`, and Cage lowers the module into prerequisite dependencies, idempotent setup, and package install steps. Example:
+`modules` is a BlueBuild-style build-time module list. The first implemented module is `type: chocolatey`, patterned after myOS `type: dnf` layers: recipes declare packages under `modules[].install.packages`, and the module produces ordered build steps. Example:
 
 ```yaml
 modules:
@@ -63,26 +63,18 @@ modules:
 
 The Chocolatey module is a small consumer of one immutable CFW prepared-runtime release. Cage verifies the pinned detached manifest, evidence, prefix archive, source/installer/input provenance, and exact digest-pinned Wine producer image before safely replacement-seeding the prefix. CFW owns CLR, PowerShell, Synchro, Chocolatey bootstrap, profiles, and compatibility policy; Cage only verifies producer-declared proofs and interfaces, performs a bounded prefix update, proves a local package lifecycle, installs requested packages, and exports the application artifact. A missing released runtime fails the real lifecycle check rather than appearing green. Package names and runtime-profile fields are validated before build-script generation. `packageSource` may select an HTTPS Chocolatey package feed; the ambiguous legacy `source` and `bootstrap` fields are rejected.
 
-`dependencies` supports build-time dependency installation. Allowed kinds: `winetricks`, `font`, `directx`, `package`, `runtime-component`.
-
-`install` supports build-time application installation. Allowed kinds: `msi`, `exe`, `portable`, `choco`, `script`, `bat`, and `cmd`. MSI/EXE/portable/BAT/CMD steps require `source`; script requires `command`. `choco` is the internal lowered form used by the Chocolatey module and requires `command: install` plus args. Public recipes should prefer `modules: - type: chocolatey` instead of hand-authored raw `install.kind: choco` steps. BAT/CMD steps execute through `wine cmd /c`, may declare `workingDirectory`, and are intended for operator-provided installer scripts from legitimate BYO media. Recipes must not use BAT/CMD support to encode activation bypasses, cracked/pre-activated payload flows, or unauthorized licensing automation.
-
-`filesystem` maps declared source files or directories into Windows-style targets under `drive_c`. `filesystem.mode: copy` is the default. `filesystem.mode: merge` copies the contents of a source directory into an existing target directory, enabling BlueBuild-style user-provided file trees such as `Program Files` overlays without nesting the source directory itself.
+Root-level `dependencies`, `install`, `filesystem`, `registry`, and `state` are not recipe fields. Use module types `exe`, `msi`, `iso`, `winetricks`, `portable`, `files`, `script`, or `chocolatey` as appropriate. `script` is the explicit shell escape hatch. The `files` module supports `copy` (replace the target) and `merge` (copy directory contents into the target); file mappings can declare SHA-256 hashes.
 
 `config` remains supported for legacy/provider-level configuration. New harder-app recipes should prefer first-class `compatibility` policy for architecture, Windows version, graphics backend, DLL policy, and compatibility environment.
-
-`registry` records build-time registry tweaks.
 
 `launch.entrypoint` is required and remains the default app entrypoint. `launch.args`, `launch.env`, and `launch.workingDirectory` are optional. For a CFW prepared runtime, `launch.env` cannot override producer-owned environment keys; the complete launch contract is bound across manifest, graph, and bundle verification.
 
 `entrypoints` optionally records named suite entrypoints such as `word`, `excel`, and `powerpoint`. `fileAssociations` maps extensions/MIME types to those named entrypoints. v0 records this metadata for artifacts/evidence, and `cage run <app> --entrypoint writer <file.docx>` routes host files as read-only `Z:` path arguments.
 
-`state` describes runtime state behavior. The default direction is persistent runtime state separate from the immutable artifact.
-
 `exports` describes user/application outputs such as reports, save exports, screenshots, generated documents, or other files that should be mounted or collected explicitly.
 
 
-## BYO files, profiles, and suite metadata
+## BYO files and suite metadata
 
 For apps that are not cleanly installed from a public URL, recipes can model customer-provided material explicitly:
 
@@ -93,10 +85,12 @@ sources:
     path: sources/vendor-suite/Program Files/Vendor Suite
     policy: bring-your-own-files
 
-filesystem:
-  - source: sources/vendor-suite/Program Files/Vendor Suite
-    target: C:/Program Files/Vendor Suite
-    mode: merge
+modules:
+  - type: files
+    mappings:
+      - source: sources/vendor-suite/Program Files/Vendor Suite
+        target: C:/Program Files/Vendor Suite
+        mode: merge
 ```
 
 This is the preferred direction for pre-installed file directories. BYO prefix import may be useful for Bottles/Crossover experiments later, but reproducible source materialization from installers/media/files is the core Cage question. Proprietary app recipes should live in private/customer repositories such as `customer-private`, not in public Cage.
@@ -165,13 +159,13 @@ If a bundle graph contains `runnerRuntime.runner`, `cage run --runner-cache-dir 
 
 ## Source integrity and compatibility evidence
 
-`cage sources verify <manifest>` emits `schemaVersion: cage.source-integrity/v0`. The report includes `valid`, `summary`, `items`, `errors`, and `warnings`. Each item records location (`sources[i]`, `install[i].source`, or `filesystem[i].source`), source reference, resolved local path when applicable, expected/actual sha256, and status (`verified`, `present`, `missing`, `hash-mismatch`, `remote`, etc.).
+`cage sources verify <manifest>` emits `schemaVersion: cage.source-integrity/v0`. The report includes `valid`, `summary`, `items`, `errors`, and `warnings`. Each item records location (`sources[i]`, `modules[i].source`, or `modules[i].mappings[j].source`), source reference, resolved local path when applicable, expected/actual sha256, and status (`verified`, `present`, `missing`, `hash-mismatch`, `remote`, etc.).
 
-`file://relative/path` and bare relative paths resolve against the selected workspace root. Real v0 builds mount the workspace at `/workspace`, and generated build scripts now resolve relative install/filesystem sources under that mount.
+`file://relative/path` and bare relative paths resolve against the selected workspace root. Real v0 builds mount the workspace at `/workspace`, and files-module scripts resolve relative sources under that mount.
 
 `cage compat test <manifest>` emits `schemaVersion: cage.compat-test/v0`. It supports `--mode dry-run`, `--mode build`, and `--mode run`. Dry-run mode records source integrity, dry-run bundle materialization, bundle verification, and run-plan generation. Build mode performs the real container build after source integrity passes and records `metadata/execution-result.json` plus structured build evidence. Run mode adds bounded `cage.run-result/v0` launch evidence.
 
-`cage compat test <manifest> --mode build --stop-before install-apps` runs dependency/prefix preparation, seals a checkpoint before application installers, and records the checkpoint in normal build evidence. `--resume-from-bundle <path>` accepts either a bundle root or a compat-output parent, locates the prepared checkpoint, seeds its `prefix/` into a fresh attempt bundle, and records `checkpoint.sourceBundle` plus `checkpoint.attemptBundle` in the evidence payload. `--stop-before` is intentionally limited to build/dry-run modes; run mode requires a full application bundle.
+`--stop-before` is unsupported and rejected because the build pipeline has no phase boundary at that point. Existing checkpoint inspection and resume commands remain for previously prepared bundles.
 
 `cage debug checkpoint inspect <path>` emits `schemaVersion: cage.checkpoint/v0` and validates a prepared-prefix checkpoint. A checkpoint is valid only when it has `prefix/drive_c`, `manifest.cage.json`, `runtime/runtime.json`, `metadata/provenance.json`, and `logs/build.log`. If `<path>` is a compat-test output parent, inspection locates a single nested valid bundle and reports that actual bundle root. `cage debug checkpoint resume <path> --output <dir> [--name <id>]` copies the checkpoint bundle into a fresh mutable attempt directory and writes `metadata/checkpoint-resume.json` without mutating the source checkpoint.
 
