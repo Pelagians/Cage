@@ -1,17 +1,15 @@
-"""Build script generator for Cage's module-first architecture.
-
-Most module steps execute in declaration order after Wine initialization.
-``prefix-seed`` steps are the one pipeline-owned exception: they materialize a
-producer-complete prefix foundation before application modules. Cage does not
-rerun ``wineboot`` against that producer-owned compatibility state.
-"""
+"""Compile and render one ordered build operation list."""
 from __future__ import annotations
 
+import shlex
 from typing import Any
 
 from core.compatibility import compatibility_environment
 from core.manifest import Manifest
-from core.modules import collect_build_steps, generate_module_script
+from core.modules import collect_build_steps
+from core.build_step import BuildStep
+from core.modules.base import ModuleError
+from core.modules.paths import validate_linux_output
 
 
 PREFIX_SEED_KIND = "prefix-seed"
@@ -20,43 +18,6 @@ PREFIX_SEED_KIND = "prefix-seed"
 def _shell_quote(value: str) -> str:
     """Quote a value for shell."""
     return "'" + value.replace("'", "'\"'\"'") + "'"
-
-
-def _runner_environment_lines(manifest: Manifest) -> list[str]:
-    """Generate environment variable setup for the runner."""
-    runner = manifest.runtime.runner
-    if not runner:
-        return []
-
-    lines = ['echo "[cage] Configuring runner environment"']
-    if isinstance(runner, dict):
-        for key, value in runner.items():
-            lines.append(f"export {key}={_shell_quote(str(value))}")
-    return lines
-
-
-def _compatibility_policy_lines(manifest: Manifest) -> list[str]:
-    """Generate compatibility policy setup (DLL overrides, Windows version, etc.)."""
-    compat = manifest.compatibility
-    if not compat:
-        return []
-
-    lines = ['echo "[cage] Applying compatibility policy"']
-    for key, value in compatibility_environment(compat).items():
-        lines.append(f"export {key}={_shell_quote(value)}")
-        if key == "WINEDLLOVERRIDES" and value:
-            lines.append(f'echo "  DLL overrides: {value}"')
-
-    windows_version = compat.get("windowsVersion")
-    if windows_version:
-        lines.append(f'echo "  Setting Windows version: {windows_version}"')
-        lines.append(f"winecfg -v {windows_version}")
-
-    graphics = compat.get("graphics", {})
-    backend = graphics.get("backend")
-    if backend:
-        lines.append(f'echo "  Graphics backend: {backend}"')
-    return lines
 
 
 def _launch_lines(manifest: Manifest) -> list[str]:
@@ -133,73 +94,179 @@ def _export_lines(manifest: Manifest, *, bundle_mount: str) -> list[str]:
         'fi',
         'mv "$CAGE_PREFIX_METADATA_PARTIAL" "$CAGE_PREFIX_METADATA_FINAL"',
         'rm -rf "$CAGE_PREFIX_PREVIOUS"',
-        'trap - EXIT',
         'echo "  Bundle export complete"',
     ])
     return lines
 
 
 def build_plan(manifest: Manifest) -> list[dict[str, object]]:
-    """Generate a build plan with prepared-prefix steps before Wine init."""
+    """Compile the ordered operations executed by the build script.
+
+    The CFW foundation is selected before execution, independently of where
+    Chocolatey package actions appear in the recipe. All application steps
+    retain their recipe position.
+    """
     steps: list[dict[str, object]] = []
-    collected = collect_build_steps(manifest.modules)
+    root_build = any(module.type in {"script", "extract"} for module in manifest.modules)
 
-    for module_index, module, build_steps in collected:
+    def append(op_id: str, phase: str, step: BuildStep, *, module_index: int | None = None,
+               module_type: str | None = None, step_index: int | None = None,
+               inputs: list[str] | None = None, resources: list[str] | None = None) -> None:
+        payload = step.to_dict()
+        payload.update({"id": op_id, "phase": phase, "inputs": inputs or [],
+                        "resourceDependencies": resources or []})
+        payload["executionUser"] = (
+            "root" if root_build and (op_id == "prepare-build" or step.kind in {"linux-state", "linux-seal"}
+                                      or module_type in {"script", "extract"}) else "application"
+        )
+        if step.kind == "media-mount":
+            payload["resourcesCreated"] = [step.metadata["resource"]]
+        if module_index is not None:
+            payload.update({"moduleIndex": module_index, "moduleType": module_type,
+                            "stepIndex": step_index})
+            payload["metadata"] = {**payload.get("metadata", {}), "runtimeIdentity": {
+                "provider": manifest.runtime.provider, "version": manifest.runtime.version,
+                "runner": manifest.runtime.runner,
+            }}
+        steps.append(payload)
+
+    init_commands = [
+        'export WINEPREFIX="${CAGE_BUILD_PREFIX:-/tmp/cage-build-prefix}"',
+        'export WINEDBG="-all"',
+        'CAGE_PREFIX_FINAL=' + _shell_quote('/opt/cage/prefix'),
+        'CAGE_PREFIX_PARTIAL=' + _shell_quote('/opt/cage/prefix.partial'),
+        'CAGE_PREFIX_PREVIOUS=' + _shell_quote('/opt/cage/prefix.previous'),
+        'CAGE_PREFIX_METADATA_PARTIAL=' + _shell_quote('/opt/cage/metadata/prefix-materialization.partial.json'),
+        'CAGE_PREFIX_METADATA_FINAL=' + _shell_quote('/opt/cage/metadata/prefix-materialization.json'),
+        'export CAGE_PREFIX_FINAL CAGE_PREFIX_PARTIAL CAGE_PREFIX_PREVIOUS CAGE_PREFIX_METADATA_PARTIAL CAGE_PREFIX_METADATA_FINAL',
+        'rm -rf "$WINEPREFIX" "$CAGE_PREFIX_PARTIAL" "$CAGE_PREFIX_PREVIOUS" "$CAGE_PREFIX_METADATA_PARTIAL"',
+        'mkdir -p "$WINEPREFIX"',
+        'rm -f /opt/cage/build/cfw-interface.env /opt/cage/logs/failed-operation',
+    ]
+    if root_build:
+        init_commands.append('chown abc:abc "$WINEPREFIX"')
+    if manifest.runtime.runner is not None:
+        init_commands.extend([
+            'export CAGE_RUNNER_BIN="${CAGE_RUNNER_BIN:-/opt/cage-runner/bin}"',
+            'export PATH="$CAGE_RUNNER_BIN:$PATH"',
+            'export WINE="$CAGE_RUNNER_BIN/wine"',
+        ])
+    preinit_env = compatibility_environment(manifest.compatibility)
+    init_commands.extend(f'export {key}={_shell_quote(value)}' for key, value in preinit_env.items())
+    append("prepare-build", "prepare-build", BuildStep(init_commands, "Prepare build and prefix environment", kind="lifecycle"))
+
+    chocolatey = next((m for m in manifest.modules if m.type == "chocolatey"), None)
+    foundation_steps = chocolatey.foundation_steps() if chocolatey is not None else []
+    seed_steps = [step for step in foundation_steps if step.kind in {"metadata", PREFIX_SEED_KIND}]
+    readiness_steps = [step for step in foundation_steps if step.kind not in {"metadata", PREFIX_SEED_KIND}]
+    for i, step in enumerate(seed_steps, 1):
+        append(f"foundation-{i}", "prefix-seed", step)
+
+    if chocolatey is not None:
+        append("init-prefix", "init-prefix", BuildStep([
+            'test -d "$WINEPREFIX/drive_c" || { echo "[cage] ERROR: prepared prefix is missing drive_c" >&2; exit 69; }',
+            'cfw_interface_file="${CAGE_BUNDLE_MOUNT:-/opt/cage}/build/cfw-interface.env"',
+            'test -f "$cfw_interface_file" || { echo "[cage] ERROR: CFW interface was not materialized" >&2; exit 68; }',
+            'source "$cfw_interface_file"',
+            'rm -f "$cfw_interface_file"',
+            'touch "$WINEPREFIX/.cage-prefix-seeded"',
+        ], "Adopt verified CFW prefix once", kind="prefix-adopt"))
+    else:
+        append("init-prefix", "init-prefix", BuildStep([
+            'wineboot_log="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/wineboot.log"',
+            'mkdir -p "$(dirname "$wineboot_log")"',
+            'timeout 300s wine wineboot --init > "$wineboot_log" 2>&1 || { rc=$?; cat "$wineboot_log" >&2; exit "$rc"; }',
+        ], "Initialize Wine prefix once", kind="wineboot", timeout=315))
+
+    for i, step in enumerate(readiness_steps, 1):
+        append(f"foundation-check-{i}", "foundation-check", step)
+    if manifest.compatibility.get("windowsVersion"):
+        version = manifest.compatibility["windowsVersion"]
+        append("compatibility", "compatibility", BuildStep(
+            [f"winecfg -v {_shell_quote(version)}"], "Set Windows version before modules", kind="wine-config"))
+
+    active_media: dict[str, str] = {}
+    occupied_drives: set[str] = set()
+    persistent_paths: list[str] = []
+    for module_index, module, build_steps in collect_build_steps(manifest.modules):
+        if module.type == "iso":
+            if module.action == "mount":
+                drive = module.drive.upper()
+                if module.id in active_media or drive in occupied_drives:
+                    raise ModuleError(f"modules[{module_index}] duplicates media ID or drive")
+                active_media[module.id] = drive
+                occupied_drives.add(drive)
+            else:
+                drive = active_media.pop(module.id, None)
+                if drive is None:
+                    raise ModuleError(f"modules[{module_index}] unmounts unknown media: {module.id}")
+                occupied_drives.remove(drive)
+                build_steps = [BuildStep([
+                    f"wine reg delete 'HKLM\\Software\\Wine\\Drives' /v '{drive}:' /f",
+                    f'rm -f -- "$WINEPREFIX/dosdevices/{drive.lower()}:"',
+                ], f"Release ISO media: {module.id}", kind="media-unmount",
+                    metadata={"resource": module.id, "drive": drive})]
+        if module.type == "install" and module.source and len(module.source) > 2 and module.source[1:3] == ":/" and module.source[0].upper() != "C":
+            requested = module.source[0].upper()
+            if requested not in occupied_drives:
+                raise ModuleError(f"modules[{module_index}] installer requires an active media drive {requested}:")
+        if module.type == "script":
+            persistent_paths.extend(module.outputs or [])
+        if module.type == "dll" and module.install and module.install["target"] == "syswow64" and manifest.compatibility.get("arch") == "win32":
+            raise ModuleError(f"modules[{module_index}] syswow64 requires a 64-bit Wine prefix")
+        if module.type == "extract" and module.target and not module.target.startswith("/work/"):
+            persistent_paths.append(module.target)
         for step_index, step in enumerate(build_steps, 1):
-            if step.kind != PREFIX_SEED_KIND:
-                continue
-            payload = step.to_dict()
-            payload.update({
-                "id": f"module-{module_index + 1}-seed-{step_index}",
-                "phase": "prefix-seed",
-                "description": f"Module {module_index + 1}/{len(manifest.modules)} ({module.type}): {step.description}",
-                "moduleType": module.type,
-                "moduleIndex": module_index + 1,
-                "stepIndex": step_index,
-            })
-            steps.append(payload)
+            if module.type == "chocolatey":
+                step = BuildStep(step.commands, step.description, kind=step.kind,
+                    environment={**step.environment,
+                                 "CAGE_CHOCOLATEY_EVIDENCE_NAME": f"chocolatey-package-evidence-{module_index + 1}.json"},
+                    working_dir=step.working_dir, timeout=step.timeout, unsafe=step.unsafe,
+                    metadata={**step.metadata,
+                              "packageEvidence": f"metadata/chocolatey-package-evidence-{module_index + 1}.json"})
+            inputs = ([module.source] if getattr(module, "source", None) else [])
+            inputs += ([module.file] if getattr(module, "file", None) and module.type in {"script", "registry"} else [])
+            if module.type == "files":
+                inputs.extend(mapping["source"] for mapping in module.mappings or [])
+            if module.type == "dll" and module.install:
+                inputs.append(module.install["source"])
+            resources = ([resource for resource, drive in active_media.items()
+                          if module.type == "install" and module.source
+                          and module.source.upper().startswith(drive + ":/")])
+            if module.type == "iso" and module.action == "unmount":
+                resources = [module.id]
+            append(f"module-{module_index + 1}-step-{step_index}",
+                   f"module-{module_index + 1}-step-{step_index}", step,
+                   module_index=module_index + 1, module_type=module.type, step_index=step_index,
+                   inputs=inputs, resources=resources)
 
-    steps.append({
-        "id": "init-prefix",
-        "phase": "init-prefix",
-        "kind": "wineboot",
-        "description": "Initialize or update Wine prefix",
-        "commands": ["wine wineboot --init-or-update"],
-        "unsafe": False,
-    })
+    for resource, drive in active_media.items():
+        append(f"release-media-{resource}", "release-media", BuildStep([
+            f"wine reg delete 'HKLM\\Software\\Wine\\Drives' /v '{drive}:' /f",
+            f'rm -f -- "$WINEPREFIX/dosdevices/{drive.lower()}:"',
+        ], f"Release outstanding build media: {resource}", kind="media-cleanup",
+            metadata={"resource": resource, "drive": drive}))
+    for index, path in enumerate(dict.fromkeys(persistent_paths), 1):
+        validate_linux_output(path)
+        destination = '/opt/cage/linux-root' + path
+        append(f"capture-linux-{index}", "capture-linux", BuildStep([
+            f'test "$(realpath -e -- {_shell_quote(path)})" = {_shell_quote(path)}',
+            f'mkdir -p -- "$(dirname -- {_shell_quote(destination)})"',
+            f'cp -a -- {_shell_quote(path)} {_shell_quote(destination)}',
+        ], f"Capture Linux artifact state: {path}", kind="linux-state",
+            metadata={"path": path, "imageBase": "qualified-runtime"}))
+    if persistent_paths:
+        entries = " ".join(_shell_quote(path.lstrip("/")) for path in dict.fromkeys(persistent_paths))
+        append("seal-linux-state", "seal-linux-state", BuildStep([
+            'test -z "$(find /opt/cage/linux-root \\( -type l -o \\( ! -type f -a ! -type d \\) \\) -print -quit)"',
+            f"tar --sort=name --mtime=@0 --numeric-owner --format=posix --pax-option=delete=atime,delete=ctime -C /opt/cage/linux-root -cf /opt/cage/linux-state.tar -- {entries}",
+            'chmod 0644 /opt/cage/linux-state.tar',
+            'rm -rf /opt/cage/linux-root',
+        ], "Seal declared Linux filesystem state", kind="linux-seal"))
 
-    for module_index, module, build_steps in collected:
-        for step_index, step in enumerate(build_steps, 1):
-            if step.kind == PREFIX_SEED_KIND:
-                continue
-            payload = step.to_dict()
-            payload.update({
-                "id": f"module-{module_index + 1}-step-{step_index}",
-                "phase": f"module-{module_index + 1}-step-{step_index}",
-                "description": f"Module {module_index + 1}/{len(manifest.modules)} ({module.type}): {step.description}",
-                "moduleType": module.type,
-                "moduleIndex": module_index + 1,
-                "stepIndex": step_index,
-            })
-            steps.append(payload)
-
-    if manifest.launch:
-        steps.append({
-            "id": "launch",
-            "phase": "launch",
-            "kind": "raw-shell",
-            "description": "Configure launch",
-            "commands": ["echo 'Configuring launch'"],
-            "unsafe": False,
-        })
-    steps.append({
-        "id": "export",
-        "phase": "export",
-        "kind": "copy-tree",
-        "description": "Export bundle",
-        "commands": ["echo 'Exporting bundle'"],
-        "unsafe": False,
-    })
+    append("launch", "launch", BuildStep(_launch_lines(manifest), "Configure launch", kind="launch"))
+    append("export", "export", BuildStep(_export_lines(manifest, bundle_mount="/opt/cage"),
+                                         "Export built prefix", kind="seal"))
     return steps
 
 
@@ -209,110 +276,37 @@ def generate_build_script(
     bundle_mount: str = "/opt/cage",
     workspace_mount: str = "/workspace",
 ) -> str:
-    """Generate the real build script."""
-    seed_script = generate_module_script(
-        manifest.modules,
-        include_kinds={PREFIX_SEED_KIND},
-        phase_label="prefix seed",
-    )
-    module_script = generate_module_script(
-        manifest.modules,
-        exclude_kinds={PREFIX_SEED_KIND},
-    )
-    if seed_script and manifest.runtime.runner is not None:
-        raise ValueError(
-            "CFW prepared runtimes cannot use runtime.runner; the producer image owns Wine identity"
+    """Render the same compiled operations recorded in the bundle plan."""
+    if bundle_mount != "/opt/cage" or workspace_mount != "/workspace":
+        raise ValueError("custom build mounts are unsupported by the compiled v0 plan")
+    root_build = any(module.type in {"script", "extract"} for module in manifest.modules)
+    lines = ["#!/bin/bash", "set -euo pipefail", "",
+             'CAGE_OPERATION_ID=prepare-build',
+             'trap \'rc=$?; rm -rf "${CAGE_PREFIX_PARTIAL:-/opt/cage/prefix.partial}" "${CAGE_PREFIX_METADATA_PARTIAL:-/opt/cage/metadata/prefix-materialization.partial.json}"; if [ "$rc" -ne 0 ]; then printf "%s %s\\n" "$CAGE_OPERATION_ID" "$rc" > /opt/cage/logs/failed-operation; fi\' EXIT',
+             'echo "[cage] Starting build"']
+    for operation in build_plan(manifest):
+        lines.extend([
+            "",
+            f'CAGE_OPERATION_ID={_shell_quote(str(operation["id"]))}',
+            f'echo "[cage] Operation {operation["id"]}: {operation["description"]}"',
+        ])
+        step = BuildStep(
+            commands=list(operation["commands"]),
+            description=str(operation["description"]),
+            kind=str(operation["kind"]),
+            environment=dict(operation.get("environment") or {}),
+            working_dir=operation.get("workingDir"),
+            timeout=operation.get("timeout"),
+            unsafe=bool(operation.get("unsafe", False)),
+            metadata=dict(operation.get("metadata") or {}),
         )
-
-    lines = [
-        '#!/bin/bash',
-        'set -euo pipefail',
-        '',
-        'export WINEDBG="-all"',
-        '',
-        f'echo "[cage] Starting build for {manifest.name} v{manifest.version}"',
-        f'echo "[cage] Bundle mount: {bundle_mount}"',
-        f'echo "[cage] Workspace mount: {workspace_mount}"',
-        'export WINEPREFIX="${CAGE_BUILD_PREFIX:-/tmp/cage-build-prefix}"',
-        f'CAGE_PREFIX_FINAL={_shell_quote(bundle_mount + "/prefix")}',
-        f'CAGE_PREFIX_PARTIAL={_shell_quote(bundle_mount + "/prefix.partial")}',
-        f'CAGE_PREFIX_PREVIOUS={_shell_quote(bundle_mount + "/prefix.previous")}',
-        f'CAGE_PREFIX_METADATA_PARTIAL={_shell_quote(bundle_mount + "/metadata/prefix-materialization.partial.json")}',
-        f'CAGE_PREFIX_METADATA_FINAL={_shell_quote(bundle_mount + "/metadata/prefix-materialization.json")}',
-        'export CAGE_PREFIX_FINAL CAGE_PREFIX_PARTIAL CAGE_PREFIX_PREVIOUS CAGE_PREFIX_METADATA_PARTIAL CAGE_PREFIX_METADATA_FINAL',
-        'rm -rf "$WINEPREFIX" "$CAGE_PREFIX_PARTIAL" "$CAGE_PREFIX_PREVIOUS" "$CAGE_PREFIX_METADATA_PARTIAL"',
-        'mkdir -p "$WINEPREFIX"',
-        'trap \'rm -rf "$CAGE_PREFIX_PARTIAL" "$CAGE_PREFIX_METADATA_PARTIAL"\' EXIT',
-        '',
-    ]
-
-    if manifest.runtime.runner is not None:
-        lines.extend([
-            'echo "[cage] Configuring runner environment"',
-            'export CAGE_RUNNER_BIN="${CAGE_RUNNER_BIN:-/opt/cage-runner/bin}"',
-            'export PATH="$CAGE_RUNNER_BIN:$PATH"',
-            'export WINE="$CAGE_RUNNER_BIN/wine"',
-            'echo "  Using cached Wine runner at $CAGE_RUNNER_BIN"',
-            '',
-        ])
-
-    if seed_script:
-        lines.extend([
-            'echo "[cage] Phase 0: Seeding prepared prefix"',
-            'cfw_interface_file="${CAGE_BUNDLE_MOUNT:-/opt/cage}/build/cfw-interface.env"',
-            'rm -f "$cfw_interface_file" "$cfw_interface_file.part"',
-            seed_script,
-            'test -d "$WINEPREFIX/drive_c" || { echo "[cage] ERROR: prefix seed did not create drive_c" >&2; exit 68; }',
-            'test -f "$cfw_interface_file" || { echo "[cage] ERROR: CFW interface was not materialized" >&2; exit 68; }',
-            'source "$cfw_interface_file"',
-            'rm -f "$cfw_interface_file"',
-            'touch "$WINEPREFIX/.cage-prefix-seeded"',
-            'echo "[cage]   Prepared prefix seeded"',
-            '',
-        ])
-
-    if seed_script:
-        lines.extend([
-            'echo "[cage] Phase 1: Adopting prepared Wine prefix"',
-            'test -d "$WINEPREFIX/drive_c" || { echo "[cage] ERROR: prepared Wine prefix is missing drive_c" >&2; exit 69; }',
-            'echo "[cage]   Prepared prefix adopted; skipping producer-owned wineboot lifecycle"',
-            '',
-        ])
-    else:
-        lines.extend([
-            'echo "[cage] Phase 1: Initializing Wine prefix"',
-            'wineboot_log="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/wineboot.log"',
-            'mkdir -p "$(dirname "$wineboot_log")"',
-            'set +e',
-            'timeout 300s wine wineboot --init > "$wineboot_log" 2>&1',
-            'wineboot_rc="$?"',
-            'set -e',
-            'sed "s/^/  /" "$wineboot_log" || true',
-            'if [ "$wineboot_rc" -ne 0 ]; then',
-            '  echo "[cage] ERROR: wineboot --init failed with exit code $wineboot_rc; see $wineboot_log" >&2',
-            '  exit "$wineboot_rc"',
-            'fi',
-            'echo "[cage]   Prefix initialized"',
-            '',
-        ])
-
-    lines.extend([
-        'echo "[cage] Phase 2: Executing modules"',
-        *_runner_environment_lines(manifest),
-        '',
-        *_compatibility_policy_lines(manifest),
-        '',
-        module_script,
-        '',
-        'echo "[cage] Phase 3: Configuring launch"',
-        *_launch_lines(manifest),
-        '',
-        'echo "[cage] Phase 4: Exporting bundle"',
-        *_export_lines(manifest, bundle_mount=bundle_mount),
-        '',
-        'echo "[cage] Build complete"',
-    ])
-    return "\n".join(lines)
+        body = step.to_shell_lines()
+        if root_build and operation["executionUser"] == "application":
+            lines.append("s6-setuidgid abc bash -c " + shlex.quote("set -euo pipefail\n" + "\n".join(body)))
+        else:
+            lines.extend(body)
+    lines.append('echo "[cage] Build complete"')
+    return "\n".join(lines) + "\n"
 
 
 __all__ = ["PREFIX_SEED_KIND", "generate_build_script", "build_plan"]

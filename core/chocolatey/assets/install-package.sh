@@ -54,7 +54,7 @@ lib_dir="$(dirname "$choco_exe")/lib"
 evidence_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/metadata"
 helper_path="$(mktemp)"
 printf '%s' '{{PACKAGE_EVIDENCE_HELPER_BASE64}}' | base64 -d > "$helper_path"
-python3 "$helper_path" --lib "$lib_dir" --output "$evidence_dir/chocolatey-package-evidence.json" \
+python3 "$helper_path" --lib "$lib_dir" --output "$evidence_dir/${CAGE_CHOCOLATEY_EVIDENCE_NAME:-chocolatey-package-evidence.json}" \
   --requested '{{REQUESTED_PACKAGES_JSON}}' --install-rc "$install_rc" --settle-rc "$settle_rc" \
   --source-url '{{PACKAGE_SOURCE}}'
 query_rc="$?"

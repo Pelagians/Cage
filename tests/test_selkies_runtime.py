@@ -185,7 +185,7 @@ class ProducerRuntimeQualificationTests(unittest.TestCase):
                 ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.5-wine-11.0.json"
             ).read_text(encoding="utf-8")
         )
-        data["modules"][0]["install"]["runtimeArtifact"] = artifact
+        data["modules"][0].setdefault("install", {})["runtimeArtifact"] = artifact
         graph = build_execution_graph(Manifest.from_dict(data))
         self.assertEqual(
             graph["runnerRuntime"]["sessionContract"], "cage.selkies-wayland/v1"
@@ -205,7 +205,7 @@ class ProducerRuntimeQualificationTests(unittest.TestCase):
         artifact["selkiesImage"] = (
             "ghcr.io/pelagians/cage-wine-selkies@sha256:" + "e" * 64
         )
-        data["modules"][0]["install"]["runtimeArtifact"] = artifact
+        data["modules"][0].setdefault("install", {})["runtimeArtifact"] = artifact
         with self.assertRaisesRegex(
             ManifestError, "unknown Chocolatey runtimeArtifact field"
         ):
@@ -223,7 +223,7 @@ class ProducerRuntimeQualificationTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
         )
         artifact.pop("sessionContract")
-        data["modules"][0]["install"]["runtimeArtifact"] = artifact
+        data["modules"][0].setdefault("install", {})["runtimeArtifact"] = artifact
         manifest = Manifest.from_dict(data)
         with tempfile.TemporaryDirectory() as tmp:
             bundle = create_bundle(manifest, Path(tmp), dry_run=True)

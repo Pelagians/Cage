@@ -46,8 +46,8 @@ class BundleInspectionTests(unittest.TestCase):
         self.assertEqual(summary["application"], {"name": "sample", "version": "1.0.0"})
         self.assertEqual(summary["runtime"]["runner"]["image"], "ghcr.io/pelagians/cage-wine:9.0")
         self.assertEqual(summary["graph"]["schemaVersion"], "cage.execution-graph/v0")
-        self.assertEqual(summary["graph"]["nodes"], 10)
-        self.assertEqual(summary["graph"]["edges"], 11)
+        self.assertEqual(summary["graph"]["nodes"], 11)
+        self.assertEqual(summary["graph"]["edges"], 12)
         self.assertTrue(summary["files"]["metadata/graph.json"]["exists"])
         self.assertTrue(summary["provenance"]["dryRun"])
 

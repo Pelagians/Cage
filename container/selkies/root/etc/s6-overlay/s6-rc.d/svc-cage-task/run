@@ -21,7 +21,13 @@ install -o abc -g abc -m 0500 /dev/null "$script"
 printf '%s' "$CAGE_BUILD_SCRIPT_B64" | base64 -d > "$script"
 
 set +e
-s6-setuidgid abc bash "$script"
+if [[ "${CAGE_BUILD_ROOT_OPERATIONS:-false}" == true ]]; then
+  # Only the ordered Linux operations execute as root; the compiled build
+  # script drops to abc for Wine, application installers, and prefix sealing.
+  bash "$script"
+else
+  s6-setuidgid abc bash "$script"
+fi
 rc=$?
 set -e
 printf '%s\n' "$rc" > /opt/cage/logs/container-exit-code

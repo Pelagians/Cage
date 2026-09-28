@@ -197,6 +197,50 @@ def _pull_image(image_ref: str, engine: str) -> bool:
         return False
 
 
+def _immutable_image_ref(engine: str, image_ref: str) -> str:
+    """Freeze a selected runtime before Linux state is captured against it."""
+    if "@sha256:" in image_ref:
+        return image_ref
+    result = subprocess.run([engine, "image", "inspect", "--format", "{{json .RepoDigests}}", image_ref],
+                            capture_output=True, text=True, timeout=30, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(f"cannot inspect selected Linux base runtime: {image_ref}")
+    try:
+        digests = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("selected Linux base runtime has unreadable image digests") from exc
+    if not isinstance(digests, list):
+        raise RuntimeError("selected Linux base runtime has no immutable producer image digest")
+    repository = image_ref.split("@", 1)[0]
+    if ":" in repository.rsplit("/", 1)[-1]:
+        repository = repository.rsplit(":", 1)[0]
+    matches = [item for item in digests if isinstance(item, str) and item.startswith(repository + "@sha256:")]
+    if len(matches) != 1:
+        raise RuntimeError("Linux customization requires one immutable producer image digest; pin the runtime image")
+    return matches[0]
+
+
+def _verify_iso_host_mounts(manifest: Manifest, workspace: Path) -> None:
+    """Never treat a normal directory or writable mount as CD-ROM media."""
+    from core.sources import resolve_source_path
+    for module in manifest.modules:
+        if module.type != "iso" or module.action != "mount":
+            continue
+        mount_path = resolve_source_path(module.mount_path, workspace)
+        if not mount_path.is_dir() or not os.path.ismount(mount_path):
+            raise RuntimeError(f"ISO {module.id}: host backend requires a real operator-mounted directory: {mount_path}")
+        if not (os.statvfs(mount_path).f_flag & os.ST_RDONLY):
+            raise RuntimeError(f"ISO {module.id}: operator-mounted directory must be read-only: {mount_path}")
+
+
+def _verify_root_build_capability(engine: str, image_ref: str) -> None:
+    result = subprocess.run([engine, "image", "inspect", "--format",
+                             '{{index .Config.Labels "org.pelagian.cage.root-build-operations"}}', image_ref],
+                            capture_output=True, text=True, timeout=30, check=False)
+    if result.returncode != 0 or result.stdout.strip() != "v1":
+        raise RuntimeError("Linux script/extract modules require a qualified Cage runtime image with root-build-operations=v1")
+
+
 def _resolve_image_ref(manifest: Manifest, engine: str) -> str | None:
     """Resolve the OCI image reference for this manifest's runtime.
 
@@ -480,16 +524,15 @@ def _write_host_chocolatey_package_evidence(manifest: Manifest, bundle_path: Pat
     modules = [module for module in manifest.modules if getattr(module, "type", None) == "chocolatey"]
     if not modules:
         return True
-    if len(modules) != 1:
-        return False
-    module = modules[0]
-    install = getattr(module, "install", None)
-    packages = install.get("packages") if isinstance(install, dict) else None
+    packages = [package for module in modules for package in module._packages()]
     if not isinstance(packages, list) or not all(isinstance(package, str) for package in packages):
         return False
     if not packages:
         return True
-    source_url = getattr(module, "package_source", None) or "https://community.chocolatey.org/api/v2/"
+    sources = {getattr(module, "package_source", None) or "https://community.chocolatey.org/api/v2/" for module in modules}
+    if len(sources) != 1:
+        return False
+    source_url = sources.pop()
     bundle_root = bundle_path.resolve()
     if _has_symlink_ancestor(bundle_path):
         return False
@@ -625,6 +668,37 @@ def execute_inside_container(
         from container.manager import get_image_ref as _img_ref
         img = _img_ref(manifest.runtime.provider, manifest.runtime.version)
 
+    root_build = any(module.type in {"script", "extract"} for module in manifest.modules)
+    if root_build:
+        _verify_root_build_capability(engine, img)
+
+    from artifact.linux_state import declared_outputs
+    if declared_outputs(bundle_path):
+        img = _immutable_image_ref(engine, img)
+        graph_path = bundle_path / "metadata/graph.json"
+        graph = json.loads(graph_path.read_text(encoding="utf-8"))
+        for runtime_key in ("builderRuntime", "runnerRuntime"):
+            graph[runtime_key]["image"] = img
+            graph[runtime_key]["ociImage"] = img
+        for node in graph.get("nodes", []):
+            if node.get("kind") == "runtime-image":
+                node["label"] = img
+                node["runtime"]["image"] = img
+                node["runtime"]["ociImage"] = img
+        graph_path.write_text(json.dumps(graph, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        runtime_path = bundle_path / "runtime/runtime.json"
+        runtime_payload = json.loads(runtime_path.read_text(encoding="utf-8"))
+        runtime_payload["ociImage"] = img
+        runtime_path.write_text(json.dumps(runtime_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        plan_path = bundle_path / "build/build-plan.json"
+        plan_payload = json.loads(plan_path.read_text(encoding="utf-8"))
+        plan_payload["qualifiedBaseImage"] = img
+        plan_path.write_text(json.dumps(plan_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        provenance_path = bundle_path / "metadata/provenance.json"
+        provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+        provenance["qualifiedBaseImage"] = img
+        provenance_path.write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
     # ---- Resolve optional downloadable runner cache and module payload cache ----
     runner_cache = _prepare_runner_cache(manifest, runner_cache_dir, engine=engine)
     module_cache = _prepare_module_cache(module_cache_dir, engine=engine)
@@ -648,6 +722,7 @@ def execute_inside_container(
     # Workspace:     selected workspace → /workspace       (for source-file access)
     host_bundle = bundle_path.resolve()
     host_workspace = Path(workspace or Path.cwd()).resolve()
+    _verify_iso_host_mounts(manifest, host_workspace)
     mounts = [
         _volume_mount(host_bundle, "/opt/cage", engine=engine),
         _volume_mount(host_workspace, "/workspace", engine=engine, read_only=True),
@@ -662,6 +737,8 @@ def execute_inside_container(
         "CAGE_WINE_GRAPHICS": "xwayland",
         "CAGE_EXIT_WHEN_DONE": "true",
     }
+    if root_build:
+        environment["CAGE_BUILD_ROOT_OPERATIONS"] = "true"
     environment.update(runtime.environment or {})
     if engine == "podman":
         environment["PUID"] = str(os.getuid())
@@ -753,6 +830,22 @@ def execute_inside_container(
                     "ok": False,
                     "message": "host failed to bind requested packages to exported nuspec and nupkg bytes",
                 })
+            from artifact.linux_state import declared_outputs, linux_state_identity
+            linux_outputs = declared_outputs(bundle_path)
+            if linux_outputs:
+                graph = json.loads((bundle_path / "metadata/graph.json").read_text(encoding="utf-8"))
+                base_image = graph["runnerRuntime"]["image"]
+                if img != base_image:
+                    failed_checks.append({"message": "Linux snapshot base runtime differs from the build image; pin the selected runtime image"})
+                else:
+                    try:
+                        identity = linux_state_identity(bundle_path, base_image)
+                        (bundle_path / "metadata/linux-state.json").write_text(json.dumps({
+                            "schemaVersion": "cage.linux-state/v0", "baseImage": base_image,
+                            "derivedRuntimeImage": identity, "outputs": linux_outputs,
+                        }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+                    except (OSError, ValueError) as exc:
+                        failed_checks.append({"message": f"Linux application snapshot failed: {exc}"})
             materialized_prefix = prefix_verification.get("materialized") is True
             prefix_size = int(prefix_verification.get("byteSize") or 0)
             prefix_file_count = int(prefix_verification.get("fileCount") or 0)

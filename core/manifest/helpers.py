@@ -12,6 +12,7 @@ class _Token:
     indent: int
     content: str
     line: int
+    block: str | None = None
 
 
 def _load_strict_yaml(text: str) -> Any:
@@ -27,7 +28,12 @@ def _load_strict_yaml(text: str) -> Any:
 
 def _tokenize_yaml(text: str) -> list[_Token]:
     tokens: list[_Token] = []
-    for line_no, raw in enumerate(text.splitlines(), start=1):
+    lines = text.splitlines()
+    index = 0
+    while index < len(lines):
+        line_no = index + 1
+        raw = lines[index]
+        index += 1
         if "\t" in raw:
             raise ManifestError(f"tabs are not allowed in YAML indentation at line {line_no}")
         stripped_comment = _strip_yaml_comment(raw).rstrip()
@@ -40,7 +46,24 @@ def _tokenize_yaml(text: str) -> list[_Token]:
         if content in {"---", "..."}:
             continue
         _reject_yaml_anchors_aliases_merge(content, line_no)
-        tokens.append(_Token(indent, content, line_no))
+        block = None
+        if re.search(r":\s*\|[-]?\s*$", content):
+            block_lines: list[str] = []
+            while index < len(lines):
+                following = lines[index]
+                following_indent = len(following) - len(following.lstrip(" "))
+                if following.strip() and following_indent <= indent:
+                    break
+                block_lines.append(following)
+                index += 1
+            nonblank = [len(line) - len(line.lstrip(" ")) for line in block_lines if line.strip()]
+            baseline = min(nonblank) if nonblank else indent + 2
+            if baseline <= indent:
+                raise ManifestError(f"block scalar needs nested indentation at line {line_no}")
+            block = "\n".join(line[baseline:] if line.strip() else "" for line in block_lines)
+            if content.endswith("|"):
+                block += "\n"
+        tokens.append(_Token(indent, content, line_no, block))
     return tokens
 
 
@@ -71,7 +94,9 @@ def _parse_yaml_mapping(tokens: list[_Token], index: int, indent: int) -> tuple[
         if key in result:
             raise ManifestError(f"duplicate YAML key {key!r} at line {token.line}")
         index += 1
-        if raw_value == "":
+        if raw_value in {"|", "|-"}:
+            value = token.block or ""
+        elif raw_value == "":
             if index < len(tokens) and tokens[index].indent > indent:
                 value, index = _parse_yaml_block(tokens, index, tokens[index].indent)
             else:
@@ -106,7 +131,7 @@ def _parse_yaml_list(tokens: list[_Token], index: int, indent: int) -> tuple[lis
         if _looks_like_yaml_key_value(rest):
             key, raw_value = _split_yaml_key_value(_Token(indent + 2, rest, token.line))
             item: dict[str, Any] = {}
-            item[key] = _parse_yaml_scalar(raw_value, token.line) if raw_value else {}
+            item[key] = token.block if raw_value in {"|", "|-"} else _parse_yaml_scalar(raw_value, token.line) if raw_value else {}
             if index < len(tokens) and tokens[index].indent > indent:
                 child, index = _parse_yaml_block(tokens, index, tokens[index].indent)
                 if not isinstance(child, dict):
@@ -157,6 +182,8 @@ def _parse_yaml_scalar(value: str, line: int) -> Any:
         return True
     if value in {"false", "False", "FALSE"}:
         return False
+    if re.fullmatch(r"-?(?:0|[1-9][0-9]*)", value):
+        return int(value)
     if value.startswith("[") and value.endswith("]"):
         inner = value[1:-1].strip()
         if not inner:

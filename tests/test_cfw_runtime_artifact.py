@@ -317,7 +317,7 @@ class CfwRuntimeArtifactTests(unittest.TestCase):
                 "launch": {"entrypoint": "C:/Program Files/App/App.exe"},
             })
             seed = next(
-                step for step in cage_manifest.modules[0].build()
+                step for step in cage_manifest.modules[0].foundation_steps()
                 if step.description == "Seed CFW prepared prefix"
             )
             command = "\n".join(seed.commands)

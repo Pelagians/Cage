@@ -37,7 +37,7 @@ def _manifest_data() -> dict[str, object]:
         "name": "failure-demo",
         "version": "1.0.0",
         "runtime": {"provider": "wine", "version": "9.0"},
-        "modules": [{"type": "exe", "source": "sources/setup.exe", "silentArgs": ["/S"]}],
+        "modules": [{"type": "install", "source": "sources/setup.exe", "args": ["/S"]}],
         "launch": {"entrypoint": "C:/Program Files/Demo/Demo.exe"},
         "provenance": {"sources": []},
     }

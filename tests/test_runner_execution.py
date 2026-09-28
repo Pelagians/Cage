@@ -45,7 +45,7 @@ class RunnerExecutionBuildTests(unittest.TestCase):
         self.assertIn("CAGE_RUNNER_BIN", script)
         self.assertIn('export PATH="$CAGE_RUNNER_BIN:$PATH"', script)
         self.assertIn('export WINE="$CAGE_RUNNER_BIN/wine"', script)
-        self.assertIn('Using cached Wine runner', script)
+        self.assertIn('export CAGE_RUNNER_BIN=', script)
 
     def test_cfw_runtime_rejects_separate_cached_runner(self):
         manifest_data = {
@@ -87,7 +87,7 @@ class RunnerExecutionBuildTests(unittest.TestCase):
     def test_cfw_runtime_rejects_compatibility_mutating_modules(self):
         for module in (
             {"type": "winetricks", "verbs": ["corefonts"]},
-            {"type": "script", "command": "winecfg -v win7"},
+            {"type": "script", "run": "winecfg -v win7", "outputs": ["/etc/vendor"]},
         ):
             manifest_data = {
                 **RUNNER_MANIFEST,

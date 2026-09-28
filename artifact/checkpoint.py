@@ -313,6 +313,12 @@ def _write_resume_metadata(source: Path, attempt: Path, *, name: str, mode: str)
         "attemptBundle": str(attempt.resolve()),
         "createdAt": datetime.now(timezone.utc).isoformat(),
     }
+    plan_path = attempt / "build/build-plan.json"
+    if plan_path.is_file() and not plan_path.is_symlink():
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        metadata["operationOrder"] = [step["id"] for step in plan.get("phases", [])]
+        if mode == "prefix-seed":
+            metadata["executionPolicy"] = "full-ordered-build"
     metadata_dir = attempt / "metadata"
     if metadata_dir.is_symlink():
         raise CheckpointError(f"refusing to write through symlink metadata directory: {metadata_dir}")

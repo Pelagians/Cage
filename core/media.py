@@ -196,6 +196,48 @@ def _stage_source(source: Path, media_dir: Path) -> str:
     return "file"
 
 
+def extract_archive(source: Path | str, destination: Path | str, *, max_bytes: int = 2 * 1024**3,
+                    expected_format: str | None = None, iso_backend: str | None = None) -> str:
+    """Extract one declared archive into an empty destination, with no links or traversal."""
+    source_path, target = Path(source), Path(destination)
+    if target.parent.resolve() != target.parent.absolute():
+        raise MediaStageError("extraction destination has a linked parent")
+    if not source_path.is_file() or target.is_symlink() or (target.exists() and (not target.is_dir() or any(target.iterdir()))):
+        raise MediaStageError("extraction requires a file source and an empty destination")
+    if zipfile.is_zipfile(source_path):
+        with zipfile.ZipFile(source_path) as archive:
+            total = sum(member.file_size for member in archive.infolist())
+        kind = "zip"
+    elif tarfile.is_tarfile(source_path):
+        with tarfile.open(source_path) as archive:
+            total = sum(member.size for member in archive.getmembers() if member.isfile())
+        kind = "tar"
+    elif source_path.suffix.lower() == ".iso":
+        total = source_path.stat().st_size * 4  # ISO extractor has a post-extract quota.
+        kind = "iso"
+    else:
+        raise MediaStageError("unsupported archive; use ZIP, TAR or ISO")
+    if expected_format is not None and kind != expected_format:
+        raise MediaStageError(f"archive does not match declared format {expected_format}: detected {kind}")
+    if total > max_bytes:
+        raise MediaStageError(f"archive exceeds extraction limit of {max_bytes} bytes")
+    target.mkdir(parents=True, exist_ok=True)
+    try:
+        if kind == "iso":
+            _extract_iso(source_path, target, backend=iso_backend)
+        else:
+            {"zip": _extract_zip, "tar": _extract_tar}[kind](source_path, target)
+        summary = summarize_tree(target)
+        if summary["byteSize"] > max_bytes:
+            raise MediaStageError("extracted archive exceeds size limit")
+    except Exception:
+        shutil.rmtree(target)
+        raise
+    return kind
+
+
+
+
 def _copy_tree_contents(source: Path, destination: Path) -> None:
     for child in _walk_tree_entries(source):
         rel = child.relative_to(source)
@@ -241,17 +283,17 @@ def _extract_tar(source: Path, destination: Path) -> None:
                 shutil.copyfileobj(src, dst)
 
 
-def _extract_iso(source: Path, destination: Path) -> None:
+def _extract_iso(source: Path, destination: Path, *, backend: str | None = None) -> None:
     with tempfile.TemporaryDirectory(prefix="cage-iso-extract-") as tmpdir:
         quarantine = Path(tmpdir)
-        bsdtar = shutil.which("bsdtar")
+        bsdtar = shutil.which("bsdtar") if backend in {None, "bsdtar"} else None
         try:
             if bsdtar:
                 subprocess.run([bsdtar, "-C", str(quarantine), "-xf", str(source)], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             else:
-                seven_zip = shutil.which("7z") or shutil.which("7zz")
+                seven_zip = (shutil.which("7z") or shutil.which("7zz")) if backend in {None, "7z"} else None
                 if not seven_zip:
-                    raise MediaStageError("ISO staging requires bsdtar or 7z/7zz on PATH")
+                    raise MediaStageError(f"ISO extraction requires {backend or 'bsdtar or 7z/7zz'} on PATH")
                 subprocess.run([seven_zip, "x", f"-o{quarantine}", str(source)], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except subprocess.CalledProcessError as exc:
             raise MediaStageError(f"ISO extraction failed for {source}: exit code {exc.returncode}") from exc
@@ -388,4 +430,14 @@ def _display_relative(path: Path, base: Path) -> str:
     except ValueError:
         return path.name
 
-
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Safely extract a Cage recipe archive")
+    parser.add_argument("source")
+    parser.add_argument("target")
+    parser.add_argument("--max-bytes", type=int, default=2 * 1024**3)
+    parser.add_argument("--format", choices=("zip", "tar", "iso"))
+    parser.add_argument("--backend", choices=("bsdtar", "7z"))
+    args = parser.parse_args()
+    print(extract_archive(args.source, args.target, max_bytes=args.max_bytes,
+                          expected_format=args.format, iso_backend=args.backend))

@@ -72,8 +72,8 @@ class CanonicalPrefixScriptTests(unittest.TestCase):
         }
         script = generate_build_script(Manifest.from_dict(data))
 
-        self.assertIn('Phase 1: Adopting prepared Wine prefix', script)
-        self.assertIn('Prepared prefix adopted; skipping producer-owned wineboot lifecycle', script)
+        self.assertIn('Operation init-prefix: Adopt verified CFW prefix once', script)
+        self.assertIn('touch "$WINEPREFIX/.cage-prefix-seeded"', script)
         self.assertNotIn('wine wineboot -u', script)
         self.assertNotIn('wine wineboot --init', script)
 
@@ -81,9 +81,9 @@ class CanonicalPrefixScriptTests(unittest.TestCase):
         script = generate_build_script(Manifest.from_dict(APP))
 
         self.assertIn('wineboot_log="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/wineboot.log"', script)
-        self.assertIn('wineboot_rc="$?"', script)
+        self.assertIn('rc=$?', script)
         self.assertIn('wine wineboot --init', script)
-        self.assertIn('wineboot --init failed with exit code $wineboot_rc', script)
+        self.assertIn('cat "$wineboot_log" >&2', script)
 
     def test_launch_values_are_shell_quoted_in_generated_script(self):
         data = dict(APP)

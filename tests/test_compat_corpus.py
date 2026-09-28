@@ -44,10 +44,10 @@ def _write_fixture_workspace(root: Path) -> Path:
         ],
         "modules": [
             {
-                "type": "exe",
+                "type": "install",
                 "source": "file://sources/demo-installer.exe",
                 "sha256": _sha256(installer),
-                "silentArgs": "/S",
+                "args": ["/S"],
             }
         ],
         "compatibility": {

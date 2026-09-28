@@ -8,6 +8,7 @@ state and exports under dedicated paths.
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -15,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from artifact.inspection import verify_bundle
+from artifact.linux_state import declared_outputs, linux_state_identity
 
 ARTIFACT_IMAGE_SCHEMA_VERSION = 'cage.artifact-image/v0'
 OCI_EXPORT_PLAN_SCHEMA_VERSION = 'cage.oci-export-plan/v0'
@@ -60,6 +62,8 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str =
         'version': manifest.get('version'),
     })
     base_image = _runtime_image(runtime)
+    linux_outputs = declared_outputs(bundle)
+    derived_image = linux_state_identity(bundle, base_image) if linux_outputs else None
     if graphics == 'headless' and str((graph.get('graphics') or {}).get('wineGraphics') or 'xwayland') == 'wayland':
         raise OCIExportError('native Wine Wayland requires graphics selkies')
     artifact_metadata = _artifact_metadata(
@@ -75,11 +79,14 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str =
     )
     labels = _oci_labels(application, runtime, base_image)
     labels['io.cage.graphics'] = graphics
+    if derived_image:
+        labels['io.cage.linux-state'] = derived_image
     image_environment = dict(runtime.get('environment') or {})
     image_environment['CAGE_WINE_GRAPHICS'] = str(
         (graph.get('graphics') or {}).get('wineGraphics') or 'xwayland'
     )
-    containerfile = _containerfile(base_image, labels, image_environment, graphics=graphics)
+    containerfile = _containerfile(base_image, labels, image_environment, graphics=graphics,
+                                   linux_outputs=linux_outputs)
 
     return {
         'schemaVersion': OCI_EXPORT_PLAN_SCHEMA_VERSION,
@@ -88,6 +95,8 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str =
         'bundle': str(bundle),
         'tag': tag,
         'baseImage': base_image,
+        'derivedRuntimeImage': derived_image,
+        'linuxOutputs': linux_outputs,
         'application': application,
         'runtime': _runtime_summary(runtime),
         'layout': {
@@ -134,6 +143,8 @@ def prepare_oci_build_context(
 
     staged_bundle = context / 'bundle'
     shutil.copytree(bundle, staged_bundle, symlinks=True)
+    if plan.get('linuxOutputs'):
+        shutil.copyfile(bundle / 'linux-state.tar', context / 'linux-state.tar')
     _write_json(staged_bundle / 'metadata/artifact.json', plan['artifactMetadata'])
 
     containerfile = context / plan['containerfile']['path']
@@ -567,6 +578,7 @@ def _containerfile(
     environment: dict[str, str] | None = None,
     *,
     graphics: str = 'headless',
+    linux_outputs: list[str] | None = None,
 ) -> str:
     label_lines = '\n'.join(
         f'LABEL {key}={_docker_quote(value)}' for key, value in labels.items()
@@ -588,7 +600,8 @@ def _containerfile(
         f'    WINEPREFIX={STATE_ROOT}/prefix \\\n'
         f'    CAGE_GRAPHICS={graphics} \\\n'
         f'    CAGE_SESSION_MODE={graphics}\n\n'
-        f'COPY bundle {BUNDLE_ROOT}\n'
+        + ("RUN rm -rf -- " + " ".join(shlex.quote(path) for path in linux_outputs) + "\nADD linux-state.tar /\n" if linux_outputs else "")
+        + f'COPY bundle {BUNDLE_ROOT}\n'
         f'COPY cage-app-launch {APP_LAUNCHER}\n'
         f'RUN chmod +x {APP_LAUNCHER} && mkdir -p {STATE_ROOT} {EXPORTS_ROOT}\n'
         f'VOLUME ["{STATE_ROOT}", "{EXPORTS_ROOT}"]\n'

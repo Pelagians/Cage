@@ -133,7 +133,8 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
                     _manifest(packageSource=value)
 
     def test_chocolatey_builds_one_prefix_seed_boundary(self):
-        steps = _manifest(["7zip", "notepadplusplus"]).modules[0].build()
+        module = _manifest(["7zip", "notepadplusplus"]).modules[0]
+        steps = module.foundation_steps() + module.build()
         descriptions = [step.description for step in steps]
         script = _all_commands(steps)
         self.assertEqual(descriptions, [
@@ -159,32 +160,17 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertNotIn("Install Synchro PowerShell layer", descriptions)
         self.assertNotIn("Install Windows PowerShell 5.1 backend", descriptions)
 
-    def test_timed_seed_restores_verified_interface_for_following_steps(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            prefix = root / "prefix"
-            (prefix / "drive_c").mkdir(parents=True)
-            interface = root / "build/cfw-interface.env"
-            interface.parent.mkdir()
-            seed = BuildStep(
-                commands=[f"printf 'export CFW_CHOCOLATEY_PREFIX_PATH=%q\\n' 'C:/verified/choco.exe' > '{interface}'"],
-                description="seed", kind="prefix-seed", timeout=5,
-            )
-            fake_seed_script = "\n".join(seed.to_shell_lines())
-            with patch("builder.pipeline.generate_module_script", side_effect=[fake_seed_script, "true"]):
-                script = generate_build_script(_manifest(), bundle_mount=str(root))
-            phase = script.split('echo "[cage] Phase 0: Seeding prepared prefix"', 1)[1].split(
-                'echo "[cage] Phase 1: Adopting prepared Wine prefix"', 1)[0]
-            check = phase + '\nprintf "%s" "$CFW_CHOCOLATEY_PREFIX_PATH" > "$CAGE_BUNDLE_MOUNT/verified"\n'
-            subprocess.run(["bash", "-c", "set -euo pipefail\n" + check], check=True,
-                           env={**os.environ, "WINEPREFIX": str(prefix), "CAGE_BUNDLE_MOUNT": str(root)})
-            self.assertEqual((root / "verified").read_text(), "C:/verified/choco.exe")
-            self.assertFalse(interface.exists())
-            rendered = _commands_for(_manifest().modules[0].build(), "Seed CFW prepared prefix")
-            self.assertLess(rendered.index('python3 "$helper" verify-extract'), rendered.index('cfw_interface_file='))
+    def test_timed_seed_interface_is_sourced_after_foundation(self):
+        from builder.pipeline import build_plan
+        plan = build_plan(_manifest())
+        seed_index = next(i for i, op in enumerate(plan) if op["kind"] == "prefix-seed")
+        adopt_index = next(i for i, op in enumerate(plan) if op["kind"] == "prefix-adopt")
+        self.assertLess(seed_index, adopt_index)
+        self.assertEqual(plan[seed_index]["timeout"], 1800)
+        self.assertIn('source "$cfw_interface_file"', "\n".join(plan[adopt_index]["commands"]))
 
     def test_runtime_artifact_is_strictly_verified(self):
-        steps = _manifest().modules[0].build()
+        steps = _manifest().modules[0].foundation_steps()
         seed = _commands_for(steps, "Seed CFW prepared prefix")
         helper = (Path(__file__).resolve().parents[1] / "core/chocolatey/assets/runtime-artifact.py").read_text(encoding="utf-8")
         self.assertIn("cage_fetch_verified", seed)
@@ -203,7 +189,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
 
     def test_unreleased_runtime_still_plans_but_real_build_fails_before_wineboot(self):
         with patch("core.modules.chocolatey.DEFAULT_CFW_RUNTIME_ARTIFACT", None):
-            steps = _manifest(include_runtime=False).modules[0].build()
+            steps = _manifest(include_runtime=False).modules[0].foundation_steps()
         seed = next(step for step in steps if step.kind == "prefix-seed")
         script = "\n".join(seed.commands)
         self.assertEqual(seed.description, "Require released CFW prepared prefix")
@@ -242,7 +228,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
                     _manifest(runtimeArtifact=runtime)
 
     def test_rendered_seed_embeds_encoded_profile_not_raw_urls(self):
-        steps = _manifest().modules[0].build()
+        steps = _manifest().modules[0].foundation_steps()
         seed = _commands_for(steps, "Seed CFW prepared prefix")
         self.assertIn("CFW_RUNTIME_PROFILE_BASE64", seed)
         self.assertIn("CFW_RUNTIME_HELPER_BASE64", seed)
@@ -289,7 +275,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             self.assertIn("github.com/noahgiroux/CFW/releases/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
             self.assertIn("/cfw-runtime-v1.0.5/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
 
-    def test_multiple_chocolatey_modules_are_rejected_before_duplicate_seeding(self):
+    def test_multiple_chocolatey_modules_seed_once_and_install_in_order(self):
         data = {
             "schemaVersion": "cage.app/v0",
             "name": "duplicate-foundation",
@@ -300,13 +286,15 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
                 {"type": "chocolatey", "install": {"packages": ["git"], "runtimeArtifact": dict(_RUNTIME)}},
             ],
         }
-        with self.assertRaisesRegex(Exception, "exactly one Chocolatey module"):
-            Manifest.from_dict(data)
+        from builder.pipeline import build_plan
+        plan = build_plan(Manifest.from_dict(data))
+        self.assertEqual(sum(op["kind"] == "prefix-seed" for op in plan), 1)
+        self.assertEqual([op["moduleIndex"] for op in plan if op["kind"] == "wine-run" and op.get("moduleType") == "chocolatey"], [1, 2])
 
     def test_package_install_uses_canonical_choco_and_disabled_internal_host(self):
         steps = _manifest(["7zip", "notepadplusplus"]).modules[0].build()
         package = _commands_for(steps, "Install Chocolatey packages: 7zip notepadplusplus")
-        policy = _commands_for(steps, "Verify Chocolatey external-host policy")
+        policy = _commands_for(_manifest(["7zip", "notepadplusplus"]).modules[0].foundation_steps(), "Verify Chocolatey external-host policy")
         self.assertIn("CFW_CHOCOLATEY_PREFIX_PATH", package)
         self.assertIn("CFW_CHOCOLATEY_WINDOWS_PATH", package)
         self.assertIn("community.chocolatey.org/api/v2", package)
@@ -321,7 +309,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
 
     def test_chocolatey_diagnostic_precedes_package_install(self):
         steps = _manifest(["7zip"]).modules[0].build()
-        diagnostic = _commands_for(steps, "Diagnose Chocolatey readiness")
+        diagnostic = _commands_for(_manifest(["7zip"]).modules[0].foundation_steps(), "Diagnose Chocolatey readiness")
         package = _commands_for(steps, "Install Chocolatey packages: 7zip")
         self.assertIn("metadata/chocolatey-diagnostic.json", diagnostic)
         self.assertIn("canonicalChocoExists", diagnostic)
@@ -346,7 +334,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
     def test_successful_package_install_does_not_exit_before_bundle_export(self):
         script = generate_build_script(_manifest(["7zip"]))
         completion = 'echo "[cage] Chocolatey package install and evidence completed"'
-        export = 'echo "[cage] Phase 4: Exporting bundle"'
+        export = 'echo "[cage] Exporting bundle"'
 
         self.assertIn(completion, script)
         self.assertIn(export, script)
@@ -467,7 +455,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
             "name": "test",
             "version": "1.0.0",
             "runtime": {"provider": "wine", "version": "latest"},
-            "modules": [{"type": "script", "command": "choco install 7zip; rm -rf /"}],
+            "modules": [{"type": "script", "run": "choco install 7zip; rm -rf /", "outputs": ["/etc/vendor"]}],
             "launch": {"entrypoint": "C:/Program Files/App/App.exe"},
         })
         self.assertEqual(len(manifest.modules), 1)

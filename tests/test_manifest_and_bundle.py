@@ -187,13 +187,13 @@ class ManifestAndBundleTests(unittest.TestCase):
 
     def test_plan_contains_required_phase_order(self):
         phases = [x["phase"] for x in build_plan(Manifest.from_dict(VALID))]
-        self.assertEqual(phases, ["init-prefix", "launch", "export"])
+        self.assertEqual(phases, ["prepare-build", "init-prefix", "compatibility", "launch", "export"])
 
     def test_build_plan_serializes_step_kind_and_safety(self):
         data = json.loads(json.dumps(VALID))
-        data["modules"] = [{"type": "script", "command": "echo unsafe"}]
+        data["modules"] = [{"type": "script", "run": "echo unsafe", "outputs": ["/etc/demo"]}]
 
-        module_step = build_plan(Manifest.from_dict(data))[1]
+        module_step = next(op for op in build_plan(Manifest.from_dict(data)) if op.get("moduleType") == "script")
 
         self.assertEqual(module_step["kind"], "raw-shell")
         self.assertTrue(module_step["unsafe"])

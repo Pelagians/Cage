@@ -40,7 +40,7 @@ def _steps():
         }],
         "launch": {"entrypoint": "C:/Program Files/App/App.exe"},
     })
-    return manifest.modules[0].build()
+    return manifest.modules[0].foundation_steps() + manifest.modules[0].build()
 
 
 class ChocolateySmokePackageTests(unittest.TestCase):
@@ -156,7 +156,7 @@ class ChocolateySmokePackageTests(unittest.TestCase):
 
     def test_bootstrap_only_fixture_uses_the_released_default_runtime(self):
         manifest = load_manifest(ROOT / "tests/fixtures/chocolatey-bootstrap-smoke.cage.yaml")
-        steps = manifest.modules[0].build()
+        steps = manifest.modules[0].foundation_steps() + manifest.modules[0].build()
         descriptions = [step.description for step in steps]
 
         self.assertEqual(manifest.modules[0].install, {"packages": []})

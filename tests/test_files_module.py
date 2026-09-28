@@ -39,10 +39,10 @@ class FilesModuleUnitTests(unittest.TestCase):
 
         self.assertIn("modules[0] must be an object", str(ctx.exception))
 
-    def test_parse_exe_rejects_unknown_config_field(self):
+    def test_parse_install_rejects_unknown_config_field(self):
         with self.assertRaises(ModuleError) as ctx:
             parse_module({
-                "type": "exe",
+                "type": "install",
                 "source": "setup.exe",
                 "config": "unsupported.xml",
             }, 0)
@@ -211,7 +211,7 @@ class FilesModuleManifestTests(unittest.TestCase):
         script = generate_build_script(manifest)
 
         self.assertIn("export WINEDLLOVERRIDES='d3d11=n,b;mscoree='", script)
-        self.assertIn("winecfg -v win10", script)
+        self.assertIn("winecfg -v 'win10'", script)
 
 
 if __name__ == "__main__":

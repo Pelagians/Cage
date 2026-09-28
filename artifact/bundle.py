@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json, re
 from pathlib import Path
+import shutil
 from artifact.graph import build_execution_graph
 from builder.pipeline import build_plan
 from core.manifest import Manifest
@@ -32,8 +33,12 @@ def create_bundle(manifest: Manifest, output_dir: Path, *,
     if bundle_path.exists():
         raise FileExistsError(bundle_path)
     for rel in ("prefix/drive_c", "runtime", "launch", "metadata",
-                "build", "logs"):
+                "build", "logs", "linux-root"):
         (bundle_path / rel).mkdir(parents=True, exist_ok=False)
+    # The exact safe extractor used by host staging is packaged into the
+    # build bundle; containers need no Python installation of the Cage tree.
+    from core import media
+    shutil.copyfile(Path(media.__file__), bundle_path / "build/media.py")
 
     runtime = resolve_manifest_runtime(manifest)
     _write_json(bundle_path / "manifest.cage.json",
@@ -105,6 +110,10 @@ def create_bundle(manifest: Manifest, output_dir: Path, *,
             "build": manifest.build.to_dict(),
             "compatibility": manifest.compatibility,
             "declaredProvenance": manifest.provenance,
+            "operations": [{"id": op["id"], "moduleIndex": op.get("moduleIndex"),
+                            "moduleType": op.get("moduleType"), "kind": op["kind"],
+                            "metadata": op.get("metadata", {}), "unsafe": op["unsafe"]}
+                           for op in plan],
             "modules": [
                 {
                     "moduleIndex": index,
@@ -203,15 +212,28 @@ def _write_step_evidence(
     log_excerpt: str | None,
 ) -> None:
     steps = []
+    failed_receipt = bundle_path / "logs/failed-operation"
+    failed_id = failed_receipt.read_text(encoding="utf-8").split(" ", 1)[0].strip() if failed_receipt.is_file() else None
+    failed_seen = False
     for phase in phases:
+        op_id = phase.get("id") or phase.get("phase")
+        if failed_id:
+            step_attempted = attempted and not failed_seen
+            step_success = attempted and not failed_seen and op_id != failed_id
+            if op_id == failed_id:
+                failed_seen = True
+        else:
+            step_attempted, step_success = attempted, success if attempted else False
         steps.append(_drop_none({
-            "id": phase.get("id") or phase.get("phase"),
+            "id": op_id,
             "phase": phase.get("phase"),
             "kind": phase.get("kind"),
             "description": phase.get("description"),
-            "attempted": attempted,
-            "success": success if attempted else False,
-            "exitCode": exit_code if attempted else None,
+            "moduleIndex": phase.get("moduleIndex"),
+            "moduleType": phase.get("moduleType"),
+            "attempted": step_attempted,
+            "success": step_success,
+            "exitCode": exit_code if failed_id == op_id else None,
             "logPath": "logs/build.log",
             "logExcerpt": log_excerpt,
         }))
