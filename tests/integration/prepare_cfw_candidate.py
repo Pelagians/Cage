@@ -81,7 +81,9 @@ def main() -> None:
         if name == "7zip":
             recipe["launch"]["entrypoint"] = "C:/Program Files/7-Zip/7z.exe"
             recipe["launch"]["args"] = ["i"]
-        (args.output / f"{name}.cage.yaml").write_text(yaml.safe_dump(recipe, sort_keys=False), encoding="utf-8")
+        # Cage accepts JSON directly. PyYAML's indentless-list output is outside
+        # Cage's deliberately small YAML subset.
+        (args.output / f"{name}.cage.json").write_text(json.dumps(recipe, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"manifestSha256": profile["manifestSha256"], "wineImage": image,
                       "sourceRevision": manifest["sourceRevision"]}, sort_keys=True))
 

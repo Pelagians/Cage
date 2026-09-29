@@ -64,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/cfw-results/lifecycle
-          cage build /tmp/cfw-recipes/lifecycle.cage.yaml \
+          cage build /tmp/cfw-recipes/lifecycle.cage.json \
             --workspace /tmp/cfw-recipes --output /tmp/cfw-results/lifecycle \
             --engine docker --runtime-image "$(cat /tmp/cfw-recipes/wine-image.txt)" \
             --module-cache-dir /tmp/cage-module-cache --build-timeout 7200 \
@@ -83,7 +83,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/cfw-results/7zip
-          cage build /tmp/cfw-recipes/7zip.cage.yaml \
+          cage build /tmp/cfw-recipes/7zip.cage.json \
             --workspace /tmp/cfw-recipes --output /tmp/cfw-results/7zip \
             --engine docker --runtime-image "$(cat /tmp/cfw-recipes/wine-image.txt)" \
             --module-cache-dir /tmp/cage-module-cache --build-timeout 7200 \
