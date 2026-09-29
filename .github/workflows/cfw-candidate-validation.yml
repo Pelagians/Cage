@@ -17,9 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
-      CFW_ARTIFACT_ID: '11053034350'
-      CFW_ARTIFACT_SHA256: 'b3c36e3ee850f168138e475c6e542a513d97b4c89c5e8f99fb8260c0f6dc9cdc'
-      CFW_SOURCE_REVISION: 'dc611b2a599593803021d3dd052d70da2354ba23'
+      CFW_ARTIFACT_ID: '11059442166'
+      CFW_ARTIFACT_SHA256: '324aec07f1241e3f6f0fb2f088be3cdfa0f1a45f3e7df11a42cee0bcce75de4b'
+      CFW_SOURCE_REVISION: '9c6b3ed5109dae88a182c5acf1b462ed488bf2a5'
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
