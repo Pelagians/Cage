@@ -1,0 +1,107 @@
+name: CFW candidate through Cage
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/cfw-candidate-validation.yml'
+      - 'tests/integration/prepare_cfw_candidate.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  packages: read
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      CFW_ARTIFACT_ID: '11053034350'
+      CFW_ARTIFACT_SHA256: 'b3c36e3ee850f168138e475c6e542a513d97b4c89c5e8f99fb8260c0f6dc9cdc'
+      CFW_SOURCE_REVISION: 'dc611b2a599593803021d3dd052d70da2354ba23'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install Cage
+        run: python -m pip install -e .
+      - name: Download exact CFW CI candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cfw-download /tmp/cage-module-cache/cfw-candidate
+          curl -fLSs --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/noahgiroux/CFW/actions/artifacts/${CFW_ARTIFACT_ID}/zip" \
+            -o /tmp/cfw-download/candidate.zip
+          printf '%s  %s\n' "$CFW_ARTIFACT_SHA256" /tmp/cfw-download/candidate.zip | sha256sum -c -
+          unzip -q /tmp/cfw-download/candidate.zip -d /tmp/cfw-download/extracted
+          for name in cfw-runtime-manifest-wine-11.0.json cfw-runtime-evidence-wine-11.0.json cfw-runtime-prefix-wine-11.0.tar.gz; do
+            mapfile -t matches < <(find /tmp/cfw-download/extracted -name "$name" -type f)
+            test "${#matches[@]}" -eq 1
+            mv "${matches[0]}" "/tmp/cage-module-cache/cfw-candidate/$name"
+          done
+          rm /tmp/cfw-download/candidate.zip
+      - name: Validate provenance and prepare explicit recipes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/integration/prepare_cfw_candidate.py \
+            /tmp/cage-module-cache/cfw-candidate /tmp/cfw-recipes \
+            --source-revision "$CFW_SOURCE_REVISION" | tee /tmp/cfw-candidate-profile.json
+          image="$(cat /tmp/cfw-recipes/wine-image.txt)"
+          docker pull "$image"
+          test "$(docker image inspect "$image" --format '{{json .Config.Entrypoint}}')" = '["/init"]'
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.pelagian.cage.session-contract"}}')" = 'cage.selkies-wayland/v1'
+      - name: CFW lifecycle through Cage
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cfw-results/lifecycle
+          cage build /tmp/cfw-recipes/lifecycle.cage.yaml \
+            --workspace /tmp/cfw-recipes --output /tmp/cfw-results/lifecycle \
+            --engine docker --runtime-image "$(cat /tmp/cfw-recipes/wine-image.txt)" \
+            --module-cache-dir /tmp/cage-module-cache --build-timeout 7200 \
+            | tee /tmp/cfw-results/lifecycle-build.json
+          bundle="$(python -c 'import json; print(json.load(open("/tmp/cfw-results/lifecycle-build.json"))["bundle"])')"
+          cage bundle verify "$bundle" | tee /tmp/cfw-results/lifecycle-verify.json
+          test -s "$bundle/metadata/chocolatey-smoke.json"
+          python - "$bundle/metadata/chocolatey-smoke.json" <<'PY'
+          import json, sys
+          evidence = json.load(open(sys.argv[1]))
+          print(json.dumps(evidence, indent=2))
+          assert evidence.get('status') == 'passed', evidence
+          PY
+      - name: Build and run 7-Zip through Cage
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cfw-results/7zip
+          cage build /tmp/cfw-recipes/7zip.cage.yaml \
+            --workspace /tmp/cfw-recipes --output /tmp/cfw-results/7zip \
+            --engine docker --runtime-image "$(cat /tmp/cfw-recipes/wine-image.txt)" \
+            --module-cache-dir /tmp/cage-module-cache --build-timeout 7200 \
+            | tee /tmp/cfw-results/7zip-build.json
+          bundle="$(python -c 'import json; print(json.load(open("/tmp/cfw-results/7zip-build.json"))["bundle"])')"
+          cage bundle verify "$bundle" | tee /tmp/cfw-results/7zip-verify.json
+          test -s "$bundle/metadata/chocolatey-package-evidence.json"
+          cage run "$bundle" --engine docker --graphics headless --timeout 180 \
+            | tee /tmp/cfw-results/7zip-run.json
+      - name: Upload small diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfw-cage-candidate-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            /tmp/cfw-candidate-profile.json
+            /tmp/cfw-results/*.json
+            /tmp/cfw-results/*/metadata/*.json
+            /tmp/cfw-results/*/logs/*.log
