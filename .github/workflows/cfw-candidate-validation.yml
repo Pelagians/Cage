@@ -91,8 +91,34 @@ jobs:
           bundle="$(python -c 'import json; print(json.load(open("/tmp/cfw-results/7zip-build.json"))["bundle"])')"
           cage bundle verify "$bundle" | tee /tmp/cfw-results/7zip-verify.json
           test -s "$bundle/metadata/chocolatey-package-evidence.json"
-          cage run "$bundle" --engine docker --graphics headless --timeout 180 \
-            | tee /tmp/cfw-results/7zip-run.json
+          cage run "$bundle" --engine docker --graphics headless \
+            --name cfw-7zip-candidate --timeout 120 \
+            > /tmp/cfw-results/7zip-run.json &
+          run_pid=$!
+          for attempt in $(seq 1 60); do
+            if docker container inspect cfw-7zip-candidate >/dev/null 2>&1; then break; fi
+            if ! kill -0 "$run_pid" 2>/dev/null; then break; fi
+            sleep 2
+          done
+          if docker container inspect cfw-7zip-candidate >/dev/null 2>&1; then
+            sleep 20
+            docker exec --user root cfw-7zip-candidate sh -c '
+              ps -ef
+              ls -l /tmp/cage-launch.sh /var/lib/cage/state/task-exit-code /var/lib/cage/state/shutdown-request 2>&1 || true
+              find /config -maxdepth 4 -name autostart -type f -print 2>/dev/null
+            ' > /tmp/cfw-results/7zip-launch-snapshot.log 2>&1 || true
+          fi
+          set +e
+          wait "$run_pid"
+          run_rc=$?
+          set -e
+          docker logs cfw-7zip-candidate > /tmp/cfw-results/7zip-container.log 2>&1 || true
+          docker rm -f cfw-7zip-candidate >/dev/null 2>&1 || true
+          cat /tmp/cfw-results/7zip-run.json
+          if [ "$run_rc" -ne 0 ]; then
+            cat /tmp/cfw-results/7zip-launch-snapshot.log 2>/dev/null || true
+            exit "$run_rc"
+          fi
       - name: Upload small diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -103,5 +129,8 @@ jobs:
           path: |
             /tmp/cfw-candidate-profile.json
             /tmp/cfw-results/*.json
+            /tmp/cfw-results/*.log
             /tmp/cfw-results/*/metadata/*.json
             /tmp/cfw-results/*/logs/*.log
+            /tmp/cfw-results/*/*/metadata/*.json
+            /tmp/cfw-results/*/*/logs/**/*.log
