@@ -4,7 +4,19 @@ set -Eeuo pipefail
 engine=${CONTAINER_ENGINE:-docker}
 image=${1:?qualified candidate runtime image required}
 scratch=$(mktemp -d)
-trap 'rm -rf "$scratch"' EXIT
+cleanup() {
+  rc=$?
+  if ((rc != 0)); then
+    find "$scratch/dist" -path '*/logs/failed-operation' -o -path '*/logs/wineboot.log' -o -path '*/logs/build.log' |
+      while IFS= read -r path; do
+        printf '\n--- %s ---\n' "$path" >&2
+        tail -n 80 "$path" >&2
+      done
+  fi
+  rm -rf "$scratch"
+  exit "$rc"
+}
+trap cleanup EXIT
 mkdir -p "$scratch/workspace" "$scratch/dist"
 cat > "$scratch/workspace/recipe.cage.yaml" <<'YAML'
 schemaVersion: cage.app/v0
