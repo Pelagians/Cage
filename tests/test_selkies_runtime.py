@@ -182,7 +182,7 @@ class ProducerRuntimeQualificationTests(unittest.TestCase):
         )
         artifact = json.loads(
             (
-                ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.5-wine-11.0.json"
+                ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.6-wine-11.0.json"
             ).read_text(encoding="utf-8")
         )
         data["modules"][0].setdefault("install", {})["runtimeArtifact"] = artifact
@@ -199,7 +199,7 @@ class ProducerRuntimeQualificationTests(unittest.TestCase):
         )
         artifact = json.loads(
             (
-                ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.5-wine-11.0.json"
+                ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.6-wine-11.0.json"
             ).read_text(encoding="utf-8")
         )
         artifact["selkiesImage"] = (
@@ -219,7 +219,7 @@ class ProducerRuntimeQualificationTests(unittest.TestCase):
         )
         artifact = json.loads(
             (
-                ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.5-wine-11.0.json"
+                ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.6-wine-11.0.json"
             ).read_text(encoding="utf-8")
         )
         artifact.pop("sessionContract")
