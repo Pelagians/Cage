@@ -4,13 +4,12 @@ version: "1.0.0"
 
 runtime:
   provider: wine
-  version: latest
+  version: "11.0"
 
 modules:
   - type: chocolatey
-    install:
-      packages:
-        - firefox
+    packages:
+      - firefox
 
 launch:
   entrypoint: C:/Program Files/Mozilla Firefox/firefox.exe

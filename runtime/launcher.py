@@ -104,7 +104,11 @@ def build_run_plan(
     _validate_network_mode(selected_network)
     _validate_graphics_network(mode, selected_network)
 
-    image = _runtime_image(runtime)
+    base_image = _runtime_image(runtime)
+    from artifact.linux_state import linux_state_identity
+    derived_identity = linux_state_identity(bundle, base_image)
+    derived_image = (derived_identity + ("-selkies" if (graphics or str((graph.get("graphics") or {}).get("defaultMode") or "headless")) == "selkies" else "-headless")) if derived_identity else None
+    image = derived_image or base_image
     launch_command = _launch_command(runtime, launch, [item["winePath"] for item in file_arguments])
     runner_cache = _runner_cache_plan(runtime, runner_cache_dir, require_runner=require_runner, engine=selected_engine)
     script = _launch_script(
@@ -166,6 +170,9 @@ def build_run_plan(
             "launcherVersion": runtime.get("launcherVersion"),
             "network": selected_network,
             "image": image,
+            "baseImage": base_image,
+            "derivedRuntimeImage": derived_image,
+            "linuxStateIdentity": derived_identity,
             "requiresExactRuntime": bool(
                 (graph.get("compatibility") or {}).get("requiresExactRuntime")
             ),
@@ -206,6 +213,25 @@ def execute_run_plan(plan: dict[str, Any], *, timeout: int | None = None) -> dic
     argv = plan.get("container", {}).get("argv")
     if not isinstance(argv, list) or not all(isinstance(item, str) for item in argv):
         raise RunError("run plan container.argv must be a list of strings")
+
+    derived = plan.get("runtime", {}).get("derivedRuntimeImage")
+    if derived:
+        from artifact.oci import export_oci_image
+        engine = plan["container"]["engine"]
+        try:
+            inspect = subprocess.run([engine, "image", "inspect", "--format",
+                                      '{{index .Config.Labels "io.cage.linux-state"}}', derived],
+                                     capture_output=True, text=True, check=False, timeout=30)
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            raise RunError(f"cannot inspect the derived application runtime image: {exc}") from exc
+        if inspect.returncode != 0 or inspect.stdout.strip() != plan["runtime"]["linuxStateIdentity"]:
+            result = export_oci_image(plan["bundle"], tag=derived, engine=engine,
+                                      graphics=plan["graphics"]["mode"])
+            if not result["success"]:
+                detail = (str(result.get("stderr") or "") + "\n" + str(result.get("stdout") or "")).strip()
+                raise RunError("could not construct the declared Linux application runtime: "
+                               + str(result.get("error") or "OCI image build failed")
+                               + ("\n" + detail[-6000:] if detail else ""))
 
     try:
         proc = subprocess.run(

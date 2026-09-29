@@ -1,0 +1,22 @@
+schemaVersion: cage.app/v0
+name: sample-packages
+version: '1.0'
+runtime:
+  provider: wine
+  version: '11.0'
+build:
+  network: bridge
+modules:
+  - type: chocolatey
+    packages:
+      - 7zip
+  - type: files
+    mappings:
+      - source: config/7zip.ini
+        target: C:/App/7zip.ini
+        mode: copy
+  - type: chocolatey
+    packages:
+      - git
+launch:
+  entrypoint: C:/Program Files/7-Zip/7zFM.exe

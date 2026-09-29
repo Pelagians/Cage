@@ -1,0 +1,29 @@
+schemaVersion: cage.app/v0
+name: sample-disc
+version: '1.0'
+runtime:
+  provider: wine
+  version: '11.0'
+modules:
+  - type: iso
+    action: mount
+    id: sample-disc
+    source: sources/sample-disc.iso
+    backend: host
+    mountPath: mounted/sample-disc
+    drive: D
+  - type: install
+    source: D:/setup.exe
+    installer: exe
+    workingDirectory: D:/
+    args:
+      - /quiet
+  - type: iso
+    action: unmount
+    id: sample-disc
+  - type: check
+    file:
+      path: C:/Program Files/Sample App/app.exe
+      exists: true
+launch:
+  entrypoint: C:/Program Files/Sample App/app.exe

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import shlex
+import re
 from typing import Any
 
 
@@ -30,14 +31,23 @@ class BuildStep:
         lines = []
 
         if self.description:
-            lines.append(f"# {self.description}")
+            # A newline in a recipe description must never escape a shell comment.
+            lines.extend(f"# {line}" for line in self.description.splitlines())
 
         body = []
         for key, value in self.environment.items():
             body.append(f"export {key}={_shell_quote(value)}")
 
         if self.working_dir:
-            body.append(f"cd {_shell_quote(self.working_dir)}")
+            normalized = self.working_dir.replace("\\", "/")
+            if re.match(r"^[A-Za-z]:/", normalized):
+                drive = normalized[0].lower()
+                suffix = normalized[3:]
+                if ".." in suffix.split("/"):
+                    raise ValueError("working directory escapes its Wine drive")
+                body.append(f'cd -- "$WINEPREFIX/dosdevices/{drive}:"/{shlex.quote(suffix)}')
+            else:
+                body.append(f"cd {_shell_quote(self.working_dir)}")
 
         body.extend(self.commands)
         if self.timeout is not None:

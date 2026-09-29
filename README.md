@@ -215,7 +215,7 @@ compatibility:
     WINEDEBUG: "-all"
 ```
 
-Cage normalizes this to `cage.compatibility-policy/v0`, records it in bundle graph/provenance/OCI metadata, applies `WINEARCH`, `winecfg -v <windowsVersion>`, compatibility env, and deterministic `WINEDLLOVERRIDES`, and installs requested `dxvk`/`vkd3d` prefix backends through winetricks. Legacy `config.wine.dllOverrides` is still normalized, but new recipes should prefer `compatibility`.
+Cage normalizes this to `cage.compatibility-policy/v0` and records it in bundle graph/provenance/OCI metadata. `WINEARCH` precedes prefix creation, `winecfg -v <windowsVersion>` runs before ordered modules, and global DLL policy plus compatibility environment apply at launch. Build operations begin with inherited `WINEDLLOVERRIDES` cleared; use ordered `dll` modules to change loader behavior for subsequent installers. Legacy `config.wine.dllOverrides` remains a launch policy. A global policy may intentionally differ from the build-time registry state.
 
 This is intentionally a high-level policy layer. Explicit loader ordering, COM timing controls, and trace/debug knobs are not primary schema.
 
@@ -239,7 +239,9 @@ modules:
         mode: merge
 ```
 
-`mode: merge` copies the contents of the source directory into the target directory. That supports BlueBuild-style customer-provided folders such as `Program Files` trees without treating an entire Wine prefix as the source of truth. Installers/ISOs use `exe`, `msi`, or `iso` modules and optional `sources[]` declarations; BYO prefix import is still possible later as a convenience path, but reproducibility should be proven from installers/media/files first.
+`mode: merge` copies the contents of the source directory into the target directory. Installers use the unified `install` module with an EXE or MSI mechanism. ISO media exposure and safe extraction are separate ordered operations; the recipe identifies the installer explicitly. See [ordered modules and artifact construction](docs/ordered-modules.md) for schemas, path rules, and Linux state capture.
+
+Small sequencing examples: [MSI, files, registry, check](examples/ordered-install.cage.yaml), [Chocolatey interleaving](examples/chocolatey-interleaved.cage.yaml), [Linux customization](examples/linux-customization.cage.yaml), [read-only ISO media](examples/iso-install.cage.yaml), and [archive extraction](examples/extract-install.cage.yaml). Their `sources/` inputs are placeholders for your own verified media.
 
 Use `media stage` to copy or extract local BYO media into a normalized workspace tree before writing/running recipes:
 

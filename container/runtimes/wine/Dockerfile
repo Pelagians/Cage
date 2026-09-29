@@ -32,6 +32,7 @@ ENV PELAGIAN_SHELL_PROFILE=legacy-apps \
     CAGE_WINE_GRAPHICS=xwayland
 
 LABEL org.pelagian.cage.session-contract="cage.selkies-wayland/v1" \
+    org.pelagian.cage.root-build-operations="v1" \
     io.pelagians.cage.pelagian-shell-image="ghcr.io/pelagians/pelagian-shell@sha256:5ad8e46d11bac94a5f7202c0f4cee5872f2f731b8602bac42329d42717d65122"
 
 COPY container/selkies/root/ /

@@ -67,7 +67,7 @@ Suite metadata (`entrypoints[]` and `fileAssociations[]`) records multi-entry ap
 
 Recipe profiles are unsupported; recipes declare modules and compatibility policy explicitly.
 
-`core/modules/` implements BlueBuild-style build-time modules as first-class build directives. `type: chocolatey` matches the myOS `type: dnf` YAML style: recipes declare packages under `modules[].install.packages`. CFW produces the immutable prepared compatibility prefix and owns CLR, PowerShell, Synchro, Chocolatey bootstrap, profiles, and Wine policy. Cage validates the detached manifest and evidence, binds the exact producer image, safely replacement-seeds the prefix, verifies producer-owned feature policy without mutating it, proves local package lifecycle behavior, and then installs requested packages. The former standalone `powershell-wrapper` module and Cage-side compatibility bootstrap are removed; ADR 0024 is the current boundary.
+`core/modules/` implements ordered application operations. Chocolatey package actions use `modules[].packages`; the CFW foundation is selected, verified, and adopted once before the ordered modules. CFW owns CLR, PowerShell, Synchro, Chocolatey bootstrap, profiles, and Wine policy. Cage validates the detached manifest and evidence, binds the exact producer image, verifies producer-owned feature policy without mutating it, proves local package lifecycle behavior, and installs each requested package action in recipe order. The former standalone `powershell-wrapper` module and Cage-side compatibility bootstrap are removed; ADR 0024 remains the trust boundary. See [ordered modules](ordered-modules.md) for plan, Linux image, media, and compatibility operations.
 
 ### 8. Downloadable runner cache
 

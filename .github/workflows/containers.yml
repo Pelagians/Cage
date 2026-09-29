@@ -149,6 +149,14 @@ jobs:
           IMAGE: ${{ steps.image.outputs.image }}
         run: CONTAINER_ENGINE=docker tests/smoke-shell-runtime.sh "$IMAGE"
 
+      - name: Exercise ordered root and application operations
+        if: matrix.provider == 'wine' && matrix.version == '11.0'
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          python3 -m pip install -e .
+          CONTAINER_ENGINE=docker tests/smoke-ordered-runtime.sh "$IMAGE"
+
       - name: Smoke Wine with rootless Podman
         if: matrix.provider == 'wine' && matrix.version == '11.0'
         env:
@@ -162,6 +170,7 @@ jobs:
           docker tag "$IMAGE" "$podman_tag"
           docker save "$podman_tag" | podman load
           CONTAINER_ENGINE=podman tests/smoke-shell-runtime.sh "$podman_tag"
+          CONTAINER_ENGINE=podman tests/smoke-ordered-runtime.sh "$podman_tag"
 
       - name: Promote qualified digest to release tags
         if: github.event_name == 'push'

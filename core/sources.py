@@ -4,9 +4,10 @@ from __future__ import annotations
 import hashlib
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
-from core.manifest import Manifest
+if TYPE_CHECKING:
+    from core.manifest import Manifest
 from core.media import SOURCE_POLICY_SCHEMA_VERSION, audit_source_path
 
 SOURCE_INTEGRITY_SCHEMA_VERSION = "cage.source-integrity/v0"
@@ -87,7 +88,13 @@ def verify_manifest_sources(manifest: Manifest, *, workspace: Path | str | None 
             items.append(item)
             return
 
-        resolved = resolve_source_path(source, workspace_path)
+        try:
+            resolved = resolve_source_path(source, workspace_path)
+        except ValueError as exc:
+            item.update({"valid": False, "status": "unsafe-path", "error": f"{location}: {exc}"})
+            errors.append(item["error"])
+            items.append(item)
+            return
         item["resolvedPath"] = str(resolved)
         item["exists"] = resolved.exists()
         if not resolved.exists():
@@ -152,6 +159,18 @@ def verify_manifest_sources(manifest: Manifest, *, workspace: Path | str | None 
                     source=mapping["source"],
                     expected_sha256=mapping.get("sha256"),
                 )
+        if module.type == "registry" and module.file:
+            add_item(location=f"modules[{index}].file", usage="module:registry",
+                     source=module.file, expected_sha256=module.sha256)
+        if module.type == "script" and module.file:
+            add_item(location=f"modules[{index}].file", usage="module:script", source=module.file,
+                     expected_sha256=module.sha256)
+        if module.type == "dll" and module.install:
+            add_item(location=f"modules[{index}].install.source", usage="module:dll",
+                     source=module.install["source"], expected_sha256=module.install["sha256"])
+        if module.type == "iso" and module.action == "mount":
+            add_item(location=f"modules[{index}].mountPath", usage="module:iso-host-mount",
+                     source=module.mount_path)
 
     # Check modules for source references
     for index, module in enumerate(manifest.modules):
@@ -160,6 +179,8 @@ def verify_manifest_sources(manifest: Manifest, *, workspace: Path | str | None 
             # prepared-runtime manifest, not as recipe-local sources.
             continue
         if hasattr(module, 'source') and module.source:
+            if module.type == "install" and (re.match(r"^[C-Yc-y]:/", module.source) or module.source.startswith("/work/")):
+                continue
             add_item(
                 location=f"modules[{index}].source",
                 usage=f"module:{module.type}",
@@ -201,6 +222,8 @@ def resolve_source_path(source: str, workspace: Path | str | None = None) -> Pat
     path = Path(raw)
     if path.is_absolute():
         return path
+    if ".." in path.parts:
+        raise ValueError(f"workspace source may not escape its root: {source}")
     return Path(workspace or Path.cwd()).resolve() / path
 
 
@@ -210,7 +233,11 @@ def container_source_path(source: str, *, workspace_mount: str = "/workspace") -
         return source
     raw = strip_file_scheme(source)
     if Path(raw).is_absolute():
-        return raw
+        if raw.startswith(("/workspace/", "/work/")) and ".." not in Path(raw).parts:
+            return raw
+        raise ValueError(f"absolute recipe input must be in /workspace or /work: {source}")
+    if ".." in Path(raw).parts:
+        raise ValueError(f"workspace source may not escape its root: {source}")
     return f"{workspace_mount.rstrip('/')}/{raw}"
 
 
@@ -269,7 +296,13 @@ def audit_manifest_sources(manifest: Manifest, *, workspace: Path | str | None =
             warnings.append(warning)
             items.append(item)
             return
-        resolved = resolve_source_path(source, workspace_path)
+        try:
+            resolved = resolve_source_path(source, workspace_path)
+        except ValueError as exc:
+            item.update({"valid": False, "status": "unsafe-path", "error": f"{location}: {exc}"})
+            errors.append(item["error"])
+            items.append(item)
+            return
         item["resolvedPath"] = str(resolved)
         if not resolved.exists():
             item.update({"valid": False, "status": "missing", "error": f"{location}: missing local source: {resolved}"})
@@ -321,6 +354,14 @@ def audit_manifest_sources(manifest: Manifest, *, workspace: Path | str | None =
                     usage="module:files",
                     source=mapping["source"],
                 )
+        if module.type == "registry" and module.file:
+            add_item(location=f"modules[{index}].file", usage="module:registry", source=module.file)
+        if module.type == "script" and module.file:
+            add_item(location=f"modules[{index}].file", usage="module:script", source=module.file)
+        if module.type == "dll" and module.install:
+            add_item(location=f"modules[{index}].install.source", usage="module:dll", source=module.install["source"])
+        if module.type == "iso" and module.action == "mount":
+            add_item(location=f"modules[{index}].mountPath", usage="module:iso-host-mount", source=module.mount_path)
 
     # Check modules for source references
     for index, module in enumerate(manifest.modules):
@@ -329,6 +370,8 @@ def audit_manifest_sources(manifest: Manifest, *, workspace: Path | str | None =
             # prepared-runtime manifest, not as recipe-local sources.
             continue
         if hasattr(module, 'source') and module.source:
+            if module.type == "install" and (re.match(r"^[C-Yc-y]:/", module.source) or module.source.startswith("/work/")):
+                continue
             add_item(
                 location=f"modules[{index}].source",
                 usage=f"module:{module.type}",

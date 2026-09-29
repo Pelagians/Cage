@@ -86,13 +86,13 @@ def build_execution_graph(manifest: Manifest) -> dict[str, Any]:
 
     edges: list[dict[str, str]] = [
         {"from": manifest_node_id, "to": runtime_node_id, "type": "resolves"},
-        {"from": manifest_node_id, "to": "phase:init-prefix", "type": "provides"},
-        {"from": runtime_node_id, "to": "phase:init-prefix", "type": "executes"},
+        {"from": manifest_node_id, "to": "phase:prepare-build", "type": "provides"},
+        {"from": runtime_node_id, "to": "phase:prepare-build", "type": "executes"},
     ]
     for left, right in zip(phase_plan, phase_plan[1:]):
         edges.append({
-            "from": f"phase:{left['phase']}",
-            "to": f"phase:{right['phase']}",
+            "from": f"phase:{left['id']}",
+            "to": f"phase:{right['id']}",
             "type": "precedes",
         })
     edges.extend([
@@ -160,17 +160,22 @@ def _runtime_node_id(runtime: RuntimeBinding) -> str:
 
 
 def _phase_node(phase: dict[str, object]) -> dict[str, Any]:
-    name = str(phase["phase"])
+    name = str(phase["id"])
     node: dict[str, Any] = {
         "id": f"phase:{name}",
         "kind": "build-phase",
         "label": name,
-        "phase": name,
+        "phase": phase["phase"],
         "stepKind": phase.get("kind"),
         "description": phase.get("description"),
         "unsafe": bool(phase.get("unsafe", False)),
         "inputs": list(phase.get("inputs", [])),
-        "actions": list(phase.get("actions", [])),
+        "resourceDependencies": list(phase.get("resourceDependencies", [])),
+        "resourcesCreated": list(phase.get("resourcesCreated", [])),
+        "actions": list(phase.get("commands", [])),
+        "environment": phase.get("environment", {}),
+        "workingDirectory": phase.get("workingDir"),
+        "timeout": phase.get("timeout"),
     }
     if phase.get("moduleType") is not None:
         node["moduleType"] = phase.get("moduleType")

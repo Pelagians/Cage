@@ -39,10 +39,10 @@ class FilesModuleUnitTests(unittest.TestCase):
 
         self.assertIn("modules[0] must be an object", str(ctx.exception))
 
-    def test_parse_exe_rejects_unknown_config_field(self):
+    def test_parse_install_rejects_unknown_config_field(self):
         with self.assertRaises(ModuleError) as ctx:
             parse_module({
-                "type": "exe",
+                "type": "install",
                 "source": "setup.exe",
                 "config": "unsupported.xml",
             }, 0)
@@ -194,7 +194,7 @@ class FilesModuleManifestTests(unittest.TestCase):
         steps = manifest.modules[0].build()
         self.assertGreater(len(steps), 0)
 
-    def test_build_script_uses_normalized_dll_policy_environment(self):
+    def test_build_script_leaves_dll_policy_for_launch(self):
         manifest = Manifest.from_dict({
             "schemaVersion": "cage.app/v0",
             "name": "compat-demo",
@@ -210,8 +210,9 @@ class FilesModuleManifestTests(unittest.TestCase):
 
         script = generate_build_script(manifest)
 
-        self.assertIn("export WINEDLLOVERRIDES='d3d11=n,b;mscoree='", script)
-        self.assertIn("winecfg -v win10", script)
+        self.assertIn("unset WINEDLLOVERRIDES", script)
+        self.assertNotIn("export WINEDLLOVERRIDES=", script)
+        self.assertIn("winecfg -v 'win10'", script)
 
 
 if __name__ == "__main__":

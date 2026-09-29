@@ -77,6 +77,7 @@ class ChocolateyModule(ModuleBase):
 
     type: str = "chocolatey"
     install: dict[str, Any] | None = None
+    packages: list[str] | None = None
     package_source: str | None = None
 
     @staticmethod
@@ -125,9 +126,7 @@ class ChocolateyModule(ModuleBase):
         }
 
     def _packages(self) -> list[str]:
-        if not isinstance(self.install, dict):
-            raise ModuleError("chocolatey module requires 'install' object")
-        packages = self.install.get("packages")
+        packages = self.packages if self.packages is not None else (self.install or {}).get("packages")
         if not isinstance(packages, list):
             raise ModuleError("chocolatey module 'install.packages' must be a list")
         if not all(isinstance(package, str) and package for package in packages):
@@ -145,9 +144,7 @@ class ChocolateyModule(ModuleBase):
         return packages
 
     def _runtime_artifact(self) -> dict[str, Any] | None:
-        if not isinstance(self.install, dict):
-            raise ModuleError("chocolatey module requires 'install' object")
-        runtime = self.install.get("runtimeArtifact", DEFAULT_CFW_RUNTIME_ARTIFACT)
+        runtime = (self.install or {}).get("runtimeArtifact", DEFAULT_CFW_RUNTIME_ARTIFACT)
         if runtime is None:
             return None
         if not isinstance(runtime, dict):
@@ -199,7 +196,7 @@ class ChocolateyModule(ModuleBase):
             } if session_contract else {}),
         }
 
-    def build(self) -> list[BuildStep]:
+    def _all_steps(self) -> list[BuildStep]:
         self.validate()
         packages = self._packages()
         runtime = self._runtime_artifact()
@@ -315,14 +312,31 @@ class ChocolateyModule(ModuleBase):
             ))
         return steps
 
+    def foundation_steps(self) -> list[BuildStep]:
+        """Producer verification and readiness operations, compiled once before modules."""
+        return [step for step in self._all_steps()
+                if step.kind == "prefix-seed" or step.kind == "metadata"
+                or step.description in {
+                    "Diagnose Chocolatey readiness",
+                    "Verify Chocolatey external-host policy",
+                    "Prove Chocolatey local package lifecycle",
+                }]
+
+    def build(self) -> list[BuildStep]:
+        """Only install packages at this module's declared position."""
+        return [step for step in self._all_steps()
+                if step.description.startswith("Install Chocolatey packages:")]
+
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {"type": self.type}
-        if self.install is not None:
-            install = dict(self.install)
+        if self.install is not None or self.packages is not None:
+            install = dict(self.install or {})
             runtime = self._runtime_artifact()
             if runtime is not None:
                 install["runtimeArtifact"] = runtime
             result["install"] = install
+        if self.packages is not None:
+            result["packages"] = self.packages
         if self.package_source is not None:
             result["packageSource"] = self.package_source
         return result

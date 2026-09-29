@@ -1,0 +1,17 @@
+schemaVersion: cage.app/v0
+name: sample-extracted-installer
+version: '1.0'
+runtime:
+  provider: wine
+  version: '11.0'
+modules:
+  - type: extract
+    source: sources/sample-installer.zip
+    target: /work/sample-installer
+  - type: install
+    source: /work/sample-installer/setup.exe
+    installer: exe
+    args:
+      - /quiet
+launch:
+  entrypoint: C:/Program Files/Sample App/app.exe

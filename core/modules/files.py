@@ -45,7 +45,7 @@ class FilesModule(ModuleBase):
                 commands.append(f"test -f {src} && test \"$(sha256sum -- {src} | cut -d ' ' -f1)\" = {shlex.quote(expected.lower())}")
             if mode == "copy":
                 commands.extend([
-                    f"mkdir -p -- $(dirname -- {dest})",
+                    f"mkdir -p -- \"$(dirname -- {dest})\"",
                     f"rm -rf -- {dest}",
                     f"cp -a -- {src} {dest}",
                 ])
@@ -55,4 +55,5 @@ class FilesModule(ModuleBase):
                     f"mkdir -p -- {dest}",
                     f"cp -a -- {src}/. {dest}/",
                 ])
-        return [BuildStep(commands=commands, description=f"Copy {len(self.mappings)} file(s)", kind="copy-tree")]
+        return [BuildStep(commands=commands, description=f"Copy {len(self.mappings)} file(s)",
+                          kind="copy-tree", metadata={"mappings": self.mappings})]

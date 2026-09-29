@@ -1,0 +1,20 @@
+schemaVersion: cage.app/v0
+name: sample-linux-runtime
+version: '1.0'
+runtime:
+  provider: wine
+  version: '11.0'
+modules:
+  - type: script
+    run: |
+      install -d /etc/sample-app
+      printf 'mode=desktop\n' > /etc/sample-app/settings.conf
+    outputs:
+      - /etc/sample-app
+  - type: install
+    source: sources/sample-setup.exe
+    installer: exe
+    args:
+      - /quiet
+launch:
+  entrypoint: C:/Program Files/Sample App/app.exe

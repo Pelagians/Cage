@@ -281,8 +281,13 @@ def _validate_cfw_boundary(
             identities.add((artifact["id"], artifact["manifestSha256"], artifact["wineImage"]))
     if len(identities) > 1:
         raise ManifestError("Chocolatey modules declare conflicting CFW prepared runtimes")
-    if len(chocolatey_modules) > 1:
-        raise ManifestError("CFW prepared runtimes require exactly one Chocolatey module")
+    package_sources = {getattr(module, "package_source", None) or "https://community.chocolatey.org/api/v2/"
+                       for module in chocolatey_modules}
+    if len(package_sources) != 1:
+        raise ManifestError("Chocolatey modules must use one verified package source")
+    all_packages = [package.casefold() for module in chocolatey_modules for package in module._packages()]
+    if len(all_packages) != len(set(all_packages)):
+        raise ManifestError("Chocolatey package names must be unique across ordered modules")
     producer_environment: dict[str, str] = {}
     resolver = getattr(chocolatey_modules[0], "_runtime_artifact", None)
     artifact = resolver() if callable(resolver) else None
@@ -302,7 +307,8 @@ def _validate_cfw_boundary(
         raise ManifestError("CFW prepared runtimes cannot declare Cage compatibility policy")
     mutating = sorted({
         module.type for module in modules
-        if module.type in {"winetricks", "script"}
+        if module.type in {"winetricks", "script", "dll", "registry", "extract"}
+        or (module.type == "check" and getattr(module, "command", None))
     })
     if mutating:
         raise ManifestError(

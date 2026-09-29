@@ -40,7 +40,7 @@ def _manifest(**module_overrides):
 
 class ChocolateyRuntimeProfileTests(unittest.TestCase):
     def test_runtime_profile_is_recorded_without_cfw_payload_details(self):
-        steps = _manifest().modules[0].build()
+        steps = _manifest().modules[0].foundation_steps()
         record = steps[0]
         command = "\n".join(record.commands)
 

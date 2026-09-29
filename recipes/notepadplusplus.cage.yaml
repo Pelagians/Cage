@@ -13,9 +13,8 @@ build:
 
 modules:
   - type: chocolatey
-    install:
-      packages:
-        - notepadplusplus
+    packages:
+      - notepadplusplus
 
 launch:
   entrypoint: C:/Program Files/Notepad++/notepad++.exe

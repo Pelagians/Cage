@@ -8,6 +8,8 @@ state and exports under dedicated paths.
 from __future__ import annotations
 
 import json
+import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -15,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from artifact.inspection import verify_bundle
+from artifact.linux_state import declared_outputs, linux_state_identity
 
 ARTIFACT_IMAGE_SCHEMA_VERSION = 'cage.artifact-image/v0'
 OCI_EXPORT_PLAN_SCHEMA_VERSION = 'cage.oci-export-plan/v0'
@@ -60,6 +63,8 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str =
         'version': manifest.get('version'),
     })
     base_image = _runtime_image(runtime)
+    linux_outputs = declared_outputs(bundle)
+    derived_image = linux_state_identity(bundle, base_image) if linux_outputs else None
     if graphics == 'headless' and str((graph.get('graphics') or {}).get('wineGraphics') or 'xwayland') == 'wayland':
         raise OCIExportError('native Wine Wayland requires graphics selkies')
     artifact_metadata = _artifact_metadata(
@@ -75,11 +80,14 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str =
     )
     labels = _oci_labels(application, runtime, base_image)
     labels['io.cage.graphics'] = graphics
+    if derived_image:
+        labels['io.cage.linux-state'] = derived_image
     image_environment = dict(runtime.get('environment') or {})
     image_environment['CAGE_WINE_GRAPHICS'] = str(
         (graph.get('graphics') or {}).get('wineGraphics') or 'xwayland'
     )
-    containerfile = _containerfile(base_image, labels, image_environment, graphics=graphics)
+    containerfile = _containerfile(base_image, labels, image_environment, graphics=graphics,
+                                   linux_outputs=linux_outputs)
 
     return {
         'schemaVersion': OCI_EXPORT_PLAN_SCHEMA_VERSION,
@@ -88,6 +96,8 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str =
         'bundle': str(bundle),
         'tag': tag,
         'baseImage': base_image,
+        'derivedRuntimeImage': derived_image,
+        'linuxOutputs': linux_outputs,
         'application': application,
         'runtime': _runtime_summary(runtime),
         'layout': {
@@ -134,6 +144,8 @@ def prepare_oci_build_context(
 
     staged_bundle = context / 'bundle'
     shutil.copytree(bundle, staged_bundle, symlinks=True)
+    if plan.get('linuxOutputs'):
+        shutil.copyfile(bundle / 'linux-state.tar', context / 'linux-state.tar')
     _write_json(staged_bundle / 'metadata/artifact.json', plan['artifactMetadata'])
 
     containerfile = context / plan['containerfile']['path']
@@ -179,6 +191,7 @@ def export_oci_image(
         Path(context_dir) if context_dir is not None else Path(tempfile.mkdtemp(prefix='cage-oci-')),
     )
     containerfile_path = context / plan['containerfile']['path']
+    local_base_tag = _stage_local_base_image(selected_engine, plan['baseImage'], containerfile_path)
     command = [selected_engine, 'build', '-f', str(containerfile_path), '-t', tag, str(context)]
     try:
         proc = subprocess.run(
@@ -224,6 +237,8 @@ def export_oci_image(
         stderr=proc.stderr,
         error=None if proc.returncode == 0 else 'OCI image build failed',
     )
+    if local_base_tag:
+        result['localBaseTag'] = local_base_tag
     if push and proc.returncode == 0:
         push_command = [selected_engine, 'push', tag]
         push_proc = subprocess.run(
@@ -253,6 +268,34 @@ def export_oci_image(
                 result['success'] = False
                 result['error'] = 'OCI image push succeeded but no repo digest was recorded'
     return result
+
+
+def _stage_local_base_image(engine: str, base_image: str, containerfile: Path) -> str | None:
+    """Resolve a pinned local image ID to a BuildKit-readable local tag.
+
+    BuildKit treats bare sha256: IDs in FROM as registry names. The tag is a
+    temporary resolver; the bundle and Linux-state identity retain the ID.
+    """
+    if not re.fullmatch(r'sha256:[0-9a-f]{64}', base_image):
+        return None
+    local_tag = 'cage-qualified-base:' + base_image.removeprefix('sha256:')
+    inspect = lambda ref: subprocess.run(
+        [engine, 'image', 'inspect', '--format', '{{.Id}}', ref],
+        capture_output=True, text=True, timeout=30, check=False)
+    original = inspect(base_image)
+    if original.returncode != 0 or original.stdout.strip() != base_image:
+        raise OCIExportError('local base image ID no longer resolves to the recorded runtime')
+    tagged = subprocess.run([engine, 'tag', base_image, local_tag],
+                            capture_output=True, text=True, timeout=30, check=False)
+    resolved = inspect(local_tag) if tagged.returncode == 0 else tagged
+    if tagged.returncode != 0 or resolved.returncode != 0 or resolved.stdout.strip() != base_image:
+        raise OCIExportError('could not bind local OCI build base to the recorded runtime image ID')
+    content = containerfile.read_text(encoding='utf-8')
+    expected = f'FROM {base_image}\n'
+    if not content.startswith(expected):
+        raise OCIExportError('OCI build context has an unexpected base image')
+    containerfile.write_text(f'FROM {local_tag}\n' + content[len(expected):], encoding='utf-8')
+    return local_tag
 
 
 def inspect_oci_image(
@@ -567,6 +610,7 @@ def _containerfile(
     environment: dict[str, str] | None = None,
     *,
     graphics: str = 'headless',
+    linux_outputs: list[str] | None = None,
 ) -> str:
     label_lines = '\n'.join(
         f'LABEL {key}={_docker_quote(value)}' for key, value in labels.items()
@@ -588,7 +632,8 @@ def _containerfile(
         f'    WINEPREFIX={STATE_ROOT}/prefix \\\n'
         f'    CAGE_GRAPHICS={graphics} \\\n'
         f'    CAGE_SESSION_MODE={graphics}\n\n'
-        f'COPY bundle {BUNDLE_ROOT}\n'
+        + ("RUN rm -rf -- " + " ".join(shlex.quote(path) for path in linux_outputs) + "\nADD linux-state.tar /\n" if linux_outputs else "")
+        + f'COPY bundle {BUNDLE_ROOT}\n'
         f'COPY cage-app-launch {APP_LAUNCHER}\n'
         f'RUN chmod +x {APP_LAUNCHER} && mkdir -p {STATE_ROOT} {EXPORTS_ROOT}\n'
         f'VOLUME ["{STATE_ROOT}", "{EXPORTS_ROOT}"]\n'

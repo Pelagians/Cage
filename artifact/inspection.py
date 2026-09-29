@@ -511,7 +511,7 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
     for module in manifest.get("modules", []):
         if isinstance(module, dict) and module.get("type") == "chocolatey":
             install = module.get("install")
-            packages = install.get("packages") if isinstance(install, dict) else None
+            packages = module.get("packages") if module.get("packages") is not None else install.get("packages") if isinstance(install, dict) else None
             if isinstance(packages, list) and all(isinstance(package, str) for package in packages):
                 requested_packages.extend(packages)
     requires_package_evidence = bool(requested_packages) and not (
@@ -697,6 +697,25 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
         details={"required": ["artifact:bundle", "launch:entrypoint", "prefix:wineprefix"]},
         error="graph is missing one or more required nodes",
     )
+
+    from artifact.linux_state import declared_outputs, linux_state_identity
+    try:
+        output_paths = declared_outputs(bundle)
+        needs_snapshot = bool(output_paths) and status.get("state") not in {"planned", "source-failed", "build-running", "build-failed"}
+        if needs_snapshot:
+            receipt = _load_json(bundle, "metadata/linux-state.json")
+            base_image = graph["runnerRuntime"]["image"]
+            linux_ok = (receipt.get("schemaVersion") == "cage.linux-state/v0"
+                        and receipt.get("outputs") == output_paths
+                        and receipt.get("baseImage") == base_image
+                        and receipt.get("derivedRuntimeImage") == linux_state_identity(bundle, base_image))
+        else:
+            linux_ok = True
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        linux_ok = False
+    add_check("linux-artifact-state", linux_ok,
+              "declared Linux outputs match their sealed image identity" if linux_ok else "Linux application state is missing or modified",
+              error="declared Linux artifact outputs require intact sealed state")
 
     structural_valid = bool(checks) and all(check["ok"] for check in checks)
     prefix_verification = verify_prefix_materialization(bundle, manifest=manifest)
