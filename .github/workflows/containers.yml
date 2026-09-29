@@ -170,6 +170,7 @@ jobs:
           docker tag "$IMAGE" "$podman_tag"
           docker save "$podman_tag" | podman load
           CONTAINER_ENGINE=podman tests/smoke-shell-runtime.sh "$podman_tag"
+          CONTAINER_ENGINE=podman tests/smoke-ordered-runtime.sh "$podman_tag"
 
       - name: Promote qualified digest to release tags
         if: github.event_name == 'push'
