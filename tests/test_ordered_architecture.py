@@ -194,6 +194,8 @@ fi
         self.assertEqual(sum(op["phase"] == "init-prefix" for op in plan), 1)
         script = generate_build_script(recipe)
         self.assertLess(script.index("export WINEARCH="), script.index("wineboot --init"))
+        self.assertIn("WINEDLLOVERRIDES=mscoree,mshtml= timeout 300s wineboot --init", script)
+        self.assertLess(script.index("unset WINEDLLOVERRIDES"), script.index("wineboot --init"))
 
     def test_chocolatey_foundation_once_before_interleaved_actions(self):
         recipe = manifest([{"type": "chocolatey", "packages": ["7zip"]},

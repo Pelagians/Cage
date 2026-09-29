@@ -180,7 +180,7 @@ def build_plan(manifest: Manifest) -> list[dict[str, object]]:
         append("init-prefix", "init-prefix", BuildStep([
             'wineboot_log="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/wineboot.log"',
             'mkdir -p "$(dirname "$wineboot_log")"',
-            'timeout 300s wineboot --init > "$wineboot_log" 2>&1 || { rc=$?; cat "$wineboot_log" >&2; exit "$rc"; }',
+            'WINEDLLOVERRIDES=mscoree,mshtml= timeout 300s wineboot --init > "$wineboot_log" 2>&1 || { rc=$?; cat "$wineboot_log" >&2; exit "$rc"; }',
         ], "Initialize Wine prefix once", kind="wineboot", timeout=315))
 
     for i, step in enumerate(readiness_steps, 1):
