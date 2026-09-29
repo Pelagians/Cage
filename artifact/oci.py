@@ -8,6 +8,7 @@ state and exports under dedicated paths.
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import shutil
 import subprocess
@@ -190,6 +191,7 @@ def export_oci_image(
         Path(context_dir) if context_dir is not None else Path(tempfile.mkdtemp(prefix='cage-oci-')),
     )
     containerfile_path = context / plan['containerfile']['path']
+    local_base_tag = _stage_local_base_image(selected_engine, plan['baseImage'], containerfile_path)
     command = [selected_engine, 'build', '-f', str(containerfile_path), '-t', tag, str(context)]
     try:
         proc = subprocess.run(
@@ -235,6 +237,8 @@ def export_oci_image(
         stderr=proc.stderr,
         error=None if proc.returncode == 0 else 'OCI image build failed',
     )
+    if local_base_tag:
+        result['localBaseTag'] = local_base_tag
     if push and proc.returncode == 0:
         push_command = [selected_engine, 'push', tag]
         push_proc = subprocess.run(
@@ -264,6 +268,34 @@ def export_oci_image(
                 result['success'] = False
                 result['error'] = 'OCI image push succeeded but no repo digest was recorded'
     return result
+
+
+def _stage_local_base_image(engine: str, base_image: str, containerfile: Path) -> str | None:
+    """Resolve a pinned local image ID to a BuildKit-readable local tag.
+
+    BuildKit treats bare sha256: IDs in FROM as registry names. The tag is a
+    temporary resolver; the bundle and Linux-state identity retain the ID.
+    """
+    if not re.fullmatch(r'sha256:[0-9a-f]{64}', base_image):
+        return None
+    local_tag = 'cage-qualified-base:' + base_image.removeprefix('sha256:')
+    inspect = lambda ref: subprocess.run(
+        [engine, 'image', 'inspect', '--format', '{{.Id}}', ref],
+        capture_output=True, text=True, timeout=30, check=False)
+    original = inspect(base_image)
+    if original.returncode != 0 or original.stdout.strip() != base_image:
+        raise OCIExportError('local base image ID no longer resolves to the recorded runtime')
+    tagged = subprocess.run([engine, 'tag', base_image, local_tag],
+                            capture_output=True, text=True, timeout=30, check=False)
+    resolved = inspect(local_tag) if tagged.returncode == 0 else tagged
+    if tagged.returncode != 0 or resolved.returncode != 0 or resolved.stdout.strip() != base_image:
+        raise OCIExportError('could not bind local OCI build base to the recorded runtime image ID')
+    content = containerfile.read_text(encoding='utf-8')
+    expected = f'FROM {base_image}\n'
+    if not content.startswith(expected):
+        raise OCIExportError('OCI build context has an unexpected base image')
+    containerfile.write_text(f'FROM {local_tag}\n' + content[len(expected):], encoding='utf-8')
+    return local_tag
 
 
 def inspect_oci_image(

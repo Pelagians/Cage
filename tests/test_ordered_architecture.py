@@ -17,7 +17,7 @@ from artifact.bundle import create_bundle
 from artifact.graph import build_execution_graph
 from artifact.inspection import verify_bundle
 from artifact.linux_state import linux_state_identity
-from artifact.oci import create_oci_export_plan, prepare_oci_build_context
+from artifact.oci import create_oci_export_plan, prepare_oci_build_context, _stage_local_base_image
 from builder.pipeline import build_plan, generate_build_script
 from builder.executor import _immutable_image_ref, _verify_iso_host_mounts, _verify_root_build_capability
 from core.manifest import Manifest
@@ -70,6 +70,22 @@ class OrderedPlanTests(unittest.TestCase):
             self.assertEqual(validate_linux_output(path), path)
         with self.assertRaisesRegex(Exception, "overlap"):
             build_plan(manifest([{"type": "script", "run": "true", "outputs": ["/etc/vendor", "/etc/vendor/sub"]}]))
+
+    def test_local_immutable_image_id_is_bound_for_oci_build(self):
+        base = "sha256:" + "a" * 64
+        with tempfile.TemporaryDirectory() as temp:
+            containerfile = Path(temp) / "Containerfile"
+            containerfile.write_text(f"FROM {base}\nRUN true\n")
+            def engine(argv, **_):
+                if argv[1] == "tag":
+                    self.assertEqual(argv[2], base)
+                    return subprocess.CompletedProcess(argv, 0, "", "")
+                return subprocess.CompletedProcess(argv, 0, base + "\n", "")
+            with patch("artifact.oci.subprocess.run", side_effect=engine) as called:
+                tag = _stage_local_base_image("docker", base, containerfile)
+            self.assertEqual(called.call_count, 3)
+            self.assertEqual(tag, "cage-qualified-base:" + "a" * 64)
+            self.assertEqual(containerfile.read_text(), f"FROM {tag}\nRUN true\n")
 
     def test_install_exit_codes_are_exhaustive(self):
         with tempfile.TemporaryDirectory() as temp:

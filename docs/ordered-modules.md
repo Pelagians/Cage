@@ -20,6 +20,8 @@ Workspace file inputs are audited; SHA-256 is checked when declared. `install`, 
 
 Normal `cage run` constructs and caches a derived application runtime image from the sealed Linux snapshot when needed. OCI export uses the same snapshot layer over the pinned base image, plus the built Windows prefix bundle and launch contract. `RUN rm -rf` on declared outputs followed by `ADD linux-state.tar /` replaces their complete final trees, including removals within a declared directory. The derived image tag hashes the immutable base reference and the deterministic archive; `metadata/linux-state.json` binds it to the bundle. OCI export may additionally add graphics-specific labels and bundle metadata. Pelagian Shell `/init` remains inherited from the qualified base.
 
+For a locally built, unpublished CI candidate, Cage records its content-addressed image ID as the base identity. Docker BuildKit cannot use that bare ID in `FROM`, so export stages a local tag and verifies that it resolves to the recorded ID before building. Published runtimes continue to use their repository digest directly.
+
 `install.expectedExitCodes` matches every result, including zero; a missing zero rejects a successful process. A hashed media installer resolves through the active drive mapping and verifies the actual mounted file immediately before Wine starts. Traversal, missing files, and linked paths fail the install operation.
 
 ## Registry, DLLs, checks
