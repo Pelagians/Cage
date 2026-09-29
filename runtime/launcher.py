@@ -228,8 +228,10 @@ def execute_run_plan(plan: dict[str, Any], *, timeout: int | None = None) -> dic
             result = export_oci_image(plan["bundle"], tag=derived, engine=engine,
                                       graphics=plan["graphics"]["mode"])
             if not result["success"]:
+                detail = (str(result.get("stderr") or "") + "\n" + str(result.get("stdout") or "")).strip()
                 raise RunError("could not construct the declared Linux application runtime: "
-                               + str(result.get("error") or result.get("stderr")))
+                               + str(result.get("error") or "OCI image build failed")
+                               + ("\n" + detail[-6000:] if detail else ""))
 
     try:
         proc = subprocess.run(
