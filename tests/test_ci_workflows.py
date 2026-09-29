@@ -53,7 +53,7 @@ class UniversalCfwWorkflowTests(unittest.TestCase):
     def test_public_package_proof_runs_only_for_universal_cfw_runtime(self):
         profile = json.loads(
             (
-                ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.5-wine-11.0.json"
+                ROOT / "core/chocolatey/assets/cfw-runtime-v1.0.6-wine-11.0.json"
             ).read_text(encoding="utf-8")
         )
         text = (

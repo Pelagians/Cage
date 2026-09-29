@@ -250,7 +250,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         artifact = serialized["modules"][0]["install"]["runtimeArtifact"]
         self.assertEqual(artifact, _RUNTIME)
 
-    def test_released_default_runtime_profile_is_pinned_to_cfw_v103(self):
+    def test_released_default_runtime_profile_is_pinned_to_cfw_v106(self):
         from core.modules.chocolatey import (
             DEFAULT_CFW_RUNTIME_ARTIFACT,
             DEFAULT_CFW_RUNTIME_PROFILE_ID,
@@ -265,15 +265,15 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertEqual(DEFAULT_CFW_RUNTIME_ARTIFACT["id"], DEFAULT_CFW_RUNTIME_PROFILE_ID)
         self.assertEqual(
             DEFAULT_CFW_RUNTIME_ARTIFACT["manifestSha256"],
-            "bad21b4be7cdaddfcb9cbe8deb2f730aeeb30a0e9bceea0055e879fffed61651",
+            "b61d2b71f5bb5d8782b080eb809d1b1abf00dd4d632fd06185dc89f3b62ee70b",
         )
         self.assertEqual(
             DEFAULT_CFW_RUNTIME_ARTIFACT["wineImage"],
-            "ghcr.io/pelagians/cage-wine@sha256:7ad192e00a251523f3a071d3ffa422789b010c359d18cd45227d9f89165f6b92",
+            "ghcr.io/pelagians/cage-wine@sha256:eb6a7cb5eb53f830a2659ac3784a8a0dd03637dba73f19e3d6da8d6a39bf30f0",
         )
         for field in ("url", "evidenceUrl", "manifestUrl"):
             self.assertIn("github.com/noahgiroux/CFW/releases/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
-            self.assertIn("/cfw-runtime-v1.0.5/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
+            self.assertIn("/cfw-runtime-v1.0.6/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
 
     def test_multiple_chocolatey_modules_seed_once_and_install_in_order(self):
         data = {

@@ -157,6 +157,11 @@ jobs:
           cp "$bundle/metadata/chocolatey-package-evidence.json" "evidence/${{ matrix.package }}-package-evidence.json"
           cage run --dry-run --graphics headless "$bundle" > "evidence/${{ matrix.package }}-launch-plan-evidence.json"
           test -s "evidence/${{ matrix.package }}-launch-plan-evidence.json"
+          if [ '${{ matrix.package }}' = 7zip ]; then
+            cage run "$bundle" --engine docker --graphics headless \
+              --entrypoint 'C:/Program Files/7-Zip/7z.exe' --timeout 180 \
+              > "evidence/7zip-headless-run.json"
+          fi
           tar -czf "evidence/${{ matrix.package }}-bundle.tar.gz" -C "$(dirname "$bundle")" "$(basename "$bundle")"
       - name: Upload package proof evidence
         if: always()
