@@ -134,15 +134,19 @@ fi
             fake.write_text('#!/bin/sh\nprintf "%s\\n" "$1" > "$WINE_CALLED"\n')
             fake.chmod(0o755)
             called = root / "called"
+            prefix = root / "prefix"
+            (prefix / "dosdevices").mkdir(parents=True)
+            (prefix / "dosdevices/d:").symlink_to(mounted)
             modules = [{"type": "iso", "id": "disc", "source": "disc.iso", "mountPath": "disc", "drive": "D"},
                        {"type": "install", "source": "D:/setup.exe", "sha256": digest}]
             def run(expected):
                 selected = [modules[0], {**modules[1], "sha256": expected}]
                 step = next(op for op in build_plan(manifest(selected)) if op.get("moduleType") == "install")
                 self.assertEqual(step["metadata"]["mediaPath"], "/workspace/disc/setup.exe")
-                commands = "\n".join(step["commands"]).replace("/workspace/disc/setup.exe", str(installer))
+                commands = "\n".join(step["commands"]).replace("/workspace/disc/setup.exe", str(installer)).replace("/workspace/disc'", str(mounted) + "'")
                 return subprocess.run(["bash", "-c", "set -eu\n" + commands],
-                    env={**os.environ, "PATH": temp + ":" + os.environ["PATH"], "WINE_CALLED": str(called)},
+                    env={**os.environ, "PATH": temp + ":" + os.environ["PATH"], "WINE_CALLED": str(called),
+                         "WINEPREFIX": str(prefix)},
                     capture_output=True, text=True)
             self.assertEqual(run(digest).returncode, 0)
             self.assertEqual(called.read_text().strip(), "D:/setup.exe")
@@ -152,6 +156,11 @@ fi
             installer.unlink()
             self.assertNotEqual(run(digest).returncode, 0)
             installer.symlink_to(fake)
+            self.assertNotEqual(run(digest).returncode, 0)
+            installer.unlink()
+            installer.write_bytes(b"installer")
+            (prefix / "dosdevices/d:").unlink()
+            (prefix / "dosdevices/d:").symlink_to(root)
             self.assertNotEqual(run(digest).returncode, 0)
             for source in ("D:/../setup.exe", "D:/sub/../../setup.exe"):
                 with self.assertRaisesRegex(Exception, "escapes its media root"):

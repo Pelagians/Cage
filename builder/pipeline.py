@@ -230,11 +230,15 @@ def build_plan(manifest: Manifest) -> list[dict[str, object]]:
                     raise ModuleError(f"modules[{module_index}] installer escapes its media root")
                 media_root = next(root for drive, root in active_media.values()
                                   if drive == source[0].upper())
-                media_file = container_source_path(media_root) + "/" + relative
+                mounted_root = container_source_path(media_root)
+                media_file = mounted_root + "/" + relative
                 commands = list(step.commands)
+                # A previous operation must not replace the Wine drive link
+                # between the ISO declaration and this installer.
+                commands.insert(0, f'test "$(readlink -- "$WINEPREFIX/dosdevices/{source[0].lower()}:")" = {_shell_quote(mounted_root)}')
                 if module.sha256:
                     file_arg = _shell_quote(media_file)
-                    commands[:0] = [
+                    commands[1:1] = [
                         f'test -f {file_arg}',
                         f'test "$(realpath -e -- {file_arg})" = {file_arg}',
                         f'test "$(sha256sum -- {file_arg} | cut -d " " -f1)" = {_shell_quote(module.sha256.lower())}',
