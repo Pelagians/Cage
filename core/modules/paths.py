@@ -19,9 +19,22 @@ def validate_linux_output(path: str) -> str:
         raise ModuleError("Linux artifact output must be an absolute application path")
     if "\\" in path or any(part in {"", ".", ".."} for part in path[1:].split("/")):
         raise ModuleError(f"unsafe Linux artifact output: {path}")
-    if any(path == item or path.startswith(item + "/") for item in _PROTECTED):
+    if any(path == item or path.startswith(item + "/") or item.startswith(path + "/")
+           for item in _PROTECTED):
         raise ModuleError(f"Linux artifact output overlaps a protected runtime/build path: {path}")
     return path
+
+
+def validate_linux_outputs(paths: list[str]) -> list[str]:
+    """Reject duplicate and nested declarations before capture or reconstruction."""
+    validated: list[str] = []
+    for path in paths:
+        validate_linux_output(path)
+        if any(path == earlier or path.startswith(earlier + "/")
+               or earlier.startswith(path + "/") for earlier in validated):
+            raise ModuleError(f"Linux artifact outputs overlap: {path}")
+        validated.append(path)
+    return validated
 
 
 def windows_prefix_target(path: str) -> str:

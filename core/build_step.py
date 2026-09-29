@@ -31,7 +31,8 @@ class BuildStep:
         lines = []
 
         if self.description:
-            lines.append(f"# {self.description}")
+            # A newline in a recipe description must never escape a shell comment.
+            lines.extend(f"# {line}" for line in self.description.splitlines())
 
         body = []
         for key, value in self.environment.items():

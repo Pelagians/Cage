@@ -260,6 +260,9 @@ def _validate_common_module_data(module_type: str, data: dict[str, Any], index: 
                 or policy not in {"native", "builtin", "native,builtin", "builtin,native", "disabled"}
                 for name, policy in overrides.items()):
                 raise ModuleError(f"{location}.overrides contains an invalid DLL policy")
+            names = [name.lower().removesuffix(".dll") for name in overrides]
+            if len(names) != len(set(names)) or "" in names:
+                raise ModuleError(f"{location}.overrides contains duplicate normalized DLL names")
         if "evidence" in data and (not isinstance(data["evidence"], dict) or set(data["evidence"]) - {"id", "failure", "artifact", "runtime"} or any(not isinstance(v, str) for v in data["evidence"].values())):
             raise ModuleError(f"{location}.evidence must contain string id/failure/artifact/runtime fields")
     elif module_type == "winetricks" and data.get("verbs") is not None:

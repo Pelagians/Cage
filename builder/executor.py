@@ -215,9 +215,17 @@ def _immutable_image_ref(engine: str, image_ref: str) -> str:
     if ":" in repository.rsplit("/", 1)[-1]:
         repository = repository.rsplit(":", 1)[0]
     matches = [item for item in digests if isinstance(item, str) and item.startswith(repository + "@sha256:")]
-    if len(matches) != 1:
-        raise RuntimeError("Linux customization requires one immutable producer image digest; pin the runtime image")
-    return matches[0]
+    if len(matches) == 1:
+        return matches[0]
+    # A locally built CI candidate has no RepoDigest until published. Its
+    # content-addressed image ID is still immutable and accepted by engines.
+    if not matches and not digests:
+        identified = subprocess.run([engine, "image", "inspect", "--format", "{{.Id}}", image_ref],
+                                    capture_output=True, text=True, timeout=30, check=False)
+        image_id = identified.stdout.strip()
+        if identified.returncode == 0 and re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
+            return image_id
+    raise RuntimeError("Linux customization requires one immutable producer image digest or local image ID")
 
 
 def _verify_iso_host_mounts(manifest: Manifest, workspace: Path) -> None:

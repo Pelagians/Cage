@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import shlex
 from typing import Any
 
 from .base import ModuleBase, ModuleError
@@ -20,8 +21,8 @@ class WinetricksModule(ModuleBase):
 
         verbs_str = " ".join(self.verbs)
         commands = [
-            f'echo "  Installing winetricks verbs: {verbs_str}"',
-            f"winetricks -q {verbs_str}",
+            f"printf '  Installing winetricks verbs: %s\\n' {shlex.quote(verbs_str)}",
+            "winetricks -q " + " ".join(shlex.quote(verb) for verb in self.verbs),
         ]
 
         return [BuildStep(

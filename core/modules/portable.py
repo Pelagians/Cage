@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import shlex
 from typing import Any
 
 from .base import ModuleBase, ModuleError
@@ -22,9 +23,9 @@ class PortableModule(ModuleBase):
             raise ModuleError("portable module requires 'target' field")
 
         commands = [
-            f'echo "  Extracting portable app to {self.target}"',
-            f"mkdir -p {self.target}",
-            f"unzip -o {self.source} -d {self.target}",
+            f"printf '  Extracting portable app to %s\\n' {shlex.quote(self.target)}",
+            f"mkdir -p -- {shlex.quote(self.target)}",
+            f"unzip -o -- {shlex.quote(self.source)} -d {shlex.quote(self.target)}",
         ]
 
         return [BuildStep(

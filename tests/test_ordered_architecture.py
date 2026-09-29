@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import subprocess
 from pathlib import Path
 import tarfile
 import tempfile
@@ -20,6 +21,7 @@ from artifact.oci import create_oci_export_plan, prepare_oci_build_context
 from builder.pipeline import build_plan, generate_build_script
 from builder.executor import _immutable_image_ref, _verify_iso_host_mounts, _verify_root_build_capability
 from core.manifest import Manifest
+from core.compatibility import compatibility_environment
 from core.manifest.helpers import _load_strict_yaml
 from core.media import MediaStageError, extract_archive
 from core.modules.registry import compile_reg
@@ -35,6 +37,126 @@ def manifest(modules, *, compatibility=None):
 
 
 class OrderedPlanTests(unittest.TestCase):
+    def test_diagnostic_description_is_data_even_with_newlines(self):
+        with tempfile.TemporaryDirectory() as temp:
+            marker = Path(temp) / "executed"
+            hostile = f'file $(touch {marker}) `touch {marker}` $CAGE_TEST_VAR "quote" \'single\'\nnext.exe'
+            recipe = manifest([{"type": "install", "source": hostile}])
+            script = generate_build_script(recipe)
+            status = script.split("CAGE_OPERATION_ID='module-1-step-1'", 1)[1].split("# Install", 1)[0]
+            result = subprocess.run(["bash", "-c", "set -eu\n" + status],
+                                    capture_output=True, text=True,
+                                    env={**os.environ, "CAGE_TEST_VAR": "expanded"})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("$(touch", result.stdout)
+            self.assertIn("`touch", result.stdout)
+            self.assertIn("$CAGE_TEST_VAR", result.stdout)
+            self.assertIn("\nnext.exe", result.stdout)
+            self.assertFalse(marker.exists())
+            # Comments generated from descriptions cannot become executable lines.
+            from core.build_step import BuildStep
+            comments = BuildStep([], "safe\ntouch " + str(marker)).to_shell_lines()
+            subprocess.run(["bash", "-c", "\n".join(comments)], check=True)
+            self.assertFalse(marker.exists())
+
+    def test_linux_outputs_reject_protected_ancestors_and_nested_declarations(self):
+        from core.modules.paths import validate_linux_output
+        for path in ("/etc", "/opt", "/var", "/etc/passwd", "/etc/group",
+                     "/etc/s6-overlay", "/opt/cage", "/usr", "/bin", "/lib",
+                     "/run", "/proc", "/sys", "/dev", "/workspace", "/work"):
+            with self.subTest(path=path), self.assertRaisesRegex(Exception, "protected"):
+                validate_linux_output(path)
+        for path in ("/etc/vendor-app", "/opt/vendor-app", "/var/lib/vendor-app"):
+            self.assertEqual(validate_linux_output(path), path)
+        with self.assertRaisesRegex(Exception, "overlap"):
+            build_plan(manifest([{"type": "script", "run": "true", "outputs": ["/etc/vendor", "/etc/vendor/sub"]}]))
+
+    def test_install_exit_codes_are_exhaustive(self):
+        with tempfile.TemporaryDirectory() as temp:
+            fake = Path(temp) / "wine"
+            fake.write_text('#!/bin/sh\nexit "$FAKE_WINE_RC"\n')
+            fake.chmod(0o755)
+            for allowed, actual, succeeds in (([0], 0, True), ([0], 42, False),
+                                               ([42], 42, True), ([42], 0, False),
+                                               ([0, 42], 0, True), ([0, 42], 42, True),
+                                               ([0, 42], 3, False)):
+                with self.subTest(allowed=allowed, actual=actual):
+                    module = manifest([{"type": "install", "source": "setup.exe",
+                                        "expectedExitCodes": allowed}]).modules[0]
+                    result = subprocess.run(["bash", "-c", "set -eu\n" + "\n".join(module.build()[0].commands)],
+                        env={**os.environ, "PATH": temp + ":" + os.environ["PATH"], "FAKE_WINE_RC": str(actual)},
+                        capture_output=True, text=True)
+                    self.assertEqual(result.returncode == 0, succeeds, result.stderr)
+
+    def test_launch_policy_does_not_override_ordered_build_dll(self):
+        recipe = manifest([{"type": "dll", "overrides": {"VendorFoo.DLL": "native"}},
+                           {"type": "install", "source": "setup.exe"}],
+                          compatibility={"dllPolicy": {"vendorfoo": "builtin"}})
+        plan = build_plan(recipe)
+        self.assertIn("unset WINEDLLOVERRIDES", plan[0]["commands"])
+        self.assertEqual(compatibility_environment(recipe.compatibility)["WINEDLLOVERRIDES"], "vendorfoo=b")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake = root / "wine"
+            fake.write_text('''#!/bin/sh
+if [ "$1" = reg ]; then
+  shift 3
+  while [ "$#" -gt 0 ]; do
+    case "$1" in /v) name="$2"; shift 2;; /d) value="$2"; shift 2;; *) shift;; esac
+  done
+  printf '%s=%s\\n' "$name" "$value" > "$WINE_REGISTRY_STATE"
+else
+  test "${WINEDLLOVERRIDES-unset}" = unset && test "$(cat "$WINE_REGISTRY_STATE")" = vendorfoo=n
+fi
+''')
+            fake.chmod(0o755)
+            ops = [op for op in plan if op.get("moduleType") in {"dll", "install"}]
+            script = "set -eu\nunset WINEDLLOVERRIDES\n" + "\n".join(
+                command for op in ops for command in op["commands"])
+            result = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                env={**os.environ, "PATH": temp + ":" + os.environ["PATH"],
+                     "WINEDLLOVERRIDES": "vendorfoo=b", "WINE_REGISTRY_STATE": str(root / "registry")})
+            self.assertEqual(result.returncode, 0, result.stderr)
+        with self.assertRaisesRegex(Exception, "duplicate normalized DLL names"):
+            manifest([{"type": "dll", "overrides": {"vendorfoo": "native", "VendorFoo.dll": "builtin"}}])
+        with self.assertRaisesRegex(Exception, "duplicate normalized DLL policy"):
+            manifest([], compatibility={"dllPolicy": {"vendorfoo": "native", "VendorFoo.dll": "builtin"}})
+
+    def test_media_installer_hash_verifies_executed_path(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mounted = root / "disc"
+            mounted.mkdir()
+            installer = mounted / "setup.exe"
+            installer.write_bytes(b"installer")
+            digest = hashlib.sha256(installer.read_bytes()).hexdigest()
+            fake = root / "wine"
+            fake.write_text('#!/bin/sh\nprintf "%s\\n" "$1" > "$WINE_CALLED"\n')
+            fake.chmod(0o755)
+            called = root / "called"
+            modules = [{"type": "iso", "id": "disc", "source": "disc.iso", "mountPath": "disc", "drive": "D"},
+                       {"type": "install", "source": "D:/setup.exe", "sha256": digest}]
+            def run(expected):
+                selected = [modules[0], {**modules[1], "sha256": expected}]
+                step = next(op for op in build_plan(manifest(selected)) if op.get("moduleType") == "install")
+                self.assertEqual(step["metadata"]["mediaPath"], "/workspace/disc/setup.exe")
+                commands = "\n".join(step["commands"]).replace("/workspace/disc/setup.exe", str(installer))
+                return subprocess.run(["bash", "-c", "set -eu\n" + commands],
+                    env={**os.environ, "PATH": temp + ":" + os.environ["PATH"], "WINE_CALLED": str(called)},
+                    capture_output=True, text=True)
+            self.assertEqual(run(digest).returncode, 0)
+            self.assertEqual(called.read_text().strip(), "D:/setup.exe")
+            called.unlink()
+            self.assertNotEqual(run("0" * 64).returncode, 0)
+            self.assertFalse(called.exists())
+            installer.unlink()
+            self.assertNotEqual(run(digest).returncode, 0)
+            installer.symlink_to(fake)
+            self.assertNotEqual(run(digest).returncode, 0)
+            for source in ("D:/../setup.exe", "D:/sub/../../setup.exe"):
+                with self.assertRaisesRegex(Exception, "escapes its media root"):
+                    build_plan(manifest(modules[:1] + [{"type": "install", "source": source, "installer": "exe"}]))
+
     def test_interleaved_modules_match_plan_graph_provenance_and_script(self):
         modules = [{"type": "install", "source": "vendor.msi"},
                    {"type": "files", "mappings": [{"source": "config.ini", "target": "C:/App/config.ini"}]},
@@ -47,7 +169,7 @@ class OrderedPlanTests(unittest.TestCase):
         self.assertEqual([op["moduleIndex"] for op in ordered], [1, 2, 3, 4, 5])
         self.assertEqual([op["kind"] for op in ordered], ["install-msi", "copy-tree", "registry", "install-exe", "check"])
         script = generate_build_script(recipe)
-        positions = [script.index("Operation " + op["id"] + ":") for op in ordered]
+        positions = [script.index("CAGE_OPERATION_ID='" + op["id"] + "'") for op in ordered]
         self.assertEqual(positions, sorted(positions))
         graph = build_execution_graph(recipe)
         nodes = [node["id"] for node in graph["nodes"] if node["id"].startswith("phase:")]
@@ -85,7 +207,7 @@ class OrderedPlanTests(unittest.TestCase):
         step = module.build()[0]
         self.assertIn("'two words'", step.commands[0])
         self.assertEqual((step.working_dir, step.timeout, step.environment), ("C:/App", 21, {"FOO": "bar"}))
-        self.assertIn("0|42", step.commands[0])
+        self.assertIn("0|42", "\n".join(step.commands))
         self.assertIn('dosdevices/c:', "\n".join(step.to_shell_lines()))
         self.assertEqual(manifest([{"type": "install", "source": "x.bin", "installer": "msi"}]).modules[0].mechanism(), "msi")
         for invalid in ({"type": "install", "source": "x.bin"}, {"type": "install", "source": "a.exe", "silentArgs": "/q"},
@@ -194,7 +316,7 @@ class OrderedPlanTests(unittest.TestCase):
         self.assertIn('"Raw"=hex:00,ff', variants)
         self.assertIn("@=-", variants)
         self.assertEqual(plan[4]["metadata"]["evidence"]["runtime"], "wine-11.0")
-        self.assertIn("native,builtin", "\n".join(plan[4]["commands"]))
+        self.assertIn("/d n,b", "\n".join(plan[4]["commands"]))
         self.assertIn("syswow64", "\n".join(plan[3]["commands"]))
         for unsupported in ({"type": "registry", "file": "a.reg", "changes": modules[0]["changes"]},
                             {"type": "registry", "changes": modules[0]["changes"], "view": "32"},

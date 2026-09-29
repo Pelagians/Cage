@@ -215,7 +215,7 @@ compatibility:
     WINEDEBUG: "-all"
 ```
 
-Cage normalizes this to `cage.compatibility-policy/v0`, records it in bundle graph/provenance/OCI metadata, applies `WINEARCH`, `winecfg -v <windowsVersion>`, compatibility env, and deterministic `WINEDLLOVERRIDES`, and installs requested `dxvk`/`vkd3d` prefix backends through winetricks. Legacy `config.wine.dllOverrides` is still normalized, but new recipes should prefer `compatibility`.
+Cage normalizes this to `cage.compatibility-policy/v0` and records it in bundle graph/provenance/OCI metadata. `WINEARCH` precedes prefix creation, `winecfg -v <windowsVersion>` runs before ordered modules, and global DLL policy plus compatibility environment apply at launch. Build operations begin with inherited `WINEDLLOVERRIDES` cleared; use ordered `dll` modules to change loader behavior for subsequent installers. Legacy `config.wine.dllOverrides` remains a launch policy. A global policy may intentionally differ from the build-time registry state.
 
 This is intentionally a high-level policy layer. Explicit loader ordering, COM timing controls, and trace/debug knobs are not primary schema.
 

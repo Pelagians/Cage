@@ -20,11 +20,15 @@ Workspace file inputs are audited; SHA-256 is checked when declared. `install`, 
 
 Normal `cage run` constructs and caches a derived application runtime image from the sealed Linux snapshot when needed. OCI export uses the same snapshot layer over the pinned base image, plus the built Windows prefix bundle and launch contract. `RUN rm -rf` on declared outputs followed by `ADD linux-state.tar /` replaces their complete final trees, including removals within a declared directory. The derived image tag hashes the immutable base reference and the deterministic archive; `metadata/linux-state.json` binds it to the bundle. OCI export may additionally add graphics-specific labels and bundle metadata. Pelagian Shell `/init` remains inherited from the qualified base.
 
+`install.expectedExitCodes` matches every result, including zero; a missing zero rejects a successful process. A hashed media installer resolves through the active drive mapping and verifies the actual mounted file immediately before Wine starts. Traversal, missing files, and linked paths fail the install operation.
+
 ## Registry, DLLs, checks
 
 `registry` accepts exactly one of `file` (optional `sha256`) or `changes`. Structured `set`, `deleteValue`, and `deleteKey` compile into a `.reg` import. Set supports `string`, `expandString`, `dword`, `qword`, and hex `binary`; omitted `name` selects the unnamed default value. Keys must start with `HKCU` or `HKLM`. The operation records the active prefix and application Wine user. Explicit 32/64 view selection and alternate users are rejected until Wine-specific behavior is qualified; use the default view. File imports are declared verified inputs.
 
 `dll` has independent `install` and `overrides` operations. Installation requires a source, SHA-256, and explicit `system32` or `syswow64` target. Loader policies accept `native`, `builtin`, both orders, or `disabled`. No DLL downloads occur. Optional `evidence` carries an ID, observed failure, artifact path, and tested runtime identity into the operation record. Global `compatibility.dllPolicy` remains a launch policy for existing v0 recipes; migrate build-time mutations to ordered `dll`. `check` supports a file existence/hash assertion or an explicit command/exit-code assertion at its recipe position. Command checks are marked unsafe. Final artifact verification still runs independently.
+
+Global `compatibility.dllPolicy` is launch-only. Build setup clears inherited `WINEDLLOVERRIDES` so ordered `dll` registry overrides affect later build operations. At launch, global policy takes precedence through the environment even when it differs from the prefix registry. Move build-time policy into ordered `dll` modules; explicit per-operation environment can override registry loader behavior for that operation. `system32` is the 64-bit directory in win64 prefixes; `syswow64` is the 32-bit directory and is rejected for win32 prefixes. Application-local DLL deployment and binary architecture inspection are not yet supported.
 
 ## ISO and extraction
 
@@ -33,6 +37,10 @@ Normal `cage run` constructs and caches a derived application runtime image from
 `extract` takes `source`, `target`, optional `sha256`, and `maxBytes`. It accepts tested ZIP and TAR variants through Python's archive libraries. ISO requires an explicit `backend: bsdtar|7z` available in the build image, and otherwise fails clearly. The chosen backend is recorded in the plan. The shared safe media extractor rejects traversal and links, checks quotas, and requires an empty target. `/work/...` is temporary; an application-owned target outside `/work` is captured in the final Linux image. Extraction is a separate operation from mounting.
 
 Disc A completing, unmounting, then mounting disc B for a *new* installer fits sequential modules. An installer already running and prompting for disc 2 needs a future explicit media-swap or interactive installer mechanism.
+
+## CFW and private-feed follow-up
+
+Distinguish producer-owned CFW foundation state from application-specific registry, DLL, and shim operations. A future recipe should be able to install a Chocolatey application, deploy a Pelagian shim, configure its registry, and verify it without invalidating the qualified foundation. Keep the current protections until that boundary is implemented. A private feed needs its own authenticated, verifiable package receipts; the public Chocolatey community-feed mechanism cannot simply be disabled. Shim packaging should include application-local deployment, binary architecture inspection, signed/versioned artifacts, paired Linux dependencies, evidence, and private feed delivery.
 
 ## Deliberately deferred
 

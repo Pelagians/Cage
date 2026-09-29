@@ -6,13 +6,13 @@ import json
 from pathlib import Path, PurePosixPath
 import tarfile
 
-from core.modules.paths import validate_linux_output
+from core.modules.paths import validate_linux_outputs
 
 
 def declared_outputs(bundle: Path) -> list[str]:
     plan = json.loads((bundle / "build/build-plan.json").read_text(encoding="utf-8"))
-    return [validate_linux_output(str(op["metadata"]["path"]))
-            for op in plan["phases"] if op.get("kind") == "linux-state"]
+    return validate_linux_outputs([str(op["metadata"]["path"])
+            for op in plan["phases"] if op.get("kind") == "linux-state"])
 
 
 def linux_state_identity(bundle: Path, base_image: str) -> str | None:
@@ -29,13 +29,14 @@ def linux_state_identity(bundle: Path, base_image: str) -> str | None:
         with tarfile.open(archive, "r:") as opened:
             for member in opened:
                 name = PurePosixPath(member.name)
-                if (name.is_absolute() or any(part in {"", ".", ".."} for part in name.parts)
+                if (member.name != str(name) or name.is_absolute()
+                    or any(part in {"", ".", ".."} for part in name.parts)
                     or not any(name == item or item in name.parents for item in expected)
                     or not (member.isfile() or member.isdir())):
                     raise ValueError(f"unsafe Linux layer member: {member.name}")
-                if member.name in seen:
+                if str(name) in seen:
                     raise ValueError(f"duplicate Linux layer member: {member.name}")
-                seen.add(member.name)
+                seen.add(str(name))
     except tarfile.TarError as exc:
         raise ValueError(f"invalid Linux state archive: {exc}") from exc
     if not all(any(name == str(item) or name.startswith(str(item) + "/") for name in seen) for item in expected):

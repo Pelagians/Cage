@@ -196,7 +196,10 @@ def _dll_policy(value: Any) -> dict[str, str]:
                 f"compatibility.dllPolicy.{dll} must be one of: "
                 + ", ".join(sorted(set(DLL_POLICY_ALIASES)))
             )
-        normalized[dll] = DLL_POLICY_ALIASES[key]
+        name = dll.lower().removesuffix(".dll")
+        if not name or name in normalized:
+            raise CompatibilityPolicyError(f"duplicate normalized DLL policy name: {dll}")
+        normalized[name] = DLL_POLICY_ALIASES[key]
     return {dll: normalized[dll] for dll in sorted(normalized)}
 
 

@@ -57,11 +57,13 @@ class InstallModule(ModuleBase):
         args = self.args if self.args is not None else (["/qn", "/norestart"] if mechanism == "msi" else [])
         runner = "wine msiexec /i" if mechanism == "msi" else "wine"
         code_values = self.expected_exit_codes if self.expected_exit_codes is not None else [0]
-        # Capture the exit code without allowing an expected reboot code to
-        # terminate the build. Reject any other code at this exact operation.
+        # Capture every exit status, including zero. A mismatch with expected
+        # code zero must itself fail with a nonzero build status.
         command = f"{runner} {argument} {' '.join(shlex.quote(arg) for arg in args)}".strip()
         allowed = "|".join(str(code) for code in code_values)
-        commands = [f"{command} || {{ rc=$?; case $rc in {allowed}) ;; *) exit \"$rc\" ;; esac; }}"]
+        commands = [f'if {command}; then rc=0; else rc=$?; fi',
+                    f'case "$rc" in {allowed}) ;; *) printf "[cage] unexpected installer exit: %s\\n" "$rc" >&2; '
+                    'if [ "$rc" -eq 0 ]; then exit 65; else exit "$rc"; fi ;; esac']
         if self.sha256 and not media:
             if re.fullmatch(r"[Cc]:/.*", source):
                 raise ModuleError("install.sha256 for a prefix path is unsupported; use a verified workspace input")

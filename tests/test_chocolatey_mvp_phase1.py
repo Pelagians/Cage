@@ -72,7 +72,7 @@ class CanonicalPrefixScriptTests(unittest.TestCase):
         }
         script = generate_build_script(Manifest.from_dict(data))
 
-        self.assertIn('Operation init-prefix: Adopt verified CFW prefix once', script)
+        self.assertIn("printf \"[cage] Operation %s: %s\\n\" 'init-prefix' 'Adopt verified CFW prefix once'", script)
         self.assertIn('touch "$WINEPREFIX/.cage-prefix-seeded"', script)
         self.assertNotIn('wine wineboot -u', script)
         self.assertNotIn('wine wineboot --init', script)

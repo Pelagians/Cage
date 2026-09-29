@@ -6,6 +6,7 @@ import shlex
 
 from core.build_step import BuildStep
 from core.sources import container_source_path
+from core.compatibility import DLL_OVERRIDE_VALUES
 from .base import ModuleBase
 
 
@@ -31,7 +32,7 @@ class DllModule(ModuleBase):
                           "target": target, "evidence": self.evidence}))
         if self.overrides:
             commands = ["wine reg add 'HKCU\\Software\\Wine\\DllOverrides' "
-                        + f"/v {shlex.quote(name)} /t REG_SZ /d {shlex.quote('' if policy == 'disabled' else policy)} /f"
+                        + f"/v {shlex.quote(name.lower().removesuffix('.dll'))} /t REG_SZ /d {shlex.quote(DLL_OVERRIDE_VALUES[policy])} /f"
                         for name, policy in self.overrides.items()]
             steps.append(BuildStep(commands, "Configure Wine DLL override policy", kind="dll-overrides",
                                    metadata={"overrides": self.overrides, "evidence": self.evidence}))

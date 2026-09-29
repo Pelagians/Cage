@@ -137,7 +137,7 @@ compatibility:
 
 `arch` currently accepts `win32` or `win64`. `windowsVersion` accepts common Wine version targets such as `win7`, `win10`, and `win11`. `graphics.backend` accepts `auto`, `wined3d`, `dxvk`, `vkd3d`, `vkd3d-proton`, or `none`. `dllPolicy` values normalize to Wine override modes: `disabled`, `native`, `builtin`, `native,builtin`, or `builtin,native`.
 
-During build, Cage exports the policy environment, applies `winecfg -v <windowsVersion>`, compiles `dllPolicy` into deterministic `WINEDLLOVERRIDES`, and installs `dxvk`/`vkd3d` prefix backends through winetricks when requested. During `run` and OCI app-image launch, Cage re-exports the same compatibility environment from the embedded graph.
+During build, Cage applies `WINEARCH` before prefix creation and `winecfg -v <windowsVersion>` before ordered modules. It clears inherited `WINEDLLOVERRIDES` so ordered DLL registry operations determine build-time loader behavior. The global `dllPolicy` and compatibility environment apply at launch from the embedded graph, including OCI app-image launch. Move policies needed during installation into ordered `dll` modules; legacy global DLL policy remains launch-only.
 
 Legacy `config.wine.arch`, `config.wine.windowsVersion`, `config.wine.dllOverrides`, `config.graphics`, and `config.env` normalize into the same policy, but explicit `compatibility` fields override legacy config.
 

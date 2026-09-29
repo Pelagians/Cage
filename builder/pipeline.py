@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import shlex
+from core.sources import container_source_path
 from typing import Any
 
 from core.compatibility import compatibility_environment
@@ -9,7 +10,7 @@ from core.manifest import Manifest
 from core.modules import collect_build_steps
 from core.build_step import BuildStep
 from core.modules.base import ModuleError
-from core.modules.paths import validate_linux_output
+from core.modules.paths import validate_linux_outputs
 
 
 PREFIX_SEED_KIND = "prefix-seed"
@@ -133,6 +134,7 @@ def build_plan(manifest: Manifest) -> list[dict[str, object]]:
     init_commands = [
         'export WINEPREFIX="${CAGE_BUILD_PREFIX:-/tmp/cage-build-prefix}"',
         'export WINEDBG="-all"',
+        'unset WINEDLLOVERRIDES',
         'CAGE_PREFIX_FINAL=' + _shell_quote('/opt/cage/prefix'),
         'CAGE_PREFIX_PARTIAL=' + _shell_quote('/opt/cage/prefix.partial'),
         'CAGE_PREFIX_PREVIOUS=' + _shell_quote('/opt/cage/prefix.previous'),
@@ -151,7 +153,10 @@ def build_plan(manifest: Manifest) -> list[dict[str, object]]:
             'export PATH="$CAGE_RUNNER_BIN:$PATH"',
             'export WINE="$CAGE_RUNNER_BIN/wine"',
         ])
-    preinit_env = compatibility_environment(manifest.compatibility)
+    # Global DLL policy belongs to launch, not build. WINEARCH alone must
+    # precede prefix creation; other compatibility settings are launch-only.
+    preinit_env = ({"WINEARCH": manifest.compatibility["arch"]}
+                   if manifest.compatibility.get("arch") else {})
     init_commands.extend(f'export {key}={_shell_quote(value)}' for key, value in preinit_env.items())
     append("prepare-build", "prepare-build", BuildStep(init_commands, "Prepare build and prefix environment", kind="lifecycle"))
 
@@ -185,7 +190,7 @@ def build_plan(manifest: Manifest) -> list[dict[str, object]]:
         append("compatibility", "compatibility", BuildStep(
             [f"winecfg -v {_shell_quote(version)}"], "Set Windows version before modules", kind="wine-config"))
 
-    active_media: dict[str, str] = {}
+    active_media: dict[str, tuple[str, str]] = {}
     occupied_drives: set[str] = set()
     persistent_paths: list[str] = []
     for module_index, module, build_steps in collect_build_steps(manifest.modules):
@@ -194,12 +199,13 @@ def build_plan(manifest: Manifest) -> list[dict[str, object]]:
                 drive = module.drive.upper()
                 if module.id in active_media or drive in occupied_drives:
                     raise ModuleError(f"modules[{module_index}] duplicates media ID or drive")
-                active_media[module.id] = drive
+                active_media[module.id] = (drive, module.mount_path)
                 occupied_drives.add(drive)
             else:
-                drive = active_media.pop(module.id, None)
-                if drive is None:
+                mounted = active_media.pop(module.id, None)
+                if mounted is None:
                     raise ModuleError(f"modules[{module_index}] unmounts unknown media: {module.id}")
+                drive = mounted[0]
                 occupied_drives.remove(drive)
                 build_steps = [BuildStep([
                     f"wine reg delete 'HKLM\\Software\\Wine\\Drives' /v '{drive}:' /f",
@@ -217,6 +223,26 @@ def build_plan(manifest: Manifest) -> list[dict[str, object]]:
         if module.type == "extract" and module.target and not module.target.startswith("/work/"):
             persistent_paths.append(module.target)
         for step_index, step in enumerate(build_steps, 1):
+            if module.type == "install" and step.metadata.get("media"):
+                source = module.source.replace("\\", "/")
+                relative = source[3:]
+                if not relative or any(part in {"", ".", ".."} for part in relative.split("/")):
+                    raise ModuleError(f"modules[{module_index}] installer escapes its media root")
+                media_root = next(root for drive, root in active_media.values()
+                                  if drive == source[0].upper())
+                media_file = container_source_path(media_root) + "/" + relative
+                commands = list(step.commands)
+                if module.sha256:
+                    file_arg = _shell_quote(media_file)
+                    commands[:0] = [
+                        f'test -f {file_arg}',
+                        f'test "$(realpath -e -- {file_arg})" = {file_arg}',
+                        f'test "$(sha256sum -- {file_arg} | cut -d " " -f1)" = {_shell_quote(module.sha256.lower())}',
+                    ]
+                step = BuildStep(commands, step.description, kind=step.kind,
+                    environment=step.environment, working_dir=step.working_dir,
+                    timeout=step.timeout, unsafe=step.unsafe,
+                    metadata={**step.metadata, "mediaPath": media_file if module.sha256 else None})
             if module.type == "chocolatey":
                 step = BuildStep(step.commands, step.description, kind=step.kind,
                     environment={**step.environment,
@@ -230,7 +256,7 @@ def build_plan(manifest: Manifest) -> list[dict[str, object]]:
                 inputs.extend(mapping["source"] for mapping in module.mappings or [])
             if module.type == "dll" and module.install:
                 inputs.append(module.install["source"])
-            resources = ([resource for resource, drive in active_media.items()
+            resources = ([resource for resource, (drive, _) in active_media.items()
                           if module.type == "install" and module.source
                           and module.source.upper().startswith(drive + ":/")])
             if module.type == "iso" and module.action == "unmount":
@@ -240,14 +266,13 @@ def build_plan(manifest: Manifest) -> list[dict[str, object]]:
                    module_index=module_index + 1, module_type=module.type, step_index=step_index,
                    inputs=inputs, resources=resources)
 
-    for resource, drive in active_media.items():
+    for resource, (drive, _) in active_media.items():
         append(f"release-media-{resource}", "release-media", BuildStep([
             f"wine reg delete 'HKLM\\Software\\Wine\\Drives' /v '{drive}:' /f",
             f'rm -f -- "$WINEPREFIX/dosdevices/{drive.lower()}:"',
         ], f"Release outstanding build media: {resource}", kind="media-cleanup",
             metadata={"resource": resource, "drive": drive}))
-    for index, path in enumerate(dict.fromkeys(persistent_paths), 1):
-        validate_linux_output(path)
+    for index, path in enumerate(validate_linux_outputs(persistent_paths), 1):
         destination = '/opt/cage/linux-root' + path
         append(f"capture-linux-{index}", "capture-linux", BuildStep([
             f'test "$(realpath -e -- {_shell_quote(path)})" = {_shell_quote(path)}',
@@ -256,7 +281,7 @@ def build_plan(manifest: Manifest) -> list[dict[str, object]]:
         ], f"Capture Linux artifact state: {path}", kind="linux-state",
             metadata={"path": path, "imageBase": "qualified-runtime"}))
     if persistent_paths:
-        entries = " ".join(_shell_quote(path.lstrip("/")) for path in dict.fromkeys(persistent_paths))
+        entries = " ".join(_shell_quote(path.lstrip("/")) for path in persistent_paths)
         append("seal-linux-state", "seal-linux-state", BuildStep([
             'test -z "$(find /opt/cage/linux-root \\( -type l -o \\( ! -type f -a ! -type d \\) \\) -print -quit)"',
             f"tar --sort=name --mtime=@0 --numeric-owner --format=posix --pax-option=delete=atime,delete=ctime -C /opt/cage/linux-root -cf /opt/cage/linux-state.tar -- {entries}",
@@ -288,7 +313,7 @@ def generate_build_script(
         lines.extend([
             "",
             f'CAGE_OPERATION_ID={_shell_quote(str(operation["id"]))}',
-            f'echo "[cage] Operation {operation["id"]}: {operation["description"]}"',
+            f'printf "[cage] Operation %s: %s\\n" {_shell_quote(str(operation["id"]))} {_shell_quote(str(operation["description"]))}',
         ])
         step = BuildStep(
             commands=list(operation["commands"]),
