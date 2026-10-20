@@ -153,12 +153,27 @@ def main():
                 '--name', token, *(['--state-action', action] if action else [])]
     processes, handles = [], []
     def start(package, action=None):
+        creating = desktop_proof and not document.exists()
+        confirmed = False
         log = (evidence / (str(len(processes)) + '-' + (action or 'launch') + '.log')).open('w')
         handles.append(log)
         process = subprocess.Popen(command(package, action), env=env, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
         processes.append(process)
         handle = gui.wait_for(gui.window, 'Notepad++ ' + (action or 'launch'), seconds=180)
-        gui.wait_for(lambda: document.name in gui.command('xdotool', 'getwindowname', handle), 'document loaded')
+        def loaded():
+            nonlocal confirmed
+            if document.name in gui.command('xdotool', 'getwindowname', handle):
+                return True
+            if creating and not confirmed:
+                dialog = subprocess.run(['xdotool','search','--onlyvisible','--name','^Create new file$'],
+                                        capture_output=True,text=True)
+                if dialog.returncode == 0:
+                    subprocess.run(['scrot', str(evidence / 'create-new-file-confirmation.png')], check=True)
+                    gui.command('xdotool','windowactivate','--sync',dialog.stdout.splitlines()[-1])
+                    gui.command('xdotool','key','--clearmodifiers','alt+y')
+                    confirmed = True
+            return False
+        gui.wait_for(loaded, 'document loaded')
         gui.focus_editor(handle)
         return process
     def save(text):
