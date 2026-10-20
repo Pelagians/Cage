@@ -74,6 +74,11 @@ Native CI at the same source revision:
   passed on retry. The initial attempt failed fetching Fedora mirror metadata
   with HTTP 503; the retry completed both container and installed Flatpak checks.
 
+The expanded OCI test harness and workflow were added in `5016f53`, without
+changing the shipping lifecycle helper. Its [new CI run](https://github.com/Pelagians/Cage/actions/runs/39479726074)
+was queued when this report was recorded; the standalone OCI result above is
+the completed local Asahi proof, not a claim that this new CI stage has passed.
+
 ## Retained local packages
 
 The following files are local, unsigned proof artifacts in `dist/`, with adjacent
