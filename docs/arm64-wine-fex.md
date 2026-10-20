@@ -133,6 +133,9 @@ Kubernetes/hosted ARM deployment is not part of this qualification.
 
 ## Qualification and boundaries
 
+Exact local artifact identities, CI links and observed acceptance results are
+recorded in the [ARM64 qualification snapshot](arm64-qualification.md).
+
 `scripts/test-arm-container-poc.py` exercises Cage's real container CLI with a
 writable document, GUI zoom change, close, relaunch, second edit/save, identical
 state generation and unchanged source seed. `scripts/test-flatpak-poc.py` exercises
