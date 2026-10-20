@@ -103,12 +103,18 @@ FUSE mounts the package read-only. Where FUSE is unavailable, use the standard
 extraction fallback with ample **disk-backed** temporary storage:
 
 ```sh
-TMPDIR=/var/tmp ./notepadplusplus-8.8.8-aarch64.AppImage --appimage-extract-and-run
+mkdir -p "$HOME/.cache/cage-appimage-tmp"
+chmod 700 "$HOME/.cache/cage-appimage-tmp"
+TMPDIR="$HOME/.cache/cage-appimage-tmp" \
+  ./notepadplusplus-8.8.8-aarch64.AppImage --appimage-extract-and-run
 ```
 
 `APPIMAGE_EXTRACT_AND_RUN=1` is equivalent and also works with the Cage controls.
 The ARM payload currently expands to several gigabytes: allow at least 6 GB of
-scratch space plus about 2.4 GB for its writable prefix. A small `/tmp` tmpfs can
+scratch space plus about 2.4 GB for its writable prefix. The upstream runtime
+can retain extracted caches in that directory; remove those caches only after
+the application has closed. Test drivers clean their dedicated temporary
+directories and retain application state and evidence. A small `/tmp` tmpfs can
 leave a partial upstream runtime extraction. Retain user state and retry using
 an empty disk-backed temporary directory; FUSE avoids extracting the payload.
 A `noexec` location cannot launch the image or an extracted executable; move it

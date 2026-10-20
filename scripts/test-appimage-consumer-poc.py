@@ -2,9 +2,11 @@
 """Clean distro userland qualification of the actual AppImage, not a boot test."""
 from pathlib import Path
 import importlib.util
+import atexit
 import json
 import os
 import socket
+import shutil
 import subprocess
 import sys
 
@@ -21,6 +23,7 @@ def main():
     data, home, temporary = [evidence / name for name in ['data', 'home', 'temporary']]
     for path in (data, home, temporary):
         path.mkdir()
+    atexit.register(shutil.rmtree, temporary, ignore_errors=True)
     document = evidence / 'Consumer café file.txt'
     document.write_text('Original consumer document\n')
     prefix = data / 'cage/appimage' / gui.APP

@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 from artifact.appimage import (create_appimage_export_plan, apprun_script, checked_download,
                               unpack_python, stage_native_libraries)
-from artifact.appimage import stage_notices, omit_unqualified_modules, relocate_wine_links
+from artifact.appimage import stage_notices, omit_unqualified_modules, relocate_wine_links, platform_directory
 from runtime import desktop_launch
 from runtime.desktop_launch import DesktopError, digest_json
 from tests.test_desktop_export import bundle_at
@@ -28,6 +28,20 @@ with patch.dict(sys.modules, {'desktop_launch': desktop_launch}):
 
 
 class AppImageTests(unittest.TestCase):
+    def test_absolute_platform_data_link_uses_pinned_tree(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / 'platform'
+            (root / 'share/X11').mkdir(parents=True)
+            target = root / 'share/xkeyboard-config-2'
+            target.mkdir()
+            (target / 'proof').write_text('pinned data')
+            (root / 'share/X11/xkb').symlink_to('/usr/share/xkeyboard-config-2')
+            resolved = platform_directory(root, 'share/X11/xkb')
+            self.assertEqual((resolved / 'proof').read_text(), 'pinned data')
+            (root / 'share/X11/unsafe').symlink_to('/etc')
+            with self.assertRaisesRegex(DesktopError, 'unexpected'):
+                platform_directory(root, 'share/X11/unsafe')
+
     def test_only_known_wine_root_links_are_relocated(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / 'wine'

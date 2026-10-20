@@ -2,6 +2,7 @@
 """Exercise a real AppImage in an isolated X11 desktop; never the user's session."""
 from pathlib import Path
 import hashlib
+import atexit
 import importlib.util
 import json
 import os
@@ -44,6 +45,7 @@ def main():
         temporary = EVIDENCE / 'temporary'
         temporary.mkdir()
         environment['TMPDIR'] = str(temporary)
+        atexit.register(shutil.rmtree, temporary, ignore_errors=True)
     info = subprocess.check_output([str(package), '--cage-info'], env=environment, text=True, timeout=180)
     plan = json.loads(info)
     installation = json.loads(subprocess.check_output([str(package), '--cage-install'],

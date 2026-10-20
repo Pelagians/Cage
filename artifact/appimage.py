@@ -170,6 +170,25 @@ def relocate_wine_links(wine_root):
     return result
 
 
+def platform_directory(platform_root, relative):
+    """Resolve /usr links inside the pinned platform, never on the build host."""
+    platform_root = Path(platform_root).resolve()
+    path = platform_root / relative
+    for _ in range(8):
+        if not path.is_symlink():
+            break
+        target = Path(os.readlink(path))
+        if target.is_absolute():
+            if not target.is_relative_to('/usr'):
+                raise DesktopError('unexpected platform data link: ' + str(target))
+            path = platform_root / target.relative_to('/usr')
+        else:
+            path = path.parent / target
+    if not path.resolve().is_relative_to(platform_root) or not path.is_dir():
+        raise DesktopError('missing or escaping pinned platform data: ' + relative)
+    return path
+
+
 def stage_native_libraries(appdir, platform_root, minimum_glibc):
     """Resolve ELF imports without executing ldd, plus the qualified X11 dlopens."""
     appdir, platform_root = Path(appdir), Path(platform_root)
@@ -279,7 +298,7 @@ def prepare_appdir(bundle, plan, context, *, store, cache):
     for directory in ('locale', 'xkb'):
         # New xkeyboard-config uses a sibling directory and an X11 symlink.
         # Materialize its data here rather than retaining a dangling link.
-        shutil.copytree((Path(location) / 'files/share/X11' / directory).resolve(),
+        shutil.copytree(platform_directory(Path(location) / 'files', 'share/X11/' + directory),
                         appdir / 'usr/share/X11' / directory, symlinks=True, copy_function=copy_file)
     notices = Path(location) / 'files/share/licenses'
     if not notices.is_dir():
