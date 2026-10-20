@@ -15,7 +15,7 @@ import tarfile
 import tempfile
 import urllib.request
 
-from artifact.desktop import create_desktop_export_plan, stage_desktop_fonts
+from artifact.desktop import create_desktop_export_plan, stage_desktop_fonts, stage_notices
 from artifact.flatpak import ICON
 from builder.flatpak import ensure_target, initialize_flatpak, run_flatpak
 from runtime import desktop_launch
@@ -123,20 +123,6 @@ def elf_information(path):
     return {'needed': re.findall(r'Shared library: \[(.*?)\]', result.stdout),
             'glibc': re.findall(r'GLIBC_([0-9]+\.[0-9]+)', needs)}
 
-
-def stage_notices(source, destination):
-    """Retain deduplicated SDK notices without their /usr absolute links."""
-    destination = Path(destination)
-    shutil.copytree(source, destination, symlinks=True, copy_function=copy_file)
-    for path in destination.rglob('*'):
-        if path.is_symlink() and os.path.isabs(os.readlink(path)):
-            original = Path(os.readlink(path))
-            if not original.is_relative_to('/usr/share/licenses'):
-                raise DesktopError('unexpected platform license link: ' + str(original))
-            target = destination / original.relative_to('/usr/share/licenses')
-            path.unlink()
-            path.symlink_to(os.path.relpath(target, path.parent))
-    inventory_tree(destination)
 
 
 def omit_unqualified_modules(wine_root, names):
@@ -303,10 +289,6 @@ def prepare_appdir(bundle, plan, context, *, store, cache):
         # Materialize its data here rather than retaining a dangling link.
         shutil.copytree(platform_directory(Path(location) / 'files', 'share/X11/' + directory),
                         appdir / 'usr/share/X11' / directory, symlinks=True, copy_function=copy_file)
-    notices = Path(location) / 'files/share/licenses'
-    if not notices.is_dir():
-        raise DesktopError('pinned platform is missing its dependency license notices')
-    stage_notices(notices, appdir / 'usr/share/licenses/freedesktop')
     helpers = appdir / 'usr/libexec'
     helpers.mkdir(parents=True)
     for name in ['desktop_launch.py', 'appimage_launch.py']:

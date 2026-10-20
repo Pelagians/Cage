@@ -49,6 +49,8 @@ class IntegrationTests(unittest.TestCase):
                 path=platform/'share/fonts'/family
                 path.mkdir(parents=True)
                 (path/'fixture.ttf').write_bytes(family.encode())
+            (platform/'share/licenses').mkdir()
+            (platform/'share/licenses/notice').write_text('retain pinned component notices')
             for target in ('flatpak','appimage'):
                 stage_desktop_fonts(root/target,platform)
             self.assertEqual(launch.inventory_tree(root/'flatpak'),launch.inventory_tree(root/'appimage'))
@@ -91,7 +93,7 @@ class IntegrationTests(unittest.TestCase):
     def test_invalid_display_preferences_and_linked_records_fail_closed(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)
-            for invalid in ({'dpi':False},{'dpi':0},{'dpi':385},{'dpi':'huge'},{'dpi':192,'extra':1}):
+            for invalid in ([], {'dpi':False},{'dpi':0},{'dpi':385},{'dpi':'huge'},{'dpi':192,'extra':1}):
                 (root/'display.json').write_text(json.dumps(invalid))
                 with self.assertRaises(launch.DesktopError):
                     launch.display_preferences(root)
@@ -99,3 +101,31 @@ class IntegrationTests(unittest.TestCase):
             (root/'display.json').symlink_to(root/'unrelated')
             with self.assertRaises(launch.DesktopError):
                 launch.display_preferences(root)
+
+    def test_explicit_auto_can_replace_custom_dpi_without_resetting_other_settings(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            seed=root/'seed'
+            seed.mkdir()
+            inventory=[]
+            plan={'target':{},'desktop':{'id':'org.example.App'},'layout':{'seed':str(seed)},
+                  'seedDigest':launch.digest_json(inventory)}
+            metadata=root/'desktop.json'
+            metadata.write_text(json.dumps(plan))
+            (root/'seed-inventory.json').write_text(json.dumps(inventory))
+            state=root/'data/org.example.App'
+            prefix=state/'prefix'
+            (prefix/'drive_c').mkdir(parents=True)
+            (prefix/'user.reg').write_text('[Control Panel\\\\Desktop]\n"LogPixels"=dword:00000090\n')
+            identity={'schemaVersion':'cage.desktop-state/v0','seedDigest':'old','runtimeDigest':'old'}
+            (prefix/'.cage-state.json').write_text(json.dumps(identity))
+            (state/'state.json').write_text(json.dumps(identity))
+            (prefix/'drive_c/document').write_text('keep')
+            before=(state/'state.json').read_bytes()
+            with patch.dict(os.environ,{'XDG_DATA_HOME':str(root/'data')}):
+                self.assertEqual(launch.launch(metadata,['--cage-dpi','auto']),0)
+            with patch.object(launch,'host_dpi',return_value=192), patch.object(launch,'_run_application',return_value=0) as run:
+                launch.configure_display({'display':True},state,prefix,'wine','server',{},None)
+                self.assertIn('192',run.call_args.args[0])
+            self.assertEqual((state/'state.json').read_bytes(),before)
+            self.assertEqual((prefix/'drive_c/document').read_text(),'keep')

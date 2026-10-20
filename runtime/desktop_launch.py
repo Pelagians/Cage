@@ -77,8 +77,10 @@ def host_dpi():
 
 def display_preferences(root):
     path = _real_path(root, 'display.json')
+    if path.exists() and not path.is_file():
+        raise DesktopError('display preference is not a regular file; state retained')
     value = json.loads(path.read_text()) if path.exists() else {'dpi': 'auto'}
-    if set(value) != {'dpi'} or not (value['dpi'] in ('auto', 'preserve') or
+    if not isinstance(value, dict) or set(value) != {'dpi'} or not (value['dpi'] in ('auto', 'preserve') or
             type(value['dpi']) is int and 96 <= value['dpi'] <= 384):
         raise DesktopError('invalid display preference; state retained')
     return value
@@ -549,6 +551,13 @@ def launch(metadata_path, files):
             raise DesktopError('--cage-dpi requires auto, preserve or an integer from 96 to 384')
         with lifecycle_lock(state_root):
             _write_state_record(state_root / 'display.json', {'dpi': int(files[1]) if files[1].isdigit() else files[1]})
+            if files[1] == 'auto':
+                record = _read_generations(state_root)
+                if record:
+                    prefix = _real_path(state_root, record['active'])
+                    # Explicitly returning to auto adopts the current value,
+                    # so a prior custom DPI does not immediately disable auto.
+                    _write_state_record(prefix / '.cage-display.json', {'dpi': prefix_dpi(prefix)})
         return 0
     action = "launch"
     if files[:1] in (["--cage-update"], ["--cage-rollback"]):

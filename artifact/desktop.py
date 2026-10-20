@@ -16,6 +16,21 @@ from core.manifest import Manifest
 from runtime.desktop_launch import DesktopError, digest_json, inventory_tree, verify_inventory, windows_path
 
 
+def stage_notices(source, destination):
+    """Retain deduplicated SDK notices without their /usr absolute links."""
+    destination = Path(destination)
+    shutil.copytree(source, destination, symlinks=True, copy_function=shutil.copy2)
+    for path in destination.rglob('*'):
+        if path.is_symlink() and os.path.isabs(os.readlink(path)):
+            original = Path(os.readlink(path))
+            if not original.is_relative_to('/usr/share/licenses'):
+                raise DesktopError('unexpected platform license link: ' + str(original))
+            target = destination / original.relative_to('/usr/share/licenses')
+            path.unlink()
+            path.symlink_to(os.path.relpath(target, path.parent))
+    inventory_tree(destination)
+
+
 def stage_desktop_fonts(destination, platform_root):
     """Identical pinned font families and aliases for both desktop formats."""
     destination, platform_root = Path(destination), Path(platform_root)
@@ -23,6 +38,7 @@ def stage_desktop_fonts(destination, platform_root):
     source = platform_root / 'share/fonts'
     inventory_tree(source)  # Reject escaping links and special files before copying.
     shutil.copytree(source, fonts, copy_function=shutil.copy2)
+    stage_notices(platform_root / 'share/licenses', destination / 'share/licenses/cage-desktop-platform')
     config = destination / 'share/cage/fonts.conf'
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text('<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">'
