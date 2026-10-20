@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real GUI update/rollback proof shared by Flatpak, AppImage and native OCI.
+"""Real GUI update/rollback proof for Flatpak, AppImage, bundles and OCI images.
 
 Requires generation-aware baseline/candidate exports of pinned 8.8.8/8.8.9.
 Runs in a private X11 desktop. Never uses the user's normal application state.
@@ -22,7 +22,6 @@ sys.path.insert(0, str(ROOT))
 spec = importlib.util.spec_from_file_location('gui', ROOT / 'scripts/test-flatpak-poc.py')
 gui = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gui)
-from runtime.desktop_launch import digest_json
 
 
 def sha(path):
@@ -32,7 +31,14 @@ def sha(path):
 
 def main():
     kind, baseline, candidate = sys.argv[1:4]
-    baseline, candidate = Path(baseline).resolve(), Path(candidate).resolve()
+    image_ids = None
+    if kind == 'oci':
+        image_ids = {name: subprocess.check_output(
+            ['podman', 'image', 'inspect', '--format', '{{.Id}}', image], text=True).strip()
+            for name, image in (('baseline', baseline), ('candidate', candidate))}
+        baseline, candidate = image_ids['baseline'], image_ids['candidate']
+    else:
+        baseline, candidate = Path(baseline).resolve(), Path(candidate).resolve()
     evidence = Path(os.environ['CAGE_TEST_EVIDENCE']).resolve()
     evidence.mkdir(parents=True, exist_ok=False)
     env = dict(os.environ)
@@ -71,8 +77,9 @@ def main():
             + 'os.execv(real,[real,*args])\n')
         (shim / 'flatpak').chmod(0o755)
         env['PATH'] = str(shim) + os.pathsep + env['PATH']
-    elif kind == 'container':
+    elif kind in ('container', 'oci'):
         state = evidence / 'state' / gui.APP
+        state.parent.mkdir()
     else:
         raise ValueError('unknown adapter')
     def prefix():
@@ -96,6 +103,17 @@ def main():
                         'flatpak', str(package), '--previous-package', str(previous),
                         '--cache-dir', str(evidence / 'package-cache'), str(document)]
             return ['flatpak', 'run', '--user', gui.APP, str(document)]
+        if kind == 'oci':
+            return ['podman', 'run', '--rm', '--pull=never', '--name', token,
+                    '--userns=keep-id', '--user', '0:0', '--net=none',
+                    '--hostname', os.uname().nodename, '--security-opt', 'label=disable',
+                    '-e', 'PUID=' + str(os.getuid()), '-e', 'PGID=' + str(os.getgid()),
+                    '-e', 'DISPLAY', '-e', 'XAUTHORITY=/tmp/cage-xauthority',
+                    '-v', env['XAUTHORITY'] + ':/tmp/cage-xauthority:ro',
+                    '-v', '/tmp/.X11-unix:/tmp/.X11-unix:ro',
+                    '-v', str(state.parent) + ':/var/lib/cage/state',
+                    '-v', str(documents) + ':/exports', str(package),
+                    *(['--cage-' + action] if action else []), '--', '/exports/' + document.name]
         return [sys.executable, '-m', 'cage', 'run', str(package), str(document), '--engine', 'podman',
                 '--graphics', 'desktop', '--state-dir', str(state.parent), '--writable-files',
                 '--name', token, *(['--state-action', action] if action else [])]
@@ -189,6 +207,8 @@ def main():
                   'externalDocument': str(document), 'externalDocumentContents': document.read_text(),
                   'prefixDocumentsCarriedForward': True, 'originalGenerationsRetained': True,
                   'saveAndRelaunchAfterUpdateAndRollback': True}
+        if image_ids:
+            result['ociImageIds'] = image_ids
         (evidence / 'result.json').write_text(json.dumps(result, indent=2, sort_keys=True) + '\n')
         print(json.dumps(result, indent=2))
         if os.environ.get('CAGE_TEST_DISCARD_PREFIXES') == '1':
@@ -201,7 +221,7 @@ def main():
                     process.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     process.kill()
-        if kind == 'container':
+        if kind in ('container', 'oci'):
             subprocess.run(['podman', 'rm', '-f', token], capture_output=True)
         for handle in handles:
             handle.close()

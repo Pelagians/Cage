@@ -22,10 +22,11 @@ hash integrity from publisher authentication.
 
 ## Runtime validation
 
-Source revision: `bf313f33ebbfc05edd27ab50e604588582575e3e`.
+Shipping runtime source revision: `bf313f33ebbfc05edd27ab50e604588582575e3e`.
 
-All three local GUI proofs passed on the Apple M1 Asahi host with a **16,384-byte
-kernel page size**. Each proof used fresh private state and ran five sessions:
+The Flatpak, AppImage, Cage container and standalone OCI GUI proofs all passed
+on the Apple M1 Asahi host with a **16,384-byte kernel page size**. Each proof
+used fresh private state and ran five sessions:
 baseline 8.8.8, update to 8.8.9, updated relaunch, rollback to 8.8.8, and rollback
 relaunch. Checks compared executables with both pinned source archives, changed
 the real editor zoom preference, saved an external Unicode-named document,
@@ -37,6 +38,7 @@ was absent. Original generations remained intact throughout each proof.
 | Native Wine ARM64EC/FEX container | Passed | `asahi-final-updates-container/result.json` |
 | Flatpak | Passed | `asahi-final-updates-flatpak/result.json` |
 | AppImage, native FUSE execution | Passed | `asahi-final-updates-appimage/result.json` |
+| Standalone exported native OCI images | Passed | `asahi-final-updates-oci/result.json` |
 
 Each evidence directory includes screenshots and per-session logs. AppImage
 integration was installed, launched through its desktop entry, and uninstalled
@@ -45,7 +47,14 @@ wrapper set a private `XDG_DATA_HOME` **inside** the sandbox because Flatpak res
 reserved XDG variables supplied from the host. The packaged entry point and
 generation manager were used. Normal user application data was untouched.
 
-After successful evidence capture, only the newly created Flatpak and AppImage
+The standalone OCI proof used the actual exported images, without a source
+bundle mount or `cage run`. Their labels and embedded artifact metadata verified
+before launch. Image references were resolved once to local image IDs and every
+session used those exact IDs with network access disabled. Export and metadata
+verification receipts are under `asahi-final-updates-oci-build/`. The same GUI
+proof is now included in the CI container job.
+
+After successful evidence capture, only the newly created Flatpak, AppImage and OCI
 proof prefixes were discarded to limit disk use; the private Flatpak test
 installation and redundant package cache were also removed. Their result records,
 screenshots, documents and package recovery metadata remain. The container proof
@@ -55,16 +64,15 @@ installations: failed candidates and user generations are still retained.
 Native CI at the same source revision:
 
 - [Update and rollback proof](https://github.com/Pelagians/Cage/actions/runs/39471937374):
-  x86_64 Flatpak and AppImage consumer proofs passed; ARM container proof passed.
-  The aarch64 desktop job was still running when this report was recorded.
+  passed. Native x86_64 and aarch64 Flatpak and AppImage consumer proofs and the
+  ARM container proof all completed successfully.
 - [AppImage regression proof](https://github.com/Pelagians/Cage/actions/runs/39471937317):
   passed, including both architecture exports and consumer checks.
 - [x86_64 Flatpak regression proof](https://github.com/Pelagians/Cage/actions/runs/39471937861):
   passed.
 - [ARM regression proof](https://github.com/Pelagians/Cage/actions/runs/39471937323):
-  retry in progress after the initial run failed fetching Fedora mirror metadata
-  with HTTP 503. This is not recorded as a successful current-revision regression
-  run. The preceding revision's ARM regression run passed.
+  passed on retry. The initial attempt failed fetching Fedora mirror metadata
+  with HTTP 503; the retry completed both container and installed Flatpak checks.
 
 ## Retained local packages
 
@@ -82,6 +90,9 @@ source. Hashes identify the local bytes; they do not authenticate a publisher.
 The native container bundles are under `dist/update-final-container/` and use the
 unchanged pinned carrier digest
 `sha256:2b18664b3b240d2f0daf77f046781670ca2f26b7f0458d9374d4b65754489587`.
+The standalone OCI images are retained locally as
+`localhost/cage-update-oci-proof:8.8.8` and `:8.8.9`, with image IDs recorded in
+the OCI proof result. The superseded OCI application prototype was removed.
 Superseded unpacked builds and duplicate prototype/CI packages were removed;
 export receipts, inventories, qualification evidence and the current package pair
 were retained. No user settings or documents were removed.
@@ -92,6 +103,6 @@ This qualifies the tested Notepad++ profile and version pair. It does not qualif
 registry migrations, arbitrary plugins or applications, Wine/FEX runtime changes,
 system Flatpak installations, signed release distribution, or external Proton/CFW
 updates. The builtin Wine container adapter has source/contract coverage; the
-real container GUI update proof uses the native ARM64EC/FEX adapter. The OCI
-export launcher shares that manager, but a separate standalone OCI-image GUI
-update/rollback qualification has not been performed.
+real container GUI update proofs use the native ARM64EC/FEX adapter, including
+its separately exported OCI images. This does not qualify
+container orchestrator rollouts or a different Wine/runtime image.

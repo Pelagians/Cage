@@ -231,7 +231,9 @@ prefix document survived rollback. Screenshots, logs and generation records are
 retained. No normal user application state is used.
 
 `.github/workflows/export-updates.yml` provides native x86_64/aarch64 desktop
-proofs and an ARM container proof. AppImages run in a contemporary Fedora
+proofs and ARM proofs for both `cage run` bundles and standalone exported OCI
+images. The OCI proof runs exact local image IDs against a fresh persistent
+volume, with no source bundle mount. AppImages run in a contemporary Fedora
 consumer with packaged Wine, using the extraction fallback on CI. Source tests,
 built artifact tests and actual Asahi 16 KB runtime tests are separate evidence;
 consult `export-update-qualification.md` for completed runs and limitations.

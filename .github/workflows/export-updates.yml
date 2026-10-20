@@ -3,9 +3,9 @@ name: Export update and rollback proof
 on:
   workflow_dispatch:
   push:
-    paths: ['runtime/**', 'artifact/**', 'core/manifest/desktop.py', 'cage/**', 'scripts/*update*poc.py', 'tests/test_*updates.py', '.github/workflows/export-updates.yml']
+    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/notepadplusplus*', 'pyproject.toml', 'scripts/*update*poc.py', 'tests/test_*updates.py', '.github/workflows/export-updates.yml']
   pull_request:
-    paths: ['runtime/**', 'artifact/**', 'core/manifest/desktop.py', 'cage/**', 'scripts/*update*poc.py', 'tests/test_*updates.py', '.github/workflows/export-updates.yml']
+    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/notepadplusplus*', 'pyproject.toml', 'scripts/*update*poc.py', 'tests/test_*updates.py', '.github/workflows/export-updates.yml']
 
 permissions:
   contents: read
@@ -144,6 +144,11 @@ jobs:
           python -m cage build recipes/notepadplusplus-portable-arm64.cage.yaml --engine podman --output dist/update-containers >dist/update-evidence/container-baseline-build.json
           python -m cage build dist/update-recipes/notepadplusplus-portable-arm64.cage.yaml --engine podman --output dist/update-containers >dist/update-evidence/container-candidate-build.json
           CAGE_TEST_EVIDENCE="$PWD/dist/update-evidence/container" python scripts/test-update-poc.py container dist/update-containers/notepadplusplus-portable-arm64-8.8.8 dist/update-containers/notepadplusplus-portable-arm64-8.8.9
+          for version in 8.8.8 8.8.9; do
+            python -m cage export oci dist/update-containers/notepadplusplus-portable-arm64-$version --engine podman --graphics desktop --tag localhost/cage-update-oci-proof:$version --context-dir .cage/update-oci-context-$version >dist/update-evidence/oci-export-$version.json
+            rm -rf -- .cage/update-oci-context-$version
+          done
+          CAGE_TEST_EVIDENCE="$PWD/dist/update-evidence/oci" python scripts/test-update-poc.py oci localhost/cage-update-oci-proof:8.8.8 localhost/cage-update-oci-proof:8.8.9
           SH
       - name: Retain container qualification evidence
         if: always()
