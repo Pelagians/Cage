@@ -105,13 +105,14 @@ def main():
     state_path = prefix.parent / "state.json"
     state_before = state_path.read_bytes()
     launch(desktop, document)
-    # Ctrl+A then copy lets the test read exactly what the reopened editor holds.
-    command("xdotool", "key", "--clearmodifiers", "ctrl+a", "ctrl+c")
-    def copied_text():
-        text = command("xclip", "-selection", "clipboard", "-o", "-target", "UTF8_STRING")
-        return text if text.strip() == expected.strip() else None
-    reopened = wait_for(copied_text, "reopened editor contains saved text", seconds=30)
-    print("Relaunched application reopened the saved text", flush=True)
+    # Appending through the reopened editor and checking the whole saved file
+    # proves it loaded the previous contents, without a host clipboard dependency.
+    command("xdotool", "key", "--clearmodifiers", "ctrl+End")
+    command("xdotool", "type", "--clearmodifiers", "--delay", "15", "Relaunch verified")
+    command("xdotool", "key", "--clearmodifiers", "Return", "ctrl+s")
+    second_expected = expected + "Relaunch verified\n"
+    wait_for(lambda: document.read_text() == second_expected, "reopened editor preserved and extended saved text", seconds=30)
+    print("Relaunched application reopened, extended and saved the original text", flush=True)
     subprocess.run(["scrot", str(EVIDENCE / "relaunch-reopened.png")], check=True)
     close_application()
     assert state_before == state_path.read_bytes(), "prefix was reinitialized"
@@ -130,7 +131,7 @@ def main():
     assert wine_version == "wine-11.0", wine_version
     result = {"schemaVersion": "cage.desktop-functional-test/v0", "status": "passed", "appId": APP,
               "packageCommit": immutable, "install": True, "desktopLaunch": True, "save": True,
-              "relaunch": True, "reopenedEditorContents": reopened, "settingsZoom": zoom,
+              "relaunch": True, "secondSaveContents": document.read_text(), "settingsZoom": zoom,
               "settingsPath": str(config.relative_to(prefix)),
               "sameStateGeneration": True, "immutableSeedVerified": True,
               "session": "Xvfb X11 with Openbox", "applicationVersion": "8.8.8",

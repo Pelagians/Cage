@@ -48,7 +48,7 @@ jobs:
       - name: Install test tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak xvfb openbox xdotool xclip scrot xdg-utils
+          sudo apt-get install -y flatpak xvfb openbox xdotool scrot xdg-utils
           python -m pip install PyYAML pytest setuptools wheel
           # Ubuntu restricts unprivileged user namespaces by default; Flatpak
           # needs them in this disposable CI machine.
