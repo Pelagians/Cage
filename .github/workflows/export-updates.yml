@@ -2,6 +2,8 @@ name: Export update and rollback proof
 
 on:
   workflow_dispatch:
+  push:
+    paths: ['runtime/**', 'artifact/**', 'core/manifest/desktop.py', 'cage/**', 'scripts/*update*poc.py', 'tests/test_*updates.py', '.github/workflows/export-updates.yml']
   pull_request:
     paths: ['runtime/**', 'artifact/**', 'core/manifest/desktop.py', 'cage/**', 'scripts/*update*poc.py', 'tests/test_*updates.py', '.github/workflows/export-updates.yml']
 
