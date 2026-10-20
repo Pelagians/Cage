@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 from artifact.appimage import (create_appimage_export_plan, apprun_script, checked_download,
                               unpack_python, stage_native_libraries)
-from artifact.appimage import stage_notices
+from artifact.appimage import stage_notices, omit_unqualified_modules, relocate_wine_links
 from runtime import desktop_launch
 from runtime.desktop_launch import DesktopError, digest_json
 from tests.test_desktop_export import bundle_at
@@ -28,6 +28,35 @@ with patch.dict(sys.modules, {'desktop_launch': desktop_launch}):
 
 
 class AppImageTests(unittest.TestCase):
+    def test_only_known_wine_root_links_are_relocated(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / 'wine'
+            (root / 'bin').mkdir(parents=True)
+            (root / 'bin/7zz').write_text('payload tool')
+            (root / 'bin/7z').symlink_to('/app/bin/7zz')
+            links = relocate_wine_links(root)
+            self.assertEqual((root / 'bin/7z').read_text(), 'payload tool')
+            self.assertEqual(links[0]['target'], '7zz')
+            (root / 'bin/unsafe').symlink_to('/etc/passwd')
+            with self.assertRaisesRegex(DesktopError, 'non-portable'):
+                relocate_wine_links(root)
+
+    def test_media_exclusion_is_bounded_and_records_original_bytes(self):
+        with tempfile.TemporaryDirectory() as td:
+            wine = Path(td) / 'wine'
+            media = wine / 'lib/wine/x86_64-unix/winedmo.so'
+            media.parent.mkdir(parents=True)
+            media.write_bytes(b'optional media module')
+            core = media.with_name('ntdll.so')
+            core.write_bytes(b'retain core')
+            omitted = omit_unqualified_modules(wine, ['winedmo.so'])
+            self.assertFalse(media.exists())
+            self.assertEqual(core.read_bytes(), b'retain core')
+            self.assertEqual(omitted[0]['path'], 'lib/wine/x86_64-unix/winedmo.so')
+            self.assertEqual(len(omitted[0]['sha256']), 64)
+            with self.assertRaisesRegex(DesktopError, 'unknown'):
+                omit_unqualified_modules(wine, ['ntdll.so'])
+
     def test_platform_notices_are_relocated_without_host_links(self):
         with tempfile.TemporaryDirectory() as td:
             source = Path(td) / 'source'

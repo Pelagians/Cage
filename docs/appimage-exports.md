@@ -22,7 +22,12 @@ engine, dynamic loader, or second glibc inside the AppImage. `readelf` resolves
 native imports without executing `ldd`; a bounded list covers Wine's qualified
 X11/font/TLS libraries loaded dynamically. The build fails for unresolved
 required dependencies and for imports newer than the declared glibc baseline.
-Wine's optional camera, Kerberos and packet-capture modules can have unavailable
+The AppImage-only profile omits the Unix `winedmo.so` module: FFmpeg-backed
+DirectShow decoding is outside this text-editor proof and would add an
+unnecessary codec stack, including x86 imports requiring glibc 2.44. The
+exclusion and original module hashes are recorded in the target/receipt;
+Flatpak and container payloads are unchanged. Wine's optional camera, Kerberos
+and packet-capture modules can have unavailable
 libraries, enumerated in `native-dependencies.json`; those features are not
 qualified. Host graphics libraries/drivers remain host-owned. GPU, audio,
 printing, native Wayland, CFW and other apps need separate qualification.

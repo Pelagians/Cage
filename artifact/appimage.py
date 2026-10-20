@@ -22,6 +22,7 @@ from runtime.desktop_launch import DesktopError, digest_json, inventory_tree, ve
 ROOT = Path(__file__).resolve().parents[1]
 # The host owns glibc/loader and graphics drivers. Never ship a second libc.
 HOST_LIBRARIES = {'libc.so.6', 'libm.so.6', 'libresolv.so.2', 'libdl.so.2',
+                  'libmvec.so.1', 'ld-linux-x86-64.so.2', 'ld-linux-aarch64.so.1',
                   'libpthread.so.0', 'librt.so.1', 'libutil.so.1', 'libanl.so.1',
                   'libGL.so.1', 'libEGL.so.1', 'libvulkan.so.1', 'libva.so.2', 'libva-drm.so.2'}
 # These optional Wine subsystems already lack native dependencies in the selected
@@ -46,6 +47,7 @@ def create_appimage_export_plan(bundle, *, allow_host_access=False):
     target = {**source['target'], 'id': 'appimage-' + source['target']['id'],
         'format': 'appimage', 'sourceTargetDigest': digest_json(source['target']),
         'minimumGlibc': lock['minimumGlibc'], 'toolsDigest': digest_json(lock),
+        'excludedUnixModules': lock['excludedUnixModules'],
         'wineDllDirectory': ('lib64/wine-wow64/wine' if source['target']['provider'] == 'wine-arm64ec' else 'lib/wine')}
     return {**source, 'target': target, 'sourceTarget': source['target'], 'format': 'appimage',
         'layout': {'runtime': 'usr/wine'},
@@ -131,6 +133,41 @@ def stage_notices(source, destination):
             path.unlink()
             path.symlink_to(os.path.relpath(target, path.parent))
     inventory_tree(destination)
+
+
+def omit_unqualified_modules(wine_root, names):
+    omitted = []
+    for name in names:
+        if name != 'winedmo.so':
+            raise DesktopError('unknown AppImage module exclusion')
+        for path in Path(wine_root).rglob(name):
+            if not path.parent.name.endswith('-unix') or path.is_symlink():
+                raise DesktopError('unexpected location for an excluded Unix module')
+            with path.open('rb') as handle:
+                sha = hashlib.file_digest(handle, 'sha256').hexdigest()
+            omitted.append({'path': str(path.relative_to(wine_root)), 'sha256': sha,
+                            'reason': 'DirectShow media decoding is outside the X11 desktop proof'})
+            path.unlink()
+    return omitted
+
+
+def relocate_wine_links(wine_root):
+    wine_root = Path(wine_root).resolve()
+    result = []
+    for path in wine_root.rglob('*'):
+        if not path.is_symlink() or not os.path.isabs(os.readlink(path)):
+            continue
+        original = Path(os.readlink(path))
+        if not original.is_relative_to('/app'):
+            raise DesktopError('non-portable Wine payload link: ' + str(original))
+        target = wine_root / original.relative_to('/app')
+        if not target.resolve().is_relative_to(wine_root) or not target.is_file():
+            raise DesktopError('unresolved Wine payload link: ' + str(original))
+        path.unlink()
+        path.symlink_to(os.path.relpath(target, path.parent))
+        result.append({'path': str(path.relative_to(wine_root)), 'originalTarget': str(original),
+                       'target': os.readlink(path)})
+    return result
 
 
 def stage_native_libraries(appdir, platform_root, minimum_glibc):
@@ -228,11 +265,15 @@ def prepare_appdir(bundle, plan, context, *, store, cache):
     initialize_flatpak(wine_stage, app_id, plan['sourceTarget'], store)
     (wine_stage / 'files').rename(appdir / 'usr/wine')
     shutil.rmtree(wine_stage)
+    relocated = relocate_wine_links(appdir / 'usr/wine')
+    omitted = omit_unqualified_modules(appdir / 'usr/wine', plan['target']['excludedUnixModules'])
     arch = plan['target']['architecture']
     unpack_python(checked_download(plan['tools']['python'][arch], cache), appdir / 'usr')
     location = run_flatpak(['info', '--user', '--show-location',
         plan['sourceTarget']['platform'] + '/' + arch + '/' + plan['sourceTarget']['branch']], store=store)
     closure = stage_native_libraries(appdir, Path(location) / 'files', plan['target']['minimumGlibc'])
+    closure['omittedUnixModules'] = omitted
+    closure['relocatedWineLinks'] = relocated
     fonts = Path(location) / 'files/share/fonts'
     shutil.copytree(fonts / 'dejavu', appdir / 'usr/share/fonts', copy_function=copy_file)
     for directory in ('locale', 'xkb'):
