@@ -85,7 +85,6 @@ jobs:
           # A separate consumer store contains only the platform and exported app.
           export FLATPAK_USER_DIR="$PWD/.cage/consumer"
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user --noninteractive -y flathub org.freedesktop.Platform//26.08
           flatpak install --user --noninteractive -y dist/notepadplusplus-8.8.8.flatpak
           ! command -v wine
           ! command -v cage

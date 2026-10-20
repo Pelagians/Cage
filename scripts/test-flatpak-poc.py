@@ -78,12 +78,8 @@ def main():
     command("xdotool", "key", "--clearmodifiers", "Return", "ctrl+s")
     expected = "Cage Flatpak saved through the real application\n"
     wait_for(lambda: document.read_text() == expected, "application saved exact host document contents")
-    command("xdotool", "mousemove", "--window", handle, "250", "200")
-    command("xdotool", "keydown", "Control_L")
-    try:
-        command("xdotool", "click", "4")
-    finally:
-        command("xdotool", "keyup", "Control_L")
+    command("xdotool", "mousemove", "--window", handle, "250", "200",
+            "keydown", "Control_L", "sleep", "0.1", "click", "4", "sleep", "0.1", "keyup", "Control_L")
     command("xdotool", "key", "--clearmodifiers", "ctrl+s")
     wait_for(lambda: document.read_text() == expected and not command("xdotool", "getwindowname", handle).startswith("*"),
              "document is unchanged by zoom and has no unsaved marker")
@@ -119,11 +115,17 @@ def main():
         "m=importlib.util.module_from_spec(s);s.loader.exec_module(m);"
         "from pathlib import Path;p=Path('/app/share/cage/" + APP + "');"
         "m.verify_inventory(p/'seed',json.loads((p/'seed-inventory.json').read_text()))"], check=True)
+    runtime_ref = command("flatpak", "info", "--user", "--show-runtime", APP)
+    runtime_commit = command("flatpak", "info", "--user", "--show-commit", "runtime/" + runtime_ref)
+    wine_version = command("flatpak", "run", "--command=wine", APP, "--version")
+    assert wine_version == "wine-11.0", wine_version
     result = {"schemaVersion": "cage.desktop-functional-test/v0", "status": "passed", "appId": APP,
               "packageCommit": immutable, "install": True, "desktopLaunch": True, "save": True,
               "relaunch": True, "reopenedEditorContents": reopened, "settingsZoom": zoom,
               "sameStateGeneration": True, "immutableSeedVerified": True,
-              "session": "Xvfb X11 with Openbox", "applicationVersion": "8.8.8"}
+              "session": "Xvfb X11 with Openbox", "applicationVersion": "8.8.8",
+              "runtimeRef": runtime_ref, "runtimeCommit": runtime_commit, "wineVersion": wine_version,
+              "host": command("uname", "-srmo"), "flatpakVersion": command("flatpak", "--version")}
     (EVIDENCE / "functional-test.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))
 

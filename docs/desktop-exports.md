@@ -28,15 +28,14 @@ The result includes the `.flatpak`, a JSON export receipt, and a retained `.flat
 
 ## Install and use
 
-On the destination computer, install Flatpak and the declared Freedesktop platform, then install the application bundle:
+On the destination computer, use Flatpak to install the application bundle:
 
 ```bash
-flatpak install --user flathub org.freedesktop.Platform//26.08
 flatpak install --user dist/notepadplusplus-8.8.8.flatpak
 flatpak run io.github.Pelagians.Cage.NotepadPlusPlus
 ```
 
-Normal Flatpak application installation and desktop software tools may also resolve the platform from the runtime repository information embedded in the bundle. A `.flatpak` application file alone is not a complete offline distribution of its shared runtime.
+The bundle contains runtime repository information for resolving its Freedesktop platform. A `.flatpak` application file alone is not a complete offline distribution of its shared runtime. Flathub provides this normal shared dependency; it does not supply or configure the application-specific Wine prefix.
 
 The application appears as **Notepad++ Cage POC** in the desktop application menu. No separately installed Cage, Wine or Python is required. Python comes from the declared Freedesktop platform. Wine and the complete application seed are inside the application package.
 
