@@ -61,8 +61,8 @@ def main():
         subprocess.run(['gio', 'launch', str(desktop), str(document)], env=environment,
                        stdout=log, stderr=subprocess.STDOUT, check=True, timeout=30)
         handle = gui.wait_for(gui.window, 'real AppImage Notepad++ window', seconds=180)
-        gui.command('xdotool', 'windowactivate', '--sync', handle)
         gui.wait_for(lambda: document.name in gui.command('xdotool', 'getwindowname', handle), 'Unicode document opened')
+        gui.focus_editor(handle)
         return handle
     prefix = data / 'cage/appimage' / APP / 'prefix'
     def close():
@@ -106,8 +106,8 @@ def main():
         logs.append(log)
         process = subprocess.Popen([str(moved), str(document)], env=environment, stdout=log, stderr=subprocess.STDOUT)
         handle = gui.wait_for(gui.window, 'relocated AppImage window', seconds=180)
-        gui.command('xdotool', 'windowactivate', '--sync', handle)
         gui.wait_for(lambda: document.name in gui.command('xdotool', 'getwindowname', handle), 'reopened original file')
+        gui.focus_editor(handle)
         gui.command('xdotool', 'key', '--clearmodifiers', 'ctrl+End')
         gui.command('xdotool', 'type', '--clearmodifiers', '--delay', '15', 'Relaunch verified')
         gui.command('xdotool', 'key', '--clearmodifiers', 'Return', 'ctrl+s')

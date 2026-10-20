@@ -38,8 +38,8 @@ def main():
             cwd=ROOT, stdout=output, stderr=subprocess.STDOUT)
         processes.append(process)
         handle = gui.wait_for(gui.window, "container Notepad++ window", seconds=60)
-        gui.command("xdotool", "windowactivate", "--sync", handle)
         gui.wait_for(lambda: document.name in gui.command("xdotool", "getwindowname", handle), "container document loaded", seconds=30)
+        gui.focus_editor(handle)
         return process
     def close(process):
         gui.command("xdotool", "key", "--clearmodifiers", "alt+F4")

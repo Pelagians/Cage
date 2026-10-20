@@ -35,11 +35,24 @@ def window():
     return command("xdotool", "search", "--onlyvisible", "--name", "Notepad\\+\\+").splitlines()[-1]
 
 
+def focus_editor(handle):
+    """Focus the real editor after load, not just the Wine top-level window."""
+    command("xdotool", "windowactivate", "--sync", handle)
+    wait_for(lambda: command("xdotool", "getactivewindow") == handle, "application activation")
+    geometry = dict(line.split("=", 1) for line in
+                    command("xdotool", "getwindowgeometry", "--shell", handle).splitlines())
+    # The pinned Notepad++ default layout puts the editor in the client center.
+    # A top-level activation alone can precede Scintilla's first focus event.
+    command("xdotool", "mousemove", "--window", handle,
+            str(int(geometry["WIDTH"]) // 2), str(int(geometry["HEIGHT"]) // 2))
+    command("xdotool", "click", "--clearmodifiers", "1")
+
+
 def launch(desktop, document):
     subprocess.run(["gio", "launch", str(desktop), str(document)], check=True)
     handle = wait_for(window, "real Notepad++ window")
-    command("xdotool", "windowactivate", "--sync", handle)
     wait_for(lambda: document.name in command("xdotool", "getwindowname", handle), "requested document loaded")
+    focus_editor(handle)
     return handle
 
 

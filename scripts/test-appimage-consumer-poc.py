@@ -38,15 +38,18 @@ def main():
     if os.environ.get('XAUTHORITY'):
         auth = os.environ['XAUTHORITY']
         argv += ['-v', auth + ':/tmp/cage-xauthority:ro', '-e', 'XAUTHORITY=/tmp/cage-xauthority']
-    argv += [image, 'sh', '-ec', '! command -v wine; ! command -v python3; exec "$@"', 'cage-consumer']
+    argv += [image, 'sh', '-ec',
+             'if command -v wine || command -v python3; then '
+             'echo "consumer must not have Wine or Python installed" >&2; exit 1; fi; exec "$@"',
+             'cage-consumer']
     logs = []
     def launch():
         log = (evidence / ('launch-' + str(len(logs) + 1) + '.log')).open('w')
         logs.append(log)
         process = subprocess.Popen([*argv, str(package), str(document)], stdout=log, stderr=subprocess.STDOUT)
         handle = gui.wait_for(gui.window, 'clean consumer Notepad++ window', seconds=180)
-        gui.command('xdotool', 'windowactivate', '--sync', handle)
         gui.wait_for(lambda: document.name in gui.command('xdotool', 'getwindowname', handle), 'requested consumer document')
+        gui.focus_editor(handle)
         return process
     try:
         process = launch()
