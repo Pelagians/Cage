@@ -238,9 +238,11 @@ def native_launch_script(bundle, file_arguments, state_action=None):
     if state_action and not plan.get("launcherSha256"):
         raise DesktopError("rebuild the bundle to enable safe update/rollback controls")
     verify_inventory(bundle / "prefix", inventory)
+    if state_action == "state-info" and file_arguments:
+        raise DesktopError("state-info does not open application documents")
     arguments = " ".join(shlex.quote(a) for a in
                          (["--cage-" + state_action] if state_action else [])
-                         + (["--"] if plan.get("launcherSha256") else []) + file_arguments)
+                         + (["--"] if plan.get("launcherSha256") and state_action != "state-info" else []) + file_arguments)
     return ('export XDG_DATA_HOME="${CAGE_STATE:-/var/lib/cage/state}"\n'
             'exec /usr/bin/python3 -I ' + launcher + ' '
             '/opt/cage/bundle/metadata/native-launch.json ' + arguments + '\n')

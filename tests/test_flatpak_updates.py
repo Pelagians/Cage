@@ -51,7 +51,9 @@ class FlatpakUpdateTests(unittest.TestCase):
         digest = hashlib.sha256(package.read_bytes()).hexdigest()
         plan = {'format': 'flatpak', 'branch': 'stable', 'seedDigest': version,
                 'target': {'architecture': 'aarch64'},
-                'desktop': {'id': 'org.example.App', 'updates': {'profile': 'p/v1'}},
+                'desktop': {'id': 'org.example.App', 'name': 'Proof', 'summary': 'Proof',
+                            'license': 'MIT', 'homepage': 'https://example.org', 'documentsDirectory': 'Cage',
+                            'updates': {'profile': 'p/v1', 'settings': [], 'documents': []}},
                 'state': {'managerVersion': 1}}
         Path(str(package) + '.json').write_text(json.dumps({
             'schemaVersion': 'cage.flatpak-export-result/v0', 'sha256': digest, 'plan': plan}))
@@ -97,6 +99,13 @@ class FlatpakUpdateTests(unittest.TestCase):
         with self.assertRaisesRegex(DesktopError, 'does not match'):
             self.run_update()
         self.assertEqual(self.installed, [])
+        receipt = Path(str(self.new[1]) + '.json')
+        metadata = json.loads(receipt.read_text())
+        metadata['plan']['desktop']['id'] = '../../outside'
+        receipt.write_text(json.dumps(metadata))
+        with self.assertRaisesRegex(DesktopError, 'invalid Flatpak export identity'):
+            self.run_update()
+        self.assertFalse((self.root / 'outside').exists())
         self.new[1].write_bytes(b'corrupted bundle')
         with self.assertRaisesRegex(DesktopError, 'mismatch'):
             self.run_update()

@@ -9,8 +9,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
+
+from core.manifest.desktop import normalize_desktop
+from core.manifest.errors import ManifestError
 
 from runtime.desktop_launch import (DesktopError, copy_file, lifecycle_lock,
                                    _write_state_record, _real_path, plan_identity)
@@ -29,9 +33,15 @@ def checked_export(package):
     with package.open('rb') as handle:
         digest = hashlib.file_digest(handle, 'sha256').hexdigest()
     plan = result.get('plan', {})
-    if (result.get('schemaVersion') != 'cage.flatpak-export-result/v0' or result.get('sha256') != digest
+    if (not isinstance(plan, dict) or result.get('schemaVersion') != 'cage.flatpak-export-result/v0' or result.get('sha256') != digest
             or plan.get('format') != 'flatpak' or plan.get('state', {}).get('managerVersion') != 1):
         raise DesktopError('bundle/receipt mismatch or pre-generation export; re-export a baseline with the current Cage first')
+    try:
+        normalize_desktop(plan.get('desktop'))
+        if plan.get('target', {}).get('architecture') not in {'x86_64', 'aarch64'} or not re.fullmatch(r'[A-Za-z0-9_-][A-Za-z0-9_.-]*', plan.get('branch', '')):
+            raise ValueError('invalid architecture/branch')
+    except (ManifestError, TypeError, ValueError) as exc:
+        raise DesktopError('invalid Flatpak export identity/policy; no deployment changed') from exc
     if not plan.get('desktop', {}).get('updates'):
         raise DesktopError('Flatpak update requires a qualified recipe migration policy')
     return {'sha256': digest, 'identity': identity(plan), 'plan': plan}, package

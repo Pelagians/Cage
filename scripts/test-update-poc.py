@@ -6,6 +6,7 @@ Runs in a private X11 desktop. Never uses the user's normal application state.
 """
 from pathlib import Path
 import hashlib
+import configparser
 import importlib.util
 import json
 import os
@@ -48,9 +49,28 @@ def main():
     elif kind == 'flatpak':
         subprocess.run(['flatpak', 'install', '--user', '--noninteractive', '-y', '--no-related', '--no-deps',
                         '--bundle', str(baseline)], env=env, check=True)
-        # A private store's override isolates this proof from the real user data.
-        subprocess.run(['flatpak', 'override', '--user', '--env=XDG_DATA_HOME=/var/data/' + token, gui.APP], env=env, check=True)
-        state = Path.home() / '.var/app' / gui.APP / 'data' / token / gui.APP
+        # Flatpak resets reserved XDG variables after applying host overrides.
+        # Set the private path inside the sandbox, then exec the real packaged
+        # command. Keep the normal installed user's data completely untouched.
+        private = Path.home() / '.var/app' / gui.APP / 'data' / token
+        state = private / gui.APP
+        metadata = configparser.ConfigParser(interpolation=None)
+        metadata.read_string(subprocess.check_output(['flatpak', 'info', '--user', '--show-metadata', gui.APP],
+                                                     env=env, text=True))
+        assert metadata['Application']['command'] == 'cage-desktop-launch'
+        actual_flatpak = shutil.which('flatpak')
+        shim = evidence / 'tools'
+        shim.mkdir()
+        (shim / 'flatpak').write_text('#!/usr/bin/env python3\nimport os,sys\n'
+            + 'real=' + repr(actual_flatpak) + '\nprivate=' + repr(str(private)) + '\n'
+            + 'args=sys.argv[1:]\n'
+            + 'if len(args)>2 and args[:2]==["run","--user"] and args[2].split("/")[0]==' + repr(gui.APP) + ':\n'
+            + '    args=["run","--user","--command=sh",args[2],"-c",'
+            + repr('export XDG_DATA_HOME="$1"; shift; exec /app/bin/cage-desktop-launch "$@"')
+            + ',"cage-proof",private,*args[3:]]\n'
+            + 'os.execv(real,[real,*args])\n')
+        (shim / 'flatpak').chmod(0o755)
+        env['PATH'] = str(shim) + os.pathsep + env['PATH']
     elif kind == 'container':
         state = evidence / 'state' / gui.APP
     else:
@@ -97,6 +117,7 @@ def main():
     def close(process):
         gui.command('xdotool', 'key', '--clearmodifiers', 'alt+F4')
         assert process.wait(timeout=90) == 0, 'launcher failed; see retained log'
+        assert (state / 'state.json').is_file(), 'expected persistent app state is missing; check the sandbox XDG path'
         import fcntl
         def stopped():
             with (state / 'launch.lock').open() as lock:

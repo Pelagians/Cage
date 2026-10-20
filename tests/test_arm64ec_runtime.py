@@ -75,6 +75,15 @@ class ARMRuntimeTests(unittest.TestCase):
                                  writable_files=True, require_runner=True)
             self.assertFalse(state.exists(), "planning must not initialize persistent state")
             self.assertNotIn(":ro", run["fileArguments"][0]["mount"])
+            info = build_run_plan(bundle, engine="podman", state_dir=state, state_action="state-info")
+            self.assertTrue(info["container"]["script"].endswith("native-launch.json --cage-state-info\n"))
+            import os, sys
+            result = subprocess.run([sys.executable, str(bundle / "metadata/cage-desktop-launch.py"),
+                                     str(bundle / "metadata/native-launch.json"), "--cage-state-info"],
+                                    env={**os.environ, "XDG_DATA_HOME": str(Path(td) / "info-state")},
+                                    capture_output=True, text=True, check=True)
+            self.assertIsNone(json.loads(result.stdout)["state"])
+
             readonly = build_run_plan(bundle, engine="podman", files=[document])
             self.assertIn(":ro", readonly["fileArguments"][0]["mount"])
             graph_path = bundle / "metadata/graph.json"
