@@ -75,9 +75,21 @@ Native CI at the same source revision:
   with HTTP 503; the retry completed both container and installed Flatpak checks.
 
 The expanded OCI test harness and workflow were added in `5016f53`, without
-changing the shipping lifecycle helper. Its [new CI run](https://github.com/Pelagians/Cage/actions/runs/39479726074)
-was queued when this report was recorded; the standalone OCI result above is
-the completed local Asahi proof, not a claim that this new CI stage has passed.
+changing the shipping lifecycle helper. Its [ARM container/OCI CI job](https://github.com/Pelagians/Cage/actions/runs/39479726074/job/118824817443)
+passed on a **4,096-byte kernel page size**, complementing the local 16 KB Asahi
+proof. Downloaded result records verify both version changes, the real editor
+preference, exact external document contents, latest prefix documents through
+rollback, and three retained generations. Both source executable hashes and
+the sealed lifecycle helper match the local proof. The evidence is retained
+locally under `.cage/oci-ci-evidence-5016f53/`; no package payloads were downloaded.
+
+The [complete expanded CI run](https://github.com/Pelagians/Cage/actions/runs/39479726074)
+passed all three jobs: x86_64 desktop, aarch64 desktop, and ARM container/OCI.
+Both desktop jobs completed Flatpak and clean-consumer AppImage update,
+relaunch, rollback and relaunch proofs. No fixes or retries were required.
+The [companion AppImage regression run](https://github.com/Pelagians/Cage/actions/runs/39479726085)
+passed for both architectures, and the [ARM runtime regression run](https://github.com/Pelagians/Cage/actions/runs/39479725934)
+also passed.
 
 ## Retained local packages
 
