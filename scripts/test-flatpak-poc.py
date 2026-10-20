@@ -44,7 +44,11 @@ def launch(desktop, document):
 
 def close_application():
     command("xdotool", "key", "--clearmodifiers", "alt+F4")
-    wait_for(lambda: APP not in command("flatpak", "ps", "--columns=application"), "application shutdown")
+    def no_window():
+        return subprocess.run(["xdotool", "search", "--onlyvisible", "--name", "Notepad\\+\\+"],
+                              capture_output=True, timeout=10).returncode != 0
+    wait_for(no_window, "application window closed without a save prompt", seconds=30)
+    wait_for(lambda: APP not in command("flatpak", "ps", "--columns=application"), "application shutdown", seconds=45)
 
 
 def main():
@@ -67,12 +71,22 @@ def main():
     (EVIDENCE / "permissions.txt").write_text(permissions + "\n")
     print("Installed application and permissions verified", flush=True)
     immutable = command("flatpak", "info", "--user", "--show-commit", APP)
-    launch(desktop, document)
+    handle = launch(desktop, document)
     print("Installed desktop entry opened the requested document", flush=True)
     command("xdotool", "key", "--clearmodifiers", "ctrl+a")
     command("xdotool", "type", "--clearmodifiers", "--delay", "15", "Cage Flatpak saved through the real application")
-    command("xdotool", "key", "--clearmodifiers", "Return", "ctrl+s", "ctrl+KP_Add")
-    wait_for(lambda: "Cage Flatpak saved" in document.read_text(), "application saved host document")
+    command("xdotool", "key", "--clearmodifiers", "Return", "ctrl+s")
+    expected = "Cage Flatpak saved through the real application\n"
+    wait_for(lambda: document.read_text() == expected, "application saved exact host document contents")
+    command("xdotool", "mousemove", "--window", handle, "250", "200")
+    command("xdotool", "keydown", "Control_L")
+    try:
+        command("xdotool", "click", "4")
+    finally:
+        command("xdotool", "keyup", "Control_L")
+    command("xdotool", "key", "--clearmodifiers", "ctrl+s")
+    wait_for(lambda: document.read_text() == expected and not command("xdotool", "getwindowname", handle).startswith("*"),
+             "document is unchanged by zoom and has no unsaved marker")
     print("Real application saved the edited document", flush=True)
     subprocess.run(["scrot", str(EVIDENCE / "first-launch-saved.png")], check=True)
     close_application()
@@ -90,7 +104,7 @@ def main():
     command("xdotool", "key", "--clearmodifiers", "ctrl+a", "ctrl+c")
     def copied_text():
         text = command("xclip", "-selection", "clipboard", "-o", "-target", "UTF8_STRING")
-        return text if "Cage Flatpak saved through the real application" in text else None
+        return text if text.strip() == expected.strip() else None
     reopened = wait_for(copied_text, "reopened editor contains saved text", seconds=30)
     print("Relaunched application reopened the saved text", flush=True)
     subprocess.run(["scrot", str(EVIDENCE / "relaunch-reopened.png")], check=True)
