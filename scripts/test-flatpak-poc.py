@@ -24,7 +24,7 @@ def wait_for(function, description, seconds=120):
             result = function()
             if result:
                 return result
-        except (OSError, subprocess.CalledProcessError):
+        except (OSError, subprocess.SubprocessError):
             pass
         time.sleep(0.5)
     raise AssertionError("timed out: " + description)
@@ -38,6 +38,7 @@ def launch(desktop, document):
     subprocess.run(["gio", "launch", str(desktop), str(document)], check=True)
     handle = wait_for(window, "real Notepad++ window")
     command("xdotool", "windowactivate", "--sync", handle)
+    wait_for(lambda: document.name in command("xdotool", "getwindowname", handle), "requested document loaded")
     return handle
 
 
@@ -64,14 +65,18 @@ def main():
     assert "network" not in permission_data.get("Context", "shared", fallback="").split(";"), permissions
     assert "filesystems=xdg-documents/Cage:create;" in permissions, permissions
     (EVIDENCE / "permissions.txt").write_text(permissions + "\n")
+    print("Installed application and permissions verified", flush=True)
     immutable = command("flatpak", "info", "--user", "--show-commit", APP)
     launch(desktop, document)
+    print("Installed desktop entry opened the requested document", flush=True)
     command("xdotool", "key", "--clearmodifiers", "ctrl+a")
     command("xdotool", "type", "--clearmodifiers", "--delay", "15", "Cage Flatpak saved through the real application")
     command("xdotool", "key", "--clearmodifiers", "Return", "ctrl+s", "ctrl+KP_Add")
     wait_for(lambda: "Cage Flatpak saved" in document.read_text(), "application saved host document")
+    print("Real application saved the edited document", flush=True)
     subprocess.run(["scrot", str(EVIDENCE / "first-launch-saved.png")], check=True)
     close_application()
+    print("Application and its Wine services stopped", flush=True)
     prefix = home / ".var/app" / APP / "data" / APP / "prefix"
     config = prefix / "drive_c/Program Files/Notepad++/config.xml"
     wait_for(config.exists, "persisted application settings")
@@ -83,8 +88,11 @@ def main():
     launch(desktop, document)
     # Ctrl+A then copy lets the test read exactly what the reopened editor holds.
     command("xdotool", "key", "--clearmodifiers", "ctrl+a", "ctrl+c")
-    reopened = command("xclip", "-selection", "clipboard", "-o")
-    assert "Cage Flatpak saved through the real application" in reopened, reopened
+    def copied_text():
+        text = command("xclip", "-selection", "clipboard", "-o", "-target", "UTF8_STRING")
+        return text if "Cage Flatpak saved through the real application" in text else None
+    reopened = wait_for(copied_text, "reopened editor contains saved text", seconds=30)
+    print("Relaunched application reopened the saved text", flush=True)
     subprocess.run(["scrot", str(EVIDENCE / "relaunch-reopened.png")], check=True)
     close_application()
     assert state_before == state_path.read_bytes(), "prefix was reinitialized"
@@ -111,4 +119,5 @@ if __name__ == "__main__":
         main()
     except BaseException:
         subprocess.run(["scrot", str(EVIDENCE / "failure.png")], check=False)
+        subprocess.run(["flatpak", "kill", APP], check=False, timeout=30)
         raise
