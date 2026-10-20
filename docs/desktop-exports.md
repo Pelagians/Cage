@@ -63,6 +63,9 @@ Existing container graphs keep `cage.execution-graph/v0`. Desktop graphs use `ca
 
 ## Validation
 
+The first completed proof and exact package/runtime identities are recorded in
+[the qualification snapshot](desktop-flatpak-qualification.md).
+
 `tests/test_desktop_export.py` covers content tampering, unsafe metadata/paths, runtime mismatch, existing-workflow rejection, source pinning, concurrent initialization, interrupted copying/promotion, persistent settings and generation mismatch. Existing Cage and CFW tests retain their own scope.
 
 The `Desktop Flatpak proof` GitHub workflow runs on x86_64 Ubuntu. It executes the full Cage Python suite, builds and exports the pinned portable application, then installs it in a separate consumer Flatpak store containing the exported app and shared platform rather than a Wine application installation. Under Xvfb/Openbox it launches the installed desktop entry, edits and saves a file whose name includes spaces and Unicode, changes GUI zoom, closes the application, relaunches, appends a second line in the reopened editor and verifies the complete saved file, checks persisted zoom and state identity, and verifies the packaged seed again. JSON receipts, logs, screenshots and the package are retained as workflow artifacts.
@@ -71,4 +74,4 @@ This is an automated X11 workflow qualification. Physical GPU behavior, native W
 
 ## Source and license information
 
-The recipe records the exact portable archive and upstream homepage; the archive includes Notepad++'s license. Notepad++ source for that release is available at `https://github.com/notepad-plus-plus/notepad-plus-plus/tree/v8.8.8`. The pinned Wine Flatpak build source and dependency recipes are recorded by `baseSource` in the runtime lock. Preserve those component notices and satisfy corresponding-source obligations before wider redistribution. Cage's license does not replace licenses of bundled applications or native runtime dependencies. No proprietary CFW or Windows foundation payload is introduced by this POC.
+The recipe records the exact portable archive and upstream homepage; the archive includes Notepad++'s license. Notepad++ source for that release is available at `https://github.com/notepad-plus-plus/notepad-plus-plus/tree/v8.8.8`. The pinned Wine Flatpak build source and dependency recipes are recorded by `baseSource` in the runtime lock. Preserve those component notices and satisfy corresponding-source obligations before wider redistribution. Cage's license does not replace licenses of bundled applications or native runtime dependencies. No CFW foundation or proprietary Windows payload is introduced by this POC.
