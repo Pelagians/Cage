@@ -206,7 +206,11 @@ def main():
         process = start(baseline)
         if desktop_proof:
             saved = documents / 'Saved As document.txt'
-            gui.command('xdotool','key','--clearmodifiers','ctrl+shift+s')
+            # Use the pinned application's File > Save As accelerator. Ctrl+Shift+S
+            # is Save All in Notepad++, so it cannot qualify Save As behavior.
+            gui.command('xdotool','key','--clearmodifiers','alt+f')
+            gui.command('xdotool','key','--clearmodifiers','a')
+            subprocess.run(['scrot', str(evidence / 'save-as-request.png')],check=True)
             gui.wait_for(lambda: gui.command('xdotool','search','--onlyvisible','--name','^Save As$'), 'Save As dialog')
             gui.command('xdotool','key','--clearmodifiers','ctrl+a')
             gui.command('xdotool','type','--clearmodifiers','--delay','10','Z:'+str(saved).replace('/','\\'))
@@ -214,6 +218,8 @@ def main():
             gui.command('xdotool','key','--clearmodifiers','Return')
             gui.wait_for(lambda: saved.exists(), 'Save As created new host document')
             document = saved
+            gui.wait_for(lambda: saved.name in gui.command('xdotool','getwindowname',gui.window()), 'Save As returned to the document')
+            gui.focus_editor(gui.window())
             assert readonly.read_text() == 'original read-only document\n'
         save('saved before update')
         gui.command('xdotool', 'key', '--clearmodifiers', 'alt+v')
@@ -287,6 +293,15 @@ def main():
         print(json.dumps(result, indent=2))
         if os.environ.get('CAGE_TEST_DISCARD_PREFIXES') == '1':
             shutil.rmtree(state)  # Only this proof's fresh, private state root.
+    except BaseException:
+        subprocess.run(['scrot', str(evidence / 'failure.png')], check=False)
+        windows = subprocess.run(['xdotool','search','--onlyvisible','--name','.*'], capture_output=True, text=True)
+        titles = {}
+        for handle in windows.stdout.splitlines():
+            title = subprocess.run(['xdotool','getwindowname',handle],capture_output=True,text=True)
+            titles[handle] = title.stdout.strip()
+        (evidence / 'failure-windows.json').write_text(json.dumps(titles,indent=2)+'\n')
+        raise
     finally:
         for process in processes:
             if process.poll() is None:

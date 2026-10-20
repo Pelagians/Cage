@@ -9,7 +9,7 @@ For Asahi and other Linux ARM64 hosts, see the additive
 [native ARM64 Wine/FEX target](arm64-wine-fex.md). An x86_64 Flatpak cannot be
 made ARM-compatible by installing host Wine or changing its architecture label.
 
-The proof application is Notepad++ **8.8.8 portable x64**, identified by its release ZIP SHA-256. This is a deliberately fixed compatibility case, not a claim about arbitrary Windows applications. CFW, Chocolatey, Proton, Linux filesystem layers, additional graphics libraries, suites, MIME associations and automatic upgrades are outside this first target. Their existing Cage workflows remain available through the default container target.
+The proof application is Notepad++ **8.8.8 portable x64**, identified by its release ZIP SHA-256. This is a deliberately fixed compatibility case, not a claim about arbitrary Windows applications. CFW, Chocolatey, Proton, Linux filesystem layers, additional graphics libraries and multiple suite entrypoints remain outside this target. Their existing Cage workflows remain available through the default container target. Default-entrypoint MIME handlers, file forwarding and display scaling are covered by the later [desktop integration qualification](desktop-integration.md); [safe updates](export-updates.md) remain explicit and profile-qualified.
 
 ## Build and export
 
@@ -46,7 +46,7 @@ The bundle contains runtime repository information for resolving its Freedesktop
 
 The application appears as **Notepad++ Cage POC** in the desktop application menu. No separately installed Cage, Wine or Python is required. Python comes from the declared Freedesktop platform. Wine and the complete application seed are inside the application package.
 
-The package grants writable access only to the **Cage** subdirectory of the user's Documents directory, plus Flatpak's private application storage. It has no network permission. Open and save user documents within that directory. Passing an accessible file to the launcher or desktop entry also works; broad filesystem access and portal-based file selection are not part of this proof. X11 permission exposes the host X server and its associated trust boundary; the package does not claim native Wayland isolation.
+The package grants writable access only to the **Cage** subdirectory of the user's Documents directory, plus Flatpak's private application storage. It has no network permission. Open and save new documents within that directory. The exported desktop entry forwards explicitly selected files through Flatpak's document portal, including files outside the permanent grant. This does not make Wine's own file chooser portal-aware or grant the selected file's parent directory. See [file-access limits and scaling controls](desktop-integration.md). X11 permission exposes the host X server and its associated trust boundary; the package does not claim native Wayland isolation.
 
 ## Persistence and integrity
 
