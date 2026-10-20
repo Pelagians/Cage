@@ -140,6 +140,13 @@ cage runners diagnose pol-8.2 --cache-dir "$HOME/cage-runners"
 
 ## Application Recipes
 
+### Desktop exports
+
+The experimental [AppImage exporter](docs/appimage-exports.md) reuses the same
+portable application recipes and persistent-prefix launcher as Flatpak. Native
+x86_64 and ARM64 outputs include Wine and Python; this initial AppImage target
+requires glibc 2.43 or newer and explicit acceptance of ordinary host access.
+
 ### Desktop Flatpak proof of concept
 
 The optional `--target flatpak` build target reuses ordered Cage recipes and

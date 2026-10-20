@@ -145,12 +145,21 @@ def launch(metadata_path, files):
     if digest_json(inventory) != plan["seedDigest"]:
         raise DesktopError("seed inventory digest mismatch")
     # Flatpak sets per-app XDG_DATA_HOME; future adapters provide their own base.
-    state_root = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share"))) / plan["desktop"]["id"]
+    state_root = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share")))
+    namespace = plan.get("state", {}).get("namespace")
+    if namespace:
+        if namespace != "cage/appimage":
+            raise DesktopError("unsupported desktop state namespace")
+        state_root /= namespace
+    state_root /= plan["desktop"]["id"]
     identity = {"schemaVersion": "cage.desktop-state/v0", "seedDigest": plan["seedDigest"],
                 "runtimeDigest": digest_json(plan["target"])}
     seed = Path(plan["layout"]["seed"]) if plan["layout"].get("seed") else metadata_path.parent / "seed"
     prefix = initialize_state(seed, inventory, state_root, identity)
     runtime_root = Path(plan["layout"]["runtime"])
+    if plan.get("format") == "appimage":
+        # AppImage mounts and extracted AppDirs relocate between launches.
+        runtime_root = metadata_path.parents[3] / "wine"
     wine = str(runtime_root / plan["target"]["wine"])
     server = str(runtime_root / plan["target"]["wineserver"])
     environment = {k: v for k, v in os.environ.items() if not (
@@ -158,6 +167,14 @@ def launch(metadata_path, files):
     )}
     environment.update(plan["environment"])
     environment.update(WINEPREFIX=str(prefix), WINEARCH="win64")
+    if plan.get("format") == "appimage":
+        usr = metadata_path.parents[3]
+        environment["LD_LIBRARY_PATH"] = str(usr / "lib/cage-native")
+        environment["WINEDLLPATH"] = str(runtime_root / plan["target"]["wineDllDirectory"])
+        environment["FONTCONFIG_FILE"] = str(usr / "share/cage/fonts.conf")
+        environment["FONTCONFIG_PATH"] = str(usr / "share/cage")
+        environment["XLOCALEDIR"] = str(usr / "share/X11/locale")
+        environment["XKB_CONFIG_ROOT"] = str(usr / "share/X11/xkb")
     environment.setdefault("WINEDEBUG", "-all")
     environment.setdefault("WINEDLLOVERRIDES", "winemenubuilder.exe=d;mscoree,mshtml=")
     if plan["target"]["graphics"] == "x11":

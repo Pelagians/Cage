@@ -1,5 +1,8 @@
 # Desktop Flatpak exports
 
+For the shared recipe's alternative desktop output, see
+[AppImage export and permissions](appimage-exports.md).
+
 Cage's initial desktop target packages a configured Windows x64 application as a local Flatpak. It uses the existing ordered recipe builder under an independently pinned Wine Flatpak runtime. It supports one default entrypoint, offline execution, X11/XWayland, a persistent private Wine prefix, and an explicitly named Documents subdirectory.
 
 For Asahi and other Linux ARM64 hosts, see the additive

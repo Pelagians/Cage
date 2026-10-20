@@ -171,13 +171,13 @@ def cmd_compat_corpus(args):
 
 def cmd_build(args):
     manifest = load_manifest(Path(args.manifest))
-    if getattr(args, "target", "container") == "flatpak":
+    if getattr(args, "target", "container") in {"flatpak", "appimage"}:
         from artifact.desktop import validate_desktop_recipe
         from builder.flatpak import build_flatpak_bundle
         if any(getattr(args, name, None) for name in (
             "engine", "runtime_image", "image_tag", "runner_cache_dir", "module_cache_dir", "requalify_cfw_runtime"
         )):
-            raise DesktopError("container runtime/cache options do not apply to the Flatpak desktop target")
+            raise DesktopError("container runtime/cache options do not apply to desktop build targets")
         if args.dry_run:
             result = {"schemaVersion": "cage.desktop-build-plan/v0", "target": validate_desktop_recipe(manifest),
                       "phases": build_plan(manifest), "dryRun": True}
@@ -483,6 +483,21 @@ def cmd_export_flatpak(args):
     return 0
 
 
+def cmd_export_appimage(args):
+    from artifact.appimage import create_appimage_export_plan, export_appimage
+    bundle = resolve_bundle_reference(args.bundle, index_path=args.artifact_index)
+    if args.dry_run:
+        result = create_appimage_export_plan(bundle, allow_host_access=args.allow_host_access)
+    else:
+        if not args.output:
+            raise DesktopError("--output is required unless --dry-run")
+        result = export_appimage(bundle, output=args.output, store=args.flatpak_store,
+            allow_host_access=args.allow_host_access, context_dir=args.context_dir,
+            cache=args.tool_cache, timeout=args.timeout)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
 def cmd_export_kube(args):
     bundle = resolve_bundle_reference(args.bundle, index_path=args.artifact_index)
     image_verification = None
@@ -604,7 +619,7 @@ def build_parser():
     p = sub.add_parser("build", help="Create an immutable execution bundle "
                                      "(dry-run or real via container)")
     p.add_argument("manifest")
-    p.add_argument("--target", choices=["container", "flatpak"], default="container",
+    p.add_argument("--target", choices=["container", "flatpak", "appimage"], default="container",
                    help="Build execution target; container remains the default")
     p.add_argument("--flatpak-store", default=".cage/flatpak", help="Isolated desktop build dependency store")
     p.add_argument("--output", default="dist",
@@ -837,6 +852,19 @@ def build_parser():
     ep.add_argument("--timeout", type=int, default=900)
     ep.add_argument("--dry-run", action="store_true")
     ep.set_defaults(func=cmd_export_flatpak)
+
+    ep = esub.add_parser("appimage", help="Export a qualified desktop seed as a native AppImage")
+    ep.add_argument("bundle", help="Desktop-target bundle path")
+    ep.add_argument("--artifact-index", default=None)
+    ep.add_argument("--output", help="Output .AppImage file")
+    ep.add_argument("--context-dir", help="New staging directory retained for inspection")
+    ep.add_argument("--flatpak-store", default=".cage/flatpak", help="Build-time pinned native payload store")
+    ep.add_argument("--tool-cache", default=".cage/appimage-tools", help="Checksum-verified tool cache")
+    ep.add_argument("--allow-host-access", action="store_true",
+                    help="Accept ordinary host-process filesystem/network access; AppImage cannot enforce recipe isolation")
+    ep.add_argument("--timeout", type=int, default=1800)
+    ep.add_argument("--dry-run", action="store_true")
+    ep.set_defaults(func=cmd_export_appimage)
 
     ep = esub.add_parser("oci", help="Export a verified bundle as a runnable OCI application image")
     ep.add_argument("bundle", help="Path to Cage bundle directory or app name from artifact index")
