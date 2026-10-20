@@ -1,0 +1,160 @@
+"""Local Flatpak package transactions paired with Cage's prefix generations.
+
+No remote updater or new service: retain user-supplied Cage exports, use Flatpak
+for deployment, and recover deployment from the authoritative prefix identity.
+Hashes bind local receipts to bytes; they are not publisher authentication.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+
+from runtime.desktop_launch import (DesktopError, copy_file, lifecycle_lock,
+                                   _write_state_record, _real_path, plan_identity)
+
+
+def identity(plan):
+    return plan_identity(plan)
+
+
+def checked_export(package):
+    package = Path(package).absolute()
+    receipt = Path(str(package) + '.json')
+    if package.is_symlink() or receipt.is_symlink() or not package.is_file() or not receipt.is_file():
+        raise DesktopError('retain both the original Cage Flatpak bundle and its .json export receipt')
+    result = json.loads(receipt.read_text())
+    with package.open('rb') as handle:
+        digest = hashlib.file_digest(handle, 'sha256').hexdigest()
+    plan = result.get('plan', {})
+    if (result.get('schemaVersion') != 'cage.flatpak-export-result/v0' or result.get('sha256') != digest
+            or plan.get('format') != 'flatpak' or plan.get('state', {}).get('managerVersion') != 1):
+        raise DesktopError('bundle/receipt mismatch or pre-generation export; re-export a baseline with the current Cage first')
+    if not plan.get('desktop', {}).get('updates'):
+        raise DesktopError('Flatpak update requires a qualified recipe migration policy')
+    return {'sha256': digest, 'identity': identity(plan), 'plan': plan}, package
+
+
+def _command(arguments, environment, *, capture=True):
+    result = subprocess.run(['flatpak', *arguments], env=environment, text=True,
+                            stdout=subprocess.PIPE if capture else None,
+                            stderr=subprocess.PIPE if capture else None)
+    if result.returncode:
+        raise DesktopError('flatpak ' + arguments[0] + ' failed: ' + (result.stderr or 'see application output'))
+    return result.stdout.strip() if capture else ''
+
+
+def _ref(entry):
+    plan = entry['plan']
+    return plan['desktop']['id'] + '/' + plan['target']['architecture'] + '/' + plan['branch']
+
+
+def _state(entry, environment):
+    return json.loads(_command(['run', '--user', _ref(entry), '--cage-state-info'], environment))
+
+
+def _active(info):
+    record = info.get('state')
+    if not record:
+        return None
+    entries = [g for g in record['generations'] if g['prefix'] == record['active']]
+    if len(entries) != 1:
+        raise DesktopError('ambiguous Flatpak state identity; retain all bundles and state')
+    return entries[0]['identity']
+
+
+def _install(directory, entry, environment):
+    package = _real_path(directory, entry['sha256'] + '.flatpak')
+    with package.open('rb') as handle:
+        if hashlib.file_digest(handle, 'sha256').hexdigest() != entry['sha256']:
+            raise DesktopError('retained Flatpak bundle changed; deployment refused')
+    _command(['install', '--user', '--noninteractive', '--assumeyes', '--no-related', '--no-deps',
+              '--bundle', str(package)], environment)
+
+
+def _retain(directory, entry, source):
+    destination = _real_path(directory, entry['sha256'] + '.flatpak')
+    if not destination.exists():
+        temporary = directory / (entry['sha256'] + '.partial')
+        if temporary.exists() or temporary.is_symlink():
+            raise DesktopError('interrupted package copy retained; move it aside before retrying')
+        copy_file(source, temporary)
+        with temporary.open('rb') as handle:
+            os.fsync(handle.fileno())
+        temporary.replace(destination)
+    _write_state_record(Path(str(destination) + '.json'), {'schemaVersion': 'cage.flatpak-export-result/v0',
+                        'sha256': entry['sha256'], 'plan': entry['plan']})
+
+
+def recover_flatpak(directory, *, environment=None):
+    directory = Path(directory)
+    environment = dict(os.environ if environment is None else environment)
+    with lifecycle_lock(directory):
+        return _recover(directory, environment)
+
+
+def _recover(directory, environment):
+    journal = json.loads(_real_path(directory, 'transaction.json').read_text())
+    # Both baseline and candidate have the same ref and generation-aware helper.
+    active = _active(_state(journal['candidate'], environment))
+    matches = [e for e in (journal['candidate'], journal['previous']) if e['identity'] == active]
+    if active is None:
+        selected = journal['previous']
+    elif not matches:
+        raise DesktopError('state does not match either retained package; no deployment changed')
+    else:
+        selected = matches[0]
+    _install(directory, selected, environment)
+    journal.update(status='recovered', deployed=selected['sha256'])
+    _write_state_record(directory / 'transaction.json', journal)
+    return {'recovered': True, 'packageSha256': selected['sha256'], 'stateRetained': True}
+
+
+def update_flatpak(package, previous_package, *, rollback=False, files=(), cache=None, environment=None):
+    candidate, source = checked_export(package)
+    previous, old_source = checked_export(previous_package)
+    if _ref(candidate) != _ref(previous):
+        raise DesktopError('update and previous bundle must have the same application ID, architecture and branch')
+    if candidate['plan']['desktop']['updates'].get('profile') != previous['plan']['desktop']['updates'].get('profile'):
+        raise DesktopError('incompatible migration profiles; no deployment changed')
+    if candidate['identity'] == previous['identity']:
+        raise DesktopError('package update has no new application/runtime generation')
+    environment = dict(os.environ if environment is None else environment)
+    directory = Path(cache) if cache else Path(environment.get('XDG_DATA_HOME', str(Path.home() / '.local/share'))) / 'cage/package-updates/flatpak' / candidate['plan']['desktop']['id']
+    with lifecycle_lock(directory):
+        journal_path = _real_path(directory, "transaction.json")
+        if journal_path.exists() and json.loads(journal_path.read_text()).get("status") == "prepared":
+            raise DesktopError("unfinished package transaction; run cage recover-flatpak on this cache first")
+        ref = _ref(candidate)
+        metadata_path = '/app/share/cage/' + candidate['plan']['desktop']['id'] + '/desktop.json'
+        installed_plan = json.loads(_command(['run', '--user', '--command=cat', ref, metadata_path], environment))
+        if identity(installed_plan) != previous['identity']:
+            raise DesktopError('installed package does not match --previous-package; no deployment changed')
+        active = _active(_state(previous, environment))
+        if active is None:
+            raise DesktopError('launch the installed baseline once before updating; no deployment changed')
+        if active != previous['identity']:
+            raise DesktopError('installed package and active state differ; run cage recover-flatpak first')
+        # Retain both exact artifacts before deployment changes or user-code runs.
+        _retain(directory, previous, old_source)
+        _retain(directory, candidate, source)
+        journal = {'schemaVersion': 'cage.flatpak-update/v1', 'status': 'prepared',
+                   'candidate': candidate, 'previous': previous, 'action': 'rollback' if rollback else 'update'}
+        _write_state_record(directory / 'transaction.json', journal)
+        try:
+            _install(directory, candidate, environment)
+            _command(['run', '--user', ref, '--cage-rollback' if rollback else '--cage-update', '--', *map(str, files)],
+                     environment, capture=False)
+            if _active(_state(candidate, environment)) != candidate['identity']:
+                raise DesktopError('trial did not activate the requested generation')
+        except BaseException:
+            # If interrupted, the same operation is available explicitly on the
+            # next run. Never guess from an exit code after a durable commit.
+            _recover(directory, environment)
+            raise
+        journal.update(status='committed', deployed=candidate['sha256'])
+        _write_state_record(directory / 'transaction.json', journal)
+        return {'updated': not rollback, 'rolledBack': rollback, 'ref': ref,
+                'recoveryDirectory': str(directory), 'stateRetained': True}

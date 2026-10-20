@@ -342,6 +342,7 @@ def cmd_run(args):
         allow_non_runnable=args.dry_run,
         state_dir=args.state_dir,
         writable_files=args.writable_files,
+        state_action=args.state_action,
     )
     if args.dry_run:
         print(json.dumps(plan, indent=2, sort_keys=True))
@@ -350,6 +351,20 @@ def cmd_run(args):
     result = execute_run_plan(plan, timeout=args.timeout)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result.get("success") else int(result.get("exitCode") or 1)
+
+
+def cmd_package_update(args):
+    from artifact.updates import update_flatpak
+    result = update_flatpak(args.package, args.previous_package, rollback=args.command == "rollback",
+                            files=args.files, cache=args.cache_dir)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_recover_flatpak(args):
+    from artifact.updates import recover_flatpak
+    print(json.dumps(recover_flatpak(args.directory), indent=2, sort_keys=True))
+    return 0
 
 
 # ---- image commands ----
@@ -660,6 +675,7 @@ def build_parser():
                    help="Runtime container network mode; defaults to bundle runtime.network")
     p.add_argument("--entrypoint", help="Named suite entrypoint id to run")
     p.add_argument("--state-dir", help="Persistent native ARM container state directory")
+    p.add_argument("--state-action", choices=["update", "rollback", "state-info"], help="Explicit generation action; requires --state-dir")
     p.add_argument("--writable-files", action="store_true", help="Allow writes within the parent directories of explicitly passed files")
     p.add_argument("files", nargs="*", help="Host files to pass to the selected application entrypoint")
     p.add_argument("--selkies-port", type=int, default=3001,
@@ -670,6 +686,18 @@ def build_parser():
     p.add_argument("--runner-cache-dir",
                    help="Runner cache directory for runtime.runner archives")
     p.set_defaults(func=cmd_run)
+
+    for operation in ("update", "rollback"):
+        p = sub.add_parser(operation, help="Deploy a retained package and trial a qualified state generation")
+        p.add_argument("format", choices=["flatpak"])
+        p.add_argument("package", help="Target Cage .flatpak bundle with adjacent export receipt")
+        p.add_argument("--previous-package", required=True, help="Currently installed Cage bundle, retained for recovery")
+        p.add_argument("--cache-dir", help="Private disk-backed package recovery directory")
+        p.add_argument("files", nargs="*", help="Documents to open during the trial")
+        p.set_defaults(func=cmd_package_update)
+    p = sub.add_parser("recover-flatpak", help="Restore retained deployment matching the committed prefix generation")
+    p.add_argument("directory", help="Recovery directory printed by cage update")
+    p.set_defaults(func=cmd_recover_flatpak)
 
     # image
     p = sub.add_parser("image", help="Inspect and verify Cage application OCI images")
@@ -915,7 +943,7 @@ def main(argv=None):
         # positional after optional arguments in a subparser.  Cage supports
         # Python 3.11, so recover only non-option run-file arguments while
         # continuing to reject misspelled or unsupported flags.
-        if args.command == "run" and all(not item.startswith("-") for item in unknown):
+        if args.command in {"run", "update", "rollback"} and all(not item.startswith("-") for item in unknown):
             args.files.extend(unknown)
         else:
             parser.error(f"unrecognized arguments: {' '.join(unknown)}")

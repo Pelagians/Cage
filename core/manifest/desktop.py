@@ -8,7 +8,7 @@ from .errors import ManifestError
 def normalize_desktop(value):
     if value is None:
         return {}
-    allowed = {"id", "name", "summary", "license", "homepage", "categories", "documentsDirectory"}
+    allowed = {"id", "name", "summary", "license", "homepage", "categories", "documentsDirectory", "updates"}
     if not isinstance(value, dict) or set(value) - allowed:
         raise ManifestError("desktop must be an object containing only " + ", ".join(sorted(allowed)))
     result = dict(value)
@@ -27,5 +27,11 @@ def normalize_desktop(value):
         isinstance(c, str) and re.fullmatch(r"[A-Za-z]+", c) for c in categories
     ):
         raise ManifestError("desktop.categories must be a list of desktop category names")
+    if "updates" in result:
+        from runtime.desktop_launch import validate_update_policy, DesktopError
+        try:
+            result["updates"] = validate_update_policy(result["updates"])
+        except DesktopError as exc:
+            raise ManifestError(str(exc)) from exc
     result["categories"] = categories
     return result

@@ -205,16 +205,22 @@ def seal_native_bundle(bundle, manifest, image):
     inventory = normalize_seed(bundle / "prefix")
     target = {**runtime_target(), "carrierImage": image}
     plan = {"schemaVersion": "cage.desktop-export-plan/v0", "target": target,
-            "desktop": {"id": manifest.desktop.get("id", manifest.name)},
+            "desktop": {**manifest.desktop, "id": manifest.desktop.get("id", manifest.name)},
+            "application": {"name": manifest.name, "version": manifest.version},
             "launch": manifest.launch.to_dict() if manifest.launch else {},
             "seedDigest": digest_json(inventory), "sourceManifestDigest": digest_json(manifest.to_dict()),
             "environment": {**compatibility_environment(manifest.compatibility), **(manifest.launch.env if manifest.launch else {})},
             "layout": {"runtime": "/usr", "seed": "/opt/cage/bundle/prefix"}}
     (bundle / "metadata/seed-inventory.json").write_text(json.dumps(inventory, sort_keys=True) + "\n")
+    import shutil
+    from runtime import desktop_launch
+    shutil.copyfile(desktop_launch.__file__, bundle / "metadata/cage-desktop-launch.py")
+    plan["state"] = {"managerVersion": 1}
+    plan["launcherSha256"] = hashlib.sha256((bundle / "metadata/cage-desktop-launch.py").read_bytes()).hexdigest()
     (bundle / "metadata/native-launch.json").write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n")
 
 
-def native_launch_script(bundle, file_arguments):
+def native_launch_script(bundle, file_arguments, state_action=None):
     import shlex
     from runtime.desktop_launch import digest_json
     bundle = Path(bundle)
@@ -225,10 +231,18 @@ def native_launch_script(bundle, file_arguments):
             or plan["seedDigest"] != digest_json(inventory)
             or plan["sourceManifestDigest"] != digest_json(json.loads((bundle / "manifest.cage.json").read_text()))):
         raise DesktopError("native container seed/runtime/recipe seal mismatch; rebuild with the selected ARM runtime")
+    helper = bundle / "metadata/cage-desktop-launch.py"
+    if plan.get("launcherSha256") and (helper.is_symlink() or not helper.is_file() or hashlib.sha256(helper.read_bytes()).hexdigest() != plan["launcherSha256"]):
+        raise DesktopError("native lifecycle helper seal mismatch")
+    launcher = "/opt/cage/bundle/metadata/cage-desktop-launch.py" if plan.get("launcherSha256") else "/usr/lib/cage-runtime/runtime/desktop_launch.py"
+    if state_action and not plan.get("launcherSha256"):
+        raise DesktopError("rebuild the bundle to enable safe update/rollback controls")
     verify_inventory(bundle / "prefix", inventory)
-    arguments = " ".join(shlex.quote(a) for a in file_arguments)
+    arguments = " ".join(shlex.quote(a) for a in
+                         (["--cage-" + state_action] if state_action else [])
+                         + (["--"] if plan.get("launcherSha256") else []) + file_arguments)
     return ('export XDG_DATA_HOME="${CAGE_STATE:-/var/lib/cage/state}"\n'
-            'exec /usr/bin/python3 -I /usr/lib/cage-runtime/runtime/desktop_launch.py '
+            'exec /usr/bin/python3 -I ' + launcher + ' '
             '/opt/cage/bundle/metadata/native-launch.json ' + arguments + '\n')
 
 

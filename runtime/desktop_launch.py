@@ -1,6 +1,7 @@
 """Small, stdlib-only desktop launch contract, also shipped inside exports."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -18,6 +19,15 @@ class DesktopError(ValueError):
 
 def digest_json(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def plan_identity(plan):
+    identity = {"schemaVersion": "cage.desktop-state/v0", "seedDigest": plan["seedDigest"],
+                "runtimeDigest": digest_json(plan["target"])}
+    if plan.get("state", {}).get("managerVersion") == 1:
+        identity.update(schemaVersion="cage.desktop-state/v1", contractDigest=digest_json(plan))
+    return identity
+
 
 
 def inventory_tree(root):
@@ -86,6 +96,11 @@ def _write_state_record(path, identity):
             handle.flush()
             os.fsync(handle.fileno())
         temporary.replace(path)
+        descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
@@ -123,7 +138,7 @@ def initialize_state(seed, inventory, state_root, identity):
             shutil.rmtree(partial)
         verify_inventory(seed, inventory)
         try:
-            shutil.copytree(seed, partial, symlinks=True)
+            shutil.copytree(seed, partial, symlinks=True, copy_function=copy_file)
             verify_inventory(partial, inventory)
             (partial / ".cage-state.json").write_text(json.dumps(identity, sort_keys=True) + "\n")
             partial.rename(prefix)
@@ -133,6 +148,261 @@ def initialize_state(seed, inventory, state_root, identity):
                 shutil.rmtree(partial)
             raise
         return prefix
+
+
+# Generations are private to one adapter/application state root. Package managers
+# own package bytes; this transaction owns only mutable Windows state.
+def validate_update_policy(policy):
+    if not isinstance(policy, dict) or set(policy) != {"profile", "settings", "documents"}:
+        raise DesktopError("desktop.updates requires profile, settings and documents")
+    import re
+    if not isinstance(policy["profile"], str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/v[0-9]+", policy["profile"]):
+        raise DesktopError("invalid update compatibility profile")
+    paths = []
+    for kind in ("settings", "documents"):
+        if not isinstance(policy[kind], list):
+            raise DesktopError("update paths must be lists")
+        for value in policy[kind]:
+            # Only one wildcard, for the Wine account name. Never accept hives,
+            # program files, globbing of arbitrary trees or arbitrary host paths.
+            parts = value.split("/") if isinstance(value, str) else []
+            if (len(parts) < 4 or parts[:3] != ["drive_c", "users", "*"]
+                    or any(p in {"", ".", ".."} or any(c in p for c in "*?[]\\:\0") for p in parts[3:])
+                    or (kind == "settings" and (len(parts) < 6 or parts[3:5] not in
+                        (["AppData", "Roaming"], ["AppData", "Local"])))
+                    or (kind == "documents" and parts[3] not in {"Documents", "Desktop", "Pictures", "Music", "Videos"})):
+                raise DesktopError("update paths must name qualified user settings or documents")
+            folded = value.casefold()
+            if any(folded == old or folded.startswith(old + "/") or old.startswith(folded + "/") for old in paths):
+                raise DesktopError("overlapping update paths")
+            paths.append(folded)
+    return policy
+
+
+def copy_file(source, destination):
+    """Reflink where supported, with a bounded-memory ordinary copy fallback."""
+    import fcntl
+    info = Path(source).lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o6000:
+        raise DesktopError("state copies require ordinary files; source retained")
+    try:
+        with open(source, "rb") as src, open(destination, "xb") as dst:
+            try:
+                fcntl.ioctl(dst.fileno(), 0x40049409, src.fileno())  # FICLONE
+            except OSError:
+                shutil.copyfileobj(src, dst, 1024 * 1024)
+        shutil.copystat(source, destination)
+        return destination
+    except BaseException:
+        Path(destination).unlink(missing_ok=True)
+        raise
+
+
+def _real_path(root, relative):
+    parts = Path(relative).parts
+    if not parts or Path(relative).is_absolute() or any(p in {".", ".."} for p in parts):
+        raise DesktopError("unsafe generation path")
+    path = Path(root)
+    if path.is_symlink():
+        raise DesktopError("linked state root")
+    for part in parts:
+        path /= part
+        if path.is_symlink():
+            raise DesktopError("linked generation or migration path; data retained")
+    return path
+
+
+def _migrate_paths(source, destination, patterns, *, replace_missing=False):
+    users = _real_path(source, "drive_c/users")
+    accounts = {p.name for p in users.iterdir()} if users.exists() else set()
+    if replace_missing:
+        target_users = _real_path(destination, "drive_c/users")
+        if target_users.exists():
+            accounts.update(p.name for p in target_users.iterdir())
+    for name in accounts:
+        account = users / name
+        if account.is_symlink() or (account.exists() and not account.is_dir()):
+            raise DesktopError("linked or invalid Wine user; migration refused")
+        for pattern in patterns:
+            relative = pattern.replace("/users/*/", "/users/" + account.name + "/", 1)
+            src = _real_path(source, relative)
+            if not src.exists():
+                if replace_missing:
+                    dst = _real_path(destination, relative)
+                    if dst.is_dir():
+                        shutil.rmtree(dst)
+                    elif dst.exists():
+                        dst.unlink()
+                continue
+            # inspect before copying; no escaping, special or linked user data.
+            # Even an in-tree link could alias settings to application binaries.
+            members = [src, *src.rglob("*")] if src.is_dir() else [src]
+            for member in members:
+                mode = member.lstat().st_mode
+                if not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)) or mode & 0o6000:
+                    raise DesktopError("migration requires ordinary files/directories; data retained")
+            dst = _real_path(destination, relative)
+            if dst.exists():
+                if dst.is_dir():
+                    shutil.rmtree(dst)
+                else:
+                    dst.unlink()
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if src.is_dir():
+                shutil.copytree(src, dst, copy_function=copy_file)
+            else:
+                copy_file(src, dst)
+
+
+def _read_generations(root):
+    path = _real_path(root, "state.json")
+    if not path.is_file():
+        return None
+    value = json.loads(path.read_text())
+    if value.get("schemaVersion") == "cage.desktop-generations/v1":
+        import re
+        for entry in value["generations"]:
+            if entry["prefix"] != "prefix" and not re.fullmatch(r"generations/[a-f0-9]{32}", entry["prefix"]):
+                raise DesktopError("invalid generation path")
+            prefix = _real_path(root, entry["prefix"])
+            marker = _real_path(prefix, ".cage-state.json")
+            if (not (prefix / "drive_c").is_dir() or not marker.is_file()
+                    or json.loads(marker.read_text()) != entry["identity"]):
+                raise DesktopError("incomplete generation; data retained for recovery")
+        _generation(value, value["active"])
+        return value
+    prefix = _real_path(root, "prefix")
+    marker = _real_path(prefix, ".cage-state.json")
+    if not (prefix / "drive_c").is_dir() or not marker.is_file() or json.loads(marker.read_text()) != value:
+        raise DesktopError("incomplete legacy generation; data retained")
+    return {"schemaVersion": "cage.desktop-generations/v1", "active": "prefix", "previous": None,
+            "generations": [{"prefix": "prefix", "identity": value}]}
+
+
+def _generation(record, name):
+    matches = [entry for entry in record["generations"] if entry["prefix"] == name]
+    if len(matches) != 1:
+        raise DesktopError("missing or ambiguous state generation")
+    return matches[0]
+
+
+def state_info(root, identity):
+    root = Path(root)
+    record = _read_generations(root)
+    known = {g["prefix"] for g in record["generations"]} if record else set()
+    directory = _real_path(root, "generations")
+    retained = [p.relative_to(root).as_posix() for p in directory.iterdir()
+                if p.relative_to(root).as_posix() not in known] if directory.is_dir() else []
+    return {"state": record, "packageIdentity": identity, "retainedCandidates": sorted(retained)}
+
+
+def prepare_generation(seed, inventory, root, identity, plan, action):
+    """Called with the lifecycle lock held. Return prefix and pending commit.
+
+    A pending generation is never the active one. Interrupted/failed candidates
+    remain available for recovery, but are never automatically reused.
+    """
+    root = Path(root)
+    record = _read_generations(root)
+    policy = plan.get("desktop", {}).get("updates")
+    if policy:
+        validate_update_policy(policy)
+    if record is None:
+        if action == "rollback":
+            raise DesktopError("no previous generation to roll back")
+        initialize_state(seed, inventory, root, identity)
+        record = _read_generations(root)
+    current = _generation(record, record["active"])
+    if current["identity"] == identity and action != "rollback":
+        if policy and identity.get("schemaVersion") == "cage.desktop-state/v1" and not current.get("profile"):
+            current.update(profile=policy["profile"], application=plan.get("application", {}))
+            _write_state_record(root / "state.json", record)
+        return _real_path(root, current["prefix"]), None
+    if action not in {"update", "rollback"}:
+        raise DesktopError("different seed/runtime; close the app and use --cage-update, or restore the previous package and use --cage-rollback")
+    if not policy:
+        raise DesktopError("this recipe has no qualified update policy; all state retained")
+    if current.get("profile", policy["profile"]) != policy["profile"]:
+        raise DesktopError("incompatible update profiles; all state retained")
+    if action == "rollback":
+        if not record.get("previous"):
+            raise DesktopError("no previous generation to roll back")
+        original = _generation(record, record["previous"])
+        legacy_match = (original["identity"].get("schemaVersion") == "cage.desktop-state/v0"
+                        and all(original["identity"].get(key) == identity.get(key) for key in ("seedDigest", "runtimeDigest")))
+        if original["identity"] != identity and not legacy_match:
+            raise DesktopError("rollback requires the previous package/runtime; see --cage-state-info")
+        source = _real_path(root, original["prefix"])
+    else:
+        if current["identity"].get("runtimeDigest") != identity.get("runtimeDigest"):
+            raise DesktopError("runtime changes require separate migration qualification; all state retained")
+        source = Path(seed)
+        verify_inventory(source, inventory)
+    import uuid
+    parent = _real_path(root, "generations")
+    parent.mkdir(mode=0o700, exist_ok=True)
+    relative = "generations/" + uuid.uuid4().hex
+    prefix = root / relative
+    # Record preparation before any copy. A crash cannot make it active.
+    _write_state_record(root / "transaction.json", {"status": "preparing", "action": action,
+                        "candidate": relative, "previous": record["active"]})
+    shutil.copytree(source, prefix, symlinks=True, copy_function=copy_file)
+    if action == "update":
+        verify_inventory(prefix, inventory)
+        _migrate_paths(_real_path(root, current["prefix"]), prefix, policy["settings"])
+    _migrate_paths(_real_path(root, current["prefix"]), prefix, policy["documents"], replace_missing=True)
+    _write_state_record(prefix / ".cage-state.json", identity)
+    # Check the application before it can write to the candidate.
+    if not windows_path(prefix, plan["launch"]["entrypoint"]).is_file():
+        raise DesktopError("updated application executable is missing; old generation retained")
+    current.setdefault("profile", policy["profile"])
+    record["previous"] = record["active"]
+    record["active"] = relative
+    record["generations"].append({"prefix": relative, "identity": identity,
+        "profile": policy["profile"], "application": plan.get("application", {}),
+        "action": action})
+    return prefix, record
+
+
+def commit_generation(root, record):
+    # Prefix contents must reach disk before the active pointer. Wine has already
+    # stopped. syncfs is not portable Python; fsync every regular file/directory.
+    prefix = _real_path(root, record["active"])
+    for path in [*prefix.rglob("*"), prefix]:
+        if path.is_symlink():
+            continue
+        if path.is_file() or path.is_dir():
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+    descriptor = os.open(prefix.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    _write_state_record(root / "state.json", record)
+    try:
+        _write_state_record(root / "transaction.json", {"status": "committed", "active": record["active"]})
+    except OSError:
+        pass  # state.json is the authoritative durable commit record.
+
+
+@contextmanager
+def lifecycle_lock(root):
+    import fcntl
+    root = Path(root)
+    if root.is_symlink():
+        raise DesktopError("application state directory cannot be a symlink")
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    descriptor = os.open(root / "launch.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise DesktopError("this application is already running; close it before updating or launching") from exc
+        yield descriptor
 
 
 def launch(metadata_path, files):
@@ -152,10 +422,25 @@ def launch(metadata_path, files):
             raise DesktopError("unsupported desktop state namespace")
         state_root /= namespace
     state_root /= plan["desktop"]["id"]
-    identity = {"schemaVersion": "cage.desktop-state/v0", "seedDigest": plan["seedDigest"],
-                "runtimeDigest": digest_json(plan["target"])}
+    identity = plan_identity(plan)
     seed = Path(plan["layout"]["seed"]) if plan["layout"].get("seed") else metadata_path.parent / "seed"
-    prefix = initialize_state(seed, inventory, state_root, identity)
+    action = "launch"
+    if files[:1] in (["--cage-update"], ["--cage-rollback"]):
+        action = files[0][7:]
+        files = files[1:]
+    elif files == ["--cage-state-info"]:
+        with lifecycle_lock(state_root):
+            print(json.dumps(state_info(state_root, identity), indent=2, sort_keys=True))
+        return 0
+    elif files and files[0].startswith("--cage-"):
+        raise DesktopError("unknown Cage lifecycle option")
+    if files[:1] == ["--"]:
+        files = files[1:]
+    with lifecycle_lock(state_root) as lock_fd:
+        return _launch_locked(metadata_path, files, plan, inventory, state_root, identity, seed, action, lock_fd)
+
+
+def _launch_locked(metadata_path, files, plan, inventory, state_root, identity, seed, action, lock_fd):
     runtime_root = Path(plan["layout"]["runtime"])
     if plan.get("format") == "appimage":
         # AppImage mounts and extracted AppDirs relocate between launches.
@@ -166,7 +451,7 @@ def launch(metadata_path, files):
         k.startswith(("WINE", "LD_", "DYLD_")) or k in {"PROTONPATH", "STEAM_COMPAT_DATA_PATH"}
     )}
     environment.update(plan["environment"])
-    environment.update(WINEPREFIX=str(prefix), WINEARCH="win64")
+    environment.update(WINEARCH="win64")
     if plan.get("format") == "appimage":
         usr = metadata_path.parents[3]
         environment["LD_LIBRARY_PATH"] = str(usr / "lib/cage-native")
@@ -180,6 +465,9 @@ def launch(metadata_path, files):
     if plan["target"]["graphics"] == "x11":
         environment.pop("WAYLAND_DISPLAY", None)
         environment.pop("WAYLAND_SOCKET", None)
+    assert_quiescent(state_root, server, environment)
+    prefix, pending = prepare_generation(seed, inventory, state_root, identity, plan, action)
+    environment["WINEPREFIX"] = str(prefix)
     # This maps the Flatpak namespace, not an unrestricted host filesystem.
     zdrive = prefix / "dosdevices/z:"
     if not zdrive.exists() and not zdrive.is_symlink():
@@ -197,26 +485,42 @@ def launch(metadata_path, files):
     cwd = windows_path(prefix, contract["workingDirectory"]) if contract.get("workingDirectory") else executable.parent
     if not cwd.is_dir():
         raise DesktopError("application working directory is missing")
-    return _run_application([wine, contract["entrypoint"], *contract.get("args", []), *arguments],
-                            server, environment, cwd, state_root)
+    result = _run_application([wine, contract["entrypoint"], *contract.get("args", []), *arguments],
+                            server, environment, cwd, state_root, locked=True, lock_fd=lock_fd)
+
+    if pending is not None and result == 0:
+        commit_generation(state_root, pending)
+    return result
 
 
-def _run_application(command, server, environment, cwd, state_root):
+def assert_quiescent(root, server, environment):
+    """An orphan Wine service must not race migration after a killed launcher."""
+    root = Path(root)
+    prefixes = [_real_path(root, "prefix")]
+    directory = _real_path(root, "generations")
+    if directory.exists():
+        prefixes.extend(_real_path(root, p.relative_to(root)) for p in directory.iterdir())
+    for prefix in prefixes:
+        if not prefix.is_dir():
+            continue
+        try:
+            subprocess.run([server, "-w"], env={**environment, "WINEPREFIX": str(prefix)},
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1, check=True)
+        except subprocess.TimeoutExpired as exc:
+            raise DesktopError("Wine is still running in retained state; close it before updating or launching") from exc
+
+
+def _run_application(command, server, environment, cwd, state_root, *, locked=False, lock_fd=None):
     """Own one prefix lifecycle; Wine services must not outlive its GUI app."""
-    import fcntl
-    descriptor = os.open(state_root / "launch.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(descriptor, "w") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise DesktopError("this application is already running; close it before launching another instance") from exc
-        try:
-            return subprocess.run(command, env=environment, cwd=cwd).returncode
-        finally:
-            # WINEPREFIX scopes this to the application. The launch lock prevents
-            # terminating another legitimate Cage launch in the same prefix.
-            subprocess.run([server, "-k"], env=environment, timeout=15, check=False)
-            subprocess.run([server, "-w"], env=environment, timeout=30, check=True)
+    if not locked:
+        with lifecycle_lock(state_root) as lock_fd:
+            return _run_application(command, server, environment, cwd, state_root, locked=True, lock_fd=lock_fd)
+    try:
+        return subprocess.run(command, env=environment, cwd=cwd,
+                              pass_fds=() if lock_fd is None else (lock_fd,)).returncode
+    finally:
+        subprocess.run([server, "-k"], env=environment, timeout=15, check=False)
+        subprocess.run([server, "-w"], env=environment, timeout=30, check=True)
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ from artifact.inspection import verify_bundle
 from builder.pipeline import generate_build_script
 from core.sources import verify_manifest_sources, audit_manifest_sources
 from runtime.desktop_launch import DesktopError
-from runtime.desktop_launch import inventory_tree, verify_inventory
+from runtime.desktop_launch import inventory_tree, verify_inventory, copy_file
 from core.media import stage_media
 
 
@@ -131,7 +131,7 @@ def initialize_flatpak(build_dir, app_id, target, store):
                  target["sdk"], target["platform"], target["branch"]], store=store)
     if target.get("payload") == "rpm":
         from runtime.arm64ec import materialize_payload
-        shutil.copytree(materialize_payload(Path(store) / "arm64ec"), Path(build_dir) / "files", symlinks=True, dirs_exist_ok=True)
+        shutil.copytree(materialize_payload(Path(store) / "arm64ec"), Path(build_dir) / "files", symlinks=True, dirs_exist_ok=True, copy_function=copy_file)
     # New application policy: never inherit the Wine base application's permissions.
     (Path(build_dir) / "metadata").write_text(
         f"[Application]\nname={app_id}\nruntime={target['platform']}/{target['architecture']}/{target['branch']}\n"

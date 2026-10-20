@@ -51,7 +51,9 @@ def create_appimage_export_plan(bundle, *, allow_host_access=False):
         'wineDllDirectory': ('lib64/wine-wow64/wine' if source['target']['provider'] == 'wine-arm64ec' else 'lib/wine')}
     return {**source, 'target': target, 'sourceTarget': source['target'], 'format': 'appimage',
         'layout': {'runtime': 'usr/wine'},
-        'state': {**source['state'], 'namespace': 'cage/appimage'},
+        'state': {**source['state'], 'namespace': 'cage/appimage',
+                  'packagerSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                  'integrationSha256': hashlib.sha256((ROOT / 'runtime/appimage_launch.py').read_bytes()).hexdigest()},
         'permissions': {'isolation': 'none', 'network': 'host', 'filesystem': 'host-user',
                         'explicitHostAccessAccepted': True, 'recipeNetworkPolicyEnforced': False},
         'tools': lock, 'prerequisites': ['Linux ' + target['architecture'],
@@ -311,6 +313,9 @@ def prepare_appdir(bundle, plan, context, *, store, cache):
     helpers.mkdir(parents=True)
     for name in ['desktop_launch.py', 'appimage_launch.py']:
         shutil.copyfile(ROOT / 'runtime' / name, helpers / name)
+        expected = plan['state']['launcherSha256' if name == 'desktop_launch.py' else 'integrationSha256']
+        if hashlib.sha256((helpers / name).read_bytes()).hexdigest() != expected:
+            raise DesktopError('lifecycle helper changed after export planning')
     # -I excludes host Python paths; only the one packaged helper directory is added.
     (helpers / 'entry.py').write_text('import sys\nfrom pathlib import Path\n'
         'sys.path.insert(0, str(Path(__file__).resolve().parent))\n'

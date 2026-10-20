@@ -36,3 +36,9 @@ desktop:
     - Utility
     - TextEditor
   documentsDirectory: Cage
+  updates:
+    profile: notepadplusplus-portable/v1
+    settings:
+      - drive_c/users/*/AppData/Roaming/Notepad++
+    documents:
+      - drive_c/users/*/Documents

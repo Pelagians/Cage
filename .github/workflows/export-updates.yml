@@ -1,0 +1,157 @@
+name: Export update and rollback proof
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['runtime/**', 'artifact/**', 'core/manifest/desktop.py', 'cage/**', 'scripts/*update*poc.py', 'tests/test_*updates.py', '.github/workflows/export-updates.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  desktop-updates:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+            recipe: notepadplusplus-portable
+            store: .cage/flatpak
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+            recipe: notepadplusplus-portable-arm64
+            store: .cage/flatpak-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      CAGE_TEST_DISCARD_PREFIXES: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install build and GUI tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak podman uidmap slirp4netns fuse-overlayfs rpm2cpio squashfs-tools binutils xvfb openbox xdotool scrot xdg-utils
+          python -m pip install PyYAML pytest setuptools wheel
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          mkdir -p "$HOME/.config/containers"
+          printf '[engine]\ncgroup_manager="cgroupfs"\nevents_logger="file"\n' > "$HOME/.config/containers/containers.conf"
+      - name: Existing contracts and update failure cases
+        run: python -m pytest tests/ -q
+      - uses: actions/cache@v4
+        with:
+          path: ${{ matrix.store }}
+          key: update-proof-${{ matrix.arch }}-${{ hashFiles('runtime/desktop-wine-11.0.json', 'runtime/wine-arm64ec-11.20-fex-2610.json') }}
+          restore-keys: |
+            appimage-native-${{ matrix.arch }}-
+            arm64-wine-fex-
+            desktop-flatpak-${{ runner.arch }}-
+      - name: Acquire both pinned releases
+        run: |
+          python scripts/prepare-flatpak-poc.py
+          python scripts/prepare-update-poc.py
+      - name: Build two versions and prove Flatpak upgrade and rollback
+        run: |
+          mkdir -p dist/update-evidence "$HOME/Documents" "$HOME/.config"
+          printf 'XDG_DOCUMENTS_DIR="$HOME/Documents"\n' > "$HOME/.config/user-dirs.dirs"
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24' bash -eu -o pipefail <<'SH'
+          openbox >dist/update-evidence/window-manager-flatpak.log 2>&1 &
+          python -m cage build recipes/${{ matrix.recipe }}.cage.yaml --target flatpak --flatpak-store ${{ matrix.store }} --output dist/update-bundles >dist/update-evidence/baseline-build.json
+          python -m cage build dist/update-recipes/${{ matrix.recipe }}.cage.yaml --target flatpak --flatpak-store ${{ matrix.store }} --output dist/update-bundles >dist/update-evidence/candidate-build.json
+          for version in 8.8.8 8.8.9; do
+            python -m cage export flatpak dist/update-bundles/${{ matrix.recipe }}-$version --flatpak-store ${{ matrix.store }} --output dist/update-$version.flatpak >dist/update-evidence/flatpak-export-$version.json
+          done
+          export FLATPAK_USER_DIR="$PWD/${{ matrix.store }}"
+          CAGE_TEST_EVIDENCE="$PWD/dist/update-evidence/flatpak" python scripts/test-update-poc.py flatpak dist/update-8.8.8.flatpak dist/update-8.8.9.flatpak
+          SH
+      - name: Export both AppImages and prove clean consumer update and rollback
+        run: |
+          for version in 8.8.8 8.8.9; do
+            python -m cage export appimage dist/update-bundles/${{ matrix.recipe }}-$version --allow-host-access --flatpak-store ${{ matrix.store }} --output dist/update-$version.AppImage >dist/update-evidence/appimage-export-$version.json
+            rm -rf -- dist/update-$version.AppImage.build
+          done
+          # Contemporary glibc consumer; Python/X11 tools only drive the test.
+          # Wine and the application come exclusively from the AppImages.
+          podman build -t localhost/cage-update-proof-tools -f - . <<'CONTAINER'
+          FROM registry.fedoraproject.org/fedora:44
+          RUN dnf -y --setopt=install_weak_deps=False install python3 xdotool scrot glibc-langpack-en && dnf clean all
+          CONTAINER
+          mkdir -p .cage/update-consumer-home .cage/update-appimage-tmp
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24' bash -eu -o pipefail <<'SH'
+          openbox >dist/update-evidence/window-manager-appimage.log 2>&1 &
+          podman run --rm --net=none --userns=keep-id --user "$(id -u):$(id -g)" --hostname "$(hostname)" \
+            --security-opt label=disable -v "$PWD:$PWD" -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+            -v "$XAUTHORITY:$XAUTHORITY:ro" -w "$PWD" -e DISPLAY -e XAUTHORITY \
+            -e HOME="$PWD/.cage/update-consumer-home" -e APPIMAGE_EXTRACT_AND_RUN=1 \
+            -e TMPDIR="$PWD/.cage/update-appimage-tmp" -e CAGE_TEST_DISCARD_PREFIXES=1 \
+            -e CAGE_TEST_EVIDENCE="$PWD/dist/update-evidence/appimage" \
+            localhost/cage-update-proof-tools python3 scripts/test-update-poc.py appimage dist/update-8.8.8.AppImage dist/update-8.8.9.AppImage
+          SH
+          rm -rf -- .cage/update-appimage-tmp
+      - name: Retain qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-updates-${{ matrix.arch }}-${{ github.sha }}
+          retention-days: 14
+          path: |
+            dist/update-*.AppImage
+            dist/update-*.AppImage.json
+            dist/update-*.flatpak
+            dist/update-*.flatpak.json
+            dist/update-evidence/**/*.json
+            dist/update-evidence/**/*.log
+            dist/update-evidence/**/*.png
+
+  arm-container-updates:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      CAGE_TEST_DISCARD_PREFIXES: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Prepare tools and sources
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman uidmap slirp4netns fuse-overlayfs rpm2cpio xvfb openbox xdotool scrot xdg-utils
+          python -m pip install PyYAML pytest setuptools wheel
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          mkdir -p "$HOME/.config/containers"
+          printf '[engine]\ncgroup_manager="cgroupfs"\nevents_logger="file"\n' > "$HOME/.config/containers/containers.conf"
+          python scripts/prepare-flatpak-poc.py
+          python scripts/prepare-update-poc.py
+          python - <<'PY'
+          from container.manager import build_container
+          result = build_container('wine-arm64ec', '11.20', build_cmd='podman')
+          print(result.log)
+          assert result.success
+          PY
+      - name: Prove persistent container update and rollback
+        run: |
+          mkdir -p dist/update-evidence
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24' bash -eu -o pipefail <<'SH'
+          openbox >dist/update-evidence/window-manager-container.log 2>&1 &
+          python -m cage build recipes/notepadplusplus-portable-arm64.cage.yaml --engine podman --output dist/update-containers >dist/update-evidence/container-baseline-build.json
+          python -m cage build dist/update-recipes/notepadplusplus-portable-arm64.cage.yaml --engine podman --output dist/update-containers >dist/update-evidence/container-candidate-build.json
+          CAGE_TEST_EVIDENCE="$PWD/dist/update-evidence/container" python scripts/test-update-poc.py container dist/update-containers/notepadplusplus-portable-arm64-8.8.8 dist/update-containers/notepadplusplus-portable-arm64-8.8.9
+          SH
+      - name: Retain container qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-updates-aarch64-${{ github.sha }}
+          retention-days: 14
+          path: |
+            dist/update-evidence/**/*.json
+            dist/update-evidence/**/*.log
+            dist/update-evidence/**/*.png
+            dist/update-containers/*/metadata/*.json
+            dist/update-containers/*/logs/*

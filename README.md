@@ -147,6 +147,10 @@ portable application recipes and persistent-prefix launcher as Flatpak. Native
 x86_64 and ARM64 outputs include Wine and Python; this initial AppImage target
 requires glibc 2.43 or newer and explicit acceptance of ordinary host access.
 
+Explicit [safe updates and rollback](docs/export-updates.md) share qualified
+recipe migrations across Flatpak, AppImage and persistent Wine containers.
+Previous generations are retained; rollback carries current documents forward.
+
 ### Desktop Flatpak proof of concept
 
 The optional `--target flatpak` build target reuses ordered Cage recipes and

@@ -96,6 +96,7 @@ class Phase3ExecutionPlanTests(unittest.TestCase):
         self.assertIn("dry-run-placeholder", message)
         self.assertIn("state=planned", message)
 
+    @patch("runtime.launcher.normalize_engine", new=lambda engine: engine)
     def test_docker_run_plan_preserves_identity_without_podman_flags(self):
         with tempfile.TemporaryDirectory() as tmp:
             plan = build_run_plan(

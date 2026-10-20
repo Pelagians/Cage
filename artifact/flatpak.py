@@ -10,7 +10,7 @@ from xml.sax.saxutils import escape
 from artifact.desktop import create_desktop_export_plan
 from builder.flatpak import ensure_target, initialize_flatpak, run_flatpak
 from runtime import desktop_launch
-from runtime.desktop_launch import DesktopError, verify_inventory, digest_json
+from runtime.desktop_launch import DesktopError, verify_inventory, digest_json, copy_file
 
 ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect x="8" y="8" width="112" height="112" rx="20" fill="#245b78"/><path d="M38 30h40l16 16v52H38z" fill="#fff"/><path d="M48 58h34M48 70h34M48 82h24" stroke="#245b78" stroke-width="5"/></svg>\n'
 
@@ -18,6 +18,7 @@ ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox
 def create_flatpak_export_plan(bundle):
     plan = create_desktop_export_plan(bundle)
     return {**plan, "format": "flatpak", "branch": "stable",
+            "state": {**plan["state"], "packagerSha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()},
             "layout": {"runtime": "/app"},
             "permissions": ["--unshare=network", "--share=ipc", "--socket=x11",
                             "--filesystem=xdg-documents/" + plan["desktop"]["documentsDirectory"] + ":create"],
@@ -40,7 +41,7 @@ def prepare_flatpak_context(bundle, plan, context, *, store):
     receipt = json.loads((Path(bundle) / "metadata/desktop-build.json").read_text())
     if digest_json(receipt["inventory"]) != plan["seedDigest"]:
         raise DesktopError("source inventory changed after export planning")
-    shutil.copytree(Path(bundle) / "prefix", destination / "seed", symlinks=True)
+    shutil.copytree(Path(bundle) / "prefix", destination / "seed", symlinks=True, copy_function=copy_file)
     verify_inventory(destination / "seed", receipt["inventory"])
     (destination / "seed-inventory.json").write_text(json.dumps(receipt["inventory"], sort_keys=True) + "\n")
     (destination / "desktop.json").write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n")
@@ -59,6 +60,8 @@ def prepare_flatpak_context(bundle, plan, context, *, store):
     helper = files / "libexec/cage-desktop-launch.py"
     helper.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(desktop_launch.__file__, helper)
+    if hashlib.sha256(helper.read_bytes()).hexdigest() != plan["state"]["launcherSha256"]:
+        raise DesktopError("lifecycle helper changed after export planning")
     wrapper = files / "bin/cage-desktop-launch"
     wrapper.write_text('#!/bin/sh\nexec /usr/bin/python3 -I /app/libexec/cage-desktop-launch.py /app/share/cage/'
                        + plan["desktop"]["id"] + '/desktop.json "$@"\n')

@@ -56,7 +56,7 @@ Wine uses `$XDG_DATA_HOME/<app-id>/prefix`. For a normal Flatpak installation th
 
 The POC permits one active application launch per prefix. A second launch reports that the application is already running. When the GUI application exits, the helper stops and waits for that prefix's Wine services, then releases its launch lock. This prevents background services from keeping the Flatpak alive and prevents cleanup from terminating another legitimate launch. Multiple simultaneous entrypoints and file handoff to a running application are later integration work.
 
-State records bind the seed digest and runtime identity. An incompatible package generation is refused with its old data retained. Automatic migration, application updates and rollback are later work; replacing a package must not silently launch old binaries or overwrite the user's only prefix.
+State records bind the seed digest and runtime identity. An incompatible package generation is refused with its old data retained. Explicit qualified updates and rollback are now available through the shared generation manager; see [safe export updates](export-updates.md). Replacing a package never silently launches old binaries or overwrites the only prefix.
 
 Both installed files and metadata are covered by Flatpak's content-addressed package commit. The seed additionally has a SHA-256 inventory covering file bytes, types, modes and safe link targets. This inventory detects accidental changes before export and first use; it is not a publisher signature. These local POC bundles are unsigned and are not published by the export command.
 

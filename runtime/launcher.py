@@ -53,6 +53,7 @@ def build_run_plan(
     allow_non_runnable: bool = False,
     state_dir: Path | str | None = None,
     writable_files: bool = False,
+    state_action: str | None = None,
 ) -> dict[str, Any]:
     """Return a deterministic container run plan for a verified bundle."""
     bundle = Path(bundle_path)
@@ -110,6 +111,8 @@ def build_run_plan(
     _validate_network_mode(selected_network)
     _validate_graphics_network(mode, selected_network)
 
+    if state_action and (state_action not in {"update", "rollback", "state-info"} or not state_dir):
+        raise RunError("state actions require a persistent container and update, rollback or state-info")
     base_image = _runtime_image(runtime)
     if session_contract == "cage.native-wine/v1":
         if mode == "selkies":
@@ -118,8 +121,7 @@ def build_run_plan(
             raise RunError("ARM64EC owns its pinned Wine/FEX runtime; external runners are unsupported")
         if entrypoint is not None or suite_entrypoints or file_associations:
             raise RunError("ARM64EC initial runtime supports the default entrypoint only")
-    elif state_dir:
-        raise RunError("--state-dir currently requires the native ARM64EC runtime; other runtime state workflows are unchanged")
+
     from artifact.linux_state import linux_state_identity
     derived_identity = linux_state_identity(bundle, base_image)
     derived_image = (derived_identity + ("-selkies" if (graphics or str((graph.get("graphics") or {}).get("defaultMode") or "headless")) == "selkies" else "-headless")) if derived_identity else None
@@ -135,11 +137,35 @@ def build_run_plan(
     )
     if session_contract == "cage.native-wine/v1" and verification.get("runnable"):
         from runtime.arm64ec import native_launch_script
-        script = native_launch_script(bundle, [item["containerPath"] for item in file_arguments])
+        script = native_launch_script(bundle, [item["containerPath"] for item in file_arguments], state_action=state_action)
+    lifecycle_mounts = []
+    if state_dir and session_contract != "cage.native-wine/v1":
+        from runtime.container_state import managed_plan
+        from runtime.desktop_launch import DesktopError
+        try:
+            managed = managed_plan(bundle, image)
+        except DesktopError as exc:
+            raise RunError(str(exc)) from exc
+        # The normal launch script still owns graphics, compatibility and launch.
+        # Only its temporary-prefix preparation is replaced for this opt-in path.
+        if ('export WINEPREFIX=/tmp/cage-prefix' not in script or
+                'rm -rf "$WINEPREFIX"\ncp -a "$CAGE_PREFIX_SOURCE" "$WINEPREFIX"' not in script):
+            raise RunError("existing launch script no longer matches the managed-prefix adapter")
+        script = script.replace('export WINEPREFIX=/tmp/cage-prefix',
+                                'export WINEPREFIX="$CAGE_MANAGED_PREFIX"')
+        script = script.replace('rm -rf "$WINEPREFIX"\ncp -a "$CAGE_PREFIX_SOURCE" "$WINEPREFIX"', ': # generation manager prepared WINEPREFIX')
+        encoded_plan = base64.b64encode(json.dumps(managed).encode()).decode()
+        encoded_script = base64.b64encode(script.encode()).decode()
+        script = ('exec /usr/bin/python3 -I /opt/cage-lifecycle/container_state.py --plan-b64 '
+                  + shlex.quote(encoded_plan) + ' ' + shlex.quote(encoded_script) + '\n')
+        lifecycle_mounts.append(_volume_mount(Path(__file__).parent, "/opt/cage-lifecycle",
+                                            engine=selected_engine, read_only=True))
     wine_graphics = str(graphics_contract.get("wineGraphics") or "xwayland")
     if mode == "headless" and wine_graphics == "wayland":
         raise RunError("native Wine Wayland requires graphics selkies")
     environment = _container_environment(mode, wine_graphics, script)
+    if state_action:
+        environment["CAGE_STATE_ACTION"] = state_action
     environment["PUID"] = str(os.getuid())
     environment["PGID"] = str(os.getgid())
     environment.update(dict(runtime.get("environment") or {}))
@@ -155,7 +181,7 @@ def build_run_plan(
     if selected_engine == "podman":
         environment["PUID"] = str(os.getuid())
         environment["PGID"] = str(os.getgid())
-    mounts = [item["mount"] for item in file_arguments] + ([runner_cache["mount"]] if runner_cache and runner_cache.get("status") == "present" else [])
+    mounts = lifecycle_mounts + [item["mount"] for item in file_arguments] + ([runner_cache["mount"]] if runner_cache and runner_cache.get("status") == "present" else [])
     if state_dir:
         state_path = Path(state_dir).absolute()
         if state_path.is_symlink() or (state_path.exists() and not state_path.is_dir()):

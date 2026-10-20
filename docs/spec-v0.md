@@ -271,3 +271,12 @@ Digest-pinned image refs are required by default because Kubernetes deployment i
 The v0 manifest emitter creates a Deployment plus state/export PVCs by default. Runtime state mounts at `/var/lib/cage/state`; exports mount at `/exports`. `--no-pvc` replaces the PVCs with `emptyDir` volumes for smoke/demo manifests. Kubernetes labels are normalized for selector/tooling safety; exact Cage metadata such as schema, raw app name, app version, and image ref is preserved in annotations.
 
 Kubernetes export reads `runnerRuntime.network` from the bundle graph. `network: none` emits `hostNetwork: false` plus a deny-all-egress `NetworkPolicy`; enforcement requires a NetworkPolicy-capable cluster CNI, and this policy only controls egress. `network: host` emits `hostNetwork: true` and no deny-egress policy. `network: bridge` maps to ordinary pod networking (`hostNetwork: false`) without the deny-egress policy. Kubernetes does not have a direct Docker/Podman `--net` flag, so these outputs are the closest v0 deployment intent mapping rather than a byte-for-byte runtime equivalent.
+
+### Optional desktop update policy
+
+`desktop.updates` accepts `profile`, `settings` and `documents`. The shared
+recipe declares which application-specific user paths have been qualified for
+copying into a fresh seed, and which document paths must carry forward on
+rollback. No registry hive or program directory migration is accepted. See
+[the transaction and path rules](export-updates.md). Omitting the policy retains
+the existing refusal of changed persistent generations.

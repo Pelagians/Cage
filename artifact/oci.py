@@ -85,6 +85,10 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str =
         base_image=base_image,
         image_graphics=graphics,
     )
+    managed_state = None
+    if not native and manifest.get('desktop', {}).get('updates'):
+        from runtime.container_state import managed_plan
+        managed_state = managed_plan(bundle, derived_image or base_image)
     labels = _oci_labels(application, runtime, base_image)
     labels['io.cage.graphics'] = graphics
     if derived_image:
@@ -96,7 +100,11 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str =
     containerfile = _containerfile(base_image, labels, image_environment, graphics=graphics,
                                    linux_outputs=linux_outputs)
 
+    if managed_state:
+        containerfile += 'COPY lifecycle /opt/cage-lifecycle\n'
+
     return {
+        **({'managedState': managed_state} if managed_state else {}),
         'schemaVersion': OCI_EXPORT_PLAN_SCHEMA_VERSION,
         'imageType': 'runnable-application-image',
         'graphics': graphics,
@@ -158,11 +166,27 @@ def prepare_oci_build_context(
     containerfile = context / plan['containerfile']['path']
     containerfile.write_text(plan['containerfile']['content'], encoding='utf-8')
 
+    if plan.get('managedState'):
+        from runtime import desktop_launch, container_state
+        lifecycle = context / 'lifecycle'
+        lifecycle.mkdir()
+        shutil.copyfile(desktop_launch.__file__, lifecycle / 'desktop_launch.py')
+        shutil.copyfile(container_state.__file__, lifecycle / 'container_state.py')
+        _write_json(lifecycle / 'plan.json', plan['managedState'])
+        legacy = _launcher_script()
+        # Preserve all existing image launch setup, skip its first-use copy only.
+        legacy = legacy.replace('if [ ! -d "$WINEPREFIX/drive_c" ]; then',
+                                'if [ -z "${CAGE_MANAGED_PREFIX:-}" ] && [ ! -d "$WINEPREFIX/drive_c" ]; then')
+        (lifecycle / 'legacy.sh').write_text(legacy)
     launcher = context / plan['launcher']['path']
     if plan['runtime'].get('provider') == 'wine-arm64ec':
+        native_helper = '/opt/cage/bundle/metadata/cage-desktop-launch.py' if json.loads((bundle / 'metadata/native-launch.json').read_text()).get('launcherSha256') else '/usr/lib/cage-runtime/runtime/desktop_launch.py'
         launcher.write_text('#!/bin/sh\nexport XDG_DATA_HOME="${CAGE_STATE:-/var/lib/cage/state}"\n'
-                            'exec /usr/bin/python3 -I /usr/lib/cage-runtime/runtime/desktop_launch.py '
+                            'exec /usr/bin/python3 -I ' + native_helper + ' '
                             '/opt/cage/bundle/metadata/native-launch.json "$@"\n', encoding='utf-8')
+    elif plan.get('managedState'):
+        launcher.write_text('#!/bin/sh\nexec /usr/bin/python3 -I /opt/cage-lifecycle/container_state.py '
+                            '/opt/cage-lifecycle/plan.json /opt/cage-lifecycle/legacy.sh "$@"\n')
     else:
         launcher.write_text(_launcher_script(), encoding='utf-8')
     launcher.chmod(0o755)

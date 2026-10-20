@@ -131,7 +131,8 @@ recipe's Windows working directory and arguments remain unchanged.
 AppImage state is `$XDG_DATA_HOME/cage/appimage/<app-id>/`. It is deliberately
 separate from Flatpak and container prefixes. Relaunch and package relocation
 reuse this state. Seed/runtime changes refuse launch while retaining the old
-prefix: generation-aware upgrades, migrations and rollback are not implemented.
+prefix. Explicit qualified generation updates and rollback are described in
+[safe export updates](export-updates.md).
 Do not share a live prefix between formats or replace the only copy of user
 state to work around a mismatch. Application self-updates are not a qualified
 package update mechanism.
@@ -151,3 +152,9 @@ checks save/relaunch on both distro families. Such container userland checks
 are not booted-device or GPU qualification. Physical Asahi FUSE/fallback checks
 are recorded separately. See [qualification evidence](appimage-qualification.md)
 for exact tested identities and outstanding limits.
+
+## Updates and rollback
+
+See [safe export updates](export-updates.md) for qualified migrations, retained
+AppImage versions, menu dispatch, rollback and recovery. Existing pre-generation
+integration must be reinstalled with a generation-aware baseline first.

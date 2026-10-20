@@ -140,10 +140,12 @@ def create_desktop_export_plan(bundle):
         handle.seek(int.from_bytes(header[60:64], "little"))
         if handle.read(6) != b"PE\0\0\x64\x86":
             raise DesktopError("desktop POC entrypoint must be an x86_64 Windows executable")
+    from runtime import desktop_launch
+    launcher_hash = hashlib.sha256(Path(desktop_launch.__file__).read_bytes()).hexdigest()
     return {"schemaVersion": "cage.desktop-export-plan/v0", "application": {"name": manifest.name, "version": manifest.version},
             "desktop": manifest.desktop, "launch": manifest.launch.to_dict(),
             "environment": {**compatibility_environment(manifest.compatibility), **manifest.launch.env},
             "target": target, "seedDigest": receipt["seedDigest"],
             "sourceManifestDigest": receipt["manifestDigest"],
-            "state": {"schemaVersion": "cage.desktop-state/v0", "upgradePolicy": "refuse-mismatch-retain-data"},
+            "state": {"schemaVersion": "cage.desktop-state/v0", "managerVersion": 1, "launcherSha256": launcher_hash, "upgradePolicy": "explicit-qualified-generations" if manifest.desktop.get("updates") else "refuse-mismatch-retain-data"},
             "qualification": receipt["qualification"]}
