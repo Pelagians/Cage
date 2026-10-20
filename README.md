@@ -151,6 +151,10 @@ for building, installing, permissions, persistence, and current limits.
 The default container, CFW, Selkies, OCI and Kubernetes workflows retain their
 existing targets. Desktop builds require separate runtime qualification.
 
+An explicit experimental `wine-arm64ec` provider adds native ARM64 Wine/FEX
+containers and aarch64 Flatpak exports, including the Asahi 16 KB kernel case.
+See [ARM64 build, run and qualification instructions](docs/arm64-wine-fex.md).
+
 Cage accepts strict YAML application recipes as the primary shareable
 authoring format for users and businesses. JSON remains valid for generated,
 normalized, or CLI-driven workflows. YAML is intentionally strict: unknown

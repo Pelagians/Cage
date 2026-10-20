@@ -126,7 +126,11 @@ def main():
         "from pathlib import Path;p=Path('/app/share/cage/" + APP + "');"
         "m.verify_inventory(p/'seed',json.loads((p/'seed-inventory.json').read_text()))"], check=True)
     runtime_ref = command("flatpak", "info", "--user", "--show-runtime", APP)
-    runtime_commit = command("flatpak", "info", "--user", "--show-commit", "runtime/" + runtime_ref)
+    # The app may resolve its shared runtime from a system installation.
+    # Inspect the actual mounted instance rather than assuming user scope.
+    instance = configparser.ConfigParser()
+    instance.read_string(command("flatpak", "run", "--command=cat", APP, "/.flatpak-info"))
+    runtime_commit = instance.get("Instance", "runtime-commit")
     wine_version = command("flatpak", "run", "--command=wine", APP, "--version")
     assert wine_version == os.environ.get("CAGE_TEST_WINE_VERSION", "wine-11.0"), wine_version
     result = {"schemaVersion": "cage.desktop-functional-test/v0", "status": "passed", "appId": APP,

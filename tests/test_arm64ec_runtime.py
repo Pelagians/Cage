@@ -34,6 +34,14 @@ def cpio(entries):
 
 
 class ARMRuntimeTests(unittest.TestCase):
+    def test_catalog_runtime_is_available_through_container_build_cli(self):
+        from cage.cli import main
+        from container.manager import ContainerBuildResult
+        result = ContainerBuildResult("wine-arm64ec", "11.20", "local:test", "Dockerfile", True)
+        with patch("cage.cli.build_container", return_value=result) as build, patch("sys.stdout", io.StringIO()):
+            self.assertEqual(main(["container", "build", "wine-arm64ec", "11.20", "--engine", "podman"]), 0)
+            self.assertEqual(build.call_args.args[:2], ("wine-arm64ec", "11.20"))
+
     def recipe(self):
         return load_manifest(ROOT / "recipes/notepadplusplus-portable-arm64.cage.yaml")
 

@@ -2,6 +2,10 @@
 
 Cage's initial desktop target packages a configured Windows x64 application as a local Flatpak. It uses the existing ordered recipe builder under an independently pinned Wine Flatpak runtime. It supports one default entrypoint, offline execution, X11/XWayland, a persistent private Wine prefix, and an explicitly named Documents subdirectory.
 
+For Asahi and other Linux ARM64 hosts, see the additive
+[native ARM64 Wine/FEX target](arm64-wine-fex.md). An x86_64 Flatpak cannot be
+made ARM-compatible by installing host Wine or changing its architecture label.
+
 The proof application is Notepad++ **8.8.8 portable x64**, identified by its release ZIP SHA-256. This is a deliberately fixed compatibility case, not a claim about arbitrary Windows applications. CFW, Chocolatey, Proton, Linux filesystem layers, additional graphics libraries, suites, MIME associations and automatic upgrades are outside this first target. Their existing Cage workflows remain available through the default container target.
 
 ## Build and export

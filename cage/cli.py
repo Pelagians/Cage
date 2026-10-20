@@ -677,7 +677,7 @@ def build_parser():
 
     cp = csub.add_parser("build", help="Build a runtime container image")
     cp.add_argument("provider",
-                    choices=["wine", "staging", "umu-proton-ge"],
+                    choices=list_providers(),
                     help="Runtime provider name")
     cp.add_argument("version",
                     help="Version tag (e.g. 9.0, GE-Proton9-27)")
