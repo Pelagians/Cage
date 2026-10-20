@@ -56,6 +56,7 @@ def main():
         document.write_text('original read-only document\n')
         document.chmod(0o444)
         readonly = document
+        (selected / 'unselected.txt').write_text('not selected for the sandbox')
     installed = None
     flatpak_desktop = None
     if kind == 'appimage':
@@ -80,7 +81,7 @@ def main():
         (shim / 'flatpak').write_text('#!/usr/bin/env python3\nimport os,sys\n'
             + 'real=' + repr(actual_flatpak) + '\nprivate=' + repr(str(private)) + '\n'
             + 'args=sys.argv[1:]\n'
-            + 'if args[:1]==["run"]:\n'
+            + 'if args[:1]==["run"] and all(not a.startswith("--command=") or a=="--command=cage-desktop-launch" for a in args):\n'
             + '    positions=[i for i,a in enumerate(args) if a.split("/")[0]==' + repr(gui.APP) + ']\n'
             + '    if len(positions)==1:\n'
             + '        pos=positions[0]\n'
@@ -104,6 +105,9 @@ def main():
             runner = '"' + str(shim / 'flatpak').replace('\\','\\\\').replace('"','\\"') + '"'
             contents = contents.replace('Exec=' + actual_flatpak + ' ', 'Exec=' + runner + ' ')
             flatpak_desktop.write_text(contents)
+            subprocess.run([actual_flatpak, 'run', '--user', '--command=python3', gui.APP, '-c',
+                            'from pathlib import Path; import sys; assert not Path(sys.argv[1]).exists()',
+                            str(readonly.parent / 'unselected.txt')], env=env, check=True)
 
     elif kind in ('container', 'oci'):
         state = evidence / 'state' / gui.APP
