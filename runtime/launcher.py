@@ -13,6 +13,7 @@ import os
 import re
 import shlex
 import shutil
+import socket
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -423,6 +424,8 @@ def _container_argv(
         argv.extend(["-p", f"127.0.0.1:{selkies_port}:3001"])
     elif graphics == "desktop":
         # X11 is an explicit trust boundary. Never relabel the host X socket.
+        # FamilyLocal Xauthority cookies match the client's hostname.
+        argv.extend(["--hostname", socket.gethostname()])
         argv.extend(["-v", "/tmp/.X11-unix:/tmp/.X11-unix:ro"])
         authority = os.environ.get("XAUTHORITY")
         if authority:
