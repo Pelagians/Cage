@@ -31,6 +31,9 @@ def main():
             path.mkdir(parents=True, exist_ok=True)
             os.chown(path, uid, gid)
         Path("/tmp/.X11-unix").mkdir(mode=0o1777, exist_ok=True)
+        runtime_directory = Path(f"/tmp/cage-runtime-{uid}")
+        runtime_directory.mkdir(mode=0o700, exist_ok=True)
+        os.chown(runtime_directory, uid, gid)
         if mode != "desktop":
             Path("/tmp/.X11-unix").chmod(0o1777)
         def demote():
@@ -42,7 +45,8 @@ def main():
         demote = None
     home = "/var/lib/cage/state/home"
     env = {**os.environ, "HOME": home, "USER": account.pw_name, "LOGNAME": account.pw_name,
-           "XDG_CACHE_HOME": home + "/.cache", "XDG_CONFIG_HOME": home + "/.config"}
+           "XDG_CACHE_HOME": home + "/.cache", "XDG_CONFIG_HOME": home + "/.config",
+           "XDG_RUNTIME_DIR": f"/tmp/cage-runtime-{uid}"}
     if mode == "build":
         env.setdefault("WINEPREFIX", env.get("CAGE_BUILD_PREFIX", "/tmp/cage-build-prefix"))
     env.pop("WAYLAND_DISPLAY", None)
@@ -50,7 +54,7 @@ def main():
     if mode != "desktop":
         read_fd, write_fd = os.pipe()
         try:
-            server = subprocess.Popen(["Xvfb", "-displayfd", str(write_fd), "-screen", "0", "1280x900x24", "-nolisten", "tcp"],
+            server = subprocess.Popen(["Xvfb", "-displayfd", str(write_fd), "-screen", "0", "1280x900x24", "-nolisten", "tcp", "-noreset"],
                                       pass_fds=(write_fd,), preexec_fn=demote, env=env)
             os.close(write_fd)
             write_fd = None
