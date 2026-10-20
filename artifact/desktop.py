@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 
 from artifact.inspection import verify_bundle
+from artifact.graph import DESKTOP_SCHEMA_VERSION
 from artifact.linux_state import declared_outputs
 from core.compatibility import compatibility_environment
 from core.manifest import Manifest
@@ -69,12 +70,20 @@ def normalize_seed(prefix):
 def seal_desktop_bundle(bundle, target, runtime_evidence):
     bundle = Path(bundle)
     inventory = normalize_seed(bundle / "prefix")
-    for relative in ("metadata/graph.json", "runtime/runtime.json"):
-        path = bundle / relative
-        metadata = json.loads(path.read_text())
-        metadata["executionTarget"] = target
-        metadata["ociBindingRole"] = "recipe-intent-only"
-        path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+    graph_path = bundle / "metadata/graph.json"
+    graph = json.loads(graph_path.read_text())
+    graph["recipeRuntime"] = {"builder": graph["builderRuntime"], "runner": graph["runnerRuntime"]}
+    native = {"provider": target["provider"], "version": target["version"], "resolvedVersion": target["version"],
+              "launcher": "wine", "executionTarget": target, "targetDigest": digest_json(target), "network": "none"}
+    graph.update(schemaVersion=DESKTOP_SCHEMA_VERSION, executionTarget=target,
+                 builderRuntime=native, runnerRuntime=native,
+                 graphics={"defaultMode": "desktop", "supportedModes": ["desktop"],
+                           "sessionBackend": "x11", "wineGraphics": "xwayland"})
+    for node in graph["nodes"]:
+        if node["kind"] == "runtime-image":
+            node.update(kind="runtime-target", label=target["id"], runtime=native)
+    graph_path.write_text(json.dumps(graph, indent=2, sort_keys=True) + "\n")
+    (bundle / "runtime/runtime.json").write_text(json.dumps(native, indent=2, sort_keys=True) + "\n")
     receipt = {"schemaVersion": "cage.desktop-build/v0", "target": target,
                "seedDigest": digest_json(inventory), "inventory": inventory,
                "manifestDigest": digest_json(json.loads((bundle / "manifest.cage.json").read_text())),
@@ -90,7 +99,8 @@ def create_desktop_export_plan(bundle):
     bundle = Path(bundle).resolve()
     verification = verify_bundle(bundle)
     if not verification.get("valid") or not verification.get("runnable"):
-        raise DesktopError("desktop export requires a verified, materialized application bundle")
+        raise DesktopError("desktop export requires a verified, materialized application bundle: "
+                           + "; ".join(verification.get("errors", [])))
     payload = json.loads((bundle / "manifest.cage.json").read_text())
     parse_payload = {**payload}
     if "compatibility" in parse_payload:
@@ -107,7 +117,7 @@ def create_desktop_export_plan(bundle):
     if target_path.is_symlink() or not target_path.is_file() or json.loads(target_path.read_text()) != target:
         raise DesktopError("desktop execution target receipt is missing or inconsistent")
     graph = json.loads((bundle / "metadata/graph.json").read_text())
-    if graph.get("executionTarget") != target:
+    if graph.get("schemaVersion") != DESKTOP_SCHEMA_VERSION or graph.get("executionTarget") != target:
         raise DesktopError("graph does not identify the actual desktop execution target")
     if receipt.get("schemaVersion") != "cage.desktop-build/v0" or receipt.get("target") != target:
         raise DesktopError("desktop runtime target mismatch")

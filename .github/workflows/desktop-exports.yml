@@ -104,5 +104,5 @@ jobs:
             dist/*.flatpak
             dist/*.flatpak.json
             dist/desktop-evidence/**
-            dist/desktop/**/logs/**
-            dist/desktop/**/metadata/*.json
+            dist/desktop/notepadplusplus-portable-8.8.8/logs/*
+            dist/desktop/notepadplusplus-portable-8.8.8/metadata/*.json

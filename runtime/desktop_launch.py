@@ -176,13 +176,26 @@ def launch(metadata_path, files):
     cwd = windows_path(prefix, contract["workingDirectory"]) if contract.get("workingDirectory") else executable.parent
     if not cwd.is_dir():
         raise DesktopError("application working directory is missing")
-    status = subprocess.run([wine, contract["entrypoint"], *contract.get("args", []), *arguments],
-                            env=environment, cwd=cwd).returncode
-    try:
-        subprocess.run([server, "-w"], env=environment, timeout=120, check=True)
-    except subprocess.TimeoutExpired:
-        raise DesktopError("application Wine processes did not settle; state has been retained")
-    return status
+    return _run_application([wine, contract["entrypoint"], *contract.get("args", []), *arguments],
+                            server, environment, cwd, state_root)
+
+
+def _run_application(command, server, environment, cwd, state_root):
+    """Own one prefix lifecycle; Wine services must not outlive its GUI app."""
+    import fcntl
+    descriptor = os.open(state_root / "launch.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise DesktopError("this application is already running; close it before launching another instance") from exc
+        try:
+            return subprocess.run(command, env=environment, cwd=cwd).returncode
+        finally:
+            # WINEPREFIX scopes this to the application. The launch lock prevents
+            # terminating another legitimate Cage launch in the same prefix.
+            subprocess.run([server, "-k"], env=environment, timeout=15, check=False)
+            subprocess.run([server, "-w"], env=environment, timeout=30, check=True)
 
 
 if __name__ == "__main__":

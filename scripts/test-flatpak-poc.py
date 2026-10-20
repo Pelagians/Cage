@@ -56,6 +56,8 @@ def main():
     user_store = Path(os.environ["FLATPAK_USER_DIR"])
     desktop = user_store / "exports/share/applications" / (APP + ".desktop")
     assert desktop.is_file(), "installed desktop entry missing"
+    installed_apps = command("flatpak", "list", "--user", "--app", "--columns=application").splitlines()
+    assert installed_apps == [APP], installed_apps
     permissions = command("flatpak", "info", "--user", "--show-permissions", APP)
     permission_data = configparser.ConfigParser()
     permission_data.read_string(permissions)

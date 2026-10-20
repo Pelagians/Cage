@@ -7,6 +7,7 @@ from pathlib import Path
 import platform
 import subprocess
 import sys
+import signal
 import hashlib
 import shutil
 import tempfile
@@ -73,13 +74,19 @@ def run_flatpak(arguments, *, store, timeout=1200):
     print("[cage desktop] flatpak " + arguments[0], file=sys.stderr, flush=True)
     environment = {**os.environ, "FLATPAK_USER_DIR": str(Path(store).resolve())}
     try:
-        result = subprocess.run(["flatpak", *arguments], env=environment, text=True,
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
+        process = subprocess.Popen(["flatpak", *arguments], env=environment, text=True,
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+        try:
+            output, _ = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            output, _ = process.communicate(timeout=15)
+            raise DesktopError(f"flatpak {arguments[0]} timed out after {timeout}s:\n{output[-12000:]}")
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise DesktopError(f"Flatpak command failed: {exc}") from exc
-    if result.returncode:
-        raise DesktopError(f"flatpak {arguments[0]} failed ({result.returncode}):\n{result.stdout[-12000:]}")
-    return result.stdout.strip()
+    if process.returncode:
+        raise DesktopError(f"flatpak {arguments[0]} failed ({process.returncode}):\n{output[-12000:]}")
+    return output.strip()
 
 
 def ensure_target(target, store):
@@ -152,14 +159,16 @@ def build_flatpak_bundle(manifest, output, *, workspace, store, timeout=900):
     script = generate_build_script(manifest, settle_prefix=True)
     (bundle / "build/run.sh").write_text(script)
     # Same operations, same /opt/cage and /workspace contract; only execution adapts.
-    args = ["build", "--unshare=network", "--share=ipc", "--socket=x11", "--env=WINEARCH=win64",
+    args = ["build", "--die-with-parent", "--unshare=network", "--share=ipc", "--socket=x11", "--env=WINEARCH=win64",
+            "--env=WINEPREFIX=/tmp/cage-build-prefix",
             "--env=WINEDEBUG=-all", f"--bind-mount=/opt/cage={bundle}",
             f"--bind-mount=/workspace={inputs}", str(build_dir)]
     try:
         version = run_flatpak([*args, "/app/bin/wine", "--version"], store=store)
         if version != target["wineVersionOutput"]:
             raise DesktopError(f"Wine version mismatch: {version}")
-        log = run_flatpak([*args, "bash", "/opt/cage/build/run.sh"], store=store, timeout=timeout)
+        wrapper = "trap 'wineserver -k || true' EXIT; bash /opt/cage/build/run.sh"
+        log = run_flatpak([*args, "bash", "-c", wrapper], store=store, timeout=timeout)
         (bundle / "logs/build.log").write_text(log + "\n")
         # Confirm the base identity did not change while build-init copied its files.
         if run_flatpak(["info", "--user", "--show-commit", target["base"]], store=store) != target["baseCommit"]:
@@ -169,6 +178,8 @@ def build_flatpak_bundle(manifest, output, *, workspace, store, timeout=900):
                                          has_default_launch=True, exit_code=0, log_excerpt=log[-4000:])
         provenance = json.loads((bundle / "metadata/provenance.json").read_text())
         provenance.update(builder="cage-flatpak-target", executionTarget=target,
+                          recipeRuntime=provenance.get("runtime"),
+                          runtime=json.loads((bundle / "runtime/runtime.json").read_text()),
                           notes=["Built by the existing ordered pipeline under the pinned desktop target; OCI binding describes recipe intent only."])
         (bundle / "metadata/provenance.json").write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n")
         if not verify_bundle(bundle)["valid"]:

@@ -48,6 +48,8 @@ The immutable application seed is under `/app/share/cage/<app-id>/seed`. On firs
 
 Wine uses `$XDG_DATA_HOME/<app-id>/prefix`. For a normal Flatpak installation this resides under `~/.var/app/<app-id>/data`. The application saves its portable configuration inside that writable prefix. The seed and exported package stay unchanged. Uninstalling the application should retain its private data unless the user separately requests Flatpak data deletion.
 
+The POC permits one active application launch per prefix. A second launch reports that the application is already running. When the GUI application exits, the helper stops and waits for that prefix's Wine services, then releases its launch lock. This prevents background services from keeping the Flatpak alive and prevents cleanup from terminating another legitimate launch. Multiple simultaneous entrypoints and file handoff to a running application are later integration work.
+
 State records bind the seed digest and runtime identity. An incompatible package generation is refused with its old data retained. Automatic migration, application updates and rollback are later work; replacing a package must not silently launch old binaries or overwrite the user's only prefix.
 
 Both installed files and metadata are covered by Flatpak's content-addressed package commit. The seed additionally has a SHA-256 inventory covering file bytes, types, modes and safe link targets. This inventory detects accidental changes before export and first use; it is not a publisher signature. These local POC bundles are unsigned and are not published by the export command.
@@ -57,6 +59,8 @@ Both installed files and metadata are covered by Flatpak's content-addressed pac
 `cage build` continues to use its existing container target unless `--target flatpak` is specified. A desktop build records its actual execution target alongside the recipe's original OCI runtime intent. Container run and OCI export reject a desktop-built prefix; users must rebuild with the corresponding target. Existing container-built artifacts are not silently rebound to desktop Wine.
 
 No CFW implementation or runtime pin changes are required. CFW desktop support needs a producer-owned desktop contract and its own proofs. Selecting a different Wine version, a custom runner or a CFW prefix cannot bypass that requirement.
+
+Existing container graphs keep `cage.execution-graph/v0`. Desktop graphs use `cage.execution-graph/v1`, with the actual native runtime in the runtime bindings and the original OCI intent retained as `recipeRuntime`. Older verifiers reject this new graph version rather than assuming a desktop prefix belongs to a container image. Updated bundle verification also checks the desktop seed inventory and target receipts.
 
 ## Validation
 

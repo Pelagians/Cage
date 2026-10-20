@@ -184,7 +184,7 @@ def cmd_build(args):
         else:
             result = build_flatpak_bundle(manifest, Path(args.output),
                         workspace=Path(args.workspace or Path.cwd()), store=args.flatpak_store,
-                        timeout=args.build_timeout)
+                        timeout=min(args.build_timeout, 900))
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0
     bundle_path = create_bundle(

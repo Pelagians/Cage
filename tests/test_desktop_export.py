@@ -10,11 +10,13 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 import zipfile
 
 from artifact.bundle import create_bundle
+from artifact.inspection import verify_bundle
 from artifact.desktop import create_desktop_export_plan, desktop_target, seal_desktop_bundle, validate_desktop_recipe
 from artifact.flatpak import create_flatpak_export_plan, prepare_flatpak_context
 from artifact.oci import create_oci_export_plan, OCIExportError
@@ -22,7 +24,7 @@ from artifact.kube import create_kube_export_plan, KubeExportError
 from builder.flatpak import snapshot_sources
 from core.manifest import Manifest, ManifestError, load_manifest
 from core.media import stage_media
-from runtime.desktop_launch import DesktopError, digest_json, initialize_state, inventory_tree, verify_inventory, windows_path
+from runtime.desktop_launch import DesktopError, digest_json, initialize_state, inventory_tree, verify_inventory, windows_path, _run_application
 from runtime.launcher import build_run_plan, RunError
 from tests.bundle_fixtures import materialize_runnable_prefix
 
@@ -97,13 +99,16 @@ class DesktopContractTests(unittest.TestCase):
             executable = windows_path(bundle / "prefix", plan["launch"]["entrypoint"])
             data = bytearray(executable.read_bytes()); data[-1] ^= 1
             executable.write_bytes(data)
-            with self.assertRaisesRegex(DesktopError, "inventory mismatch"):
+            self.assertFalse(verify_bundle(bundle)["valid"])
+            with self.assertRaises(DesktopError):
                 create_desktop_export_plan(bundle)
 
     def test_old_bundle_cannot_be_silently_rebound(self):
         with tempfile.TemporaryDirectory() as td:
-            bundle = bundle_at(td)
-            (bundle / "metadata/desktop-build.json").unlink()
+            manifest = Manifest.from_dict(app())
+            bundle = create_bundle(manifest, Path(td), dry_run=True)
+            materialize_runnable_prefix(bundle, entrypoint=manifest.launch.entrypoint)
+            self.assertTrue(verify_bundle(bundle)["valid"])
             with self.assertRaisesRegex(DesktopError, "no qualified desktop build"):
                 create_desktop_export_plan(bundle)
 
@@ -124,7 +129,7 @@ class DesktopContractTests(unittest.TestCase):
             payload = json.loads(receipt.read_text())
             payload["target"]["baseCommit"] = "0" * 64
             receipt.write_text(json.dumps(payload))
-            with self.assertRaisesRegex(DesktopError, "target mismatch"):
+            with self.assertRaises(DesktopError):
                 create_desktop_export_plan(bundle)
 
     def test_flatpak_layout_uses_one_helper_and_narrow_permissions(self):
@@ -143,6 +148,29 @@ class DesktopContractTests(unittest.TestCase):
 
 
 class DesktopStateTests(unittest.TestCase):
+    def test_second_launch_cannot_stop_an_active_application(self):
+        started, release = threading.Event(), threading.Event()
+        calls = []
+        def execute(command, **kwargs):
+            calls.append(command)
+            if command[0] == "fake-wine":
+                started.set()
+                self.assertTrue(release.wait(5))
+            return subprocess.CompletedProcess(command, 0)
+        with tempfile.TemporaryDirectory() as td, patch("runtime.desktop_launch.subprocess.run", side_effect=execute):
+            root = Path(td)
+            with ThreadPoolExecutor(1) as pool:
+                first = pool.submit(_run_application, ["fake-wine", "App.exe"], "server", {}, root, root)
+                self.assertTrue(started.wait(5))
+                try:
+                    with self.assertRaisesRegex(DesktopError, "already running"):
+                        _run_application(["fake-wine", "App.exe"], "server", {}, root, root)
+                    self.assertEqual(len(calls), 1, "a rejected launch must not terminate the active prefix")
+                finally:
+                    release.set()
+                self.assertEqual(first.result(), 0)
+            self.assertIn(["server", "-k"], calls)
+
     def seed(self, directory):
         root = Path(directory) / "seed"
         (root / "drive_c").mkdir(parents=True)

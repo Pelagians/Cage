@@ -19,6 +19,7 @@ from runtime.providers import (
 )
 
 SCHEMA_VERSION = "cage.execution-graph/v0"
+DESKTOP_SCHEMA_VERSION = "cage.execution-graph/v1"
 DEFAULT_GRAPHICS_MODE = "headless"
 SUPPORTED_GRAPHICS_MODES = ["headless", "selkies"]
 
