@@ -136,3 +136,19 @@ rollback artifacts, special files, exact OCI IDs, download-cache restrictions,
 and CLI exit codes. The update CI workflow cleans each new export's staging
 with `scripts/test-storage-poc.py`, verifies its retained artifact, then runs
 the real application update/rollback proofs using that artifact.
+
+Local validation on the Asahi 16 KB host completed:
+
+- **512 tests and 187 subtests passed**, including wheel packaging and existing
+  container, CFW-consumer, desktop and update contracts.
+- Real AppImage, Flatpak and OCI exports passed preview, apply, provenance
+  retention, and retained-package/image integrity checks. Receipts are in
+  `dist/storage-controls-proof/result.json`; the live read-only doctor check
+  also passed.
+- Newly generated proof packages/images were retired by the test harness only
+  after integrity checks. Current application packages, user state, documents
+  and rollback data were not removed. Cleanup itself never removes a package
+  or image.
+- The [CI run for the implementation](https://github.com/Pelagians/Cage/actions/runs/39491693675)
+  is in progress; its new staging-cleanup checks run before the application GUI
+  proofs. Local success is separate from the pending CI qualification.
