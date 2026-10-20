@@ -149,6 +149,28 @@ Local validation on the Asahi 16 KB host completed:
   after integrity checks. Current application packages, user state, documents
   and rollback data were not removed. Cleanup itself never removes a package
   or image.
-- The [CI run for the implementation](https://github.com/Pelagians/Cage/actions/runs/39491693675)
-  is in progress; its new staging-cleanup checks run before the application GUI
-  proofs. Local success is separate from the pending CI qualification.
+
+CI qualification at implementation revision
+`f601960bcdb90a2de5a39cf619564d6b1db8a4e9` completed successfully:
+
+- The [storage/update CI run](https://github.com/Pelagians/Cage/actions/runs/39491693675)
+  passed all three jobs on the first attempt: x86_64 desktop, aarch64 desktop,
+  and ARM container/OCI. Both desktop jobs passed **512 tests and 187 subtests**.
+- Both versions' Flatpak and AppImage staging were pruned before their GUI
+  proofs on each architecture. Both exported OCI images likewise passed staging
+  cleanup and immutable-image verification before launch.
+- All six GUI proofs (four desktop formats/architectures, Cage container and
+  standalone OCI) completed baseline, update, updated relaunch, rollback and
+  rollback relaunch. Result records verified executable versions, the editor
+  preference, exact saved external document contents, latest prefix documents
+  through rollback, and three retained generations.
+- Companion [Flatpak](https://github.com/Pelagians/Cage/actions/runs/39491693747),
+  [AppImage](https://github.com/Pelagians/Cage/actions/runs/39491693962), and
+  [ARM Wine/FEX](https://github.com/Pelagians/Cage/actions/runs/39491693916)
+  regression workflows also passed. No fixes or retries were required.
+
+Small container evidence and desktop job logs were retained locally under
+`.cage/storage-ci-evidence-f601960/` and `.cage/storage-ci-*.log`; the checked
+result summary is `.cage/storage-ci-verification-f601960.json`. Large desktop
+package artifacts were not downloaded. These proofs qualify the pinned
+Notepad++ 8.8.8/8.8.9 profile, not arbitrary applications or runtime migrations.
