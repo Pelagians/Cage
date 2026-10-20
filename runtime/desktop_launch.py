@@ -11,6 +11,115 @@ import stat
 import subprocess
 import sys
 import tempfile
+import re
+
+
+def desktop_entry(plan, command, *, icon=None, suffix=''):
+    """Shared desktop metadata; offer Open With without changing defaults."""
+    desktop = plan['desktop']
+    def value(text):
+        return text.replace('\\', '\\\\')
+    return ('[Desktop Entry]\nType=Application\nName=' + value(desktop['name']) + suffix
+            + '\nComment=' + value(desktop['summary']) + '\nExec=' + command
+            + '\nIcon=' + (icon or desktop['id']) + '\nCategories='
+            + ';'.join(desktop['categories']) + ';\nTerminal=false\n'
+            + ('MimeType=' + ';'.join(plan['mimeTypes']) + ';\n' if plan.get('mimeTypes') else ''))
+
+
+def document_arguments(files):
+    """Translate selected local files, including new files in accessible folders."""
+    from urllib.parse import urlsplit, unquote
+    arguments = []
+    for name in files:
+        if not name or any(ord(c) < 32 for c in name):
+            raise DesktopError('document path must be a nonempty single-line path')
+        if name.startswith('file:'):
+            uri = urlsplit(name)
+            if uri.netloc not in ('', 'localhost') or uri.query or uri.fragment or not uri.path.startswith('/'):
+                raise DesktopError('only local file URIs are supported')
+            name = unquote(uri.path)
+        elif '://' in name:
+            raise DesktopError('only local document paths are supported')
+        path = Path(name).absolute()
+        if any(ord(c) < 32 or c in '\\:*?"<>|' for c in str(path)):
+            raise DesktopError('document path contains characters Wine cannot represent: ' + str(path))
+        if path.exists():
+            if not path.is_file() or not os.access(path, os.R_OK):
+                raise DesktopError('document is not a readable file: ' + str(path))
+        elif path.is_symlink() or not path.parent.is_dir() or not os.access(path.parent, os.W_OK):
+            raise DesktopError('file is missing or inaccessible with this package\'s permissions: ' + str(path))
+        arguments.append('Z:' + str(path).replace('/', '\\'))
+    return arguments
+
+
+def host_dpi():
+    """Read the X11/XWayland logical DPI, never infer scale from physical size."""
+    import ctypes
+    try:
+        xlib = ctypes.CDLL('libX11.so.6')
+        xlib.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        xlib.XOpenDisplay.restype = ctypes.c_void_p
+        xlib.XResourceManagerString.argtypes = [ctypes.c_void_p]
+        xlib.XResourceManagerString.restype = ctypes.c_char_p
+        xlib.XCloseDisplay.argtypes = [ctypes.c_void_p]
+        display = xlib.XOpenDisplay(None)
+        if not display:
+            return 96
+        try:
+            resource = (xlib.XResourceManagerString(display) or b'').decode('utf-8', errors='replace')
+        finally:
+            xlib.XCloseDisplay(display)
+        match = re.search(r'(?mi)^Xft[.*]dpi\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*$', resource)
+        return max(96, min(384, round(float(match[1])))) if match else 96
+    except (OSError, ValueError):
+        return 96
+
+
+def display_preferences(root):
+    path = _real_path(root, 'display.json')
+    value = json.loads(path.read_text()) if path.exists() else {'dpi': 'auto'}
+    if set(value) != {'dpi'} or not (value['dpi'] in ('auto', 'preserve') or
+            type(value['dpi']) is int and 96 <= value['dpi'] <= 384):
+        raise DesktopError('invalid display preference; state retained')
+    return value
+
+
+def prefix_dpi(prefix):
+    path = _real_path(prefix, 'user.reg')
+    if not path.is_file():
+        return None
+    content = path.read_text(errors='replace')
+    section = re.search(r'(?m)^\[Control Panel\\\\Desktop\][^\n]*\n([^\[]*)', content)
+    match = re.search(r'(?m)^"LogPixels"=dword:([a-fA-F0-9]+)$', section[1]) if section else None
+    return int(match[1], 16) if match else None
+
+
+def configure_display(plan, root, prefix, wine, server, environment, lock_fd):
+    if not plan.get('display'):
+        return  # Container and older package launch contracts remain unchanged.
+    preference = display_preferences(root)
+    selected = preference['dpi']
+    if selected == 'preserve':
+        return
+    current = prefix_dpi(prefix)
+    marker = _real_path(prefix, '.cage-display.json')
+    previous = json.loads(marker.read_text()).get('dpi') if marker.exists() else None
+    if selected == 'auto' and current is not None and (
+            previous is None and current != 96 or previous is not None and current != previous):
+        # Preserve pre-existing custom Wine DPI, including through future updates.
+        if not 96 <= current <= 384:
+            _write_state_record(root / 'display.json', {'dpi': 'preserve'})
+            return
+        _write_state_record(root / 'display.json', {'dpi': current})
+        selected = current
+    desired = host_dpi() if selected == 'auto' else selected
+    if current != desired:
+        result = _run_application([wine, 'reg.exe', 'add', r'HKCU\Control Panel\Desktop',
+                                  '/v', 'LogPixels', '/t', 'REG_DWORD', '/d', str(desired), '/f'],
+                                 server, environment, prefix, root, locked=True, lock_fd=lock_fd)
+        if result:
+            raise DesktopError('could not configure Wine display DPI; application state retained')
+    _write_state_record(marker, {'dpi': desired})
 
 
 class DesktopError(ValueError):
@@ -430,6 +539,17 @@ def launch(metadata_path, files):
     state_root /= plan["desktop"]["id"]
     identity = plan_identity(plan)
     seed = Path(plan["layout"]["seed"]) if plan["layout"].get("seed") else metadata_path.parent / "seed"
+    if files == ['--cage-display-info']:
+        with lifecycle_lock(state_root):
+            print(json.dumps({'preference': display_preferences(state_root), 'hostDpi': host_dpi(),
+                              'range': [96, 384], 'scope': 'X11/XWayland session; restart after scale changes'}))
+        return 0
+    if files[:1] == ['--cage-dpi']:
+        if len(files) != 2 or not (files[1] in ('auto', 'preserve') or files[1].isdigit() and 96 <= int(files[1]) <= 384):
+            raise DesktopError('--cage-dpi requires auto, preserve or an integer from 96 to 384')
+        with lifecycle_lock(state_root):
+            _write_state_record(state_root / 'display.json', {'dpi': int(files[1]) if files[1].isdigit() else files[1]})
+        return 0
     action = "launch"
     if files[:1] in (["--cage-update"], ["--cage-rollback"]):
         action = files[0][7:]
@@ -458,6 +578,9 @@ def _launch_locked(metadata_path, files, plan, inventory, state_root, identity, 
     )}
     environment.update(plan["environment"])
     environment.update(WINEARCH="win64")
+    if plan.get('display') and plan.get('format') == 'flatpak':
+        environment['FONTCONFIG_FILE'] = str(runtime_root / 'share/cage/fonts.conf')
+        environment['FONTCONFIG_PATH'] = str(runtime_root / 'share/cage')
     if plan.get("format") == "appimage":
         usr = metadata_path.parents[3]
         environment["LD_LIBRARY_PATH"] = str(usr / "lib/cage-native")
@@ -474,16 +597,12 @@ def _launch_locked(metadata_path, files, plan, inventory, state_root, identity, 
     assert_quiescent(state_root, server, environment)
     prefix, pending = prepare_generation(seed, inventory, state_root, identity, plan, action)
     environment["WINEPREFIX"] = str(prefix)
+    configure_display(plan, state_root, prefix, wine, server, environment, lock_fd)
     # This maps the Flatpak namespace, not an unrestricted host filesystem.
     zdrive = prefix / "dosdevices/z:"
     if not zdrive.exists() and not zdrive.is_symlink():
         zdrive.symlink_to("/")
-    arguments = []
-    for name in files:
-        path = Path(name).absolute()
-        if not path.is_file():
-            raise DesktopError(f"file is missing or inaccessible with this package's permissions: {path}")
-        arguments.append("Z:" + str(path).replace("/", "\\"))
+    arguments = document_arguments(files)
     contract = plan["launch"]
     executable = windows_path(prefix, contract["entrypoint"])
     if not executable.is_file():

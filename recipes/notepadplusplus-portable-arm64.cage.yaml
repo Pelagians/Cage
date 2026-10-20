@@ -27,6 +27,16 @@ launch:
     - -multiInst
     - -nosession
     - -noPlugin
+entrypoints:
+  - id: editor
+    name: Notepad++
+    executable: C:/Program Files/Notepad++/notepad++.exe
+    workingDirectory: C:/Program Files/Notepad++
+    args: [-multiInst, -nosession, -noPlugin]
+fileAssociations:
+  - entrypoint: editor
+    extensions: [.txt]
+    mime: [text/plain]
 desktop:
   id: io.github.Pelagians.Cage.NotepadPlusPlus
   name: Notepad++ Cage POC

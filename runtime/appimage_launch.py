@@ -8,9 +8,21 @@ from pathlib import Path
 import platform
 import subprocess
 import sys
+import shutil
 
 from desktop_launch import (DesktopError, launch, digest_json, _write_state_record,
-                            lifecycle_lock, _read_generations, _generation, _real_path, plan_identity, copy_file)
+                            lifecycle_lock, _read_generations, _generation, _real_path, plan_identity, copy_file,
+                            desktop_entry)
+
+
+def refresh_desktop_cache(directory):
+    tool = shutil.which('update-desktop-database')
+    if tool:
+        try:
+            return subprocess.run([tool, str(directory)], check=False, timeout=30).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            pass  # Optional host cache maintenance cannot invalidate an installation.
+    return False
 
 
 def file_hash(path):
@@ -27,7 +39,7 @@ def desktop_quote(value):
 
 
 def integrate(root, plan, *, remove=False):
-    """Explicit per-user integration; never register associations or erase state."""
+    """Explicit per-user integration; offer MIME handlers, retain user defaults/state."""
     data = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share'))).resolve()
     app_id = plan['desktop']['id']
     directory = data / 'cage/appimages' / app_id
@@ -64,6 +76,7 @@ def integrate(root, plan, *, remove=False):
         (directory / 'launch.lock').unlink(missing_ok=True)
         receipt.unlink()
         directory.rmdir()
+        refresh_desktop_cache(desktop.parent)
         return {'removed': True, 'userStateRetained': True}
     source = Path(os.environ.get('APPIMAGE', ''))
     if not source.is_file():
@@ -80,19 +93,16 @@ def integrate(root, plan, *, remove=False):
         desktop.parent.mkdir(parents=True, exist_ok=True)
         icon.parent.mkdir(parents=True, exist_ok=True)
         icon.write_bytes((root / (app_id + '.svg')).read_bytes())
-        metadata = plan['desktop']
-        desktop.write_text('[Desktop Entry]\nType=Application\n'
-            + 'Name=' + metadata['name'].replace('\\', '\\\\') + ' (AppImage)\n'
-            + 'Comment=' + metadata['summary'].replace('\\', '\\\\') + '\n'
+        desktop.write_text(desktop_entry(plan,
             # GIO checks argv[0] before expanding %% in a desktop Exec value.
             # env keeps literal percent characters in an ordinary argument.
-            + 'Exec=/usr/bin/env ' + desktop_quote(package) + ' -- %F\n'
-            + 'Icon=' + app_id + '.CageAppImage\n'
-            + 'Categories=' + ';'.join(metadata['categories']) + ';\nTerminal=false\n')
+            '/usr/bin/env ' + desktop_quote(package) + ' -- %F',
+            icon=app_id + '.CageAppImage', suffix=' (AppImage)'))
         recorded = {name: file_hash(path) for name, path in
                     {'package': package, 'desktop': desktop, 'icon': icon}.items()}
         recorded.update(schemaVersion='cage.appimage-installation/v1', versions=[])
         _write_state_record(receipt, recorded)
+        refresh_desktop_cache(desktop.parent)
     except BaseException:
         # All paths were absent before this explicit installation.
         for path in (desktop, icon, package, receipt):
@@ -221,7 +231,7 @@ def main(root, arguments):
         with lifecycle_lock(data / 'cage/appimage' / plan['desktop']['id']):
             stage_update(plan)
         return launch(metadata, arguments)
-    if arguments == ['--cage-state-info']:
+    if arguments in (['--cage-state-info'], ['--cage-display-info']) or arguments[:1] == ['--cage-dpi']:
         return launch(metadata, arguments)
     dispatch_installed(plan, arguments)
     if arguments[:1] == ['--']:

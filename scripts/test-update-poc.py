@@ -47,7 +47,17 @@ def main():
     documents.mkdir(parents=True)
     document = documents / 'Update café.txt'
     document.write_text('original\n')
+    desktop_proof = kind in ('flatpak', 'appimage') and os.environ.get('CAGE_TEST_DESKTOP_INTEGRATION') == '1'
+    readonly = None
+    if desktop_proof:
+        selected = evidence / 'selected files'
+        selected.mkdir()
+        document = selected / 'Read only café.txt'
+        document.write_text('original read-only document\n')
+        document.chmod(0o444)
+        readonly = document
     installed = None
+    flatpak_desktop = None
     if kind == 'appimage':
         env['XDG_DATA_HOME'] = str(evidence / 'data')
         installed = json.loads(subprocess.check_output([str(baseline), '--cage-install'], env=env, text=True))
@@ -70,13 +80,31 @@ def main():
         (shim / 'flatpak').write_text('#!/usr/bin/env python3\nimport os,sys\n'
             + 'real=' + repr(actual_flatpak) + '\nprivate=' + repr(str(private)) + '\n'
             + 'args=sys.argv[1:]\n'
-            + 'if len(args)>2 and args[:2]==["run","--user"] and args[2].split("/")[0]==' + repr(gui.APP) + ':\n'
-            + '    args=["run","--user","--command=sh",args[2],"-c",'
+            + 'if args[:1]==["run"]:\n'
+            + '    positions=[i for i,a in enumerate(args) if a.split("/")[0]==' + repr(gui.APP) + ']\n'
+            + '    if len(positions)==1:\n'
+            + '        pos=positions[0]\n'
+            + '        flags=[a for a in args[1:pos] if not a.startswith("--command=")]\n'
+            + '        args=["run",*flags,"--command=sh",args[pos],"-c",'
             + repr('export XDG_DATA_HOME="$1"; shift; exec /app/bin/cage-desktop-launch "$@"')
-            + ',"cage-proof",private,*args[3:]]\n'
+            + ',"cage-proof",private,*args[pos+1:]]\n'
             + 'os.execv(real,[real,*args])\n')
         (shim / 'flatpak').chmod(0o755)
         env['PATH'] = str(shim) + os.pathsep + env['PATH']
+        if desktop_proof:
+            store = Path(env['FLATPAK_USER_DIR'])
+            original = store / 'exports/share/applications' / (gui.APP + '.desktop')
+            contents = original.read_text()
+            assert '--file-forwarding' in contents and '@@ %F @@' in contents
+            assert 'MimeType=text/plain;' in contents
+            flatpak_desktop = evidence / 'private.desktop'
+            # The exported file-forwarding command is retained. Only the runner
+            # is replaced to set XDG_DATA_HOME inside the sandbox, protecting the
+            # normal user's settings. No filesystem permissions are added.
+            runner = '"' + str(shim / 'flatpak').replace('\\','\\\\').replace('"','\\"') + '"'
+            contents = contents.replace('Exec=' + actual_flatpak + ' ', 'Exec=' + runner + ' ')
+            flatpak_desktop.write_text(contents)
+
     elif kind in ('container', 'oci'):
         state = evidence / 'state' / gui.APP
         state.parent.mkdir()
@@ -102,6 +130,8 @@ def main():
                 return [sys.executable, '-m', 'cage', 'rollback' if action == 'rollback' else 'update',
                         'flatpak', str(package), '--previous-package', str(previous),
                         '--cache-dir', str(evidence / 'package-cache'), str(document)]
+            if flatpak_desktop:
+                return ['gio', 'launch', str(flatpak_desktop), str(document)]
             return ['flatpak', 'run', '--user', gui.APP, str(document)]
         if kind == 'oci':
             return ['podman', 'run', '--rm', '--pull=never', '--name', token,
@@ -154,14 +184,39 @@ def main():
     for version in ('8.8.8', '8.8.9'):
         with zipfile.ZipFile(ROOT / ('sources/npp.' + version + '.portable.x64.zip')) as archive:
             source_hashes[version] = hashlib.sha256(archive.read('notepad++.exe')).hexdigest()
+    def dpi_check():
+        if desktop_proof:
+            sys.path.insert(0, str(ROOT))
+            from runtime.desktop_launch import prefix_dpi
+            assert prefix_dpi(prefix()) == 192, 'expected 2x logical DPI in the actual Wine prefix'
     try:
+        if desktop_proof:
+            subprocess.run(['xrdb', '-merge'], input='Xft.dpi: 192\n', text=True, check=True)
+            control = [str(baseline)] if kind == 'appimage' else ['flatpak','run','--user',gui.APP]
+            subprocess.run([*control, '--cage-dpi', 'auto'], env=env, check=True)
+            info = json.loads(subprocess.check_output([*control, '--cage-display-info'], env=env, text=True))
+            assert info['hostDpi'] == 192, info
+            if installed:
+                assert 'MimeType=text/plain;' in Path(installed['desktop']).read_text()
         process = start(baseline)
+        if desktop_proof:
+            saved = documents / 'Saved As document.txt'
+            gui.command('xdotool','key','--clearmodifiers','ctrl+shift+s')
+            gui.wait_for(lambda: gui.command('xdotool','search','--onlyvisible','--name','^Save As$'), 'Save As dialog')
+            gui.command('xdotool','key','--clearmodifiers','ctrl+a')
+            gui.command('xdotool','type','--clearmodifiers','--delay','10','Z:'+str(saved).replace('/','\\'))
+            subprocess.run(['scrot', str(evidence / 'save-as-dialog.png')],check=True)
+            gui.command('xdotool','key','--clearmodifiers','Return')
+            gui.wait_for(lambda: saved.exists(), 'Save As created new host document')
+            document = saved
+            assert readonly.read_text() == 'original read-only document\n'
         save('saved before update')
         gui.command('xdotool', 'key', '--clearmodifiers', 'alt+v')
         gui.command('xdotool', 'key', '--delay', '80', 'Home', *(['Down'] * 6), 'Right', 'Home', 'Return')
         subprocess.run(['scrot', str(evidence / 'baseline.png')], check=True)
         close(process)
         first = prefix()
+        dpi_check()
         assert executable_hash() == source_hashes['8.8.8']
         original_zoom = zoom()
         assert original_zoom != '0'
@@ -173,6 +228,7 @@ def main():
         subprocess.run(['scrot', str(evidence / 'update.png')], check=True)
         close(process)
         updated = prefix()
+        dpi_check()
         assert updated != first
         assert executable_hash() == source_hashes['8.8.9'], 'old program survived update'
         assert zoom() == original_zoom, 'settings were not migrated'
@@ -187,6 +243,7 @@ def main():
         subprocess.run(['scrot', str(evidence / 'rollback.png')], check=True)
         close(process)
         restored = prefix()
+        dpi_check()
         assert restored not in (first, updated)
         assert executable_hash() == source_hashes['8.8.8']
         assert zoom() == original_zoom
@@ -197,6 +254,16 @@ def main():
         close(process)
         assert prefix() == restored
         assert document.read_text() == 'saved on rollback relaunch\n'
+        if desktop_proof:
+            previous = document
+            document = documents / 'New from launcher café.txt'
+            process = start(baseline)
+            save('new file created by the application')
+            close(process)
+            assert previous.read_text() == 'saved on rollback relaunch\n'
+            assert readonly.read_text() == 'original read-only document\n'
+            document = previous
+            dpi_check()
         if installed:
             subprocess.run([installed['installed'], '--cage-uninstall'], env=env, check=True)
             assert (state / 'state.json').is_file()
@@ -207,6 +274,8 @@ def main():
                   'externalDocument': str(document), 'externalDocumentContents': document.read_text(),
                   'prefixDocumentsCarriedForward': True, 'originalGenerationsRetained': True,
                   'saveAndRelaunchAfterUpdateAndRollback': True}
+        if desktop_proof:
+            result['desktopIntegration'] = {'mimeHandler': True, 'desktopFileForwarding': kind == 'flatpak', 'readOnlyOriginalPreserved': True, 'saveAs': True, 'newFileFromLauncher': True, 'logicalDpi': 192, 'dpiPreservedAcrossUpdateAndRollback': True}
         if image_ids:
             result['ociImageIds'] = image_ids
         (evidence / 'result.json').write_text(json.dumps(result, indent=2, sort_keys=True) + '\n')

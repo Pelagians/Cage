@@ -9,7 +9,7 @@ from pathlib import Path
 import shutil
 from xml.sax.saxutils import escape
 
-from artifact.desktop import create_desktop_export_plan
+from artifact.desktop import create_desktop_export_plan, stage_desktop_fonts
 from builder.flatpak import ensure_target, initialize_flatpak, run_flatpak
 from runtime import desktop_launch
 from runtime.desktop_launch import DesktopError, verify_inventory, digest_json, copy_file
@@ -38,6 +38,9 @@ def prepare_flatpak_context(bundle, plan, context, *, store):
     build_dir = context / "app"
     initialize_flatpak(build_dir, plan["desktop"]["id"], plan["target"], store)
     files = build_dir / "files"
+    location = run_flatpak(['info', '--user', '--show-location',
+                           plan['target']['platform'] + '/' + plan['target']['architecture'] + '/' + plan['target']['branch']], store=store)
+    stage_desktop_fonts(files, Path(location) / 'files')
     destination = files / "share/cage" / plan["desktop"]["id"]
     destination.mkdir(parents=True)
     receipt = json.loads((Path(bundle) / "metadata/desktop-build.json").read_text())
@@ -69,13 +72,10 @@ def prepare_flatpak_context(bundle, plan, context, *, store):
                        + plan["desktop"]["id"] + '/desktop.json "$@"\n')
     wrapper.chmod(0o755)
     desktop = plan["desktop"]
-    title = desktop["name"].replace("\\", "\\\\")
-    summary = desktop["summary"].replace("\\", "\\\\")
     entries = files / "share/applications"
     entries.mkdir(parents=True, exist_ok=True)
     (entries / (desktop["id"] + ".desktop")).write_text(
-        f"[Desktop Entry]\nType=Application\nName={title}\nComment={summary}\nExec=cage-desktop-launch %F\n"
-        f"Icon={desktop['id']}\nCategories={';'.join(desktop['categories'])};\nTerminal=false\n")
+        desktop_launch.desktop_entry(plan, 'cage-desktop-launch -- %F'))
     icon = files / "share/icons/hicolor/scalable/apps" / (desktop["id"] + ".svg")
     icon.parent.mkdir(parents=True, exist_ok=True)
     icon.write_text(ICON)

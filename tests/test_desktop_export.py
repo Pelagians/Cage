@@ -138,7 +138,9 @@ class DesktopContractTests(unittest.TestCase):
             plan = create_flatpak_export_plan(bundle)
             def initialize(path, *args):
                 (path / "files/bin").mkdir(parents=True)
-            with patch("artifact.flatpak.initialize_flatpak", side_effect=initialize):
+            with patch("artifact.flatpak.initialize_flatpak", side_effect=initialize), \
+                    patch('artifact.flatpak.run_flatpak', return_value=str(Path(td) / 'platform')), \
+                    patch('artifact.flatpak.stage_desktop_fonts'):
                 build = prepare_flatpak_context(bundle, plan, Path(td) / "context", store=Path(td) / "store")
             self.assertIn("--unshare=network", plan["permissions"])
             self.assertNotIn("--filesystem=home", plan["permissions"])

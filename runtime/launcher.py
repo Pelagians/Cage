@@ -119,7 +119,11 @@ def build_run_plan(
             raise RunError("ARM64EC Selkies is not qualified")
         if runtime.get("runnerUrl"):
             raise RunError("ARM64EC owns its pinned Wine/FEX runtime; external runners are unsupported")
-        if entrypoint is not None or suite_entrypoints or file_associations:
+        default_alias = (len(suite_entrypoints) == 1 and all(
+            suite_entrypoints[0].get(key, fallback) == launch.get(target, fallback)
+            for key, target, fallback in (('executable', 'entrypoint', None), ('args', 'args', []),
+                                           ('env', 'env', {}), ('workingDirectory', 'workingDirectory', None))))
+        if entrypoint is not None or (suite_entrypoints or file_associations) and not default_alias:
             raise RunError("ARM64EC initial runtime supports the default entrypoint only")
 
     from artifact.linux_state import linux_state_identity

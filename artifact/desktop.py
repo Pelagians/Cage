@@ -6,6 +6,7 @@ import hashlib
 import os
 from pathlib import Path
 import re
+import shutil
 
 from artifact.inspection import verify_bundle
 from artifact.graph import DESKTOP_SCHEMA_VERSION
@@ -13,6 +14,27 @@ from artifact.linux_state import declared_outputs
 from core.compatibility import compatibility_environment
 from core.manifest import Manifest
 from runtime.desktop_launch import DesktopError, digest_json, inventory_tree, verify_inventory, windows_path
+
+
+def stage_desktop_fonts(destination, platform_root):
+    """Identical pinned font families and aliases for both desktop formats."""
+    destination, platform_root = Path(destination), Path(platform_root)
+    fonts = destination / 'share/fonts/cage-desktop'
+    source = platform_root / 'share/fonts'
+    inventory_tree(source)  # Reject escaping links and special files before copying.
+    shutil.copytree(source, fonts, copy_function=shutil.copy2)
+    config = destination / 'share/cage/fonts.conf'
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text('<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">'
+        '<fontconfig><dir prefix="relative">../fonts/cage-desktop</dir>'
+        '<cachedir prefix="xdg">fontconfig</cachedir>'
+        '<alias><family>sans-serif</family><prefer><family>DejaVu Sans</family></prefer></alias>'
+        '<alias><family>serif</family><prefer><family>Liberation Serif</family></prefer></alias>'
+        '<alias><family>monospace</family><prefer><family>DejaVu Sans Mono</family></prefer></alias>'
+        '<alias><family>Tahoma</family><prefer><family>DejaVu Sans</family></prefer></alias>'
+        '<alias><family>Arial</family><prefer><family>Liberation Sans</family></prefer></alias>'
+        '<alias><family>Segoe UI</family><prefer><family>Carlito</family></prefer></alias>'
+        '</fontconfig>\n')
 
 
 def desktop_target(provider="wine"):
@@ -32,8 +54,19 @@ def validate_desktop_recipe(manifest):
         raise DesktopError("custom OCI images/runners cannot be substituted for a qualified desktop runtime")
     if manifest.runtime.wine_graphics != "xwayland" or manifest.runtime.network != "none" or manifest.build.network != "none":
         raise DesktopError("the desktop POC supports X11/XWayland and offline build/run only")
-    if manifest.entrypoints or manifest.file_associations or manifest.exports:
-        raise DesktopError("suite entrypoints, associations and additional outputs need later desktop qualification")
+    if manifest.exports:
+        raise DesktopError("additional outputs need later desktop qualification")
+    # Reuse the suite schema, but qualify only the default application here.
+    for entry in manifest.entrypoints:
+        if (len(manifest.entrypoints) != 1 or entry['executable'] != manifest.launch.entrypoint
+                or entry.get('args', []) != manifest.launch.args
+                or entry.get('env', {}) != manifest.launch.env
+                or entry.get('workingDirectory') != manifest.launch.working_directory):
+            raise DesktopError("desktop associations currently require one entrypoint identical to launch")
+    for association in manifest.file_associations:
+        if not association.get('mime') or any(not re.fullmatch(r'[a-z0-9][a-z0-9.+-]*/[a-z0-9][a-z0-9.+-]*', mime)
+                                               for mime in association['mime']):
+            raise DesktopError("desktop associations require explicit valid MIME types")
     for module in manifest.modules:
         if module.type not in {"files", "registry", "check"} or (module.type == "check" and module.command):
             raise DesktopError(f"desktop POC cannot qualify module {module.type}; CFW and Linux-state workflows remain container-only")
@@ -144,6 +177,8 @@ def create_desktop_export_plan(bundle):
     launcher_hash = hashlib.sha256(Path(desktop_launch.__file__).read_bytes()).hexdigest()
     return {"schemaVersion": "cage.desktop-export-plan/v0", "application": {"name": manifest.name, "version": manifest.version},
             "desktop": manifest.desktop, "launch": manifest.launch.to_dict(),
+            "mimeTypes": sorted({mime for item in manifest.file_associations for mime in item.get('mime', [])}),
+            "display": {"policy": "xft-dpi", "fallbackDpi": 96, "fonts": "freedesktop-desktop/v1"},
             "environment": {**compatibility_environment(manifest.compatibility), **manifest.launch.env},
             "target": target, "seedDigest": receipt["seedDigest"],
             "sourceManifestDigest": receipt["manifestDigest"],

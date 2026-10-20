@@ -652,3 +652,8 @@ bash container/build.sh wine default
 ## License
 
 Open source — available under the MIT License.
+
+Desktop MIME handlers, file forwarding and UI scaling are described in
+[desktop integration and scaling](docs/desktop-integration.md). New exports can
+follow the desktop's logical DPI; `--cage-dpi 192` selects an explicit 2x scale
+without manually configuring Wine.

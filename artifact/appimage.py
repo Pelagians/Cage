@@ -15,7 +15,7 @@ import tarfile
 import tempfile
 import urllib.request
 
-from artifact.desktop import create_desktop_export_plan
+from artifact.desktop import create_desktop_export_plan, stage_desktop_fonts
 from artifact.flatpak import ICON
 from builder.flatpak import ensure_target, initialize_flatpak, run_flatpak
 from runtime import desktop_launch
@@ -297,8 +297,7 @@ def prepare_appdir(bundle, plan, context, *, store, cache):
     closure = stage_native_libraries(appdir, Path(location) / 'files', plan['target']['minimumGlibc'])
     closure['omittedUnixModules'] = omitted
     closure['relocatedWineLinks'] = relocated
-    fonts = Path(location) / 'files/share/fonts'
-    shutil.copytree(fonts / 'dejavu', appdir / 'usr/share/fonts', copy_function=copy_file)
+    stage_desktop_fonts(appdir / 'usr', Path(location) / 'files')
     for directory in ('locale', 'xkb'):
         # New xkeyboard-config uses a sibling directory and an X11 symlink.
         # Materialize its data here rather than retaining a dangling link.
@@ -308,9 +307,6 @@ def prepare_appdir(bundle, plan, context, *, store, cache):
     if not notices.is_dir():
         raise DesktopError('pinned platform is missing its dependency license notices')
     stage_notices(notices, appdir / 'usr/share/licenses/freedesktop')
-    (appdir / 'usr/share/cage/fonts.conf').write_text(
-        '<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">'
-        '<fontconfig><dir prefix="relative">../fonts</dir><cachedir prefix="xdg">fontconfig</cachedir></fontconfig>\n')
     helpers = appdir / 'usr/libexec'
     helpers.mkdir(parents=True)
     for name in ['desktop_launch.py', 'appimage_launch.py']:
@@ -326,9 +322,7 @@ def prepare_appdir(bundle, plan, context, *, store, cache):
     (appdir / 'AppRun').chmod(0o755)
     (appdir / (app_id + '.svg')).write_text(ICON)
     (appdir / '.DirIcon').symlink_to(app_id + '.svg')
-    (appdir / (app_id + '.desktop')).write_text('[Desktop Entry]\nType=Application\nName='
-        + plan['desktop']['name'].replace('\\', '\\\\') + '\nExec=AppRun %F\nIcon=' + app_id
-        + '\nCategories=' + ';'.join(plan['desktop']['categories']) + ';\nTerminal=false\n')
+    (appdir / (app_id + '.desktop')).write_text(desktop_launch.desktop_entry(plan, 'AppRun -- %F'))
     (destination / 'native-dependencies.json').write_text(json.dumps(closure, indent=2, sort_keys=True) + '\n')
     (destination / 'component-sources.json').write_text(json.dumps({
         'applicationSources': manifest.get('sources', []), 'applicationLicense': plan['desktop']['license'],
