@@ -7,6 +7,7 @@ import subprocess
 import time
 import xml.etree.ElementTree as ET
 import configparser
+import shutil
 
 APP = "io.github.Pelagians.Cage.NotepadPlusPlus"
 ROOT = Path(__file__).resolve().parents[1]
@@ -78,8 +79,12 @@ def main():
     command("xdotool", "key", "--clearmodifiers", "Return", "ctrl+s")
     expected = "Cage Flatpak saved through the real application\n"
     wait_for(lambda: document.read_text() == expected, "application saved exact host document contents")
-    command("xdotool", "mousemove", "--window", handle, "250", "200",
-            "keydown", "Control_L", "sleep", "0.1", "click", "4", "sleep", "0.1", "keyup", "Control_L")
+    # Pinned 8.8.8 English resource: View's seventh selectable item is Zoom.
+    # Use the actual menu command rather than an Xvfb keypad/modifier mapping.
+    command("xdotool", "key", "--clearmodifiers", "alt+v")
+    command("xdotool", "key", "--delay", "80", "Home", *(["Down"] * 6), "Right", "Home")
+    subprocess.run(["scrot", str(EVIDENCE / "zoom-menu.png")], check=True)
+    command("xdotool", "key", "Return")
     command("xdotool", "key", "--clearmodifiers", "ctrl+s")
     wait_for(lambda: document.read_text() == expected and not command("xdotool", "getwindowname", handle).startswith("*"),
              "document is unchanged by zoom and has no unsaved marker")
@@ -90,6 +95,7 @@ def main():
     prefix = home / ".var/app" / APP / "data" / APP / "prefix"
     config = prefix / "drive_c/Program Files/Notepad++/config.xml"
     wait_for(config.exists, "persisted application settings")
+    shutil.copyfile(config, EVIDENCE / "persisted-config.xml")
     original_config = ET.parse(config).getroot()
     zoom = original_config.find(".//GUIConfig[@name='ScintillaPrimaryView']").attrib["zoom"]
     assert zoom != "0", "GUI zoom change was not persisted"
