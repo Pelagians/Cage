@@ -40,7 +40,7 @@ def build_execution_graph(manifest: Manifest) -> dict[str, Any]:
     runner_runtime_payload["sessionContract"] = (
         str(cfw_runtime.get("sessionContract") or "unqualified-producer-runtime")
         if cfw_runtime is not None
-        else "cage.selkies-wayland/v1"
+        else runtime.session_contract or "cage.selkies-wayland/v1"
     )
     build_payload = {"network": manifest.build.network}
     launch_payload = manifest.launch.to_dict() if manifest.launch else {"hasDefaultLaunch": False}
@@ -122,8 +122,8 @@ def build_execution_graph(manifest: Manifest) -> dict[str, Any]:
         "runnerRuntime": dict(runner_runtime_payload),
         "graphics": {
             "defaultMode": DEFAULT_GRAPHICS_MODE,
-            "supportedModes": SUPPORTED_GRAPHICS_MODES,
-            "sessionBackend": "wayland",
+            "supportedModes": ["headless", "desktop"] if runtime.architecture == "aarch64" else SUPPORTED_GRAPHICS_MODES,
+            "sessionBackend": "x11" if runtime.architecture == "aarch64" else "wayland",
             "compositor": "labwc",
             "wineGraphics": manifest.runtime.wine_graphics,
             "resolution": {"width": 1280, "height": 800},

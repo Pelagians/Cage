@@ -103,6 +103,10 @@ def build_container(
     )
 
     build_args = ["--build-arg", entry.build_arg_line()]
+    if provider == "wine-arm64ec":
+        from runtime.arm64ec import runtime_target
+        from runtime.desktop_launch import digest_json
+        build_args.extend(["--build-arg", "RUNTIME_LOCK_SHA256=" + digest_json(runtime_target())])
     if provider == "staging":
         build_args.extend(["--build-arg", "WINE_CHANNEL=staging"])
     cmd = [
@@ -121,7 +125,7 @@ def build_container(
 
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=600,
+            cmd, capture_output=True, text=True, timeout=1800 if provider == "wine-arm64ec" else 600,
         )
         log = result.stdout + result.stderr
         if result.returncode != 0:

@@ -15,16 +15,19 @@ from core.manifest import Manifest
 from runtime.desktop_launch import DesktopError, digest_json, inventory_tree, verify_inventory, windows_path
 
 
-def desktop_target():
+def desktop_target(provider="wine"):
+    if provider == "wine-arm64ec":
+        from runtime.arm64ec import runtime_target
+        return runtime_target()
     return json.loads((Path(__file__).resolve().parents[1] / "runtime/desktop-wine-11.0.json").read_text())
 
 
 def validate_desktop_recipe(manifest):
-    target = desktop_target()
+    target = desktop_target(manifest.runtime.provider)
     if not manifest.desktop or not manifest.launch:
         raise DesktopError("desktop export requires desktop metadata and a default launch")
     if manifest.runtime.provider != target["provider"] or manifest.runtime.version != target["version"]:
-        raise DesktopError("the desktop POC requires pinned Wine 11.0")
+        raise DesktopError("the desktop target requires its pinned Wine provider/version")
     if manifest.runtime.runner or manifest.runtime.image or manifest.runtime.digest or manifest.runtime.source or manifest.runtime.channel:
         raise DesktopError("custom OCI images/runners cannot be substituted for a qualified desktop runtime")
     if manifest.runtime.wine_graphics != "xwayland" or manifest.runtime.network != "none" or manifest.build.network != "none":

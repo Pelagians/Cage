@@ -99,6 +99,7 @@ class ChocolateySmokePackageTests(unittest.TestCase):
                 ROOT,
                 source_copy,
                 ignore=shutil.ignore_patterns(
+                    ".cage", "sources",
                     ".git", ".venv", "build", "dist", "*.egg-info", "__pycache__"
                 ),
             )

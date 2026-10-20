@@ -684,8 +684,16 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
     graphics = graph.get("graphics", {})
     modes = graphics.get("supportedModes", [])
     desktop_graph = graph.get("schemaVersion") == DESKTOP_SCHEMA_VERSION
+    native_graph = graph.get("runnerRuntime", {}).get("sessionContract") == "cage.native-wine/v1"
     graphics_ok = (graphics.get("defaultMode") == "desktop" and modes == ["desktop"]
-                   if desktop_graph else graphics.get("defaultMode") in modes and {"headless", "selkies"}.issubset(set(modes)))
+                   if desktop_graph else graphics.get("defaultMode") in modes and
+                   ({"headless", "desktop"} == set(modes) if native_graph else {"headless", "selkies"}.issubset(set(modes))))
+    if native_graph:
+        from runtime.arm64ec import runtime_target
+        graphics_ok = (graphics_ok and runtime.get("executionTarget") == runtime_target()
+                       and graph.get("builderRuntime", {}).get("executionTarget") == runtime.get("executionTarget")
+                       and graph.get("runnerRuntime", {}).get("executionTarget") == runtime.get("executionTarget")
+                       and runtime.get("architecture") == "aarch64" and graphics.get("sessionBackend") == "x11")
     add_check(
         "graphics-contract",
         graphics_ok,
@@ -694,6 +702,17 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
         error=("graph graphics must match its desktop contract" if desktop_graph
                else "graph graphics must include defaultMode and support headless and selkies"),
     )
+    if native_graph and status.get("runnable") is True:
+        try:
+            from runtime.arm64ec import native_launch_script
+            native_launch_script(bundle, [])
+            native_seal_ok = True
+            native_seal_error = None
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            native_seal_ok = False
+            native_seal_error = str(exc)
+        add_check("native-prefix-seal", native_seal_ok, "native ARM prefix and runtime identity are sealed",
+                  error="native ARM prefix seal failed: " + str(native_seal_error) if not native_seal_ok else None)
     if desktop_graph:
         from runtime.desktop_launch import digest_json, verify_inventory
         try:

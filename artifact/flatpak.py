@@ -52,7 +52,8 @@ def prepare_flatpak_context(bundle, plan, context, *, store):
         "applicationSources": manifest.get("sources", []),
         "applicationLicense": plan["desktop"]["license"],
         "wineBuildSource": plan["target"]["baseSource"],
-        "wineBuildCommit": plan["target"]["baseCommit"],
+        "wineBuildCommit": plan["target"].get("baseCommit"),
+        "runtimePackages": plan["target"].get("packages", []),
         "notice": "Preserve application/runtime notices and provide corresponding source before redistribution."
     }, indent=2, sort_keys=True) + "\n")
     helper = files / "libexec/cage-desktop-launch.py"

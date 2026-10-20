@@ -11,7 +11,7 @@ import shutil
 
 APP = "io.github.Pelagians.Cage.NotepadPlusPlus"
 ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE = ROOT / "dist/desktop-evidence"
+EVIDENCE = Path(os.environ.get("CAGE_TEST_EVIDENCE", str(ROOT / "dist/desktop-evidence")))
 
 
 def command(*argv):
@@ -57,7 +57,7 @@ def main():
     home = Path.home()
     docs = home / "Documents/Cage"
     docs.mkdir(parents=True, exist_ok=True)
-    document = docs / "Desktop proof café.txt"
+    document = docs / os.environ.get("CAGE_TEST_DOCUMENT", "Desktop proof café.txt")
     document.write_text("Original document\n")
     user_store = Path(os.environ["FLATPAK_USER_DIR"])
     desktop = user_store / "exports/share/applications" / (APP + ".desktop")
@@ -128,7 +128,7 @@ def main():
     runtime_ref = command("flatpak", "info", "--user", "--show-runtime", APP)
     runtime_commit = command("flatpak", "info", "--user", "--show-commit", "runtime/" + runtime_ref)
     wine_version = command("flatpak", "run", "--command=wine", APP, "--version")
-    assert wine_version == "wine-11.0", wine_version
+    assert wine_version == os.environ.get("CAGE_TEST_WINE_VERSION", "wine-11.0"), wine_version
     result = {"schemaVersion": "cage.desktop-functional-test/v0", "status": "passed", "appId": APP,
               "packageCommit": immutable, "install": True, "desktopLaunch": True, "save": True,
               "relaunch": True, "secondSaveContents": document.read_text(), "settingsZoom": zoom,
@@ -137,6 +137,8 @@ def main():
               "session": "Xvfb X11 with Openbox", "applicationVersion": "8.8.8",
               "runtimeRef": runtime_ref, "runtimeCommit": runtime_commit, "wineVersion": wine_version,
               "host": command("uname", "-srmo"), "flatpakVersion": command("flatpak", "--version")}
+    result["kernelPageSize"] = os.sysconf("SC_PAGE_SIZE")
+    result["installedRef"] = command("flatpak", "info", "--user", "--show-ref", APP)
     (EVIDENCE / "functional-test.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))
 

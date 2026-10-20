@@ -215,6 +215,8 @@ def _immutable_image_ref(engine: str, image_ref: str) -> str:
     if ":" in repository.rsplit("/", 1)[-1]:
         repository = repository.rsplit(":", 1)[0]
     matches = [item for item in digests if isinstance(item, str) and item.startswith(repository + "@sha256:")]
+    if not matches and engine == "podman" and "/" in repository and "." not in repository.split("/", 1)[0]:
+        matches = [item for item in digests if isinstance(item, str) and item.startswith("localhost/" + repository + "@sha256:")]
     if len(matches) == 1:
         return matches[0]
     # A locally built CI candidate has no RepoDigest until published. Its
@@ -223,6 +225,8 @@ def _immutable_image_ref(engine: str, image_ref: str) -> str:
         identified = subprocess.run([engine, "image", "inspect", "--format", "{{.Id}}", image_ref],
                                     capture_output=True, text=True, timeout=30, check=False)
         image_id = identified.stdout.strip()
+        if identified.returncode == 0 and re.fullmatch(r"[0-9a-f]{64}", image_id):
+            image_id = "sha256:" + image_id  # Podman omits Docker's prefix.
         if identified.returncode == 0 and re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
             return image_id
     raise RuntimeError("Linux customization requires one immutable producer image digest or local image ID")
@@ -676,12 +680,18 @@ def execute_inside_container(
         from container.manager import get_image_ref as _img_ref
         img = _img_ref(manifest.runtime.provider, manifest.runtime.version)
 
+    if manifest.runtime.provider == "wine-arm64ec":
+        from runtime.arm64ec import verify_container_runtime
+        verify_container_runtime(engine, img)
+        if any(module.type not in {"files", "registry", "check"} for module in manifest.modules):
+            raise RuntimeError("ARM64EC initial container support qualifies files, registry and check modules only")
+
     root_build = any(module.type in {"script", "extract"} for module in manifest.modules)
     if root_build:
         _verify_root_build_capability(engine, img)
 
     from artifact.linux_state import declared_outputs
-    if declared_outputs(bundle_path):
+    if declared_outputs(bundle_path) or manifest.runtime.provider == "wine-arm64ec":
         img = _immutable_image_ref(engine, img)
         graph_path = bundle_path / "metadata/graph.json"
         graph = json.loads(graph_path.read_text(encoding="utf-8"))
@@ -717,6 +727,7 @@ def execute_inside_container(
         manifest,
         bundle_mount="/opt/cage",
         workspace_mount="/workspace",
+        settle_prefix=manifest.runtime.provider == "wine-arm64ec",
     )
     script_path.parent.mkdir(parents=True, exist_ok=True)
     script_path.write_text(script, encoding="utf-8")
@@ -796,6 +807,9 @@ def execute_inside_container(
         for line in log_lines:
             print(line, file=sys.stderr, flush=True)
         result = _run_container_command(cmd, timeout=timeout)
+        if result.returncode == 0 and manifest.runtime.provider == "wine-arm64ec":
+            from runtime.arm64ec import seal_native_bundle
+            seal_native_bundle(bundle_path, manifest, img)
         log_lines.append(result.stdout or "")
         if result.stderr:
             log_lines.append("--- stderr ---")

@@ -229,6 +229,11 @@ def cmd_build(args):
     binding = resolve_manifest_runtime(manifest)
     base_image = getattr(args, "runtime_image", None) or binding.oci_image or get_image_ref(
         manifest.runtime.provider, manifest.runtime.version)
+    if manifest.runtime.provider == "wine-arm64ec" and not args.dry_run and not args.runtime_image:
+        from container.manager import get_image_available
+        if get_image_available(manifest.runtime.provider, manifest.runtime.version,
+                               build_cmd=args.engine or "podman", published=False):
+            base_image = binding.local_oci_image
 
     if args.dry_run:
         artifact_entry = register_bundle(
@@ -275,6 +280,8 @@ def cmd_build(args):
     )
 
     # Write OCI mapping
+    if manifest.runtime.provider == "wine-arm64ec":
+        base_image = build_result.image_ref
     oci = build_oci_image(bundle_path, base_image,
                           output_tag=args.image_tag)
     artifact_entry = register_bundle(
@@ -333,6 +340,8 @@ def cmd_run(args):
         require_runner=not args.dry_run,
         network=args.network,
         allow_non_runnable=args.dry_run,
+        state_dir=args.state_dir,
+        writable_files=args.writable_files,
     )
     if args.dry_run:
         print(json.dumps(plan, indent=2, sort_keys=True))
@@ -626,7 +635,7 @@ def build_parser():
     p.add_argument("bundle", help="Path to Cage bundle directory or app name from artifact index")
     p.add_argument("--artifact-index", default=None,
                    help="Artifact index path for resolving app names (default: dist/.cage/artifacts.json)")
-    p.add_argument("--graphics", choices=["headless", "selkies"],
+    p.add_argument("--graphics", choices=["headless", "selkies", "desktop"],
                    help="Graphics mode; defaults to metadata/graph.json defaultMode")
     p.add_argument("--engine", default=None,
                    help="Container engine (podman, docker). Auto-detect if omitted.")
@@ -635,6 +644,8 @@ def build_parser():
     p.add_argument("--network", choices=["none", "bridge", "host"],
                    help="Runtime container network mode; defaults to bundle runtime.network")
     p.add_argument("--entrypoint", help="Named suite entrypoint id to run")
+    p.add_argument("--state-dir", help="Persistent native ARM container state directory")
+    p.add_argument("--writable-files", action="store_true", help="Allow writes within the parent directories of explicitly passed files")
     p.add_argument("files", nargs="*", help="Host files to pass to the selected application entrypoint")
     p.add_argument("--selkies-port", type=int, default=3001,
                    help="Host loopback HTTPS port for --graphics selkies")
@@ -833,7 +844,7 @@ def build_parser():
                     help="Artifact index path for resolving app names (default: dist/.cage/artifacts.json)")
     ep.add_argument("--tag", required=True, help="Output OCI image tag")
     ep.add_argument("--dry-run", action="store_true", help="Print the OCI export plan without building")
-    ep.add_argument("--graphics", choices=["headless", "selkies"], default="headless",
+    ep.add_argument("--graphics", choices=["headless", "selkies", "desktop"], default="headless",
                     help="Application image session target")
     ep.add_argument("--engine", default=None, help="Container build engine (podman, docker). Auto-detect if omitted.")
     ep.add_argument("--context-dir", help="Optional build context directory to materialize")

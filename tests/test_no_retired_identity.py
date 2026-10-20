@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OLD = "v" + "ic"
 PATTERN = re.compile(rf"(?<![a-z]){OLD}(?![a-z])", re.IGNORECASE)
-SKIP = {".git", ".venv", "__pycache__", ".pytest_cache"}
+SKIP = {".git", ".venv", ".cage", "sources", "dist", "build", "__pycache__", ".pytest_cache"}
 
 
 class RetiredIdentityTests(unittest.TestCase):

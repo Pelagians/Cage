@@ -54,7 +54,11 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str =
     manifest = _load_json(bundle, 'manifest.cage.json')
     graph = _load_json(bundle, 'metadata/graph.json')
     runtime = dict(graph.get('runnerRuntime') or {})
-    if graphics not in {'headless', 'selkies'}:
+    native = runtime.get('sessionContract') == 'cage.native-wine/v1'
+    if native:
+        from runtime.arm64ec import native_launch_script
+        native_launch_script(bundle, [])  # Verify the same seed/runtime seal.
+    if graphics not in ({'headless', 'desktop'} if native else {'headless', 'selkies'}):
         raise OCIExportError("graphics must be headless or selkies")
     if graphics == 'selkies' and runtime.get('sessionContract') != 'cage.selkies-wayland/v1':
         raise OCIExportError(
@@ -155,7 +159,12 @@ def prepare_oci_build_context(
     containerfile.write_text(plan['containerfile']['content'], encoding='utf-8')
 
     launcher = context / plan['launcher']['path']
-    launcher.write_text(_launcher_script(), encoding='utf-8')
+    if plan['runtime'].get('provider') == 'wine-arm64ec':
+        launcher.write_text('#!/bin/sh\nexport XDG_DATA_HOME="${CAGE_STATE:-/var/lib/cage/state}"\n'
+                            'exec /usr/bin/python3 -I /usr/lib/cage-runtime/runtime/desktop_launch.py '
+                            '/opt/cage/bundle/metadata/native-launch.json "$@"\n', encoding='utf-8')
+    else:
+        launcher.write_text(_launcher_script(), encoding='utf-8')
     launcher.chmod(0o755)
     return context
 

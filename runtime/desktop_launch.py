@@ -138,6 +138,9 @@ def initialize_state(seed, inventory, state_root, identity):
 def launch(metadata_path, files):
     metadata_path = Path(metadata_path)
     plan = json.loads(metadata_path.read_text())
+    page_sizes = plan["target"].get("translation", {}).get("hostPageSizes")
+    if page_sizes and os.sysconf("SC_PAGE_SIZE") not in page_sizes:
+        raise DesktopError("Wine/FEX runtime does not qualify this kernel page size")
     inventory = json.loads((metadata_path.parent / "seed-inventory.json").read_text())
     if digest_json(inventory) != plan["seedDigest"]:
         raise DesktopError("seed inventory digest mismatch")
@@ -145,7 +148,8 @@ def launch(metadata_path, files):
     state_root = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share"))) / plan["desktop"]["id"]
     identity = {"schemaVersion": "cage.desktop-state/v0", "seedDigest": plan["seedDigest"],
                 "runtimeDigest": digest_json(plan["target"])}
-    prefix = initialize_state(metadata_path.parent / "seed", inventory, state_root, identity)
+    seed = Path(plan["layout"]["seed"]) if plan["layout"].get("seed") else metadata_path.parent / "seed"
+    prefix = initialize_state(seed, inventory, state_root, identity)
     runtime_root = Path(plan["layout"]["runtime"])
     wine = str(runtime_root / plan["target"]["wine"])
     server = str(runtime_root / plan["target"]["wineserver"])

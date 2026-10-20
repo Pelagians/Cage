@@ -43,6 +43,8 @@ class CatalogVersion:
     launcher_version: str | None = None
     aliases: tuple[str, ...] = ()
     publish_tags: tuple[str, ...] = ()
+    architecture: str | None = None
+    session_contract: str | None = None
 
     @property
     def local_ref(self) -> str:
@@ -175,6 +177,8 @@ def resolve_catalog_version(provider: str, version: str | None = None,
                           if vdata.get("launcherVersion", pdata.get("launcherVersion")) is not None else None),
         aliases=resolved_aliases,
         publish_tags=publish_tags,
+        architecture=pdata.get("architecture"),
+        session_contract=pdata.get("sessionContract"),
     )
 
 

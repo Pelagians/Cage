@@ -96,11 +96,13 @@ def ensure_target(target, store):
         raise DesktopError(f"desktop target requires {target['architecture']}; this host is {platform.machine()}; use an appropriate build runner")
     run_flatpak(["remote-add", "--user", "--if-not-exists", target["remote"], target["remoteUrl"]], store=store)
     commits = {}
-    for kind, name, branch, commit in (
+    references = [
         ("runtime", target["platform"], target["branch"], target["platformCommit"]),
         ("runtime", target["sdk"], target["branch"], target["sdkCommit"]),
-        ("app", target["base"], target["baseBranch"], target["baseCommit"]),
-    ):
+    ]
+    if target.get("base"):
+        references.append(("app", target["base"], target["baseBranch"], target["baseCommit"]))
+    for kind, name, branch, commit in references:
         ref = f"{kind}/{name}/{target['architecture']}/{branch}"
         try:
             installed = run_flatpak(["info", "--user", "--show-commit", ref], store=store)
@@ -113,16 +115,23 @@ def ensure_target(target, store):
         if actual != commit:
             raise DesktopError(f"runtime identity mismatch for {ref}")
         commits[ref] = actual
-    actual_runtime = run_flatpak(["info", "--user", "--show-runtime", target["base"]], store=store)
-    if actual_runtime != f"{target['platform']}/{target['architecture']}/{target['branch']}":
-        raise DesktopError("Wine base uses a different Freedesktop platform")
+    if target.get("base"):
+        actual_runtime = run_flatpak(["info", "--user", "--show-runtime", target["base"]], store=store)
+        if actual_runtime != f"{target['platform']}/{target['architecture']}/{target['branch']}":
+            raise DesktopError("Wine base uses a different Freedesktop platform")
+    else:
+        from runtime.arm64ec import materialize_payload
+        materialize_payload(Path(store) / "arm64ec")
     return commits
 
 
 def initialize_flatpak(build_dir, app_id, target, store):
-    run_flatpak(["build-init", f"--arch={target['architecture']}", f"--base={target['base']}",
-                 f"--base-version={target['baseBranch']}", str(build_dir), app_id,
+    base = [f"--base={target['base']}", f"--base-version={target['baseBranch']}"] if target.get("base") else []
+    run_flatpak(["build-init", f"--arch={target['architecture']}", *base, str(build_dir), app_id,
                  target["sdk"], target["platform"], target["branch"]], store=store)
+    if target.get("payload") == "rpm":
+        from runtime.arm64ec import materialize_payload
+        shutil.copytree(materialize_payload(Path(store) / "arm64ec"), Path(build_dir) / "files", symlinks=True, dirs_exist_ok=True)
     # New application policy: never inherit the Wine base application's permissions.
     (Path(build_dir) / "metadata").write_text(
         f"[Application]\nname={app_id}\nruntime={target['platform']}/{target['architecture']}/{target['branch']}\n"
@@ -171,7 +180,7 @@ def build_flatpak_bundle(manifest, output, *, workspace, store, timeout=900):
         log = run_flatpak([*args, "bash", "-c", wrapper], store=store, timeout=timeout)
         (bundle / "logs/build.log").write_text(log + "\n")
         # Confirm the base identity did not change while build-init copied its files.
-        if run_flatpak(["info", "--user", "--show-commit", target["base"]], store=store) != target["baseCommit"]:
+        if target.get("base") and run_flatpak(["info", "--user", "--show-commit", target["base"]], store=store) != target["baseCommit"]:
             raise DesktopError("Wine base changed during build")
         seal_desktop_bundle(bundle, target, {"wineVersion": version, "commits": commits})
         update_bundle_execution_metadata(bundle, state="runnable", runnable=True, materialized_prefix=True,
