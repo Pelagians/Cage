@@ -49,6 +49,9 @@ def stage_desktop_fonts(destination, platform_root):
         '<alias><family>monospace</family><prefer><family>DejaVu Sans Mono</family></prefer></alias>'
         '<alias><family>Tahoma</family><prefer><family>DejaVu Sans</family></prefer></alias>'
         '<alias><family>Arial</family><prefer><family>Liberation Sans</family></prefer></alias>'
+        '<alias><family>Courier New</family><prefer><family>Liberation Mono</family></prefer></alias>'
+        '<alias><family>Consolas</family><prefer><family>DejaVu Sans Mono</family></prefer></alias>'
+        '<alias><family>Lucida Console</family><prefer><family>DejaVu Sans Mono</family></prefer></alias>'
         '<alias><family>Segoe UI</family><prefer><family>Carlito</family></prefer></alias>'
         '</fontconfig>\n')
 

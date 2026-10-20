@@ -96,6 +96,37 @@ def prefix_dpi(prefix):
     return int(match[1], 16) if match else None
 
 
+def configure_fonts(plan, prefix, wine, server, environment, root, lock_fd):
+    if not plan.get('display'):
+        return
+    # Wine's GDI family enumeration does not use fontconfig aliases as Windows
+    # font names. Replacements apply only when the real family is absent; keep
+    # all existing user replacements and application font preferences.
+    replacements = {'Courier New': 'Liberation Mono', 'Consolas': 'DejaVu Sans Mono',
+                    'Lucida Console': 'DejaVu Sans Mono', 'Arial': 'Liberation Sans',
+                    'Times New Roman': 'Liberation Serif', 'Tahoma': 'DejaVu Sans',
+                    'MS Sans Serif': 'Liberation Sans', 'Segoe UI': 'Carlito'}
+    registry = _real_path(prefix, 'user.reg')
+    content = registry.read_text(errors='replace') if registry.exists() else ''
+    section = re.search(r'(?m)^\[Software\\\\Wine\\\\Fonts\\\\Replacements\][^\n]*\n([^\[]*)', content)
+    existing = {name.casefold() for name in re.findall(r'(?m)^"([^"]+)"=', section[1])} if section else set()
+    missing = {name: target for name, target in replacements.items() if name.casefold() not in existing}
+    if not missing:
+        return
+    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-16', suffix='.reg',
+                                     dir=_real_path(prefix, 'drive_c'), delete=False) as handle:
+        path = Path(handle.name)
+        handle.write('Windows Registry Editor Version 5.00\n\n[HKEY_CURRENT_USER\\Software\\Wine\\Fonts\\Replacements]\n')
+        handle.writelines('"' + name + '"="' + target + '"\n' for name, target in missing.items())
+    try:
+        result = _run_application([wine, 'reg.exe', 'import', 'C:\\' + path.name], server,
+                                 environment, prefix, root, locked=True, lock_fd=lock_fd)
+        if result:
+            raise DesktopError('could not configure missing font fallbacks; state retained')
+    finally:
+        path.unlink(missing_ok=True)
+
+
 def configure_display(plan, root, prefix, wine, server, environment, lock_fd):
     if not plan.get('display'):
         return  # Container and older package launch contracts remain unchanged.
@@ -606,6 +637,7 @@ def _launch_locked(metadata_path, files, plan, inventory, state_root, identity, 
     assert_quiescent(state_root, server, environment)
     prefix, pending = prepare_generation(seed, inventory, state_root, identity, plan, action)
     environment["WINEPREFIX"] = str(prefix)
+    configure_fonts(plan, prefix, wine, server, environment, state_root, lock_fd)
     configure_display(plan, state_root, prefix, wine, server, environment, lock_fd)
     # This maps the Flatpak namespace, not an unrestricted host filesystem.
     zdrive = prefix / "dosdevices/z:"

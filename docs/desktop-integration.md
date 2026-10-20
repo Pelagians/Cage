@@ -35,6 +35,12 @@ and the same fontconfig aliases. AppImage previously carried only DejaVu fonts;
 its font selection could differ from Flatpak. There is no host font dependency
 or font download at launch.
 
+Missing Windows font families also receive Wine GDI replacements (for example,
+Courier New to Liberation Mono). Fontconfig aliases alone do not provide those
+Windows family names. Existing user replacements and application font settings
+are retained; Wine uses an installed real family ahead of a replacement. See
+[Wine's replacement implementation](https://github.com/wine-mirror/wine/blob/wine-11.0/dlls/win32u/font.c).
+
 The launcher reads the X11/XWayland session's logical `Xft.dpi` and sets Wine's
 `HKCU\Control Panel\Desktop\LogPixels` before starting the application. It uses
 96 DPI when no value is available, with a supported range of 96–384. This scales

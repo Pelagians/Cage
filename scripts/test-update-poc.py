@@ -193,6 +193,7 @@ def main():
             sys.path.insert(0, str(ROOT))
             from runtime.desktop_launch import prefix_dpi
             assert prefix_dpi(prefix()) == 192, 'expected 2x logical DPI in the actual Wine prefix'
+            assert '"Courier New"="Liberation Mono"' in (prefix() / 'user.reg').read_text(), 'Windows monospace fallback missing'
     try:
         if desktop_proof:
             subprocess.run(['xrdb', '-merge'], input='Xft.dpi: 192\n', text=True, check=True)

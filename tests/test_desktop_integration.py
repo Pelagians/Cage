@@ -14,6 +14,22 @@ from tests.test_desktop_export import app
 
 
 class IntegrationTests(unittest.TestCase):
+    def test_wine_font_aliases_keep_existing_choices_and_remove_temporary_import(self):
+        with tempfile.TemporaryDirectory() as td:
+            prefix=Path(td)/'prefix'
+            (prefix/'drive_c').mkdir(parents=True)
+            original='[Software\\\\Wine\\\\Fonts\\\\Replacements]\n"Courier New"="My Custom Font"\n'
+            (prefix/'user.reg').write_text(original)
+            def execute(command,*args,**kwargs):
+                imported=(prefix/'drive_c'/command[-1][3:]).read_text(encoding='utf-16')
+                self.assertNotIn('"Courier New"=',imported)
+                self.assertIn('"Consolas"="DejaVu Sans Mono"',imported)
+                return 0
+            with patch.object(launch,'_run_application',side_effect=execute):
+                launch.configure_fonts({'display':True},prefix,'wine','server',{},Path(td),None)
+            self.assertFalse(list((prefix/'drive_c').iterdir()))
+            self.assertEqual((prefix/'user.reg').read_text(),original)
+
     def test_associations_reuse_default_entrypoint_and_reject_ambiguous_handlers(self):
         value = app()
         self.assertEqual(validate_desktop_recipe(Manifest.from_dict(value))['architecture'], 'x86_64')
