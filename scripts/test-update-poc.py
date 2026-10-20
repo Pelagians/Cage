@@ -64,7 +64,7 @@ def main():
         installed = json.loads(subprocess.check_output([str(baseline), '--cage-install'], env=env, text=True))
         state = evidence / 'data/cage/appimage' / gui.APP
     elif kind == 'flatpak':
-        subprocess.run(['flatpak', 'install', '--user', '--noninteractive', '-y', '--no-related', '--no-deps',
+        subprocess.run(['flatpak', 'install', '--user', '--noninteractive', '--reinstall', '-y', '--no-related', '--no-deps',
                         '--bundle', str(baseline)], env=env, check=True)
         # Flatpak resets reserved XDG variables after applying host overrides.
         # Set the private path inside the sandbox, then exec the real packaged
@@ -290,6 +290,22 @@ def main():
             assert readonly.read_text() == 'original read-only document\n'
             document = previous
             dpi_check()
+            # A selected writable file outside the permanent Flatpak grant must
+            # support in-place save and reopen, not just read-only import.
+            document = readonly.parent / 'Writable café.txt'
+            document.write_text('original writable document\n')
+            process = start(baseline)
+            save('saved selected writable file')
+            close(process)
+            process = start(baseline)
+            gui.command('xdotool','key','--clearmodifiers','ctrl+End')
+            gui.command('xdotool','type','--clearmodifiers','--delay','10','reopened selected writable file')
+            gui.command('xdotool','key','--clearmodifiers','ctrl+s')
+            gui.wait_for(lambda: document.read_text() == 'saved selected writable file\nreopened selected writable file',
+                         'selected writable file reopened and appended')
+            close(process)
+            assert readonly.read_text() == 'original read-only document\n'
+            document = previous
         if installed:
             subprocess.run([installed['installed'], '--cage-uninstall'], env=env, check=True)
             assert (state / 'state.json').is_file()
@@ -301,7 +317,7 @@ def main():
                   'prefixDocumentsCarriedForward': True, 'originalGenerationsRetained': True,
                   'saveAndRelaunchAfterUpdateAndRollback': True}
         if desktop_proof:
-            result['desktopIntegration'] = {'mimeHandler': True, 'desktopFileForwarding': kind == 'flatpak', 'readOnlyOriginalPreserved': True, 'saveAs': True, 'newFileFromLauncher': True, 'logicalDpi': 192, 'dpiPreservedAcrossUpdateAndRollback': True}
+            result['desktopIntegration'] = {'mimeHandler': True, 'desktopFileForwarding': kind == 'flatpak', 'readOnlyOriginalPreserved': True, 'saveAs': True, 'newFileFromLauncher': True, 'selectedWritableSaveAndRelaunch': True, 'logicalDpi': 192, 'dpiPreservedAcrossUpdateAndRollback': True}
         if image_ids:
             result['ociImageIds'] = image_ids
         (evidence / 'result.json').write_text(json.dumps(result, indent=2, sort_keys=True) + '\n')
