@@ -53,7 +53,8 @@ def build_run_plan(
 ) -> dict[str, Any]:
     """Return a deterministic container run plan for a verified bundle."""
     bundle = Path(bundle_path)
-    if (bundle / "metadata/execution-target.json").exists():
+    if any((bundle / name).exists() or (bundle / name).is_symlink()
+           for name in ("metadata/execution-target.json", "metadata/desktop-build.json")):
         raise RunError("desktop-target bundles require their exported desktop runtime; rebuild normally for container execution")
     verification = verify_bundle(bundle)
     if not verification.get("valid"):

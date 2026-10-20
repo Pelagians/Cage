@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import platform
 import subprocess
+import sys
 import hashlib
 import shutil
 import tempfile
@@ -69,6 +70,7 @@ def snapshot_sources(manifest, workspace, destination):
 
 
 def run_flatpak(arguments, *, store, timeout=1200):
+    print("[cage desktop] flatpak " + arguments[0], file=sys.stderr, flush=True)
     environment = {**os.environ, "FLATPAK_USER_DIR": str(Path(store).resolve())}
     try:
         result = subprocess.run(["flatpak", *arguments], env=environment, text=True,
@@ -81,6 +83,8 @@ def run_flatpak(arguments, *, store, timeout=1200):
 
 
 def ensure_target(target, store):
+    if platform.system().lower() != target["os"]:
+        raise DesktopError(f"desktop target requires {target['os']}; this host is {platform.system()}")
     if platform.machine() != target["architecture"]:
         raise DesktopError(f"desktop target requires {target['architecture']}; this host is {platform.machine()}; use an appropriate build runner")
     run_flatpak(["remote-add", "--user", "--if-not-exists", target["remote"], target["remoteUrl"]], store=store)
@@ -119,7 +123,6 @@ def initialize_flatpak(build_dir, app_id, target, store):
     for directory in ("share/applications", "share/metainfo", "share/appdata"):
         path = Path(build_dir) / "files" / directory
         if path.exists():
-            import shutil
             shutil.rmtree(path)
 
 
@@ -137,8 +140,13 @@ def build_flatpak_bundle(manifest, output, *, workspace, store, timeout=900):
     # including after failed/partial desktop builds.
     (bundle / "metadata/execution-target.json").write_text(json.dumps(target, indent=2) + "\n")
     build_dir = bundle / "build/flatpak"
-    inputs = snapshot_sources(manifest, workspace, bundle / "build/inputs")
-    initialize_flatpak(build_dir, manifest.desktop["id"], target, store)
+    try:
+        inputs = snapshot_sources(manifest, workspace, bundle / "build/inputs")
+        initialize_flatpak(build_dir, manifest.desktop["id"], target, store)
+    except (DesktopError, OSError, ValueError) as exc:
+        update_bundle_execution_metadata(bundle, state="build-failed", runnable=False,
+                                         has_default_launch=True, error=str(exc), log_excerpt=str(exc))
+        raise
     for name, payload in (("source-integrity", integrity), ("source-policy", policy)):
         (bundle / f"metadata/{name}.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     script = generate_build_script(manifest, settle_prefix=True)
@@ -166,6 +174,7 @@ def build_flatpak_bundle(manifest, output, *, workspace, store, timeout=900):
         if not verify_bundle(bundle)["valid"]:
             raise DesktopError("desktop build failed existing bundle verification")
     except (DesktopError, OSError, ValueError) as exc:
+        (bundle / "logs/build.log").write_text(str(exc) + "\n")
         update_bundle_execution_metadata(bundle, state="build-failed", runnable=False,
                                          has_default_launch=True, error=str(exc), log_excerpt=str(exc))
         raise

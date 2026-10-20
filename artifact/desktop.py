@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -23,7 +24,7 @@ def validate_desktop_recipe(manifest):
         raise DesktopError("desktop export requires desktop metadata and a default launch")
     if manifest.runtime.provider != target["provider"] or manifest.runtime.version != target["version"]:
         raise DesktopError("the desktop POC requires pinned Wine 11.0")
-    if manifest.runtime.runner or manifest.runtime.image or manifest.runtime.digest:
+    if manifest.runtime.runner or manifest.runtime.image or manifest.runtime.digest or manifest.runtime.source or manifest.runtime.channel:
         raise DesktopError("custom OCI images/runners cannot be substituted for a qualified desktop runtime")
     if manifest.runtime.wine_graphics != "xwayland" or manifest.runtime.network != "none" or manifest.build.network != "none":
         raise DesktopError("the desktop POC supports X11/XWayland and offline build/run only")
@@ -43,6 +44,8 @@ def validate_desktop_recipe(manifest):
             raise DesktopError(f"desktop environment key is runtime-owned: {key}")
     if "WINEARCH" in manifest.launch.env:
         raise DesktopError("launch.env cannot override desktop WINEARCH")
+    if env.get("WINEARCH", "win64") != "win64":
+        raise DesktopError("desktop compatibility environment must use win64")
     return target
 
 
@@ -66,9 +69,17 @@ def normalize_seed(prefix):
 def seal_desktop_bundle(bundle, target, runtime_evidence):
     bundle = Path(bundle)
     inventory = normalize_seed(bundle / "prefix")
+    for relative in ("metadata/graph.json", "runtime/runtime.json"):
+        path = bundle / relative
+        metadata = json.loads(path.read_text())
+        metadata["executionTarget"] = target
+        metadata["ociBindingRole"] = "recipe-intent-only"
+        path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
     receipt = {"schemaVersion": "cage.desktop-build/v0", "target": target,
                "seedDigest": digest_json(inventory), "inventory": inventory,
                "manifestDigest": digest_json(json.loads((bundle / "manifest.cage.json").read_text())),
+               "buildScriptSha256": hashlib.sha256((bundle / "build/run.sh").read_bytes()).hexdigest()
+                    if (bundle / "build/run.sh").is_file() else None,
                "runtimeEvidence": runtime_evidence,
                "qualification": "built-with-target-runtime; application workflow proof is separate"}
     (bundle / "metadata/desktop-build.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
@@ -92,6 +103,12 @@ def create_desktop_export_plan(bundle):
     if path.is_symlink() or not path.is_file():
         raise DesktopError("bundle has no qualified desktop build; rebuild with cage build --target flatpak")
     receipt = json.loads(path.read_text())
+    target_path = bundle / "metadata/execution-target.json"
+    if target_path.is_symlink() or not target_path.is_file() or json.loads(target_path.read_text()) != target:
+        raise DesktopError("desktop execution target receipt is missing or inconsistent")
+    graph = json.loads((bundle / "metadata/graph.json").read_text())
+    if graph.get("executionTarget") != target:
+        raise DesktopError("graph does not identify the actual desktop execution target")
     if receipt.get("schemaVersion") != "cage.desktop-build/v0" or receipt.get("target") != target:
         raise DesktopError("desktop runtime target mismatch")
     if receipt.get("manifestDigest") != digest_json(manifest.to_dict()):

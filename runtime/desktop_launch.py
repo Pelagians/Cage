@@ -1,7 +1,6 @@
 """Small, stdlib-only desktop launch contract, also shipped inside exports."""
 from __future__ import annotations
 
-import fcntl
 import hashlib
 import json
 import os
@@ -10,6 +9,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 
 
 class DesktopError(ValueError):
@@ -77,8 +77,23 @@ def windows_path(prefix, value):
     return path
 
 
+def _write_state_record(path, identity):
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, prefix=".state-", delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(json.dumps(identity, sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.replace(path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def initialize_state(seed, inventory, state_root, identity):
     """Copy once under a lock and atomically commit; never migrate an old prefix."""
+    import fcntl
     seed, root = Path(seed), Path(state_root)
     if root.is_symlink():
         raise DesktopError("application state directory cannot be a symlink")
@@ -101,7 +116,7 @@ def initialize_state(seed, inventory, state_root, identity):
             if marker.is_file() and not marker.is_symlink() and json.loads(marker.read_text()) == identity:
                 # The directory promotion committed; only its external receipt
                 # was interrupted. Recover without replacing the prefix.
-                record.write_text(json.dumps(identity, sort_keys=True) + "\n")
+                _write_state_record(record, identity)
                 return prefix
             raise DesktopError("uncommitted prefix retained; move it aside for recovery before retrying")
         if partial.exists():
@@ -112,11 +127,7 @@ def initialize_state(seed, inventory, state_root, identity):
             verify_inventory(partial, inventory)
             (partial / ".cage-state.json").write_text(json.dumps(identity, sort_keys=True) + "\n")
             partial.rename(prefix)
-            temporary = root / "state.json.partial"
-            if temporary.is_symlink():
-                raise DesktopError("linked state record is unsupported")
-            temporary.write_text(json.dumps(identity, sort_keys=True) + "\n")
-            temporary.replace(record)
+            _write_state_record(record, identity)
         except BaseException:
             if partial.exists():
                 shutil.rmtree(partial)
@@ -135,14 +146,19 @@ def launch(metadata_path, files):
     identity = {"schemaVersion": "cage.desktop-state/v0", "seedDigest": plan["seedDigest"],
                 "runtimeDigest": digest_json(plan["target"])}
     prefix = initialize_state(metadata_path.parent / "seed", inventory, state_root, identity)
-    wine = "/app/" + plan["target"]["wine"]
-    server = "/app/" + plan["target"]["wineserver"]
+    runtime_root = Path(plan["layout"]["runtime"])
+    wine = str(runtime_root / plan["target"]["wine"])
+    server = str(runtime_root / plan["target"]["wineserver"])
     environment = {k: v for k, v in os.environ.items() if not (
         k.startswith(("WINE", "LD_", "DYLD_")) or k in {"PROTONPATH", "STEAM_COMPAT_DATA_PATH"}
     )}
     environment.update(plan["environment"])
-    environment.update(WINEPREFIX=str(prefix), WINEARCH="win64", WINEDEBUG="-all",
-                       WINEDLLOVERRIDES=plan["environment"].get("WINEDLLOVERRIDES", "winemenubuilder.exe=d;mscoree,mshtml="))
+    environment.update(WINEPREFIX=str(prefix), WINEARCH="win64")
+    environment.setdefault("WINEDEBUG", "-all")
+    environment.setdefault("WINEDLLOVERRIDES", "winemenubuilder.exe=d;mscoree,mshtml=")
+    if plan["target"]["graphics"] == "x11":
+        environment.pop("WAYLAND_DISPLAY", None)
+        environment.pop("WAYLAND_SOCKET", None)
     # This maps the Flatpak namespace, not an unrestricted host filesystem.
     zdrive = prefix / "dosdevices/z:"
     if not zdrive.exists() and not zdrive.is_symlink():

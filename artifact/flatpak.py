@@ -10,7 +10,7 @@ from xml.sax.saxutils import escape
 from artifact.desktop import create_desktop_export_plan
 from builder.flatpak import ensure_target, initialize_flatpak, run_flatpak
 from runtime import desktop_launch
-from runtime.desktop_launch import DesktopError, verify_inventory
+from runtime.desktop_launch import DesktopError, verify_inventory, digest_json
 
 ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect x="8" y="8" width="112" height="112" rx="20" fill="#245b78"/><path d="M38 30h40l16 16v52H38z" fill="#fff"/><path d="M48 58h34M48 70h34M48 82h24" stroke="#245b78" stroke-width="5"/></svg>\n'
 
@@ -18,6 +18,7 @@ ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox
 def create_flatpak_export_plan(bundle):
     plan = create_desktop_export_plan(bundle)
     return {**plan, "format": "flatpak", "branch": "stable",
+            "layout": {"runtime": "/app"},
             "permissions": ["--unshare=network", "--share=ipc", "--socket=x11",
                             "--filesystem=xdg-documents/" + plan["desktop"]["documentsDirectory"] + ":create"],
             "prerequisites": ["Flatpak", plan["target"]["platform"] + "//" + plan["target"]["branch"]],
@@ -26,6 +27,8 @@ def create_flatpak_export_plan(bundle):
 
 def prepare_flatpak_context(bundle, plan, context, *, store):
     context = Path(context).resolve()
+    if context.is_relative_to(Path(bundle).resolve()):
+        raise DesktopError("export staging must be outside the source bundle")
     if context.exists():
         raise DesktopError(f"Flatpak export context already exists: {context}")
     context.mkdir(parents=True)
@@ -35,15 +38,28 @@ def prepare_flatpak_context(bundle, plan, context, *, store):
     destination = files / "share/cage" / plan["desktop"]["id"]
     destination.mkdir(parents=True)
     receipt = json.loads((Path(bundle) / "metadata/desktop-build.json").read_text())
+    if digest_json(receipt["inventory"]) != plan["seedDigest"]:
+        raise DesktopError("source inventory changed after export planning")
     shutil.copytree(Path(bundle) / "prefix", destination / "seed", symlinks=True)
     verify_inventory(destination / "seed", receipt["inventory"])
     (destination / "seed-inventory.json").write_text(json.dumps(receipt["inventory"], sort_keys=True) + "\n")
     (destination / "desktop.json").write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n")
+    manifest = json.loads((Path(bundle) / "manifest.cage.json").read_text())
+    if digest_json(manifest) != plan["sourceManifestDigest"]:
+        raise DesktopError("source manifest changed after export planning")
+    (destination / "manifest.cage.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    (destination / "component-sources.json").write_text(json.dumps({
+        "applicationSources": manifest.get("sources", []),
+        "applicationLicense": plan["desktop"]["license"],
+        "wineBuildSource": plan["target"]["baseSource"],
+        "wineBuildCommit": plan["target"]["baseCommit"],
+        "notice": "Preserve application/runtime notices and provide corresponding source before redistribution."
+    }, indent=2, sort_keys=True) + "\n")
     helper = files / "libexec/cage-desktop-launch.py"
     helper.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(desktop_launch.__file__, helper)
     wrapper = files / "bin/cage-desktop-launch"
-    wrapper.write_text('#!/bin/sh\nexec /usr/bin/python3 /app/libexec/cage-desktop-launch.py /app/share/cage/'
+    wrapper.write_text('#!/bin/sh\nexec /usr/bin/python3 -I /app/libexec/cage-desktop-launch.py /app/share/cage/'
                        + plan["desktop"]["id"] + '/desktop.json "$@"\n')
     wrapper.chmod(0o755)
     desktop = plan["desktop"]
@@ -73,6 +89,8 @@ def prepare_flatpak_context(bundle, plan, context, *, store):
 def export_flatpak(bundle, *, output, store, context_dir=None, timeout=900):
     plan = create_flatpak_export_plan(bundle)
     output = Path(output).resolve()
+    if output.is_relative_to(Path(bundle).resolve()):
+        raise DesktopError("export output must be outside the source bundle")
     if output.exists() or Path(str(output) + ".partial").exists():
         raise DesktopError(f"Flatpak output already exists: {output}")
     output.parent.mkdir(parents=True, exist_ok=True)

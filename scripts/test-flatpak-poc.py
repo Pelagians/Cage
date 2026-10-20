@@ -6,6 +6,7 @@ import os
 import subprocess
 import time
 import xml.etree.ElementTree as ET
+import configparser
 
 APP = "io.github.Pelagians.Cage.NotepadPlusPlus"
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,7 +14,7 @@ EVIDENCE = ROOT / "dist/desktop-evidence"
 
 
 def command(*argv):
-    return subprocess.check_output(argv, text=True).strip()
+    return subprocess.check_output(argv, text=True, timeout=30).strip()
 
 
 def wait_for(function, description, seconds=120):
@@ -56,7 +57,9 @@ def main():
     desktop = user_store / "exports/share/applications" / (APP + ".desktop")
     assert desktop.is_file(), "installed desktop entry missing"
     permissions = command("flatpak", "info", "--user", "--show-permissions", APP)
-    assert "network" not in permissions, permissions
+    permission_data = configparser.ConfigParser()
+    permission_data.read_string(permissions)
+    assert "network" not in permission_data.get("Context", "shared", fallback="").split(";"), permissions
     assert "filesystems=xdg-documents/Cage:create;" in permissions, permissions
     (EVIDENCE / "permissions.txt").write_text(permissions + "\n")
     immutable = command("flatpak", "info", "--user", "--show-commit", APP)
@@ -102,4 +105,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BaseException:
+        subprocess.run(["scrot", str(EVIDENCE / "failure.png")], check=False)
+        raise

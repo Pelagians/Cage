@@ -4,17 +4,24 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 import copy
 import json
+import hashlib
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+import zipfile
 
 from artifact.bundle import create_bundle
 from artifact.desktop import create_desktop_export_plan, desktop_target, seal_desktop_bundle, validate_desktop_recipe
 from artifact.flatpak import create_flatpak_export_plan, prepare_flatpak_context
 from artifact.oci import create_oci_export_plan, OCIExportError
+from artifact.kube import create_kube_export_plan, KubeExportError
 from builder.flatpak import snapshot_sources
 from core.manifest import Manifest, ManifestError, load_manifest
+from core.media import stage_media
 from runtime.desktop_launch import DesktopError, digest_json, initialize_state, inventory_tree, verify_inventory, windows_path
 from runtime.launcher import build_run_plan, RunError
 from tests.bundle_fixtures import materialize_runnable_prefix
@@ -52,6 +59,16 @@ def initialize_worker(values):
 
 
 class DesktopContractTests(unittest.TestCase):
+    def test_cli_desktop_dry_run_does_not_materialize_a_bundle(self):
+        with tempfile.TemporaryDirectory() as td:
+            output = Path(td) / "absent"
+            result = subprocess.run([sys.executable, "-m", "cage", "build",
+                "recipes/notepadplusplus-portable.cage.yaml", "--target", "flatpak", "--dry-run",
+                "--output", str(output)], cwd=ROOT, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["target"]["architecture"], "x86_64")
+            self.assertFalse(output.exists())
+
     def test_metadata_roundtrip_and_strict_validation(self):
         value = app()
         self.assertEqual(Manifest.from_dict(value).to_dict(), value)
@@ -97,6 +114,8 @@ class DesktopContractTests(unittest.TestCase):
                 build_run_plan(bundle)
             with self.assertRaises(OCIExportError):
                 create_oci_export_plan(bundle, tag="test:desktop")
+            with self.assertRaises(KubeExportError):
+                create_kube_export_plan(bundle, image="example.invalid/app@sha256:" + "a" * 64)
 
     def test_runtime_and_recipe_seals_are_checked(self):
         with tempfile.TemporaryDirectory() as td:
@@ -173,6 +192,9 @@ class DesktopStateTests(unittest.TestCase):
             with self.assertRaises(DesktopError):
                 inventory_tree(seed)
             (seed / "escape").unlink()
+            os.mkfifo(seed / "fifo")
+            with self.assertRaisesRegex(DesktopError, "special payload"):
+                inventory_tree(seed)
             for path in ("C:/../outside", "Z:/file", "C:/folder/../../secret"):
                 with self.assertRaises(DesktopError):
                     windows_path(seed, path)
@@ -184,6 +206,25 @@ class DesktopStateTests(unittest.TestCase):
             (workspace / manifest.modules[0].mappings[0]["source"]).mkdir(parents=True)
             with self.assertRaisesRegex(DesktopError, "media staging"):
                 snapshot_sources(manifest, workspace, Path(td) / "inputs")
+
+    def test_staged_directory_is_bound_to_archive_bytes(self):
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td) / "workspace"
+            archive = workspace / "sources/pinned.zip"
+            archive.parent.mkdir(parents=True)
+            with zipfile.ZipFile(archive, "w") as handle:
+                handle.writestr("config.txt", "good")
+            media = stage_media(archive, name="input", workspace=workspace)
+            value = app()
+            value["sources"] = [{"id": "input", "type": "archive", "policy": "synthetic-fixture",
+                                  "path": "sources/pinned.zip", "sha256": hashlib.sha256(archive.read_bytes()).hexdigest()}]
+            value["modules"] = [{"type": "files", "mappings": [{"source": "sources/input/media",
+                                  "target": "C:/Program Files/App", "mode": "merge"}]}]
+            manifest = Manifest.from_dict(value)
+            snapshot_sources(manifest, workspace, Path(td) / "good")
+            (Path(media["stagedPath"]) / "config.txt").write_text("evil")
+            with self.assertRaisesRegex(DesktopError, "inventory mismatch"):
+                snapshot_sources(manifest, workspace, Path(td) / "tampered")
 
 
 if __name__ == "__main__":

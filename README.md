@@ -140,6 +140,17 @@ cage runners diagnose pol-8.2 --cache-dir "$HOME/cage-runners"
 
 ## Application Recipes
 
+### Desktop Flatpak proof of concept
+
+The optional `--target flatpak` build target reuses ordered Cage recipes and
+exports a configured Windows application with a packaged Wine runtime. The
+first supported proof is checksum-pinned portable Notepad++ 8.8.8 on Linux
+x86_64. See [desktop export instructions and validation](docs/desktop-exports.md)
+for building, installing, permissions, persistence, and current limits.
+
+The default container, CFW, Selkies, OCI and Kubernetes workflows retain their
+existing targets. Desktop builds require separate runtime qualification.
+
 Cage accepts strict YAML application recipes as the primary shareable
 authoring format for users and businesses. JSON remains valid for generated,
 normalized, or CLI-driven workflows. YAML is intentionally strict: unknown

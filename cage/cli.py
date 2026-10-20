@@ -174,6 +174,10 @@ def cmd_build(args):
     if getattr(args, "target", "container") == "flatpak":
         from artifact.desktop import validate_desktop_recipe
         from builder.flatpak import build_flatpak_bundle
+        if any(getattr(args, name, None) for name in (
+            "engine", "runtime_image", "image_tag", "runner_cache_dir", "module_cache_dir", "requalify_cfw_runtime"
+        )):
+            raise DesktopError("container runtime/cache options do not apply to the Flatpak desktop target")
         if args.dry_run:
             result = {"schemaVersion": "cage.desktop-build-plan/v0", "target": validate_desktop_recipe(manifest),
                       "phases": build_plan(manifest), "dryRun": True}

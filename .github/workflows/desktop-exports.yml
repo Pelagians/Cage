@@ -51,12 +51,20 @@ jobs:
       - name: Preserve existing contracts and test desktop failure cases
         run: python -m pytest tests/ -q
       - name: Cache authenticated build runtimes
-        uses: actions/cache@v4
+        id: runtime-cache
+        uses: actions/cache/restore@v4
         with:
           path: .cage/flatpak
           key: desktop-flatpak-${{ runner.arch }}-${{ hashFiles('runtime/desktop-wine-11.0.json') }}
       - name: Acquire pinned portable application
         run: python scripts/prepare-flatpak-poc.py
+      - name: Prepare pinned Wine platform and SDK in isolated store
+        run: |
+          python - <<'PY'
+          from artifact.desktop import desktop_target
+          from builder.flatpak import ensure_target
+          ensure_target(desktop_target(), '.cage/flatpak')
+          PY
       - name: Build, export, install and exercise actual GUI
         run: |
           mkdir -p dist/desktop-evidence
@@ -79,6 +87,12 @@ jobs:
           flatpak list --user >dist/desktop-evidence/consumer-installed.txt
           python scripts/test-flatpak-poc.py 2>&1 | tee dist/desktop-evidence/gui-test.log
           SH
+      - name: Save authenticated runtimes even after a later GUI failure
+        if: always() && steps.runtime-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cage/flatpak
+          key: desktop-flatpak-${{ runner.arch }}-${{ hashFiles('runtime/desktop-wine-11.0.json') }}
       - name: Retain package and behavioral evidence
         if: always()
         uses: actions/upload-artifact@v4

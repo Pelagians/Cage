@@ -83,6 +83,8 @@ def inspect_bundle(bundle_path: Path | str) -> dict[str, Any]:
             "manifest": runtime,
             "builder": graph.get("builderRuntime", {}),
             "runner": graph.get("runnerRuntime", {}),
+            **({"executionTarget": graph["executionTarget"], "ociBindingRole": "recipe-intent-only"}
+               if graph.get("executionTarget") else {}),
         },
         "graphics": graph.get("graphics", {}),
         "launch": launch,
