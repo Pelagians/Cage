@@ -93,8 +93,11 @@ def main():
     close_application()
     print("Application and its Wine services stopped", flush=True)
     prefix = home / ".var/app" / APP / "data" / APP / "prefix"
-    config = prefix / "drive_c/Program Files/Notepad++/config.xml"
-    wait_for(config.exists, "persisted application settings")
+    # Pinned Notepad++ disables doLocalConf.xml under Program Files (UAC),
+    # even for the portable archive. Inspect its actual per-user settings.
+    configs = list(prefix.glob("drive_c/users/*/AppData/Roaming/Notepad++/config.xml"))
+    assert len(configs) == 1, f"expected one active Notepad++ user configuration: {configs}"
+    config = configs[0]
     shutil.copyfile(config, EVIDENCE / "persisted-config.xml")
     original_config = ET.parse(config).getroot()
     zoom = original_config.find(".//GUIConfig[@name='ScintillaPrimaryView']").attrib["zoom"]
@@ -128,6 +131,7 @@ def main():
     result = {"schemaVersion": "cage.desktop-functional-test/v0", "status": "passed", "appId": APP,
               "packageCommit": immutable, "install": True, "desktopLaunch": True, "save": True,
               "relaunch": True, "reopenedEditorContents": reopened, "settingsZoom": zoom,
+              "settingsPath": str(config.relative_to(prefix)),
               "sameStateGeneration": True, "immutableSeedVerified": True,
               "session": "Xvfb X11 with Openbox", "applicationVersion": "8.8.8",
               "runtimeRef": runtime_ref, "runtimeCommit": runtime_commit, "wineVersion": wine_version,
