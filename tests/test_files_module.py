@@ -215,5 +215,40 @@ class FilesModuleManifestTests(unittest.TestCase):
         self.assertIn("winecfg -v 'win10'", script)
 
 
+
+class FilesExclusionTests(unittest.TestCase):
+    def test_exclusion_removes_only_literal_child_after_copy(self):
+        import os
+        import subprocess
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source = root / 'source'
+            (source / 'updater').mkdir(parents=True)
+            (source / 'updater/GUP.exe').write_bytes(b'updater')
+            (source / 'App.exe').write_bytes(b'application')
+            module = parse_module({'type': 'files', 'mappings': [
+                {'source': 'sources/test/media', 'target': 'C:/App', 'mode': 'merge', 'exclude': ['updater']}]})
+            with patch('core.sources.container_source_path', return_value=str(source)):
+                step = module.build()[0]
+            prefix = root / 'prefix'
+            subprocess.run(['bash', '-eu', '-c', '\n'.join(step.commands)],
+                           env={**os.environ, 'WINEPREFIX': str(prefix)}, check=True)
+            self.assertTrue((prefix / 'drive_c/App/App.exe').is_file())
+            self.assertFalse((prefix / 'drive_c/App/updater').exists())
+            self.assertTrue((source / 'updater/GUP.exe').is_file())
+
+    def test_exclusions_reject_paths_globs_are_literal(self):
+        for excluded in ('../outside', '/absolute', '.', '..', 'path/to/file', 'path\\file', ''):
+            with self.subTest(excluded=excluded), self.assertRaises(ModuleError):
+                parse_module({'type': 'files', 'mappings': [
+                    {'source': 'input', 'target': 'C:/App', 'exclude': [excluded]}]})
+        module = parse_module({'type': 'files', 'mappings': [
+            {'source': 'input', 'target': 'C:/App', 'exclude': ['*.exe']}]})
+        self.assertIn("'*.exe'", '\n'.join(module.build()[0].commands))
+
+
 if __name__ == "__main__":
     unittest.main()

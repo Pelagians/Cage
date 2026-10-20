@@ -109,6 +109,7 @@ def main():
         gui.wait_for(lambda: not subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', 'Notepad\\+\\+'],
                     capture_output=True).stdout, 'GUI shutdown')
     def executable_hash():
+        assert not (prefix() / "drive_c/Program Files/Notepad++/updater").exists(), "bundled self-updater must be excluded"
         return sha(prefix() / 'drive_c/Program Files/Notepad++/notepad++.exe')
     source_hashes = {}
     for version in ('8.8.8', '8.8.9'):

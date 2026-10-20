@@ -280,6 +280,25 @@ class SafeUpdateTests(unittest.TestCase):
             launch(self.new, ['--cage-update'])
         self.assertEqual(self.active(), self.state / 'prefix')
 
+    def test_clean_exit_releases_lock_even_when_a_detached_helper_inherited_it(self):
+        import signal
+        import subprocess
+        import sys
+        info = self.root / 'detached-pid'
+        child = None
+        try:
+            with lifecycle_lock(self.state) as descriptor:
+                subprocess.run([sys.executable, '-c',
+                    'import subprocess,sys; p=subprocess.Popen([sys.executable,"-c","import time;time.sleep(60)"],pass_fds=(int(sys.argv[1]),));open(sys.argv[2],"w").write(str(p.pid))',
+                    str(descriptor), str(info)], pass_fds=(descriptor,), check=True)
+                child = int(info.read_text())
+            os.kill(child, 0)
+            with lifecycle_lock(self.state):
+                pass
+        finally:
+            if child is not None:
+                os.kill(child, signal.SIGKILL)
+
     def test_appimage_retains_exact_candidate_before_state_activation(self):
         plan = json.loads(self.old.read_text())
         plan['desktop'].update(name='Proof', summary='Proof', categories=['Utility'])
@@ -301,6 +320,13 @@ class SafeUpdateTests(unittest.TestCase):
         entry = receipt['versions'][0]
         retained = stable.parent / entry['package']
         self.assertEqual(retained.read_bytes(), candidate.read_bytes())
+        interrupted = retained.parent / 'interrupted.partial'
+        interrupted.write_bytes(b'partial update retained')
+        with self.assertRaisesRegex(DesktopError, 'untracked update files'):
+            integration.integrate(appdir, plan, remove=True)
+        self.assertTrue(retained.exists())
+        self.assertTrue(stable.exists())
+        interrupted.unlink()
         retained.write_bytes(b'changed')
         with self.assertRaisesRegex(DesktopError, 'changed'):
             integration.integrate(appdir, plan, remove=True)

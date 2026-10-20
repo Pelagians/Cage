@@ -49,6 +49,12 @@ def integrate(root, plan, *, remove=False):
             if not path.is_file() or file_hash(path) != entry['sha256']:
                 raise DesktopError('retained AppImage changed; files retained')
             retained.append(path)
+        versions = _real_path(directory, 'versions')
+        if versions.exists() and set(versions.iterdir()) != set(retained):
+            raise DesktopError('untracked update files retained; recover them before uninstalling')
+        allowed = {'application.AppImage', 'installation.json', 'versions', 'launch.lock'}
+        if {path.name for path in directory.iterdir()} - allowed:
+            raise DesktopError('untracked installation files retained; recover them before uninstalling')
         for path in retained:
             path.unlink()
         if (directory / 'versions').exists():

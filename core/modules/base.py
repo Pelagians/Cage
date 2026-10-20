@@ -67,7 +67,7 @@ MODULE_FIELDS: dict[str, set[str]] = {
     "script": {"type", "defaults", "run", "file", "sha256", "shell", "workingDirectory", "environment", "timeout", "user", "outputs"},
 }
 
-FILES_MAPPING_FIELDS = {"source", "target", "sha256", "mode"}
+FILES_MAPPING_FIELDS = {"source", "target", "sha256", "mode", "exclude"}
 FILES_MAPPING_MODES = {"copy", "merge"}
 
 
@@ -99,6 +99,17 @@ def _string_list(value: Any, location: str) -> list[str]:
     return value
 
 
+def files_exclusions(mapping: dict[str, Any], location: str = "files mapping") -> list[str]:
+    values = mapping.get("exclude", [])
+    if not isinstance(values, list) or any(
+        not isinstance(value, str) or not value or value in {".", ".."}
+        or any(c in value for c in "/\\") or any(ord(c) < 32 for c in value)
+        for value in values
+    ):
+        raise ModuleError(f"{location}.exclude must contain literal top-level file/directory names")
+    return values
+
+
 def _validate_files_mappings(mappings: Any, location: str) -> None:
     if not isinstance(mappings, list) or not mappings:
         raise ModuleError(f"{location}.mappings must be a non-empty list")
@@ -114,6 +125,7 @@ def _validate_files_mappings(mappings: Any, location: str) -> None:
             import re
             if not re.fullmatch(r"[0-9a-fA-F]{64}", sha):
                 raise ModuleError(f"{mapping_location}.sha256 must be 64 hexadecimal characters")
+        files_exclusions(mapping, mapping_location)
         mode = mapping.get("mode", "copy")
         if mode not in FILES_MAPPING_MODES:
             raise ModuleError(f"{mapping_location}.mode must be one of: " + ", ".join(sorted(FILES_MAPPING_MODES)))

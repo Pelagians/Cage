@@ -6,7 +6,7 @@ certify arbitrary application, runtime, registry, CFW or Proton migrations.
 
 ## Source validation
 
-The isolated Python 3.13 suite passes **489 tests and 178 subtests**, including
+The isolated Python 3.13 suite passes **492 tests and 185 subtests**, including
 wheel construction and reproducible Chocolatey smoke-package checks. Four
 Docker-specific fixtures now explicitly model Docker instead of accidentally
 testing the Asahi host's Docker-to-Podman alias; the dedicated alias-normalization

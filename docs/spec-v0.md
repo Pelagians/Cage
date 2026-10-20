@@ -280,3 +280,9 @@ copying into a fresh seed, and which document paths must carry forward on
 rollback. No registry hive or program directory migration is accepted. See
 [the transaction and path rules](export-updates.md). Omitting the policy retains
 the existing refusal of changed persistent generations.
+
+Files mappings optionally accept `exclude`, a list of literal top-level file or
+directory names removed from the copied destination. Paths, traversal and control
+characters are rejected; wildcard characters are literal names. For example,
+`exclude: [updater]` omits a bundled self-updater while the full original input
+archive remains checksum-pinned and unchanged.

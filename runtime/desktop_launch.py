@@ -402,7 +402,13 @@ def lifecycle_lock(root):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise DesktopError("this application is already running; close it before updating or launching") from exc
-        yield descriptor
+        try:
+            yield descriptor
+        finally:
+            # Wine may pass inherited descriptors to detached Unix helpers. A
+            # clean lifecycle must release the shared open-file-description lock
+            # explicitly; SIGKILL still leaves the inherited crash guard held.
+            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 def launch(metadata_path, files):

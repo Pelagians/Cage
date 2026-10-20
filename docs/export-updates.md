@@ -36,6 +36,10 @@ A recipe without this policy continues to refuse changed generations.
 
 Applications that keep essential preferences in the registry need an explicit,
 separately tested migration design; this implementation does not merge hives.
+The Notepad++ files mapping excludes its top-level `updater` directory, so
+WinGup cannot independently replace the pinned application. This is an ordinary
+shared recipe operation, applied by both desktop and container producers.
+
 Installed binaries, plugins, self-updaters and undeclared state are not copied
 into a new application seed. Disable application self-updaters where necessary
 and qualify the application's actual settings and document paths before
@@ -64,7 +68,9 @@ The shared Flatpak platform is still managed by Flatpak; Cage does not provide
 an atomic rollback of unrelated shared platform/security updates.
 
 One nonblocking lifecycle lock covers preparation, the application, Wine
-shutdown and commit. The application inherits the lock descriptor. Wine service
+shutdown and commit. The application inherits the lock descriptor. Clean shutdown explicitly
+unlocks the shared descriptor, including copies inherited by detached Unix
+helpers; an abrupt launcher death retains the crash guard. Wine service
 probes also reject running retained prefixes after an orphaned launcher. Cage
 never kills an unrelated prefix to force an update through.
 

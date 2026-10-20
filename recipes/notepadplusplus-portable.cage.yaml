@@ -19,6 +19,7 @@ modules:
       - source: sources/notepadplusplus-portable/media
         target: C:/Program Files/Notepad++
         mode: merge
+        exclude: [updater]
 launch:
   entrypoint: C:/Program Files/Notepad++/notepad++.exe
   workingDirectory: C:/Program Files/Notepad++
