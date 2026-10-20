@@ -691,7 +691,8 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
         graphics_ok,
         "graph supports its declared execution target graphics modes",
         details={"defaultMode": graphics.get("defaultMode"), "supportedModes": modes},
-        error="graph graphics must match its container or desktop contract",
+        error=("graph graphics must match its desktop contract" if desktop_graph
+               else "graph graphics must include defaultMode and support headless and selkies"),
     )
     if desktop_graph:
         from runtime.desktop_launch import digest_json, verify_inventory

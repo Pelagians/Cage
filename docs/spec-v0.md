@@ -218,6 +218,28 @@ The graph should not become a general runtime scheduler. Runtime should be borin
 
 The v0 runner mounts the bundle read-only at `/opt/cage/bundle`, copies `prefix/` to `/tmp/cage-prefix`, sets `WINEPREFIX` to that copy, then launches the application entrypoint. When a cached runner is mounted, it lives at `/opt/cage-runner` and is selected through `PATH`/`CAGE_RUNNER_BIN`. This preserves the sealed artifact while allowing Wine to mutate runtime state.
 
+## Desktop export extension
+
+The optional `desktop` recipe object declares `id`, `name`, `summary`,
+`license`, `homepage`, `categories`, and `documentsDirectory`. The ID is reverse
+DNS; the documents directory is one named subdirectory of the user's Documents.
+These fields round-trip without changing recipes that omit the extension.
+
+`cage build <recipe> --target flatpak` executes the existing ordered pipeline
+under the pinned desktop target. Desktop-built bundles use
+`cage.execution-graph/v1`: native bindings identify the actual Wine payload and
+platform, `recipeRuntime` retains the original container intent, and graphics
+support is `desktop`. Existing container graphs remain v0. Target receipts and
+the complete prefix inventory are checked by bundle verification. Container
+run, OCI, and Kubernetes export reject desktop prefixes.
+
+`cage export flatpak <desktop-bundle> --dry-run` produces the shared
+`cage.desktop-export-plan/v0` plus Flatpak layout and permission information.
+Without `--dry-run`, `--output <file.flatpak>` creates the local application
+bundle and a JSON result receipt. Runtime dependencies are build-store scoped;
+no proprietary service is required. See [desktop exports](desktop-exports.md)
+for current eligibility, persistent state, and functional validation.
+
 ## OCI application image export
 
 `cage export oci <bundle-or-app-ref> --tag <image> --dry-run` consumes a verified bundle, either directly by path or resolved through the local artifact index, and emits a `cage.oci-export-plan/v0` document. The plan includes the graph-resolved runtime base image, application identity, requested and resolved runtime versions, OCI labels, `metadata/artifact.json` content, image layout, and generated `Containerfile` content.

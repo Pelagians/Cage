@@ -4,30 +4,35 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'artifact/desktop.py'
-      - 'artifact/flatpak.py'
-      - 'builder/flatpak.py'
-      - 'builder/pipeline.py'
-      - 'core/manifest/**'
-      - 'runtime/desktop*'
-      - 'cage/cli.py'
+      - 'artifact/**'
+      - 'builder/**'
+      - 'core/**'
+      - 'runtime/**'
+      - 'cage/**'
+      - 'pyproject.toml'
       - 'recipes/notepadplusplus-portable.cage.yaml'
       - 'scripts/*flatpak*'
-      - 'tests/test_desktop_export.py'
+      - 'tests/**'
       - '.github/workflows/desktop-exports.yml'
   pull_request:
     paths:
-      - 'artifact/desktop.py'
-      - 'artifact/flatpak.py'
-      - 'builder/flatpak.py'
-      - 'runtime/desktop*'
+      - 'artifact/**'
+      - 'builder/**'
+      - 'core/**'
+      - 'runtime/**'
+      - 'cage/**'
+      - 'pyproject.toml'
       - 'recipes/notepadplusplus-portable.cage.yaml'
       - 'scripts/*flatpak*'
-      - 'tests/test_desktop_export.py'
+      - 'tests/**'
       - '.github/workflows/desktop-exports.yml'
 
 permissions:
   contents: read
+
+concurrency:
+  group: desktop-flatpak-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   flatpak-poc:
