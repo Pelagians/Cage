@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -14,6 +15,7 @@ from unittest.mock import patch
 
 from artifact.appimage import (create_appimage_export_plan, apprun_script, checked_download,
                               unpack_python, stage_native_libraries)
+from artifact.appimage import stage_notices
 from runtime import desktop_launch
 from runtime.desktop_launch import DesktopError, digest_json
 from tests.test_desktop_export import bundle_at
@@ -26,6 +28,40 @@ with patch.dict(sys.modules, {'desktop_launch': desktop_launch}):
 
 
 class AppImageTests(unittest.TestCase):
+    def test_platform_notices_are_relocated_without_host_links(self):
+        with tempfile.TemporaryDirectory() as td:
+            source = Path(td) / 'source'
+            (source / 'common').mkdir(parents=True)
+            (source / 'common/license').write_text('notice')
+            (source / 'package').mkdir()
+            (source / 'package/COPYING').symlink_to('/usr/share/licenses/common/license')
+            target = Path(td) / 'destination'
+            stage_notices(source, target)
+            self.assertEqual((target / 'package/COPYING').read_text(), 'notice')
+            self.assertFalse(os.path.isabs(os.readlink(target / 'package/COPYING')))
+
+    @unittest.skipUnless(shutil.which('gio'), 'requires desktop-entry execution tool')
+    def test_desktop_exec_roundtrips_literal_special_characters(self):
+        with tempfile.TemporaryDirectory(prefix='Cage café % " $ ` \\') as td:
+            root = Path(td)
+            executable = root / 'application'
+            receipt = root / 'argv'
+            executable.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$CAGE_TEST_ARGV"\n')
+            executable.chmod(0o755)
+            document = root / 'document café %.txt'
+            document.touch()
+            desktop = root / 'fixture.desktop'
+            desktop.write_text('[Desktop Entry]\nType=Application\nName=Fixture\nExec=/usr/bin/env '
+                               + integration.desktop_quote(executable) + ' -- %F\nTerminal=false\n')
+            result = subprocess.run(['gio', 'launch', str(desktop), str(document)],
+                           env={**os.environ, 'CAGE_TEST_ARGV': str(receipt)}, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr + desktop.read_text())
+            import time
+            end = time.monotonic() + 5
+            while not receipt.exists() and time.monotonic() < end:
+                time.sleep(0.02)
+            self.assertEqual(receipt.read_text().splitlines(), ['--', str(document)])
+
     def test_explicit_host_access_and_state_separation(self):
         with tempfile.TemporaryDirectory() as td:
             bundle = bundle_at(td)

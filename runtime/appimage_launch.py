@@ -22,7 +22,8 @@ def desktop_quote(value):
     value = str(value).replace('%', '%%')
     for character in ('\\', '"', '`', '$'):
         value = value.replace(character, '\\' + character)
-    return '"' + value + '"'
+    # Desktop string escaping is applied before Exec's quoted-argument grammar.
+    return '"' + value.replace('\\', '\\\\') + '"'
 
 
 def integrate(root, plan, *, remove=False):
@@ -66,7 +67,9 @@ def integrate(root, plan, *, remove=False):
         desktop.write_text('[Desktop Entry]\nType=Application\n'
             + 'Name=' + metadata['name'].replace('\\', '\\\\') + ' (AppImage)\n'
             + 'Comment=' + metadata['summary'].replace('\\', '\\\\') + '\n'
-            + 'Exec=' + desktop_quote(package) + ' -- %F\n'
+            # GIO checks argv[0] before expanding %% in a desktop Exec value.
+            # env keeps literal percent characters in an ordinary argument.
+            + 'Exec=/usr/bin/env ' + desktop_quote(package) + ' -- %F\n'
             + 'Icon=' + app_id + '.CageAppImage\n'
             + 'Categories=' + ';'.join(metadata['categories']) + ';\nTerminal=false\n')
         receipt.write_text(json.dumps({name: file_hash(path) for name, path in

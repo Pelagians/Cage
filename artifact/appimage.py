@@ -118,6 +118,21 @@ def elf_information(path):
             'glibc': re.findall(r'GLIBC_([0-9]+\.[0-9]+)', needs)}
 
 
+def stage_notices(source, destination):
+    """Retain deduplicated SDK notices without their /usr absolute links."""
+    destination = Path(destination)
+    shutil.copytree(source, destination, symlinks=True, copy_function=copy_file)
+    for path in destination.rglob('*'):
+        if path.is_symlink() and os.path.isabs(os.readlink(path)):
+            original = Path(os.readlink(path))
+            if not original.is_relative_to('/usr/share/licenses'):
+                raise DesktopError('unexpected platform license link: ' + str(original))
+            target = destination / original.relative_to('/usr/share/licenses')
+            path.unlink()
+            path.symlink_to(os.path.relpath(target, path.parent))
+    inventory_tree(destination)
+
+
 def stage_native_libraries(appdir, platform_root, minimum_glibc):
     """Resolve ELF imports without executing ldd, plus the qualified X11 dlopens."""
     appdir, platform_root = Path(appdir), Path(platform_root)
@@ -224,7 +239,7 @@ def prepare_appdir(bundle, plan, context, *, store, cache):
     notices = Path(location) / 'files/share/licenses'
     if not notices.is_dir():
         raise DesktopError('pinned platform is missing its dependency license notices')
-    shutil.copytree(notices, appdir / 'usr/share/licenses/freedesktop', symlinks=True, copy_function=copy_file)
+    stage_notices(notices, appdir / 'usr/share/licenses/freedesktop')
     (appdir / 'usr/share/cage/fonts.conf').write_text(
         '<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">'
         '<fontconfig><dir prefix="relative">../fonts</dir><cachedir prefix="xdg">fontconfig</cachedir></fontconfig>\n')
@@ -282,6 +297,9 @@ def export_appimage(bundle, *, output, store, allow_host_access=False, context_d
     plan = create_appimage_export_plan(bundle, allow_host_access=allow_host_access)
     if platform.system() != 'Linux' or platform.machine() != plan['target']['architecture']:
         raise DesktopError('AppImage export requires a native Linux build runner for ' + plan['target']['architecture'])
+    for executable in ('readelf', 'mksquashfs', 'flatpak'):
+        if not shutil.which(executable):
+            raise DesktopError('AppImage producer requires ' + executable + ' (not needed by consumers)')
     output = Path(output).resolve()
     if output.is_relative_to(Path(bundle).resolve()) or output.exists() or Path(str(output) + '.partial').exists():
         raise DesktopError('AppImage output must be new and outside the source bundle')
@@ -290,8 +308,11 @@ def export_appimage(bundle, *, output, store, allow_host_access=False, context_d
     appdir = prepare_appdir(bundle, plan, context, store=store, cache=cache)
     runtime = checked_download(plan['tools']['runtime'][plan['target']['architecture']], cache)
     squashfs = context / 'payload.squashfs'
-    result = subprocess.run(['mksquashfs', str(appdir), str(squashfs), '-noappend', '-all-root',
-        '-comp', 'zstd', '-processors', '2', '-no-progress'], capture_output=True, text=True, timeout=timeout)
+    try:
+        result = subprocess.run(['mksquashfs', str(appdir), str(squashfs), '-noappend', '-all-root',
+            '-comp', 'zstd', '-processors', '2', '-no-progress'], capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise DesktopError('mksquashfs exceeded the export timeout; staging retained') from exc
     if result.returncode:
         raise DesktopError('mksquashfs failed: ' + result.stderr[-4000:])
     partial = Path(str(output) + '.partial')

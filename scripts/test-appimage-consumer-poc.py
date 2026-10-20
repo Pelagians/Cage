@@ -24,7 +24,8 @@ def main():
     document = evidence / 'Consumer café file.txt'
     document.write_text('Original consumer document\n')
     prefix = data / 'cage/appimage' / gui.APP
-    argv = ['podman', 'run', '--rm', '--network', 'none', '--userns=keep-id',
+    container_name = 'cage-appimage-proof-' + str(os.getpid())
+    argv = ['podman', 'run', '--rm', '--name', container_name, '--network', 'none', '--userns=keep-id',
         '--user', str(os.getuid()) + ':' + str(os.getgid()), '--hostname', socket.gethostname(),
         '--security-opt', 'label=disable', '-v', str(ROOT) + ':' + str(ROOT) + ':ro',
         '-v', str(evidence) + ':' + str(evidence) + ':rw',
@@ -75,6 +76,7 @@ def main():
         subprocess.run(['scrot', str(evidence / 'failure.png')], check=False)
         raise
     finally:
+        subprocess.run(['podman', 'rm', '-f', container_name], capture_output=True, timeout=30)
         for log in logs:
             log.close()
 

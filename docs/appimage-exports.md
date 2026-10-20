@@ -12,7 +12,7 @@ There are separate Linux x86_64 and aarch64 packages. ARM uses the same Wine
 11.20 ARM64EC and FEX 2610 payload as Cage's ARM Flatpak/container profile; x86
 uses the existing Wine 11.0 desktop profile. ARM accepts 4 KB and 16 KB kernels.
 No host Wine, FEX, Cage, Python, Flatpak or container engine is needed to run the
-resulting AppImage. A normal Linux desktop with `/bin/sh`, `getconf`, glibc
+resulting AppImage. A normal Linux desktop with `/bin/sh`, `/usr/bin/env`, `getconf`, glibc
 **2.43 or newer**, and X11/XWayland is required. Older glibc and musl systems
 receive a diagnostic; they are outside this first target's support range.
 
