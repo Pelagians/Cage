@@ -139,9 +139,13 @@ def stage_native_libraries(appdir, platform_root, minimum_glibc):
     native = appdir / 'usr/lib/cage-native'
     native.mkdir(parents=True)
     available = {}
-    for path in sorted((platform_root / 'lib').rglob('*.so*')):
-        if path.is_file() and path.resolve().is_relative_to(platform_root.resolve()):
-            available.setdefault(path.name, path)
+    # The x86 Wine base carries additional private dependencies (e.g. Kerberos)
+    # absent from the platform. Honor their SONAME symlink aliases and preserve
+    # the producer's dependency precedence before falling back to the platform.
+    for source in (appdir / 'usr/wine', platform_root / 'lib'):
+        for path in sorted(source.rglob('*.so*')):
+            if path.is_file() and path.resolve().is_relative_to(source.resolve()):
+                available.setdefault(path.name, path)
     internal = {}
     queue = []
     for base in (appdir / 'usr/wine', appdir / 'usr/python'):

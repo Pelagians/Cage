@@ -71,6 +71,14 @@ jobs:
           python -m cage export appimage dist/appimage-bundles/${{ matrix.recipe }}-8.8.8 \
             --allow-host-access --flatpak-store ${{ matrix.store }} \
             --output dist/notepadplusplus-8.8.8-${{ matrix.arch }}.AppImage >dist/appimage-evidence/export.json
+          # Retain receipts, not multiple unpacked copies of the same multi-GB
+          # Wine payload. All following consumer checks use the actual image.
+          mkdir -p dist/appimage-evidence/payload
+          cp dist/*.AppImage.build/AppDir/usr/share/cage/*/native-dependencies.json dist/appimage-evidence/payload/
+          cp dist/*.AppImage.build/AppDir/usr/share/cage/*/component-sources.json dist/appimage-evidence/payload/
+          cp dist/*.AppImage.build/appdir-inventory.json dist/appimage-evidence/payload/
+          rm -rf -- dist/notepadplusplus-8.8.8-${{ matrix.arch }}.AppImage.build
+          rm -rf -- dist/appimage-bundles/${{ matrix.recipe }}-8.8.8/build/flatpak
           # Ubuntu 24.04 is a producer, below the declared consumer glibc ABI.
           # Run the package in clean contemporary distro userlands, sharing only
           # the test X server, package and dedicated writable test directories.
@@ -97,5 +105,4 @@ jobs:
             dist/appimage-evidence/*-consumer/*.log
             dist/appimage-evidence/*-consumer/*.png
             dist/appimage-bundles/*/logs/*
-            dist/*.AppImage.build/AppDir/usr/share/cage/*/native-dependencies.json
-            dist/*.AppImage.build/AppDir/usr/share/cage/*/component-sources.json
+            dist/appimage-evidence/payload/*.json
