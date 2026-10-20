@@ -55,6 +55,10 @@ jobs:
           sudo apt-get install -y flatpak podman uidmap slirp4netns fuse-overlayfs rpm2cpio xvfb openbox xdotool scrot xdg-utils
           python -m pip install PyYAML pytest setuptools wheel
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          # The GUI proof creates a private D-Bus session, not a systemd user bus.
+          # Keep rootless Podman independent of systemd activation on this runner.
+          mkdir -p "$HOME/.config/containers"
+          printf '[engine]\ncgroup_manager="cgroupfs"\nevents_logger="file"\n' > "$HOME/.config/containers/containers.conf"
           df -h .
           getconf PAGE_SIZE
       - name: Preserve existing contracts
