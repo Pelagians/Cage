@@ -45,6 +45,25 @@ from runtime.launcher import RunError, build_run_plan, execute_run_plan
 from runtime.runner_cache import RunnerCacheError, diagnose_runner, ensure_runner
 from runtime.runner_catalog import RunnerCatalogError, RunnerSpec, resolve_runner_spec, runner_catalog_payload
 from runtime.desktop_launch import DesktopError
+from artifact.storage import StorageError, storage_status, prune_storage, doctor
+
+
+def cmd_storage(args):
+    options = dict(output_dir=args.output_dir, index_path=args.artifact_index,
+                   build_dirs=args.build_dir, state_dirs=args.state_dir,
+                   package_dirs=args.package_dir, tool_cache=args.tool_cache)
+    try:
+        if args.command == 'doctor':
+            result = doctor(**options, required_free_mib=args.required_free_mib, bundle=args.bundle)
+        elif args.storage_command == 'prune':
+            result = prune_storage(**options, apply=args.apply, min_age_hours=args.min_age_hours)
+        else:
+            result = storage_status(**options)
+    except OSError as exc:
+        raise StorageError(str(exc)) from exc
+    print(json.dumps(result, indent=2, sort_keys=True))
+    failed = result.get('healthy') is False or any(item.get('error') for item in result.get('builds', []))
+    return 15 if failed else 0
 
 
 # ---- manifest commands ----
@@ -619,6 +638,24 @@ def build_parser():
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
+    storage = sub.add_parser('storage', help='Inspect protected state and preview cleanup of completed export staging')
+    storage_sub = storage.add_subparsers(dest='storage_command', required=True)
+    status = storage_sub.add_parser('status', help='Read-only bundle, generation, disk and staging report')
+    prune = storage_sub.add_parser('prune', help='Preview cleanup; deletion requires --apply')
+    prune.add_argument('--apply', action='store_true', help='Remove only verified disposable build files')
+    prune.add_argument('--min-age-hours', type=float, default=24, help='Minimum completed-build/cache age (default: 24)')
+    diagnostic = sub.add_parser('doctor', help='Read-only storage and selected bundle diagnostics')
+    diagnostic.add_argument('--bundle', help='Bundle path or indexed app reference to verify')
+    diagnostic.add_argument('--required-free-mib', type=float, default=1024, help='Requested free-space reserve (not a build-size estimate)')
+    for command in (status, prune, diagnostic):
+        command.add_argument('--output-dir', default='dist', help='Artifact directory; discover direct *.build staging children')
+        command.add_argument('--artifact-index', help='Existing Cage artifact index')
+        command.add_argument('--build-dir', action='append', default=[], help='Additional export staging directory; repeatable')
+        command.add_argument('--state-dir', action='append', default=[], help='Exact application state root containing state.json; repeatable')
+        command.add_argument('--package-dir', action='append', default=[], help='Additional AppImage installation or Flatpak recovery cache; repeatable')
+        command.add_argument('--tool-cache', help='Explicit AppImage build-tool download cache; runtime/runner caches are never pruned')
+        command.set_defaults(func=cmd_storage)
+
     # inspect
     p = sub.add_parser("inspect", help="Validate and print normalized manifest")
     p.add_argument("manifest")
@@ -949,6 +986,9 @@ def main(argv=None):
             parser.error(f"unrecognized arguments: {' '.join(unknown)}")
     try:
         return args.func(args)
+    except StorageError as exc:
+        print(f"cage: storage error: {exc}", file=sys.stderr)
+        return 15
     except ManifestError as exc:
         print(f"cage: manifest error: {exc}", file=sys.stderr)
         return 2

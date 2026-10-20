@@ -1,6 +1,8 @@
 """Native AppDir adapter over the sealed desktop plan; no application installer logic."""
 from __future__ import annotations
 
+from artifact.storage import build_lock, record_export
+
 import hashlib
 import json
 import os
@@ -373,30 +375,33 @@ def export_appimage(bundle, *, output, store, allow_host_access=False, context_d
     if output.is_relative_to(Path(bundle).resolve()) or output.exists() or Path(str(output) + '.partial').exists():
         raise DesktopError('AppImage output must be new and outside the source bundle')
     output.parent.mkdir(parents=True, exist_ok=True)
-    context = Path(context_dir) if context_dir else output.parent / (output.name + '.build')
-    appdir = prepare_appdir(bundle, plan, context, store=store, cache=cache)
-    runtime = checked_download(plan['tools']['runtime'][plan['target']['architecture']], cache)
-    squashfs = context / 'payload.squashfs'
-    try:
-        result = subprocess.run(['mksquashfs', str(appdir), str(squashfs), '-noappend', '-all-root',
-            '-comp', 'zstd', '-processors', '2', '-no-progress'], capture_output=True, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired as exc:
-        raise DesktopError('mksquashfs exceeded the export timeout; staging retained') from exc
-    if result.returncode:
-        raise DesktopError('mksquashfs failed: ' + result.stderr[-4000:])
-    partial = Path(str(output) + '.partial')
-    try:
-        with partial.open('xb') as handle, runtime.open('rb') as first, squashfs.open('rb') as second:
-            shutil.copyfileobj(first, handle)
-            shutil.copyfileobj(second, handle)
-        partial.chmod(0o755)
-        partial.replace(output)
-    finally:
-        partial.unlink(missing_ok=True)
-    with output.open('rb') as handle:
-        sha = hashlib.file_digest(handle, 'sha256').hexdigest()
-    result = {'schemaVersion': 'cage.appimage-export-result/v0', 'success': True,
-        'output': str(output), 'sha256': sha, 'bytes': output.stat().st_size,
-        'context': str(context.resolve()), 'plan': plan, 'mksquashfsVersion': subprocess.check_output(['mksquashfs', '-version'], text=True).splitlines()[0]}
-    Path(str(output) + '.json').write_text(json.dumps(result, indent=2, sort_keys=True) + '\n')
-    return result
+    context = Path(context_dir).resolve() if context_dir else output.parent / (output.name + '.build')
+    cache = Path(cache).resolve()
+    with build_lock(context), build_lock(cache):
+        appdir = prepare_appdir(bundle, plan, context, store=store, cache=cache)
+        runtime = checked_download(plan['tools']['runtime'][plan['target']['architecture']], cache)
+        squashfs = context / 'payload.squashfs'
+        try:
+            result = subprocess.run(['mksquashfs', str(appdir), str(squashfs), '-noappend', '-all-root',
+                '-comp', 'zstd', '-processors', '2', '-no-progress'], capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            raise DesktopError('mksquashfs exceeded the export timeout; staging retained') from exc
+        if result.returncode:
+            raise DesktopError('mksquashfs failed: ' + result.stderr[-4000:])
+        partial = Path(str(output) + '.partial')
+        try:
+            with partial.open('xb') as handle, runtime.open('rb') as first, squashfs.open('rb') as second:
+                shutil.copyfileobj(first, handle)
+                shutil.copyfileobj(second, handle)
+            partial.chmod(0o755)
+            partial.replace(output)
+        finally:
+            partial.unlink(missing_ok=True)
+        with output.open('rb') as handle:
+            sha = hashlib.file_digest(handle, 'sha256').hexdigest()
+        result = {'schemaVersion': 'cage.appimage-export-result/v0', 'success': True,
+            'output': str(output), 'sha256': sha, 'bytes': output.stat().st_size,
+            'context': str(context.resolve()), 'plan': plan, 'mksquashfsVersion': subprocess.check_output(['mksquashfs', '-version'], text=True).splitlines()[0]}
+        Path(str(output) + '.json').write_text(json.dumps(result, indent=2, sort_keys=True) + '\n')
+        result['storage'] = record_export(context, bundle, 'appimage', {'kind': 'file', 'path': str(output), 'sha256': result['sha256']})
+        return result

@@ -16,6 +16,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from artifact.storage import build_lock, record_export
 from artifact.inspection import verify_bundle
 from artifact.linux_state import declared_outputs, linux_state_identity
 
@@ -221,89 +222,94 @@ def export_oci_image(
             error=f'container build engine not found: {requested}',
         )
 
-    context = prepare_oci_build_context(
-        bundle,
-        plan,
-        Path(context_dir) if context_dir is not None else Path(tempfile.mkdtemp(prefix='cage-oci-')),
-    )
-    containerfile_path = context / plan['containerfile']['path']
-    local_base_tag = _stage_local_base_image(selected_engine, plan['baseImage'], containerfile_path)
-    command = [selected_engine, 'build', '-f', str(containerfile_path), '-t', tag, str(context)]
-    try:
-        proc = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-    except FileNotFoundError as exc:
-        return _result(
-            success=False,
-            plan=plan,
-            engine=selected_engine,
-            context=context,
-            command=command,
-            exit_code=None,
-            stdout='',
-            stderr='',
-            error=f'container build engine not found: {selected_engine}: {exc}',
-        )
-    except subprocess.TimeoutExpired as exc:
-        return _result(
-            success=False,
-            plan=plan,
-            engine=selected_engine,
-            context=context,
-            command=command,
-            exit_code=None,
-            stdout=exc.stdout or '',
-            stderr=exc.stderr or '',
-            error=f'OCI image build timed out after {timeout}s',
-        )
+    context = Path(context_dir).resolve() if context_dir is not None else Path(tempfile.mkdtemp(prefix='cage-oci-'))
+    with build_lock(context):
+        context = prepare_oci_build_context(bundle, plan, context)
+        containerfile_path = context / plan['containerfile']['path']
+        local_base_tag = _stage_local_base_image(selected_engine, plan['baseImage'], containerfile_path)
+        image_id_file = context / '.cage-oci-image-id'
+        command = [selected_engine, 'build', '--iidfile', str(image_id_file), '-f', str(containerfile_path), '-t', tag, str(context)]
+        try:
+            proc = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            return _result(
+                success=False,
+                plan=plan,
+                engine=selected_engine,
+                context=context,
+                command=command,
+                exit_code=None,
+                stdout='',
+                stderr='',
+                error=f'container build engine not found: {selected_engine}: {exc}',
+            )
+        except subprocess.TimeoutExpired as exc:
+            return _result(
+                success=False,
+                plan=plan,
+                engine=selected_engine,
+                context=context,
+                command=command,
+                exit_code=None,
+                stdout=exc.stdout or '',
+                stderr=exc.stderr or '',
+                error=f'OCI image build timed out after {timeout}s',
+            )
 
-    result = _result(
-        success=proc.returncode == 0,
-        plan=plan,
-        engine=selected_engine,
-        context=context,
-        command=command,
-        exit_code=proc.returncode,
-        stdout=proc.stdout,
-        stderr=proc.stderr,
-        error=None if proc.returncode == 0 else 'OCI image build failed',
-    )
-    if local_base_tag:
-        result['localBaseTag'] = local_base_tag
-    if push and proc.returncode == 0:
-        push_command = [selected_engine, 'push', tag]
-        push_proc = subprocess.run(
-            push_command,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
+        result = _result(
+            success=proc.returncode == 0,
+            plan=plan,
+            engine=selected_engine,
+            context=context,
+            command=command,
+            exit_code=proc.returncode,
+            stdout=proc.stdout,
+            stderr=proc.stderr,
+            error=None if proc.returncode == 0 else 'OCI image build failed',
         )
-        result['push'] = {
-            'command': push_command,
-            'exitCode': push_proc.returncode,
-            'stdout': push_proc.stdout,
-            'stderr': push_proc.stderr,
-            'success': push_proc.returncode == 0,
-        }
-        result['success'] = result['success'] and push_proc.returncode == 0
-        if push_proc.returncode != 0:
-            result['error'] = 'OCI image push failed'
-        else:
-            image_identity = inspect_oci_image(tag, engine=selected_engine, timeout=timeout)
-            result['image'] = image_identity
-            if image_identity.get('success') and image_identity.get('digest'):
-                result['push']['digest'] = image_identity['digest']
-                result['push']['repoDigests'] = image_identity.get('repoDigests', [])
+        if local_base_tag:
+            result['localBaseTag'] = local_base_tag
+        if push and proc.returncode == 0:
+            push_command = [selected_engine, 'push', tag]
+            push_proc = subprocess.run(
+                push_command,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+            result['push'] = {
+                'command': push_command,
+                'exitCode': push_proc.returncode,
+                'stdout': push_proc.stdout,
+                'stderr': push_proc.stderr,
+                'success': push_proc.returncode == 0,
+            }
+            result['success'] = result['success'] and push_proc.returncode == 0
+            if push_proc.returncode != 0:
+                result['error'] = 'OCI image push failed'
             else:
-                result['success'] = False
-                result['error'] = 'OCI image push succeeded but no repo digest was recorded'
-    return result
+                image_identity = inspect_oci_image(tag, engine=selected_engine, timeout=timeout)
+                result['image'] = image_identity
+                if image_identity.get('success') and image_identity.get('digest'):
+                    result['push']['digest'] = image_identity['digest']
+                    result['push']['repoDigests'] = image_identity.get('repoDigests', [])
+                else:
+                    result['success'] = False
+                    result['error'] = 'OCI image push succeeded but no repo digest was recorded'
+        if result['success']:
+            try:
+                result['storage'] = record_export(context, bundle, 'oci', {
+                    'kind': 'oci', 'engine': selected_engine, 'id': image_id_file.read_text().strip()})
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                result['storage'] = {'managed': False, 'reason': str(exc), 'stagingRetained': True}
+        return result
 
 
 def _stage_local_base_image(engine: str, base_image: str, containerfile: Path) -> str | None:

@@ -1,6 +1,8 @@
 """Flatpak layout and assembly over the shared desktop contract."""
 from __future__ import annotations
 
+from artifact.storage import build_lock, record_export
+
 import hashlib
 import json
 from pathlib import Path
@@ -98,22 +100,24 @@ def export_flatpak(bundle, *, output, store, context_dir=None, timeout=900):
     if output.exists() or Path(str(output) + ".partial").exists():
         raise DesktopError(f"Flatpak output already exists: {output}")
     output.parent.mkdir(parents=True, exist_ok=True)
-    context = Path(context_dir) if context_dir else output.parent / (output.name + ".build")
-    ensure_target(plan["target"], store)
-    build_dir = prepare_flatpak_context(bundle, plan, context, store=store)
-    run_flatpak(["build-finish", "--no-inherit-permissions", "--command=cage-desktop-launch",
-                 *plan["permissions"], str(build_dir)], store=store, timeout=timeout)
-    repo = context.resolve() / "repository"
-    run_flatpak(["build-export", str(repo), str(build_dir), "stable"], store=store, timeout=timeout)
-    temporary = Path(str(output) + ".partial")
-    run_flatpak(["build-bundle", "--runtime-repo=" + plan["target"]["remoteUrl"],
-                 str(repo), str(temporary), plan["desktop"]["id"], "stable"], store=store, timeout=timeout)
-    temporary.replace(output)
-    with output.open("rb") as handle:
-        h = hashlib.sha256()
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            h.update(chunk)
-    result = {"schemaVersion": "cage.flatpak-export-result/v0", "success": True, "output": str(output),
-              "sha256": h.hexdigest(), "bytes": output.stat().st_size, "context": str(context.resolve()), "plan": plan}
-    Path(str(output) + ".json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
-    return result
+    context = Path(context_dir).resolve() if context_dir else output.parent / (output.name + ".build")
+    with build_lock(context):
+        ensure_target(plan["target"], store)
+        build_dir = prepare_flatpak_context(bundle, plan, context, store=store)
+        run_flatpak(["build-finish", "--no-inherit-permissions", "--command=cage-desktop-launch",
+                     *plan["permissions"], str(build_dir)], store=store, timeout=timeout)
+        repo = context.resolve() / "repository"
+        run_flatpak(["build-export", str(repo), str(build_dir), "stable"], store=store, timeout=timeout)
+        temporary = Path(str(output) + ".partial")
+        run_flatpak(["build-bundle", "--runtime-repo=" + plan["target"]["remoteUrl"],
+                     str(repo), str(temporary), plan["desktop"]["id"], "stable"], store=store, timeout=timeout)
+        temporary.replace(output)
+        with output.open("rb") as handle:
+            h = hashlib.sha256()
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                h.update(chunk)
+        result = {"schemaVersion": "cage.flatpak-export-result/v0", "success": True, "output": str(output),
+                  "sha256": h.hexdigest(), "bytes": output.stat().st_size, "context": str(context.resolve()), "plan": plan}
+        Path(str(output) + ".json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+        result['storage'] = record_export(context, bundle, 'flatpak', {'kind': 'file', 'path': str(output), 'sha256': result['sha256']})
+        return result

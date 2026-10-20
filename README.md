@@ -151,6 +151,12 @@ Explicit [safe updates and rollback](docs/export-updates.md) share qualified
 recipe migrations across Flatpak, AppImage and persistent Wine containers.
 Previous generations are retained; rollback carries current documents forward.
 
+[Storage controls and diagnostics](docs/storage-controls.md) report protected
+application state and disk usage. `cage storage prune` previews cleanup of
+verified completed export staging; deletion requires `--apply`. Prefixes,
+settings, documents, retained generations and rollback packages remain protected.
+`cage doctor` checks state, recovery packages, free space and selected bundles.
+
 ### Desktop Flatpak proof of concept
 
 The optional `--target flatpak` build target reuses ordered Cage recipes and

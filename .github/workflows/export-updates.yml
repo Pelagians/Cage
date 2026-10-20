@@ -3,9 +3,9 @@ name: Export update and rollback proof
 on:
   workflow_dispatch:
   push:
-    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/notepadplusplus*', 'pyproject.toml', 'scripts/*update*poc.py', 'tests/test_*updates.py', '.github/workflows/export-updates.yml']
+    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/notepadplusplus*', 'pyproject.toml', 'scripts/*update*poc.py', 'scripts/*storage*poc.py', 'tests/test_*updates.py', 'tests/test_storage.py', '.github/workflows/export-updates.yml']
   pull_request:
-    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/notepadplusplus*', 'pyproject.toml', 'scripts/*update*poc.py', 'tests/test_*updates.py', '.github/workflows/export-updates.yml']
+    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/notepadplusplus*', 'pyproject.toml', 'scripts/*update*poc.py', 'scripts/*storage*poc.py', 'tests/test_*updates.py', 'tests/test_storage.py', '.github/workflows/export-updates.yml']
 
 permissions:
   contents: read
@@ -66,6 +66,7 @@ jobs:
           python -m cage build dist/update-recipes/${{ matrix.recipe }}.cage.yaml --target flatpak --flatpak-store ${{ matrix.store }} --output dist/update-bundles >dist/update-evidence/candidate-build.json
           for version in 8.8.8 8.8.9; do
             python -m cage export flatpak dist/update-bundles/${{ matrix.recipe }}-$version --flatpak-store ${{ matrix.store }} --output dist/update-$version.flatpak >dist/update-evidence/flatpak-export-$version.json
+            python scripts/test-storage-poc.py dist/update-$version.flatpak.build >dist/update-evidence/storage-flatpak-$version.json
           done
           export FLATPAK_USER_DIR="$PWD/${{ matrix.store }}"
           CAGE_TEST_EVIDENCE="$PWD/dist/update-evidence/flatpak" python scripts/test-update-poc.py flatpak dist/update-8.8.8.flatpak dist/update-8.8.9.flatpak
@@ -74,7 +75,7 @@ jobs:
         run: |
           for version in 8.8.8 8.8.9; do
             python -m cage export appimage dist/update-bundles/${{ matrix.recipe }}-$version --allow-host-access --flatpak-store ${{ matrix.store }} --output dist/update-$version.AppImage >dist/update-evidence/appimage-export-$version.json
-            rm -rf -- dist/update-$version.AppImage.build
+            python scripts/test-storage-poc.py dist/update-$version.AppImage.build >dist/update-evidence/storage-appimage-$version.json
           done
           # Contemporary glibc consumer; Python/X11 tools only drive the test.
           # Wine and the application come exclusively from the AppImages.
@@ -146,7 +147,7 @@ jobs:
           CAGE_TEST_EVIDENCE="$PWD/dist/update-evidence/container" python scripts/test-update-poc.py container dist/update-containers/notepadplusplus-portable-arm64-8.8.8 dist/update-containers/notepadplusplus-portable-arm64-8.8.9
           for version in 8.8.8 8.8.9; do
             python -m cage export oci dist/update-containers/notepadplusplus-portable-arm64-$version --engine podman --graphics desktop --tag localhost/cage-update-oci-proof:$version --context-dir .cage/update-oci-context-$version >dist/update-evidence/oci-export-$version.json
-            rm -rf -- .cage/update-oci-context-$version
+            python scripts/test-storage-poc.py .cage/update-oci-context-$version >dist/update-evidence/storage-oci-$version.json
           done
           CAGE_TEST_EVIDENCE="$PWD/dist/update-evidence/oci" python scripts/test-update-poc.py oci localhost/cage-update-oci-proof:8.8.8 localhost/cage-update-oci-proof:8.8.9
           SH
