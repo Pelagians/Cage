@@ -47,7 +47,7 @@ namespaces = false
 
 [tool.setuptools.package-data]
 "compat.corpus" = ["*.json"]
-runtime = ["catalog.json"]
+runtime = ["catalog.json", "desktop-wine-11.0.json"]
 "core.chocolatey.assets" = ["*.sh", "*.ps1", "*.nupkg", "*.py", "*.json"]
 container = [
   "build.sh",

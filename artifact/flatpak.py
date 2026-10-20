@@ -1,0 +1,97 @@
+"""Flatpak layout and assembly over the shared desktop contract."""
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+import shutil
+from xml.sax.saxutils import escape
+
+from artifact.desktop import create_desktop_export_plan
+from builder.flatpak import ensure_target, initialize_flatpak, run_flatpak
+from runtime import desktop_launch
+from runtime.desktop_launch import DesktopError, verify_inventory
+
+ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect x="8" y="8" width="112" height="112" rx="20" fill="#245b78"/><path d="M38 30h40l16 16v52H38z" fill="#fff"/><path d="M48 58h34M48 70h34M48 82h24" stroke="#245b78" stroke-width="5"/></svg>\n'
+
+
+def create_flatpak_export_plan(bundle):
+    plan = create_desktop_export_plan(bundle)
+    return {**plan, "format": "flatpak", "branch": "stable",
+            "permissions": ["--unshare=network", "--share=ipc", "--socket=x11",
+                            "--filesystem=xdg-documents/" + plan["desktop"]["documentsDirectory"] + ":create"],
+            "prerequisites": ["Flatpak", plan["target"]["platform"] + "//" + plan["target"]["branch"]],
+            "distribution": "local proof of concept; unsigned; no publication performed"}
+
+
+def prepare_flatpak_context(bundle, plan, context, *, store):
+    context = Path(context).resolve()
+    if context.exists():
+        raise DesktopError(f"Flatpak export context already exists: {context}")
+    context.mkdir(parents=True)
+    build_dir = context / "app"
+    initialize_flatpak(build_dir, plan["desktop"]["id"], plan["target"], store)
+    files = build_dir / "files"
+    destination = files / "share/cage" / plan["desktop"]["id"]
+    destination.mkdir(parents=True)
+    receipt = json.loads((Path(bundle) / "metadata/desktop-build.json").read_text())
+    shutil.copytree(Path(bundle) / "prefix", destination / "seed", symlinks=True)
+    verify_inventory(destination / "seed", receipt["inventory"])
+    (destination / "seed-inventory.json").write_text(json.dumps(receipt["inventory"], sort_keys=True) + "\n")
+    (destination / "desktop.json").write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n")
+    helper = files / "libexec/cage-desktop-launch.py"
+    helper.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(desktop_launch.__file__, helper)
+    wrapper = files / "bin/cage-desktop-launch"
+    wrapper.write_text('#!/bin/sh\nexec /usr/bin/python3 /app/libexec/cage-desktop-launch.py /app/share/cage/'
+                       + plan["desktop"]["id"] + '/desktop.json "$@"\n')
+    wrapper.chmod(0o755)
+    desktop = plan["desktop"]
+    title = desktop["name"].replace("\\", "\\\\")
+    summary = desktop["summary"].replace("\\", "\\\\")
+    entries = files / "share/applications"
+    entries.mkdir(parents=True, exist_ok=True)
+    (entries / (desktop["id"] + ".desktop")).write_text(
+        f"[Desktop Entry]\nType=Application\nName={title}\nComment={summary}\nExec=cage-desktop-launch %F\n"
+        f"Icon={desktop['id']}\nCategories={';'.join(desktop['categories'])};\nTerminal=false\n")
+    icon = files / "share/icons/hicolor/scalable/apps" / (desktop["id"] + ".svg")
+    icon.parent.mkdir(parents=True, exist_ok=True)
+    icon.write_text(ICON)
+    metadata = files / "share/metainfo" / (desktop["id"] + ".metainfo.xml")
+    metadata.parent.mkdir(parents=True, exist_ok=True)
+    metadata.write_text('<?xml version="1.0" encoding="UTF-8"?>\n<component type="desktop-application">'
+                        f'<id>{desktop["id"]}</id><metadata_license>CC0-1.0</metadata_license>'
+                        f'<project_license>{escape(desktop["license"])}</project_license>'
+                        f'<name>{escape(desktop["name"])}</name><summary>{escape(desktop["summary"])}</summary>'
+                        f'<url type="homepage">{escape(desktop["homepage"])}</url>'
+                        f'<launchable type="desktop-id">{desktop["id"]}.desktop</launchable>'
+                        '<description><p>A Windows application packaged with Cage and Wine.</p></description></component>\n')
+    (context / "export-plan.json").write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n")
+    return build_dir
+
+
+def export_flatpak(bundle, *, output, store, context_dir=None, timeout=900):
+    plan = create_flatpak_export_plan(bundle)
+    output = Path(output).resolve()
+    if output.exists() or Path(str(output) + ".partial").exists():
+        raise DesktopError(f"Flatpak output already exists: {output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    context = Path(context_dir) if context_dir else output.parent / (output.name + ".build")
+    ensure_target(plan["target"], store)
+    build_dir = prepare_flatpak_context(bundle, plan, context, store=store)
+    run_flatpak(["build-finish", "--no-inherit-permissions", "--command=cage-desktop-launch",
+                 *plan["permissions"], str(build_dir)], store=store, timeout=timeout)
+    repo = context.resolve() / "repository"
+    run_flatpak(["build-export", str(repo), str(build_dir), "stable"], store=store, timeout=timeout)
+    temporary = Path(str(output) + ".partial")
+    run_flatpak(["build-bundle", "--runtime-repo=" + plan["target"]["remoteUrl"],
+                 str(repo), str(temporary), plan["desktop"]["id"], "stable"], store=store, timeout=timeout)
+    temporary.replace(output)
+    with output.open("rb") as handle:
+        h = hashlib.sha256()
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            h.update(chunk)
+    result = {"schemaVersion": "cage.flatpak-export-result/v0", "success": True, "output": str(output),
+              "sha256": h.hexdigest(), "bytes": output.stat().st_size, "context": str(context.resolve()), "plan": plan}
+    Path(str(output) + ".json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+    return result

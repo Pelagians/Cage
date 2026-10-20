@@ -44,6 +44,7 @@ from runtime.providers import list_providers, resolve_manifest_runtime, resolve_
 from runtime.launcher import RunError, build_run_plan, execute_run_plan
 from runtime.runner_cache import RunnerCacheError, diagnose_runner, ensure_runner
 from runtime.runner_catalog import RunnerCatalogError, RunnerSpec, resolve_runner_spec, runner_catalog_payload
+from runtime.desktop_launch import DesktopError
 
 
 # ---- manifest commands ----
@@ -170,6 +171,18 @@ def cmd_compat_corpus(args):
 
 def cmd_build(args):
     manifest = load_manifest(Path(args.manifest))
+    if getattr(args, "target", "container") == "flatpak":
+        from artifact.desktop import validate_desktop_recipe
+        from builder.flatpak import build_flatpak_bundle
+        if args.dry_run:
+            result = {"schemaVersion": "cage.desktop-build-plan/v0", "target": validate_desktop_recipe(manifest),
+                      "phases": build_plan(manifest), "dryRun": True}
+        else:
+            result = build_flatpak_bundle(manifest, Path(args.output),
+                        workspace=Path(args.workspace or Path.cwd()), store=args.flatpak_store,
+                        timeout=args.build_timeout)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
     bundle_path = create_bundle(
         manifest, Path(args.output), dry_run=args.dry_run,
     )
@@ -443,6 +456,20 @@ def cmd_export_oci(args):
     return 0 if result.get("success") else 1
 
 
+def cmd_export_flatpak(args):
+    from artifact.flatpak import create_flatpak_export_plan, export_flatpak
+    bundle = resolve_bundle_reference(args.bundle, index_path=args.artifact_index)
+    if args.dry_run:
+        result = create_flatpak_export_plan(bundle)
+    else:
+        if not args.output:
+            raise DesktopError("--output is required unless --dry-run")
+        result = export_flatpak(bundle, output=args.output, store=args.flatpak_store,
+                                context_dir=args.context_dir, timeout=args.timeout)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
 def cmd_export_kube(args):
     bundle = resolve_bundle_reference(args.bundle, index_path=args.artifact_index)
     image_verification = None
@@ -564,6 +591,9 @@ def build_parser():
     p = sub.add_parser("build", help="Create an immutable execution bundle "
                                      "(dry-run or real via container)")
     p.add_argument("manifest")
+    p.add_argument("--target", choices=["container", "flatpak"], default="container",
+                   help="Build execution target; container remains the default")
+    p.add_argument("--flatpak-store", default=".cage/flatpak", help="Isolated desktop build dependency store")
     p.add_argument("--output", default="dist",
                    help="Output directory")
     p.add_argument("--workspace",
@@ -783,6 +813,16 @@ def build_parser():
     p = sub.add_parser("export", help="Export Cage bundles to deployable artifacts")
     esub = p.add_subparsers(dest="export_command", required=True)
 
+    ep = esub.add_parser("flatpak", help="Export a qualified desktop-target bundle as a Flatpak")
+    ep.add_argument("bundle", help="Desktop-target bundle path")
+    ep.add_argument("--artifact-index", default=None)
+    ep.add_argument("--output", help="Output .flatpak file")
+    ep.add_argument("--context-dir", help="New staging directory retained for inspection")
+    ep.add_argument("--flatpak-store", default=".cage/flatpak", help="Isolated build-time Flatpak store")
+    ep.add_argument("--timeout", type=int, default=900)
+    ep.add_argument("--dry-run", action="store_true")
+    ep.set_defaults(func=cmd_export_flatpak)
+
     ep = esub.add_parser("oci", help="Export a verified bundle as a runnable OCI application image")
     ep.add_argument("bundle", help="Path to Cage bundle directory or app name from artifact index")
     ep.add_argument("--artifact-index", default=None,
@@ -841,6 +881,9 @@ def main(argv=None):
     except ManifestError as exc:
         print(f"cage: manifest error: {exc}", file=sys.stderr)
         return 2
+    except DesktopError as exc:
+        print(f"cage: desktop export error: {exc}", file=sys.stderr)
+        return 14
     except FileExistsError as exc:
         print(f"cage: artifact exists: {exc}", file=sys.stderr)
         return 3

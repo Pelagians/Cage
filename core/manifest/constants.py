@@ -24,6 +24,7 @@ ROOT_FIELDS = {
     "fileAssociations",
     "exports",
     "provenance",
+    "desktop",
 }
 RUNTIME_FIELDS = {"provider", "version", "source", "channel", "digest", "runner", "network", "image", "imageRef", "wineGraphics"}
 BUILD_FIELDS = {"network"}

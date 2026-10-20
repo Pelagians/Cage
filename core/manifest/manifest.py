@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .errors import ManifestError
+from .desktop import normalize_desktop
 from .helpers import _reject_unknown, _required_str, _optional_str, _drop_none, _load_strict_yaml
 from .constants import (
     ROOT_FIELDS,
@@ -338,6 +339,7 @@ class Manifest:
     exports: list[dict[str, Any]] = field(default_factory=list)
     entrypoints: list[dict[str, Any]] = field(default_factory=list)
     file_associations: list[dict[str, Any]] = field(default_factory=list)
+    desktop: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Manifest:
@@ -471,6 +473,7 @@ class Manifest:
             exports=exports,
             entrypoints=entrypoints,
             file_associations=file_associations,
+            desktop=normalize_desktop(data.get("desktop")),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -510,6 +513,8 @@ class Manifest:
         
         if self.file_associations:
             result["fileAssociations"] = self.file_associations
+        if self.desktop:
+            result["desktop"] = self.desktop
         
         
         return result

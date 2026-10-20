@@ -53,6 +53,8 @@ def build_run_plan(
 ) -> dict[str, Any]:
     """Return a deterministic container run plan for a verified bundle."""
     bundle = Path(bundle_path)
+    if (bundle / "metadata/execution-target.json").exists():
+        raise RunError("desktop-target bundles require their exported desktop runtime; rebuild normally for container execution")
     verification = verify_bundle(bundle)
     if not verification.get("valid"):
         raise RunError("invalid Cage bundle: " + _verification_error_text(verification))

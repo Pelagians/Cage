@@ -36,6 +36,8 @@ class OCIExportError(RuntimeError):
 
 
 def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str = 'headless') -> dict[str, Any]:
+    if (Path(bundle_path) / 'metadata/execution-target.json').exists():
+        raise OCIExportError('desktop-target bundles are not qualified for OCI; rebuild with the existing container target')
     '''Return a dry-run plan for exporting *bundle_path* as a runnable OCI image.'''
     bundle = Path(bundle_path)
     verification = verify_bundle(bundle)
