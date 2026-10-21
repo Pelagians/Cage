@@ -187,7 +187,12 @@ def main():
         gui.command('xdotool', 'key', '--clearmodifiers', 'ctrl+a')
         gui.command('xdotool', 'type', '--clearmodifiers', '--delay', '5', wine_file(saved))
         gui.command('xdotool', 'key', '--clearmodifiers', 'Return')
-        gui.wait_for(saved.is_file, 'saved host document')
+        def saved_contents():
+            if not saved.is_file():return False
+            try:workflow.validate_saved(saved, expected)
+            except (AssertionError, OSError):return False
+            return True
+        gui.wait_for(saved_contents, 'complete saved host document contents')
         workflow.validate_saved(saved, expected)
         gui.wait_for(lambda: not subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', '^Save As$'], capture_output=True).stdout, 'Save As closed')
         subprocess.run(['scrot', str(evidence / (label + '.png'))], check=True)
