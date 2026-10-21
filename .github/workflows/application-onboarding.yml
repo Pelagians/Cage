@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   desktop:
     strategy:
@@ -86,16 +90,16 @@ jobs:
             -e CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/appimage" \
             localhost/cage-onboarding-tools python3 scripts/test-onboarding-poc.py appimage dist/onboarding-3.6.AppImage dist/onboarding-3.6.1.AppImage --legacy dist/onboarding-legacy.AppImage
           SH
+      - name: Collect records without following Wine drive links
+        if: always()
+        run: python scripts/collect-onboarding-evidence.py
       - name: Retain qualification evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: application-onboarding-desktop-${{ matrix.arch }}-${{ github.sha }}
           retention-days: 14
-          path: |
-            dist/onboarding-evidence/**/*.json
-            dist/onboarding-evidence/**/*.log
-            dist/onboarding-evidence/**/*.png
+          path: dist/onboarding-ci-evidence
 
   containers:
     strategy:
@@ -152,14 +156,13 @@ jobs:
           done
           CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/oci" python scripts/test-onboarding-poc.py oci localhost/cage-onboarding:3.6 localhost/cage-onboarding:3.6.1
           SH
+      - name: Collect records without following Wine drive links
+        if: always()
+        run: python scripts/collect-onboarding-evidence.py
       - name: Retain qualification evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: application-onboarding-containers-${{ matrix.provider }}-${{ github.sha }}
           retention-days: 14
-          path: |
-            dist/onboarding-evidence/**/*.json
-            dist/onboarding-evidence/**/*.log
-            dist/onboarding-evidence/**/*.png
-            dist/onboarding-containers/*/logs/*
+          path: dist/onboarding-ci-evidence

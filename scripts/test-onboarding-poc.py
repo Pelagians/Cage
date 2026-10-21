@@ -15,6 +15,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -129,7 +130,7 @@ def main():
                         if struct.unpack_from('=i', data, 48)[0] not in (0, 1):raise RuntimeError('extent verification refused')
             assert before == (state / 'state.json').read_bytes()
 
-    processes = []; logs = []; sessions = []
+    processes = []; handles = []; logs = []; sessions = []
     def run(package, label, action=None, previous=None, preference=False, menu=False):
         nonlocal document
         arguments = command(package, action, previous)
@@ -144,13 +145,20 @@ def main():
         output = (evidence / (label + '.log')).open('w'); logs.append(output)
         process = subprocess.Popen(arguments, env=env, cwd=ROOT, stdout=output, stderr=subprocess.STDOUT); processes.append(process)
         handle = gui.wait_for(window, label + ' application window', seconds=180)
+        handles.append(handle)
         gui.wait_for(lambda: document.name in gui.command('xdotool', 'getwindowname', handle), 'requested document loaded')
         gui.focus_editor(handle)
         if preference:workflow.change_preference(gui)
-        saved = documents / (label + ' café' + workflow.extension)
+        # Unicode input is opened through argv. Keep typed Save As names ASCII:
+        # Xvfb's synthetic keyboard cannot reliably deliver accented key events.
+        saved = documents / (label + '-saved' + workflow.extension)
         workflow.save_keys(gui)
         dialog = gui.wait_for(lambda: gui.command('xdotool', 'search', '--onlyvisible', '--name', '^Save As$'), 'Save As dialog')
         gui.command('xdotool', 'windowactivate', '--sync', dialog.splitlines()[-1])
+        # Wine can expose the top-level dialog before populating its filename
+        # edit. Focus its labelled field after initialization, as a user would.
+        time.sleep(1)
+        gui.command('xdotool', 'key', '--clearmodifiers', 'alt+n')
         gui.command('xdotool', 'key', '--clearmodifiers', 'ctrl+a')
         gui.command('xdotool', 'type', '--clearmodifiers', '--delay', '5', wine_file(saved))
         gui.command('xdotool', 'key', '--clearmodifiers', 'Return')
@@ -219,8 +227,17 @@ def main():
         subprocess.run(['scrot', str(evidence / 'failure.png')], check=False)
         raise
     finally:
+        # Close only windows owned by this proof, allowing Wine's launcher to
+        # finish its normal shutdown even when an assertion failed.
+        for handle in reversed(handles):
+            visible = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', workflow.window_pattern], capture_output=True, text=True)
+            if handle in visible.stdout.splitlines():
+                subprocess.run(['xdotool', 'windowactivate', '--sync', handle], capture_output=True)
+                subprocess.run(['xdotool', 'key', '--clearmodifiers', 'Escape', 'alt+F4'], capture_output=True)
         for process in processes:
-            if process.poll() is None:process.terminate()
+            if process.poll() is None:
+                try:process.wait(timeout=30)
+                except subprocess.TimeoutExpired:process.terminate()
         for output in logs:output.close()
         if kind in ('container', 'oci'):subprocess.run(['podman', 'rm', '-f', token], capture_output=True)
 
