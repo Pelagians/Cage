@@ -160,8 +160,24 @@ def main():
         # Unicode input is opened through argv. Keep typed Save As names ASCII:
         # Xvfb's synthetic keyboard cannot reliably deliver accented key events.
         saved = documents / (label + '-saved' + workflow.extension)
-        workflow.save_keys(gui)
-        dialog = gui.wait_for(lambda: gui.command('xdotool', 'search', '--onlyvisible', '--name', '^Save As$'), 'Save As dialog')
+        attempts = 0; next_attempt = 0
+        def save_dialog():
+            nonlocal attempts, next_attempt
+            found = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', '^Save As$'],
+                                   capture_output=True, text=True).stdout.strip()
+            if found:return found
+            # A newly mapped Wine window can acquire X11 focus before its
+            # document handles accelerators. Retry the real action boundedly,
+            # never typing into or dismissing an unexpected modal dialog.
+            if attempts < 3 and time.monotonic() >= next_attempt:
+                if gui.command('xdotool', 'getactivewindow') == handle:
+                    gui.focus_editor(handle)
+                    time.sleep(.5)
+                    workflow.save_keys(gui)
+                    attempts += 1
+                next_attempt = time.monotonic() + 2
+            return False
+        dialog = gui.wait_for(save_dialog, 'Save As dialog')
         gui.command('xdotool', 'windowactivate', '--sync', dialog.splitlines()[-1])
         # Wine can expose the top-level dialog before populating its filename
         # edit. Focus its labelled field after initialization, as a user would.

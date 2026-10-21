@@ -43,6 +43,7 @@ def managed_plan(bundle, image=None):
     return {'schemaVersion': 'cage.desktop-export-plan/v0', 'desktop': desktop,
             'state': {'managerVersion': 1,
                       'launcherSha256': hashlib.sha256(Path(state.__file__).read_bytes()).hexdigest(),
+                      'initSha256': hashlib.sha256(Path(__file__).with_name('container_init.py').read_bytes()).hexdigest(),
                       'adapterSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()},
             'application': graph.get('application', {}), 'launch': graph['launch'],
             'seedDigest': state.digest_json(inventory),
