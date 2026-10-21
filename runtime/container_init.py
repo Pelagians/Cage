@@ -22,19 +22,21 @@ def main():
         raise SystemExit("native Wine tasks require non-root PUID/PGID")
     if os.geteuid() == 0:
         try:
-            account = pwd.getpwuid(uid)
+            account = pwd.getpwnam('abc')
         except KeyError:
             try:
-                pwd.getpwnam('abc')
+                account = pwd.getpwuid(uid)
             except KeyError:
                 subprocess.run(["groupadd", "-o", "-g", str(gid), "abc"], check=True)
                 subprocess.run(["useradd", "-o", "-u", str(uid), "-g", str(gid), "-m", "abc"], check=True)
-            else:
-                # Universal x86 images already have abc; match the explicit
-                # caller IDs without starting the hosted desktop services.
+                account = pwd.getpwuid(uid)
+        else:
+            # Keep the universal image's Wine account stable across hosted and
+            # direct sessions, even when Podman injects another passwd alias.
+            if account.pw_uid != uid or account.pw_gid != gid:
                 subprocess.run(['groupmod', '-o', '-g', str(gid), 'abc'], check=True)
                 subprocess.run(['usermod', '-o', '-u', str(uid), '-g', str(gid), 'abc'], check=True)
-            account = pwd.getpwuid(uid)
+            account = pwd.getpwnam('abc')
         for directory in ("/var/lib/cage/state", "/var/lib/cage/state/home", "/exports"):
             path = Path(directory)
             path.mkdir(parents=True, exist_ok=True)

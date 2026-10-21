@@ -55,7 +55,11 @@ def run(plan, script, arguments):
     if arguments[:1] and arguments[0] in {'--cage-update', '--cage-rollback', '--cage-state-info', '--cage-migrate'}:
         action, arguments = arguments[0][7:], arguments[1:]
     if arguments[:1] == ['--']:
-        arguments = arguments[1:]
+        # Explicit document mode matches desktop exports. Keep legacy raw
+        # application arguments (without --), including Windows switches.
+        import re
+        arguments = [name if re.match(r'^[A-Za-z]:[\\/]', name) else state.document_arguments([name])[0]
+                     for name in arguments[1:]]
     if action not in {'launch', 'update', 'rollback', 'state-info', 'migrate'}:
         raise state.DesktopError('unknown container state action')
     seed = Path(os.environ.get('CAGE_BUNDLE', '/opt/cage/bundle')) / 'prefix'
@@ -73,6 +77,11 @@ def run(plan, script, arguments):
             raise state.DesktopError('container seed changed after planning')
         state.assert_quiescent(root, 'wineserver', os.environ)
         prefix, pending = state.prepare_generation(seed, inventory, root, identity, plan, action)
+        drives = state._real_path(prefix, 'dosdevices')
+        drives.mkdir(exist_ok=True)
+        zdrive = drives / 'z:'
+        if not zdrive.exists() and not zdrive.is_symlink():
+            zdrive.symlink_to('/')  # Only the container namespace and its explicit mounts.
         environment = {**os.environ, 'WINEPREFIX': str(prefix), 'CAGE_MANAGED_PREFIX': str(prefix)}
         result = state._run_application(['/bin/bash', '-c', script, 'cage-managed', *arguments],
                      'wineserver', environment, seed.parent, root, locked=True, lock_fd=lock_fd)

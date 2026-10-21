@@ -282,8 +282,8 @@ def execute_run_plan(plan: dict[str, Any], *, timeout: int | None = None) -> dic
     if plan.get("runtime", {}).get("provider") == "wine-arm64ec":
         from runtime.arm64ec import verify_container_runtime
         verify_container_runtime(plan["container"]["engine"], plan["runtime"]["baseImage"])
-        if plan.get("stateDirectory"):
-            Path(plan["stateDirectory"]).mkdir(parents=True, exist_ok=True, mode=0o700)
+    if plan.get("stateDirectory"):
+        Path(plan["stateDirectory"]).mkdir(parents=True, exist_ok=True, mode=0o700)
 
     derived = plan.get("runtime", {}).get("derivedRuntimeImage")
     if derived:

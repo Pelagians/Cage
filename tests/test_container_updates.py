@@ -12,7 +12,7 @@ from artifact.bundle import create_bundle
 from artifact.oci import create_oci_export_plan, prepare_oci_build_context
 from core.manifest import load_manifest
 from runtime.container_state import managed_plan
-from runtime.launcher import build_run_plan, RunError
+from runtime.launcher import build_run_plan, execute_run_plan, RunError
 from runtime.desktop_launch import DesktopError
 from tests.bundle_fixtures import materialize_runnable_prefix
 
@@ -69,12 +69,36 @@ class ContainerUpdateTests(unittest.TestCase):
             argv = plan['container']['argv']
             self.assertIn('--entrypoint', argv)
             self.assertEqual(argv[-2:], ['-I', '/opt/cage-lifecycle/container_init.py'])
+            state = Path(td) / 'state'
+            self.assertFalse(state.exists())
+            import subprocess
+            with patch('runtime.launcher.subprocess.run', return_value=subprocess.CompletedProcess([], 0, '', '')):
+                self.assertTrue(execute_run_plan(plan)['success'])
+            self.assertTrue(state.is_dir())
+            self.assertFalse((state / 'prefix').exists())
             hosted = build_run_plan(bundle, engine='podman', graphics='selkies', network='bridge')
             self.assertNotIn('--entrypoint', hosted['container']['argv'])
             exported = create_oci_export_plan(bundle, tag='example/desktop', graphics='desktop')
             self.assertIn('ENTRYPOINT ["/usr/bin/python3", "-I", "/opt/cage-lifecycle/container_init.py"]', exported['containerfile']['content'])
             context = prepare_oci_build_context(bundle, exported, Path(td) / 'context')
             self.assertTrue((context / 'lifecycle/container_init.py').is_file())
+
+    def test_managed_oci_explicit_documents_translate_without_changing_raw_arguments(self):
+        from runtime.container_state import run
+        with tempfile.TemporaryDirectory() as td:
+            bundle = self.bundle(td); document = Path(td) / 'Reader café.pdf'
+            document.write_bytes(b'PDF proof')
+            plan = managed_plan(bundle)
+            with patch.dict(os.environ, {'CAGE_BUNDLE': str(bundle), 'CAGE_STATE': str(Path(td) / 'state')}), \
+                    patch('runtime.container_state.state.assert_quiescent'), \
+                    patch('runtime.container_state.state._run_application', return_value=0) as application:
+                self.assertEqual(run(plan, 'legacy launch', ['--', str(document)]), 0)
+                self.assertEqual(application.call_args.args[0][-1], 'Z:' + str(document).replace('/', '\\'))
+                active = Path(td) / 'state' / plan['desktop']['id'] / 'prefix'
+                self.assertEqual(os.readlink(active / 'dosdevices/z:'), '/')
+                self.assertFalse((bundle / 'prefix/dosdevices/z:').is_symlink())
+                self.assertEqual(run(plan, 'legacy launch', ['/silent', 'C:/Existing.pdf']), 0)
+                self.assertEqual(application.call_args.args[0][-2:], ['/silent', 'C:/Existing.pdf'])
 
     def test_mutable_carriers_external_runners_and_unqualified_environment_fail_closed(self):
         with tempfile.TemporaryDirectory() as td:
