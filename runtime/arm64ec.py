@@ -242,7 +242,7 @@ def native_launch_script(bundle, file_arguments, state_action=None):
         raise DesktopError("state-info does not open application documents")
     arguments = " ".join(shlex.quote(a) for a in
                          (["--cage-" + state_action] if state_action else [])
-                         + (["--"] if plan.get("launcherSha256") and state_action != "state-info" else []) + file_arguments)
+                         + (["--"] if plan.get("state", {}).get("managerVersion") == 1 and state_action != "state-info" else []) + file_arguments)
     return ('export XDG_DATA_HOME="${CAGE_STATE:-/var/lib/cage/state}"\n'
             'exec /usr/bin/python3 -I ' + launcher + ' '
             '/opt/cage/bundle/metadata/native-launch.json ' + arguments + '\n')

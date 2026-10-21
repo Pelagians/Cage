@@ -84,7 +84,7 @@ def main():
             if action:
                 return [sys.executable, '-m', 'cage', action, 'flatpak', str(package), '--previous-package', str(previous),
                         '--cache-dir', str(evidence / 'package-cache'), *(['--state-dir', str(state)] if action == 'migrate' else []), str(document)]
-            return ['flatpak', 'run', '--user', app, '--', str(document)]
+            return ['flatpak', 'run', '--user', app, *([] if package == legacy else ['--']), str(document)]
         if kind == 'appimage':
             return [str(package), *(['--cage-' + action] if action else []),
                     *(['--previous-package', str(previous)] if action == 'migrate' else []), '--', str(document)]

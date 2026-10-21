@@ -691,7 +691,9 @@ def execute_inside_container(
         _verify_root_build_capability(engine, img)
 
     from artifact.linux_state import declared_outputs
-    if declared_outputs(bundle_path) or manifest.runtime.provider == "wine-arm64ec":
+    managed_wine = (manifest.desktop.get('updates') and manifest.runtime.provider in {'wine', 'staging'}
+                    and not manifest.runtime.runner)
+    if declared_outputs(bundle_path) or manifest.runtime.provider == "wine-arm64ec" or managed_wine:
         img = _immutable_image_ref(engine, img)
         graph_path = bundle_path / "metadata/graph.json"
         graph = json.loads(graph_path.read_text(encoding="utf-8"))
