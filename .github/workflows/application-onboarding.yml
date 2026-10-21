@@ -65,11 +65,19 @@ jobs:
           openbox >dist/onboarding-evidence/window-manager-flatpak.log 2>&1 &
           for version in 3.6 3.6.1; do
             python -m cage build dist/onboarding-recipes/${{ matrix.provider }}/$version.json --target flatpak --flatpak-store ${{ matrix.store }} --output dist/onboarding-bundles >dist/onboarding-evidence/build-$version.json
-            python -m cage export flatpak dist/onboarding-bundles/sumatrapdf-portable-$version --flatpak-store ${{ matrix.store }} --output dist/onboarding-$version.flatpak >dist/onboarding-evidence/flatpak-export-$version.json
-            python scripts/test-storage-poc.py dist/onboarding-$version.flatpak.build >dist/onboarding-evidence/storage-flatpak-$version.json
           done
+          python -m cage export flatpak dist/onboarding-bundles/sumatrapdf-portable-3.6 --flatpak-store ${{ matrix.store }} --output dist/onboarding-3.6.flatpak >dist/onboarding-evidence/flatpak-export-3.6.json
+          python scripts/test-storage-poc.py dist/onboarding-3.6.flatpak.build >dist/onboarding-evidence/storage-flatpak-3.6.json
+          # Independent contexts share only the already prepared SDK. Keep one
+          # CLI index writer; the historical fixture uses the producer directly.
+          (
+            python -m cage export flatpak dist/onboarding-bundles/sumatrapdf-portable-3.6.1 --flatpak-store ${{ matrix.store }} --output dist/onboarding-3.6.1.flatpak >dist/onboarding-evidence/flatpak-export-3.6.1.json
+            python scripts/test-storage-poc.py dist/onboarding-3.6.1.flatpak.build >dist/onboarding-evidence/storage-flatpak-3.6.1.json
+          ) &
+          candidate_pid=$!
           python scripts/prepare-legacy-poc.py flatpak dist/onboarding-bundles/sumatrapdf-portable-3.6 --flatpak-store ${{ matrix.store }} --output dist/onboarding-legacy.flatpak >dist/onboarding-evidence/legacy-flatpak-export.json
           python scripts/test-storage-poc.py dist/onboarding-legacy.flatpak.build >dist/onboarding-evidence/storage-legacy-flatpak.json
+          wait "$candidate_pid"
           export FLATPAK_USER_DIR="$PWD/${{ matrix.store }}"
           CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/flatpak" python scripts/test-onboarding-poc.py flatpak dist/onboarding-3.6.flatpak dist/onboarding-3.6.1.flatpak --legacy dist/onboarding-legacy.flatpak
           SH
