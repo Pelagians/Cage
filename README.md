@@ -657,3 +657,7 @@ Desktop MIME handlers, file forwarding and UI scaling are described in
 [desktop integration and scaling](docs/desktop-integration.md). New exports can
 follow the desktop's logical DPI; `--cage-dpi 192` selects an explicit 2x scale
 without manually configuring Wine.
+
+[Application onboarding and supported legacy migration](docs/application-onboarding.md)
+adds a second pinned portable application, SumatraPDF, using the same recipe for
+Flatpak, AppImage and containers, with explicit recovery snapshots before adoption.

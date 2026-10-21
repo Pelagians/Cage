@@ -15,6 +15,83 @@ _SHA256_RE = re.compile(r"^[A-Fa-f0-9]{64}$")
 _REMOTE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
 
 
+def prepare_portable_source(manifest, *, workspace=None, source_id=None, stage_name=None):
+    """Explicit, repeatable acquisition/staging of one hash-pinned public archive.
+
+    Build/run never implicitly download sources. Existing staging is checked
+    against a fresh safe extraction, not trusted from its metadata alone.
+    """
+    import os
+    import tempfile
+    import urllib.request
+    from urllib.parse import urlsplit
+    from core.media import MediaStageError, stage_media
+    try:
+        root = Path(workspace or Path.cwd()).resolve()
+        candidates = [s for s in manifest.sources if source_id is None or s.id == source_id]
+        if len(candidates) != 1:
+            raise MediaStageError('select exactly one declared archive with --source-id')
+        source = candidates[0]
+        if source.type != 'archive' or source.policy != 'redistributable' or not source.path or not source.sha256 or not _SHA256_RE.fullmatch(source.sha256):
+            raise MediaStageError('preparation requires an explicitly redistributable archive with a local path and SHA-256')
+        parts = Path(source.path).parts
+        if not parts or parts[0] != 'sources' or Path(source.path).is_absolute() or any(p in {'.', '..'} for p in parts):
+            raise MediaStageError('archive path must be beneath workspace/sources')
+        archive = root
+        for part in parts:
+            archive /= part
+            if archive.is_symlink():
+                raise MediaStageError('linked source paths are not prepared')
+        if not archive.exists():
+            url = urlsplit(source.url or '')
+            if url.scheme != 'https' or not url.hostname or url.username or url.password:
+                raise MediaStageError('source preparation requires an HTTPS publisher URL')
+            archive.parent.mkdir(parents=True, exist_ok=True)
+            partial = archive.with_name(archive.name + '.partial')
+            request = urllib.request.Request(source.url, headers={'User-Agent': 'Mozilla/5.0 Cage-source-preparation'})
+            with urllib.request.urlopen(request, timeout=90) as response, partial.open('xb') as output:
+                if urlsplit(response.geturl()).scheme != 'https':
+                    raise MediaStageError('source redirect left HTTPS')
+                total = 0
+                while chunk := response.read(1024 * 1024):
+                    total += len(chunk)
+                    if total > 128 * 1024 * 1024:
+                        raise MediaStageError('portable source exceeds the 128 MiB preparation quota; partial retained')
+                    output.write(chunk)
+                output.flush()
+                os.fsync(output.fileno())
+            if sha256_file(partial).lower() != source.sha256.lower():
+                raise MediaStageError('source checksum mismatch; partial retained')
+            partial.rename(archive)
+        if not archive.is_file() or sha256_file(archive).lower() != source.sha256.lower():
+            raise MediaStageError('source checksum mismatch; existing file retained')
+        name = stage_name or manifest.name + '-' + manifest.version
+        from core.media import _safe_stage_name
+        name = _safe_stage_name(name)
+        staged = root / 'sources' / name / 'media'
+        if staged.exists() or staged.is_symlink():
+            def contents(directory):
+                entries = []
+                for p in sorted(directory.rglob('*')):
+                    if p.is_symlink() or not (p.is_dir() or p.is_file()):
+                        raise MediaStageError('changed or linked staged source retained')
+                    entries.append((p.relative_to(directory).as_posix(), 'dir' if p.is_dir() else sha256_file(p)))
+                return entries
+            for p in (staged.parent, staged):
+                if p.is_symlink() or not p.is_dir():
+                    raise MediaStageError('linked staged source retained')
+            with tempfile.TemporaryDirectory(prefix='.cage-source-check-', dir=root) as td:
+                fresh = stage_media(archive, name=name, workspace=td)
+                if contents(staged) != contents(Path(fresh['stagedPath'])):
+                    raise MediaStageError('staged source differs from the pinned archive; existing files retained')
+        else:
+            stage_media(archive, name=name, workspace=root)
+        return {'prepared': True, 'sourceId': source.id, 'sha256': source.sha256.lower(),
+                'archive': str(archive), 'stagedPath': str(staged)}
+    except (OSError, ValueError) as exc:
+        raise MediaStageError(str(exc)) from exc
+
+
 def verify_manifest_sources(manifest: Manifest, *, workspace: Path | str | None = None) -> dict[str, Any]:
     """Verify local source presence and hashes for a manifest.
 

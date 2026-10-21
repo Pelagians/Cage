@@ -51,11 +51,11 @@ def managed_plan(bundle, image=None):
 
 def run(plan, script, arguments):
     action = os.environ.get('CAGE_STATE_ACTION', 'launch')
-    if arguments[:1] and arguments[0] in {'--cage-update', '--cage-rollback', '--cage-state-info'}:
+    if arguments[:1] and arguments[0] in {'--cage-update', '--cage-rollback', '--cage-state-info', '--cage-migrate'}:
         action, arguments = arguments[0][7:], arguments[1:]
     if arguments[:1] == ['--']:
         arguments = arguments[1:]
-    if action not in {'launch', 'update', 'rollback', 'state-info'}:
+    if action not in {'launch', 'update', 'rollback', 'state-info', 'migrate'}:
         raise state.DesktopError('unknown container state action')
     seed = Path(os.environ.get('CAGE_BUNDLE', '/opt/cage/bundle')) / 'prefix'
     root = Path(os.environ.get('CAGE_STATE', '/var/lib/cage/state')) / plan['desktop']['id']

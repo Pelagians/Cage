@@ -172,7 +172,7 @@ def plan_identity(plan):
 
 
 
-def inventory_tree(root):
+def inventory_tree(root, *, state_snapshot=False):
     """Hash all bytes and metadata, rejecting special files and escaping links."""
     root = Path(root)
     if root.is_symlink() or not root.is_dir():
@@ -185,9 +185,9 @@ def inventory_tree(root):
             raise DesktopError(f"set-ID payload member: {path}")
         if stat.S_ISLNK(info.st_mode):
             target = os.readlink(path)
-            if os.path.isabs(target) or not path.resolve().is_relative_to(root.resolve()):
+            if not state_snapshot and (os.path.isabs(target) or not path.resolve().is_relative_to(root.resolve())):
                 raise DesktopError(f"escaping payload symlink: {path}")
-            if not path.exists():
+            if not state_snapshot and not path.exists():
                 raise DesktopError(f"dangling payload symlink: {path}")
             item.update(type="symlink", target=target)
         elif stat.S_ISDIR(info.st_mode):
@@ -207,6 +207,97 @@ def inventory_tree(root):
 def verify_inventory(root, inventory):
     if inventory_tree(root) != inventory:
         raise DesktopError("desktop payload inventory mismatch; rebuild from trusted inputs")
+
+
+def _flush_tree(root):
+    for path in [*Path(root).rglob('*'), Path(root)]:
+        if path.is_symlink():
+            continue
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+
+def migration_space(root, source):
+    """Conservative full-copy budget unless this actual source supports reflinks."""
+    root, source = Path(root), Path(source)
+    files = [p for p in source.rglob('*') if not p.is_symlink() and p.is_file()]
+    logical = sum(p.stat().st_size for p in files)
+    clone = False
+    sample = next((p for p in files if p.stat().st_size), None)
+    if sample:
+        import fcntl
+        with sample.open('rb') as src, tempfile.TemporaryFile(dir=root) as dst:
+            try:
+                fcntl.ioctl(dst.fileno(), 0x40049409, src.fileno())
+                clone = True
+            except OSError:
+                pass
+    reserve = 128 * 1024 * 1024
+    required = reserve + (len(files) * 16384 if clone else logical)
+    available = shutil.disk_usage(root).free
+    if available < required:
+        raise DesktopError('insufficient space for migration; old state retained (required '
+                           + str(required) + ', available ' + str(available) + ' bytes)')
+    return {'logicalBytes': logical, 'reflinkAvailable': clone, 'requiredFreeBytes': required,
+            'availableBytes': available}
+
+
+def snapshot_legacy(root, identity, *, reuse=True):
+    """Under the lifecycle lock: retain and verify v0 state without following links.
+
+    This is a recovery inventory, never a trusted export/seed inventory. Absolute
+    Wine drive mappings are recorded literally, never traversed or promoted.
+    """
+    root = Path(root)
+    record = _read_generations(root)
+    if not record or len(record['generations']) != 1 or record['active'] != 'prefix':
+        raise DesktopError('migration requires recorded legacy state; managed generations retained')
+    old = _generation(record, 'prefix')['identity']
+    if old.get('schemaVersion') != 'cage.desktop-state/v0' or identity.get('schemaVersion') != 'cage.desktop-state/v1':
+        raise DesktopError('migration requires a recorded v0 prefix and a generation-aware baseline')
+    if old.get('runtimeDigest') != identity.get('runtimeDigest'):
+        raise DesktopError('runtime changes require separate migration qualification; all state retained')
+    source = _real_path(root, 'prefix')
+    inventory = inventory_tree(source, state_snapshot=True)
+    journal = _real_path(root, 'legacy-migration.json')
+    if reuse and journal.is_file():
+        previous = json.loads(journal.read_text())
+        backup = _real_path(root, previous['snapshot'])
+        receipt = _real_path(backup, 'snapshot.json')
+        if receipt.is_file():
+            saved = json.loads(receipt.read_text())
+            if (saved['identity'] == old and saved['targetIdentity'] == identity
+                    and saved['inventory'] == inventory
+                    and inventory_tree(backup / 'prefix', state_snapshot=True) == inventory
+                    and (backup / 'state.json').read_bytes() == (root / 'state.json').read_bytes()):
+                return backup
+    space = migration_space(root, source)
+    import uuid
+    parent = _real_path(root, 'legacy-snapshots')
+    parent.mkdir(mode=0o700, exist_ok=True)
+    backup = parent / uuid.uuid4().hex
+    backup.mkdir(mode=0o700)
+    _write_state_record(journal, {'status': 'preparing', 'snapshot': str(backup.relative_to(root))})
+    shutil.copytree(source, backup / 'prefix', symlinks=True, copy_function=copy_file)
+    copy_file(root / 'state.json', backup / 'state.json')
+    preference = _real_path(root, 'display.json')
+    if preference.exists():
+        display_preferences(root)
+        copy_file(preference, backup / 'display.json')
+    if (inventory_tree(backup / 'prefix', state_snapshot=True) != inventory
+            or inventory_tree(source, state_snapshot=True) != inventory
+            or _generation(_read_generations(backup), 'prefix')['identity'] != old):
+        raise DesktopError('legacy snapshot changed during copying; all state retained')
+    _write_state_record(backup / 'snapshot.json', {'schemaVersion': 'cage.legacy-snapshot/v1',
+        'identity': old, 'targetIdentity': identity, 'inventory': inventory, 'space': space,
+        'externalDocuments': 'not traversed or rewritten; retained in their host locations'})
+    _flush_tree(backup)
+    _write_state_record(journal, {'status': 'snapshotted', 'snapshot': str(backup.relative_to(root)),
+                                'identity': old, 'targetIdentity': identity})
+    return backup
 
 
 def windows_path(prefix, value):
@@ -435,7 +526,8 @@ def state_info(root, identity):
     directory = _real_path(root, "generations")
     retained = [p.relative_to(root).as_posix() for p in directory.iterdir()
                 if p.relative_to(root).as_posix() not in known] if directory.is_dir() else []
-    return {"state": record, "packageIdentity": identity, "retainedCandidates": sorted(retained)}
+    return {"state": record, "packageIdentity": identity, "stateDirectory": str(root.absolute()),
+            "retainedCandidates": sorted(retained)}
 
 
 def prepare_generation(seed, inventory, root, identity, plan, action):
@@ -450,11 +542,20 @@ def prepare_generation(seed, inventory, root, identity, plan, action):
     if policy:
         validate_update_policy(policy)
     if record is None:
+        if action == 'migrate':
+            raise DesktopError('migration requires existing recorded legacy state; nothing imported')
         if action == "rollback":
             raise DesktopError("no previous generation to roll back")
         initialize_state(seed, inventory, root, identity)
         record = _read_generations(root)
     current = _generation(record, record["active"])
+    if action == 'migrate' or (action == 'update' and current['identity'].get('schemaVersion') == 'cage.desktop-state/v0'
+                              and identity.get('schemaVersion') == 'cage.desktop-state/v1'):
+        if not policy:
+            raise DesktopError('migration requires a qualified update policy; all state retained')
+        migration_space(root, seed)
+        snapshot_legacy(root, identity)
+        action = 'update'
     if current["identity"] == identity and action != "rollback":
         if policy and identity.get("schemaVersion") == "cage.desktop-state/v1" and not current.get("profile"):
             current.update(profile=policy["profile"], application=plan.get("application", {}))
@@ -510,15 +611,7 @@ def commit_generation(root, record):
     # Prefix contents must reach disk before the active pointer. Wine has already
     # stopped. syncfs is not portable Python; fsync every regular file/directory.
     prefix = _real_path(root, record["active"])
-    for path in [*prefix.rglob("*"), prefix]:
-        if path.is_symlink():
-            continue
-        if path.is_file() or path.is_dir():
-            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-            try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
+    _flush_tree(prefix)
     descriptor = os.open(prefix.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         os.fsync(descriptor)
@@ -591,7 +684,7 @@ def launch(metadata_path, files):
                     _write_state_record(prefix / '.cage-display.json', {'dpi': prefix_dpi(prefix)})
         return 0
     action = "launch"
-    if files[:1] in (["--cage-update"], ["--cage-rollback"]):
+    if files[:1] in (["--cage-update"], ["--cage-rollback"], ["--cage-migrate"]):
         action = files[0][7:]
         files = files[1:]
     elif files == ["--cage-state-info"]:

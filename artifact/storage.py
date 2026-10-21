@@ -377,6 +377,18 @@ def inspect_state(path):
         if record and record.get('previous') and record['previous'] not in {g['prefix'] for g in record['generations']}:
             raise StorageError('previous generation is missing; restore state before rollback')
         result.update(state=record, retainedCandidates=info['retainedCandidates'])
+        snapshots = path / 'legacy-snapshots'
+        if snapshots.exists():
+            snapshots = real_path(snapshots)
+            result['legacySnapshots'] = []
+            for backup in sorted(snapshots.iterdir()):
+                backup = real_path(backup)
+                receipt = backup / 'snapshot.json'
+                result['legacySnapshots'].append({'path': str(backup), 'protected': True,
+                                                  'complete': receipt.is_file() and not receipt.is_symlink()})
+        migration = path / 'appimage-migration.json'
+        if migration.exists() and read_json(migration).get('status') == 'prepared':
+            result['recovery'] = 'close the application, then run the migration baseline with --cage-recover-migration'
         for name in ('prefix.partial',):
             if (path / name).exists():
                 result['retainedCandidates'].append(name)
@@ -406,7 +418,7 @@ def inspect_packages(path):
             entries += [(e['package'], e['sha256']) for e in record.get('versions', [])]
         else:
             record = read_json(path / 'transaction.json')
-            if record.get('schemaVersion') != 'cage.flatpak-update/v1':
+            if record.get('schemaVersion') not in {'cage.flatpak-update/v1', 'cage.flatpak-migration/v1'}:
                 raise StorageError('unknown recovery receipt; retained')
             entries = [(record[key]['sha256'] + '.flatpak', record[key]['sha256']) for key in ('previous', 'candidate')]
             if record.get('status') == 'prepared':

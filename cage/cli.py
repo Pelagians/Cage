@@ -121,6 +121,14 @@ def cmd_sources_audit(args):
     return 0 if result.get("valid") else 8
 
 
+def cmd_sources_prepare(args):
+    from core.sources import prepare_portable_source
+    result = prepare_portable_source(load_manifest(args.manifest), workspace=args.workspace,
+                                     source_id=args.source_id, stage_name=args.stage_name)
+    print(json.dumps(result, indent=2))
+    return 0
+
+
 def cmd_media_stage(args):
     result = stage_media(
         Path(args.source),
@@ -384,6 +392,20 @@ def cmd_recover_flatpak(args):
     from artifact.updates import recover_flatpak
     print(json.dumps(recover_flatpak(args.directory), indent=2, sort_keys=True))
     return 0
+
+
+def cmd_migrate(args):
+    if args.format == 'flatpak':
+        from artifact.updates import migrate_flatpak
+        result = migrate_flatpak(args.package, args.previous_package, files=args.files,
+                                 cache=args.cache_dir, state_dir=args.state_dir)
+        print(json.dumps(result, indent=2))
+        return 0
+    if args.cache_dir or args.state_dir:
+        raise DesktopError('AppImage migration uses its installed application state and package directory')
+    import subprocess
+    return subprocess.run([str(Path(args.package).absolute()), '--cage-migrate', '--previous-package',
+                           str(Path(args.previous_package).absolute()), '--', *args.files]).returncode
 
 
 # ---- image commands ----
@@ -712,7 +734,7 @@ def build_parser():
                    help="Runtime container network mode; defaults to bundle runtime.network")
     p.add_argument("--entrypoint", help="Named suite entrypoint id to run")
     p.add_argument("--state-dir", help="Persistent native ARM container state directory")
-    p.add_argument("--state-action", choices=["update", "rollback", "state-info"], help="Explicit generation action; requires --state-dir")
+    p.add_argument("--state-action", choices=["update", "rollback", "state-info", "migrate"], help="Explicit generation action; requires --state-dir")
     p.add_argument("--writable-files", action="store_true", help="Allow writes within the parent directories of explicitly passed files")
     p.add_argument("files", nargs="*", help="Host files to pass to the selected application entrypoint")
     p.add_argument("--selkies-port", type=int, default=3001,
@@ -732,6 +754,14 @@ def build_parser():
         p.add_argument("--cache-dir", help="Private disk-backed package recovery directory")
         p.add_argument("files", nargs="*", help="Documents to open during the trial")
         p.set_defaults(func=cmd_package_update)
+    p = sub.add_parser('migrate', help='Adopt recorded legacy state with a same-version managed baseline')
+    p.add_argument('format', choices=['flatpak', 'appimage'])
+    p.add_argument('package', help='Generation-aware baseline package')
+    p.add_argument('--previous-package', required=True, help='Exact legacy package with its export receipt')
+    p.add_argument('--cache-dir', help='Flatpak package recovery directory')
+    p.add_argument('--state-dir', help='Explicit Flatpak application state directory, if nonstandard')
+    p.add_argument('files', nargs='*', help='Documents to open during the migration trial')
+    p.set_defaults(func=cmd_migrate)
     p = sub.add_parser("recover-flatpak", help="Restore retained deployment matching the committed prefix generation")
     p.add_argument("directory", help="Recovery directory printed by cage update")
     p.set_defaults(func=cmd_recover_flatpak)
@@ -828,6 +858,13 @@ def build_parser():
     # sources
     p = sub.add_parser("sources", help="Verify recipe source files and hashes")
     ssub = p.add_subparsers(dest="sources_command", required=True)
+
+    sp = ssub.add_parser('prepare', help='Acquire and safely stage a declared hash-pinned portable archive')
+    sp.add_argument('manifest')
+    sp.add_argument('--workspace')
+    sp.add_argument('--source-id', help='Choose a source when the recipe declares more than one')
+    sp.add_argument('--stage-name', help='Staging name; defaults to application name-version')
+    sp.set_defaults(func=cmd_sources_prepare)
 
     sp = ssub.add_parser("verify", help="Verify local recipe sources and sha256 values")
     sp.add_argument("manifest", help="Path to Cage manifest")
@@ -980,7 +1017,7 @@ def main(argv=None):
         # positional after optional arguments in a subparser.  Cage supports
         # Python 3.11, so recover only non-option run-file arguments while
         # continuing to reject misspelled or unsupported flags.
-        if args.command in {"run", "update", "rollback"} and all(not item.startswith("-") for item in unknown):
+        if args.command in {"run", "update", "rollback", "migrate"} and all(not item.startswith("-") for item in unknown):
             args.files.extend(unknown)
         else:
             parser.error(f"unrecognized arguments: {' '.join(unknown)}")
