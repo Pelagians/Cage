@@ -729,7 +729,7 @@ def execute_inside_container(
         manifest,
         bundle_mount="/opt/cage",
         workspace_mount="/workspace",
-        settle_prefix=manifest.runtime.provider == "wine-arm64ec",
+        settle_prefix=manifest.runtime.provider == "wine-arm64ec" or bool(managed_wine),
     )
     script_path.parent.mkdir(parents=True, exist_ok=True)
     script_path.write_text(script, encoding="utf-8")
@@ -812,6 +812,9 @@ def execute_inside_container(
         if result.returncode == 0 and manifest.runtime.provider == "wine-arm64ec":
             from runtime.arm64ec import seal_native_bundle
             seal_native_bundle(bundle_path, manifest, img)
+        elif result.returncode == 0 and managed_wine:
+            from artifact.desktop import normalize_seed
+            normalize_seed(bundle_path / 'prefix')
         log_lines.append(result.stdout or "")
         if result.stderr:
             log_lines.append("--- stderr ---")
