@@ -164,6 +164,9 @@ def build_run_plan(
                   + shlex.quote(encoded_plan) + ' ' + shlex.quote(encoded_script) + '\n')
         lifecycle_mounts.append(_volume_mount(Path(__file__).parent, "/opt/cage-lifecycle",
                                             engine=selected_engine, read_only=True))
+    if mode == 'desktop' and session_contract != 'cage.native-wine/v1' and not lifecycle_mounts:
+        lifecycle_mounts.append(_volume_mount(Path(__file__).parent, '/opt/cage-lifecycle',
+                                            engine=selected_engine, read_only=True))
     wine_graphics = str(graphics_contract.get("wineGraphics") or "xwayland")
     if mode == "headless" and wine_graphics == "wayland":
         raise RunError("native Wine Wayland requires graphics selkies")
@@ -203,6 +206,7 @@ def build_run_plan(
         container_name=container_name,
         network=selected_network,
         file_mounts=mounts,
+        desktop_init=mode == 'desktop' and session_contract != 'cage.native-wine/v1',
     )
 
     return {
@@ -438,6 +442,7 @@ def _container_argv(
     container_name: str | None,
     network: str,
     file_mounts: list[str] | None = None,
+    desktop_init: bool = False,
 ) -> list[str]:
     argv = [engine, "run", "--rm"]
     if engine == "podman":
@@ -464,9 +469,13 @@ def _container_argv(
             argv.extend(["-v", f"{Path(authority).resolve()}:/tmp/cage-xauthority:ro"])
         if engine == "podman":
             argv.extend(["--security-opt", "label=disable"])
-    # Every catalog image inherits Pelagian Shell /init. Launch scripts are
-    # transported through the supervised Wayland session in every mode.
+    if desktop_init:
+        argv.extend(['--entrypoint', '/usr/bin/python3'])
+    # Hosted and headless universal sessions keep their inherited /init.
+    # Explicit X11 tasks reuse the same native startup as the ARM carrier.
     argv.append(image)
+    if desktop_init:
+        argv.extend(['-I', '/opt/cage-lifecycle/container_init.py'])
     return argv
 
 

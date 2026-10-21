@@ -34,6 +34,13 @@ python -m cage export appimage dist/apps/sumatrapdf-portable-3.6 \
 python -m cage build dist/onboarding-recipes/wine/3.6.json --engine podman --output dist/containers
 ```
 
+Managed builtin Wine recipes can explicitly select `--graphics desktop` for a
+shared X11 session. Both architectures reuse the native task startup, which
+runs Wine as the caller's non-root UID and uses private persistent home/state
+directories. The universal x86 image retains `/init` for ordinary hosted and
+headless sessions; direct X11 is selected only explicitly. As with the existing
+ARM path, sharing an X11 display is a deliberate desktop trust grant.
+
 For another portable application:
 
 1. Declare the publisher archive URL, SHA-256, redistribution policy and local
@@ -93,9 +100,10 @@ and keeps its receipt, icon and desktop file. Unknown or changed integration
 files cause refusal. Direct, previously unintegrated old AppImages can also be
 adopted; the explicit migration installs the managed baseline's menu entry.
 
-After migration, use the existing update and rollback commands. Rollback carries
-the **latest** qualified user settings/documents into the older application seed;
-it does not restore a stale document snapshot. Legacy snapshots are protected
+After migration, use the existing update and rollback commands. Rollback restores
+the previous generation's settings and carries the **latest** qualified documents
+into that generation. Updated settings remain in the retained newer prefix;
+rollback does not restore a stale document snapshot. Legacy snapshots are protected
 recovery data, never build cleanup candidates. `cage storage` reports them.
 
 ### Recovery and limits

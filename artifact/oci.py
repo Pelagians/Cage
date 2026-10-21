@@ -59,8 +59,11 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str =
     if native:
         from runtime.arm64ec import native_launch_script
         native_launch_script(bundle, [])  # Verify the same seed/runtime seal.
-    if graphics not in ({'headless', 'desktop'} if native else {'headless', 'selkies'}):
-        raise OCIExportError("graphics must be headless or selkies")
+    managed_desktop = (manifest.get('desktop', {}).get('updates') and runtime.get('launcher') == 'wine'
+                       and not runtime.get('runnerUrl') and 'desktop' in graph.get('graphics', {}).get('supportedModes', []))
+    allowed = {'headless', 'desktop'} if native else {'headless', 'selkies'} | ({'desktop'} if managed_desktop else set())
+    if graphics not in allowed:
+        raise OCIExportError('graphics mode is not qualified by this container recipe')
     if graphics == 'selkies' and runtime.get('sessionContract') != 'cage.selkies-wayland/v1':
         raise OCIExportError(
             'runner runtime is not qualified for Cage Selkies/Wayland application export'
@@ -103,6 +106,8 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str =
 
     if managed_state:
         containerfile += 'COPY lifecycle /opt/cage-lifecycle\n'
+        if graphics == 'desktop':
+            containerfile += 'ENTRYPOINT ["/usr/bin/python3", "-I", "/opt/cage-lifecycle/container_init.py"]\n'
 
     return {
         **({'managedState': managed_state} if managed_state else {}),
@@ -173,6 +178,7 @@ def prepare_oci_build_context(
         lifecycle.mkdir()
         shutil.copyfile(desktop_launch.__file__, lifecycle / 'desktop_launch.py')
         shutil.copyfile(container_state.__file__, lifecycle / 'container_state.py')
+        shutil.copyfile(Path(container_state.__file__).with_name('container_init.py'), lifecycle / 'container_init.py')
         _write_json(lifecycle / 'plan.json', plan['managedState'])
         legacy = _launcher_script()
         # Preserve all existing image launch setup, skip its first-use copy only.
@@ -699,7 +705,7 @@ if [ ! -d "$WINEPREFIX/drive_c" ]; then
   cp -a "$CAGE_BUNDLE/prefix" "$WINEPREFIX"
 fi
 
-if [ "${{CAGE_GRAPHICS:-headless}}" = selkies ]; then
+if [ "${{CAGE_GRAPHICS:-headless}}" = selkies ] || [ "${{CAGE_GRAPHICS:-headless}}" = desktop ]; then
   /usr/local/libexec/cage-select-wine-graphics
 fi
 

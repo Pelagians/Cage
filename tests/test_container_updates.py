@@ -62,6 +62,20 @@ class ContainerUpdateTests(unittest.TestCase):
             self.assertIn('cage-select-wine-graphics', legacy)
             self.assertTrue((context / 'lifecycle/desktop_launch.py').is_file())
 
+    def test_explicit_managed_desktop_reuses_native_startup_without_changing_hosted_defaults(self):
+        with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {'DISPLAY': ':91'}):
+            bundle = self.bundle(td)
+            plan = build_run_plan(bundle, engine='podman', graphics='desktop', state_dir=Path(td) / 'state')
+            argv = plan['container']['argv']
+            self.assertIn('--entrypoint', argv)
+            self.assertEqual(argv[-2:], ['-I', '/opt/cage-lifecycle/container_init.py'])
+            hosted = build_run_plan(bundle, engine='podman', graphics='selkies', network='bridge')
+            self.assertNotIn('--entrypoint', hosted['container']['argv'])
+            exported = create_oci_export_plan(bundle, tag='example/desktop', graphics='desktop')
+            self.assertIn('ENTRYPOINT ["/usr/bin/python3", "-I", "/opt/cage-lifecycle/container_init.py"]', exported['containerfile']['content'])
+            context = prepare_oci_build_context(bundle, exported, Path(td) / 'context')
+            self.assertTrue((context / 'lifecycle/container_init.py').is_file())
+
     def test_mutable_carriers_external_runners_and_unqualified_environment_fail_closed(self):
         with tempfile.TemporaryDirectory() as td:
             bundle = self.bundle(td)

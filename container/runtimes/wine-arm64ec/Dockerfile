@@ -9,7 +9,7 @@ COPY runtime/__init__.py runtime/arm64ec.py runtime/desktop_launch.py runtime/wi
 RUN --mount=type=cache,target=/tmp/cage-arm-rpms PYTHONPATH=/usr/lib/cage-runtime python3 -m runtime.arm64ec --container-install && \
     PYTHONPATH=/usr/lib/cage-runtime python3 -c 'from runtime.arm64ec import runtime_target; from runtime.desktop_launch import digest_json; import os; assert digest_json(runtime_target()) == os.environ["RUNTIME_LOCK_SHA256"]' && \
     wine --version && dnf clean all
-COPY container/runtimes/wine-arm64ec/entrypoint.py /usr/local/bin/cage-native-init
+COPY runtime/container_init.py /usr/local/bin/cage-native-init
 COPY container/common/wine-env.sh /opt/cage/common/wine-env.sh
 RUN chmod 0755 /usr/local/bin/cage-native-init && \
     mkdir -p /usr/local/libexec && \

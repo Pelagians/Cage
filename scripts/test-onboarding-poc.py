@@ -151,7 +151,12 @@ def main():
         handles.append(handle)
         gui.wait_for(lambda: document.name in gui.command('xdotool', 'getwindowname', handle), 'requested document loaded')
         gui.focus_editor(handle)
-        if preference:workflow.change_preference(gui)
+        if preference:
+            workflow.change_preference(gui)
+            gui.wait_for(lambda: gui.command('xdotool', 'getactivewindow') == handle,
+                         'application focus after preference command')
+            gui.focus_editor(handle)
+            time.sleep(.5)
         # Unicode input is opened through argv. Keep typed Save As names ASCII:
         # Xvfb's synthetic keyboard cannot reliably deliver accented key events.
         saved = documents / (label + '-saved' + workflow.extension)

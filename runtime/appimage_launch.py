@@ -227,7 +227,11 @@ def recover_migration(root, plan):
             raise DesktopError('retained migration baseline changed; all files retained')
         record = _read_generations(state)
         active = _generation(record, record['active'])['identity']
-        if active not in (journal['identity'], journal['targetIdentity']):
+        initial_state = len(record['generations']) == 1 and record['active'] == 'prefix'
+        adopted_state = (len(record['generations']) == 2 and record.get('previous') == 'prefix'
+                         and record['active'] != 'prefix')
+        if (active not in (journal['identity'], journal['targetIdentity'])
+                or not (initial_state or adopted_state)):
             raise DesktopError('state belongs to a later generation; migration recovery refused')
         if active == journal['identity'] and journal['hadIntegration']:
             saved = _real_path(backup, 'integration')

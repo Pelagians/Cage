@@ -220,6 +220,19 @@ class AppImageMigrationTests(unittest.TestCase):
         self.assertEqual((self.installation / 'installation.json').read_bytes(), self.original_receipt)
         self.assertEqual(self.active(), self.previous)
 
+    def test_old_migration_recovery_cannot_reset_integration_after_a_later_rollback(self):
+        self.assertEqual(self.migrate(), 0)
+        record = _read_generations(self.state)
+        previous = record['active']; later = 'generations/' + 'f' * 32
+        shutil.copytree(self.state / previous, self.state / later, symlinks=True)
+        record['generations'].append({**record['generations'][-1], 'prefix': later, 'action': 'rollback'})
+        record.update(active=later, previous=previous)
+        (self.state / 'state.json').write_text(json.dumps(record))
+        before = (self.installation / 'installation.json').read_bytes()
+        with self.assertRaisesRegex(integration.DesktopError, 'later generation'):
+            integration.recover_migration(self.appdir, self.plan)
+        self.assertEqual((self.installation / 'installation.json').read_bytes(), before)
+
 
 class SourcePreparationTests(unittest.TestCase):
     def test_repeated_preparation_verifies_bytes_and_refuses_changed_staging(self):

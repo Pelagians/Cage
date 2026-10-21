@@ -1,9 +1,10 @@
 #!/usr/bin/python3
-"""Native ARM container lifecycle; deliberately no unqualified Selkies claim."""
+"""Shared native Wine task startup; hosted x86 sessions retain their own /init."""
 import base64
 import os
 from pathlib import Path
 import pwd
+import platform
 import select
 import signal
 import subprocess
@@ -11,20 +12,28 @@ import sys
 
 
 def main():
-    if os.sysconf("SC_PAGE_SIZE") not in {4096, 16384}:
+    if platform.machine() == 'aarch64' and os.sysconf("SC_PAGE_SIZE") not in {4096, 16384}:
         raise SystemExit("ARM64EC runtime qualifies 4 KB and 16 KB kernels only")
     mode = os.environ.get("CAGE_SESSION_MODE", "headless")
     if mode not in {"build", "headless", "desktop"}:
-        raise SystemExit("ARM64EC supports build, headless and desktop X11; Selkies is not qualified")
+        raise SystemExit("native Wine tasks support build, headless and desktop X11")
     uid, gid = int(os.environ.get("PUID", "1000")), int(os.environ.get("PGID", "1000"))
     if uid <= 0 or gid <= 0:
-        raise SystemExit("ARM Wine tasks require non-root PUID/PGID")
+        raise SystemExit("native Wine tasks require non-root PUID/PGID")
     if os.geteuid() == 0:
         try:
             account = pwd.getpwuid(uid)
         except KeyError:
-            subprocess.run(["groupadd", "-o", "-g", str(gid), "abc"], check=True)
-            subprocess.run(["useradd", "-o", "-u", str(uid), "-g", str(gid), "-m", "abc"], check=True)
+            try:
+                pwd.getpwnam('abc')
+            except KeyError:
+                subprocess.run(["groupadd", "-o", "-g", str(gid), "abc"], check=True)
+                subprocess.run(["useradd", "-o", "-u", str(uid), "-g", str(gid), "-m", "abc"], check=True)
+            else:
+                # Universal x86 images already have abc; match the explicit
+                # caller IDs without starting the hosted desktop services.
+                subprocess.run(['groupmod', '-o', '-g', str(gid), 'abc'], check=True)
+                subprocess.run(['usermod', '-o', '-u', str(uid), '-g', str(gid), 'abc'], check=True)
             account = pwd.getpwuid(uid)
         for directory in ("/var/lib/cage/state", "/var/lib/cage/state/home", "/exports"):
             path = Path(directory)
