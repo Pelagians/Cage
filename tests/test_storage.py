@@ -60,6 +60,21 @@ class StorageTests(unittest.TestCase):
     def contents(self, root):
         return {str(p.relative_to(root)): p.read_bytes() for p in root.rglob('*') if p.is_file() and not p.is_symlink()}
 
+    def test_legacy_snapshots_and_interrupted_migration_remain_protected(self):
+        root = self.state()
+        backup = root / 'legacy-snapshots/original'
+        backup.mkdir(parents=True)
+        (backup / 'snapshot.json').write_text('{"schemaVersion":"cage.legacy-snapshot/v1"}')
+        (backup / 'saved-work.txt').write_text('original work')
+        (root / 'appimage-migration.json').write_text('{"status":"prepared"}')
+        before = self.contents(root)
+        info = storage.inspect_state(root)
+        self.assertTrue(info['legacySnapshots'][0]['protected'])
+        self.assertTrue(info['legacySnapshots'][0]['complete'])
+        self.assertIn('--cage-recover-migration', info['recovery'])
+        self.assertFalse(storage.prune_context(root, min_age_hours=0, apply=True)['eligible'])
+        self.assertEqual(self.contents(root), before)
+
     def test_preview_then_prune_preserves_package_bundle_and_provenance(self):
         context, package, bundle = self.context()
         before = self.contents(self.root)

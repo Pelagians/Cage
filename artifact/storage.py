@@ -398,9 +398,9 @@ def inspect_state(path):
             transaction = read_json(path / 'transaction.json')
             committed = record and transaction.get('candidate') == record['active']
             if transaction.get('status') == 'preparing' and not committed:
-                result['recovery'] = 'interrupted trial retained; state.json selects the committed generation'
+                result.setdefault('recovery', 'interrupted trial retained; state.json selects the committed generation')
         if result['retainedCandidates']:
-            result['recovery'] = 'uncommitted candidate data retained; inspect saved work before recovery'
+            result.setdefault('recovery', 'uncommitted candidate data retained; inspect saved work before recovery')
     except (OSError, ValueError, TypeError, KeyError, AttributeError, DesktopError, StorageError) as exc:
         result['error'] = str(exc)
     return result

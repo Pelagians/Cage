@@ -256,6 +256,10 @@ def cmd_build(args):
     binding = resolve_manifest_runtime(manifest)
     base_image = getattr(args, "runtime_image", None) or binding.oci_image or get_image_ref(
         manifest.runtime.provider, manifest.runtime.version)
+    if (manifest.desktop.get('updates') and manifest.runtime.provider in {'wine', 'staging'}
+            and not manifest.runtime.runner and not args.dry_run and not args.runtime_image):
+        from builder.executor import _find_engine, _resolve_image_ref
+        base_image = _resolve_image_ref(manifest, _find_engine(args.engine)) or base_image
     if manifest.runtime.provider == "wine-arm64ec" and not args.dry_run and not args.runtime_image:
         from container.manager import get_image_available
         if get_image_available(manifest.runtime.provider, manifest.runtime.version,

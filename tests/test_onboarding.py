@@ -202,6 +202,24 @@ class AppImageMigrationTests(unittest.TestCase):
         self.assertFalse(list((self.state / 'legacy-snapshots').glob('*/integration')))
         self.assertEqual(external.read_text(), 'private')
 
+    def test_unintegrated_legacy_package_can_explicitly_adopt_a_menu_entry(self):
+        integration.integrate(self.appdir, self.plan, remove=True)
+        self.assertEqual(self.migrate(), 0)
+        self.assertEqual((self.installation / 'application.AppImage').read_bytes(), self.modern.read_bytes())
+        journal = json.loads((self.state / 'appimage-migration.json').read_text())
+        self.assertFalse(journal['hadIntegration'])
+
+    def test_package_change_during_retention_refuses_before_integration_changes(self):
+        real = integration.copy_file
+        def changed(source, destination):
+            result = real(source, destination)
+            if Path(destination).name == 'baseline.AppImage':self.modern.write_bytes(b'changed package')
+            return result
+        with patch.object(integration, 'copy_file', side_effect=changed):
+            with self.assertRaisesRegex(integration.DesktopError, 'changed while copying'):self.migrate()
+        self.assertEqual((self.installation / 'installation.json').read_bytes(), self.original_receipt)
+        self.assertEqual(self.active(), self.previous)
+
 
 class SourcePreparationTests(unittest.TestCase):
     def test_repeated_preparation_verifies_bytes_and_refuses_changed_staging(self):

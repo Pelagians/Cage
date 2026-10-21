@@ -325,12 +325,16 @@ def migrate(root, metadata, plan, previous, files):
         copy_file(previous, backup / 'previous.AppImage')
         copy_file(receipt, backup / 'previous.AppImage.json')
         source = Path(os.environ['APPIMAGE'])
+        baseline_hash = file_hash(source)
         copy_file(source, backup / 'baseline.AppImage')
+        if (file_hash(backup / 'previous.AppImage') != exported['sha256']
+                or file_hash(backup / 'baseline.AppImage') != baseline_hash or file_hash(source) != baseline_hash):
+            raise DesktopError('migration package changed while copying; all data retained')
         _flush_tree(backup)
         journal = {'schemaVersion': 'cage.appimage-migration/v1', 'status': 'prepared',
                    'snapshot': str(backup.relative_to(state)), 'identity': plan_identity(old),
                    'targetIdentity': plan_identity(plan), 'hadIntegration': had,
-                   'previousSha256': exported['sha256'], 'baselineSha256': file_hash(source)}
+                   'previousSha256': exported['sha256'], 'baselineSha256': baseline_hash}
         _write_state_record(pending, journal)
     try:
         with lifecycle_lock(state):

@@ -71,6 +71,15 @@ def main():
         subprocess.run(['flatpak', 'install', '--user', '--noninteractive', '--reinstall', '-y', '--no-related', '--no-deps', '--bundle', str(first_package)], env=env, check=True)
     elif kind == 'appimage':
         installed = json.loads(subprocess.check_output([str(first_package), '--cage-install'], env=env, text=True))
+        if os.environ.get('CAGE_TEST_SHARE_WINDOWS'):
+            # Genuine historical integration used an ordinary package copy.
+            # On a local Btrfs proof, ask the kernel to share only equal bytes.
+            target = Path(installed['installed'])
+            with first_package.open('rb') as a, target.open('r+b') as b:
+                data = bytearray(struct.pack('=QQHHI', 0, target.stat().st_size, 1, 0, 0)
+                                 + struct.pack('=qQQiI', b.fileno(), 0, 0, 0, 0))
+                fcntl.ioctl(a.fileno(), 0xc0189436, data, True)
+                assert struct.unpack_from('=i', data, 48)[0] == 0
 
     def prefix():
         record = _read_generations(state); return state / record['active']
