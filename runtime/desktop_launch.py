@@ -549,6 +549,16 @@ def prepare_generation(seed, inventory, root, identity, plan, action):
         initialize_state(seed, inventory, root, identity)
         record = _read_generations(root)
     current = _generation(record, record["active"])
+    if action == 'migrate':
+        # v0 markers do not record application versions. Bind explicit adoption
+        # to the same pinned executable instead of guessing from a directory.
+        previous_exe = windows_path(_real_path(root, current['prefix']), plan['launch']['entrypoint'])
+        baseline_exe = windows_path(seed, plan['launch']['entrypoint'])
+        if not previous_exe.is_file() or not baseline_exe.is_file():
+            raise DesktopError('migration requires the same pinned application executable baseline')
+        with previous_exe.open('rb') as previous, baseline_exe.open('rb') as baseline:
+            if hashlib.file_digest(previous, 'sha256').digest() != hashlib.file_digest(baseline, 'sha256').digest():
+                raise DesktopError('migration requires the same pinned application executable baseline; adopt it before updating')
     if action == 'migrate' or (action == 'update' and current['identity'].get('schemaVersion') == 'cage.desktop-state/v0'
                               and identity.get('schemaVersion') == 'cage.desktop-state/v1'):
         if not policy:

@@ -58,6 +58,16 @@ class LegacyMigrationTests(unittest.TestCase):
         self.assertEqual(launch(self.baseline(), ['--cage-update']), 0)
         self.assertTrue((self.state / 'legacy-migration.json').is_file())
 
+    def test_explicit_adoption_requires_the_pinned_baseline_before_a_version_update(self):
+        plan = json.loads(self.new.read_text()); plan['state'] = {'managerVersion': 1}
+        self.new.write_text(json.dumps(plan))
+        before = inventory_tree(self.previous, state_snapshot=True)
+        with self.assertRaisesRegex(DesktopError, 'same pinned application executable'):
+            launch(self.new, ['--cage-migrate'])
+        self.assertEqual(inventory_tree(self.previous, state_snapshot=True), before)
+        self.assertFalse((self.state / 'legacy-snapshots').exists())
+        self.assertFalse((self.state / 'generations').exists())
+
     def test_low_space_and_runtime_change_leave_original_pointer_and_bytes(self):
         baseline = self.baseline()
         before = inventory_tree(self.previous, state_snapshot=True)
