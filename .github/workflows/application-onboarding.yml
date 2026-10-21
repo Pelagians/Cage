@@ -51,6 +51,10 @@ jobs:
         with:
           path: .cage/flatpak
           key: onboarding-${{ matrix.arch }}-${{ hashFiles('runtime/desktop-wine-11.0.json', 'runtime/wine-arm64ec-11.20-fex-2610.json') }}
+          restore-keys: |
+            onboarding-${{ matrix.arch }}-
+            update-proof-${{ matrix.arch }}-
+            appimage-native-${{ matrix.arch }}-
       - name: Prepare pinned application sources
         run: python scripts/prepare-sumatrapdf-poc.py --runtime ${{ matrix.provider }}
       - name: Build shared recipes and qualify historical Flatpak migration
