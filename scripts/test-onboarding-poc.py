@@ -62,6 +62,7 @@ def main():
         documents = evidence / 'documents'
     else:
         state = evidence / 'state' / app; documents = evidence / 'documents'
+        if kind == 'oci':state.parent.mkdir(parents=True)
     documents.mkdir(parents=True)
     document = documents / ('Original café' + workflow.extension); workflow.fixture(document)
     expected = document.read_bytes(); original = document; original_hash = sha(original)
