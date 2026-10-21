@@ -123,7 +123,7 @@ def cmd_sources_audit(args):
 
 def cmd_sources_prepare(args):
     from core.sources import prepare_portable_source
-    result = prepare_portable_source(load_manifest(args.manifest), workspace=args.workspace,
+    result = prepare_portable_source(load_manifest(Path(args.manifest)), workspace=args.workspace,
                                      source_id=args.source_id, stage_name=args.stage_name)
     print(json.dumps(result, indent=2))
     return 0

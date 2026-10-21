@@ -1,5 +1,6 @@
 """Legacy adoption keeps source bytes, failed work and exact package recovery."""
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -245,6 +246,25 @@ class AppImageMigrationTests(unittest.TestCase):
 
 
 class SourcePreparationTests(unittest.TestCase):
+    def test_public_cli_prepares_and_rechecks_the_declared_archive(self):
+        from cage.cli import main
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); (root / 'sources').mkdir()
+            archive = root / 'sources/app.zip'
+            with zipfile.ZipFile(archive, 'w') as z:z.writestr('app.exe', b'pinned CLI application')
+            recipe = root / 'app.json'
+            recipe.write_text(json.dumps({'schemaVersion': 'cage.app/v0', 'name': 'portable-cli', 'version': '1',
+                'runtime': {'provider': 'wine', 'version': '11.0'},
+                'sources': [{'id': 'app', 'type': 'archive', 'policy': 'redistributable', 'path': 'sources/app.zip',
+                             'sha256': hashlib.sha256(archive.read_bytes()).hexdigest()}]}))
+            for _ in range(2):
+                output = io.StringIO()
+                with patch('sys.stdout', output):
+                    self.assertEqual(main(['sources', 'prepare', str(recipe), '--workspace', str(root)]), 0)
+                result = json.loads(output.getvalue())
+                self.assertTrue(result['prepared'])
+                self.assertEqual((Path(result['stagedPath']) / 'app.exe').read_bytes(), b'pinned CLI application')
+
     def test_repeated_preparation_verifies_bytes_and_refuses_changed_staging(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td); (root / 'sources').mkdir()
