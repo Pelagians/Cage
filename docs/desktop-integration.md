@@ -77,10 +77,53 @@ The update CI matrix runs on native x86_64 and aarch64. It uses a private test
 state, real exported packages and a real X11 desktop. The extended proof checks
 MIME metadata, desktop launches, Flatpak file forwarding of a read-only Unicode
 filename outside the permanent grant, Save As to a new host file, new-file
-creation, 192-DPI selection and settings/documents through update and rollback.
+creation, selected writable-file save and relaunch, 192-DPI selection and
+settings/documents through update and rollback.
 Flatpak's test desktop file retains the exported forwarding arguments but uses a
 wrapper to set private state inside the sandbox; normal user data is untouched.
 Screenshots and result JSON are retained with update qualification evidence.
 
-Implementation validation is in progress. Passing metadata/unit tests alone
-will not be recorded as real desktop qualification.
+Qualification completed for the pinned portable Notepad++ 8.8.8 → 8.8.9 → 8.8.8
+profile at source revision `dce3885bf839157573e9a0b8430ecdacac0031a1`:
+
+| Environment | Flatpak | AppImage | Container / OCI regression |
+| --- | --- | --- | --- |
+| Native x86_64 CI, 4 KiB pages | Passed | Passed | Existing contract suite |
+| Native ARM64 CI, 4 KiB pages | Passed | Passed | Passed |
+| Asahi Linux, Apple M1, 16 KiB pages | Passed | Passed, including FUSE execution | Separate existing qualification |
+
+[The complete CI run](https://github.com/Pelagians/Cage/actions/runs/39516599623)
+retains result JSON, logs and screenshots. Each desktop proof uses eight real GUI
+sessions: baseline, update, relaunch, rollback, relaunch, new-file creation and
+two selected writable-file sessions. It verifies executable hashes, saved file
+contents, retained editor zoom, latest prefix documents and all three generation
+records. The Flatpak proof also checks that an unselected sibling outside the
+permanent grant remains inaccessible. Build-staging cleanup retains verified
+packages and provenance before the consumer tests run.
+
+The local suite passed 520 tests and 192 subtests, covering existing export,
+container, CFW-consumer, update and storage contracts. The Asahi proofs used a
+private X11 desktop at 192 DPI and private application state; the user's normal
+installations, settings, documents and rollback data were not replaced. Both
+exports contained the same 88 font files, byte-identical fontconfig and the same
+desktop launcher. Find-dialog screenshots were visually checked for matching
+font and control metrics; Courier New fallback was checked for monospace text.
+Wine still supplies its classic controls, rather than the host's GTK theme.
+
+Local evidence is retained in
+`.cage/desktop-integration-local-verification.json`,
+`.cage/desktop-integration-ci-verification.json` and
+`dist/appimage-evidence/asahi-desktop-{flatpak-final-v5,appimage-final}/`.
+Qualified ARM64 packages are retained under
+`dist/desktop-integration-packages/{8.8.8,8.8.9}.flatpak` and
+`dist/desktop-integration-final/{8.8.8,8.8.9}.AppImage`, with export and relocation
+receipts. These are local unsigned proof packages, not published releases.
+
+Qualification is specific to this application profile and these environments.
+It does not establish compatibility for arbitrary Windows applications, native
+Wine Wayland or dynamic mixed-monitor scaling. The existing exclusive session
+lock still applies: opening another file while a session is running does not
+implement handoff into that Windows process. New exports carry the desktop and
+display fixes; an already installed older package is not silently modified.
+Legacy prefixes and old integration metadata need their own migration
+qualification before replacing a user's existing baseline.
