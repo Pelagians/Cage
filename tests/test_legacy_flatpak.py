@@ -96,5 +96,26 @@ class LegacyFlatpakTests(unittest.TestCase):
         with self.assertRaisesRegex(DesktopError, 'mismatch'):self.migrate()
         self.assertEqual(self.installs, [])
 
+    def test_own_metadata_probe_is_not_mistaken_for_a_running_application(self):
+        original = updates._command; probed = False
+        def command(arguments, environment, **options):
+            nonlocal probed
+            if arguments[0] == 'ps' and probed:return self.old[0]['plan']['desktop']['id']
+            result = original(arguments, environment, **options)
+            if '--command=cat' in arguments:probed = True
+            return result
+        with patch('artifact.updates._command', side_effect=command):
+            self.assertTrue(self.migrate()['migrated'])
+
+    def test_real_running_application_is_refused_before_the_metadata_probe(self):
+        original = updates._command
+        def command(arguments, environment, **options):
+            if arguments[0] == 'ps':return self.old[0]['plan']['desktop']['id']
+            return original(arguments, environment, **options)
+        with patch('artifact.updates._command', side_effect=command):
+            with self.assertRaisesRegex(DesktopError, 'close the installed application'):self.migrate()
+        self.assertFalse(any('--command=cat' in args for args in self.commands))
+        self.assertEqual(self.installs, [])
+
 
 if __name__ == '__main__':unittest.main()

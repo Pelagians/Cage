@@ -199,6 +199,9 @@ def main():
             except Exception:return False
         gui.wait_for(idle, 'Wine stopped and state committed', seconds=60)
         gui.wait_for(lambda: not subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', workflow.window_pattern], capture_output=True).stdout, 'GUI closed')
+        if kind == 'flatpak':
+            gui.wait_for(lambda: app not in subprocess.check_output(['flatpak', 'ps', '--columns=application'],
+                         env=env, text=True).splitlines(), 'Flatpak sandbox stopped', seconds=45)
         document = saved
         record = _read_generations(state); active = _generation(record, record['active'])
         sessions.append({'phase': label, 'identity': active['identity'], 'prefix': record['active'], 'savedSha256': sha(saved)})

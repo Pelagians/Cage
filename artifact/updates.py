@@ -159,12 +159,14 @@ def migrate_flatpak(package, previous_package, *, files=(), cache=None, state_di
         journal_path = _real_path(directory, 'transaction.json')
         if journal_path.exists() and json.loads(journal_path.read_text()).get('status') == 'prepared':
             raise DesktopError('unfinished package transaction; run cage recover-flatpak first')
+        if app in _command(['ps', '--columns=application'], environment).splitlines():
+            raise DesktopError('close the installed application before migration')
+        # A short-lived metadata probe can remain in `flatpak ps` briefly
+        # after its command exits. Check real running instances before it.
         installed = json.loads(_command(['run', '--user', '--command=cat', _ref(candidate),
                                         '/app/share/cage/' + app + '/desktop.json'], environment))
         if installed != previous['plan']:
             raise DesktopError('installed package does not match the supplied legacy export; no deployment changed')
-        if app in _command(['ps', '--columns=application'], environment).splitlines():
-            raise DesktopError('close the installed application before migration')
         with lifecycle_lock(root):
             record = _read_generations(root)
             if not record or _generation(record, record['active'])['identity'] != previous['identity']:
