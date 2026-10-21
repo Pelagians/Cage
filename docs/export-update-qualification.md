@@ -3,6 +3,9 @@
 This report separates source checks from packaged GUI behavior. The update
 workflow is limited to the qualified portable Notepad++ profile; it does not
 certify arbitrary application, runtime, registry, CFW or Proton migrations.
+This report records that earlier qualification snapshot. The second portable
+application and explicit same-version legacy adoption are described in
+[application onboarding](application-onboarding.md).
 
 ## Source validation
 

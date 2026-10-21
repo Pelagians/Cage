@@ -110,6 +110,7 @@ def main():
 
     def window():return gui.command('xdotool', 'search', '--onlyvisible', '--name', workflow.window_pattern).splitlines()[-1]
 
+    shared_windows = set()
     def share_windows():
         # Optional local Btrfs test-space optimization, never enabled by CI or
         # production launch. Kernel equality checks preserve every private file.
@@ -118,6 +119,7 @@ def main():
         with lifecycle_lock(state):
             before = (state / 'state.json').read_bytes()
             for entry in _read_generations(state)['generations']:
+                if entry['prefix'] in shared_windows:continue
                 windows = state / entry['prefix'] / 'drive_c/windows'
                 for target in windows.rglob('*'):
                     src = Path(source) / target.relative_to(windows)
@@ -128,6 +130,7 @@ def main():
                         data = bytearray(struct.pack('=QQHHI', 0, size, 1, 0, 0) + struct.pack('=qQQiI', b.fileno(), 0, 0, 0, 0))
                         fcntl.ioctl(a.fileno(), 0xc0189436, data, True)
                         if struct.unpack_from('=i', data, 48)[0] not in (0, 1):raise RuntimeError('extent verification refused')
+                shared_windows.add(entry['prefix'])
             assert before == (state / 'state.json').read_bytes()
 
     processes = []; handles = []; logs = []; sessions = []

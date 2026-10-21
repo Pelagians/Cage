@@ -1,6 +1,7 @@
 """Small application-specific GUI actions; package/state assertions stay shared."""
 from pathlib import Path
 import re
+import time
 import xml.etree.ElementTree as ET
 
 
@@ -29,7 +30,13 @@ class SumatraPDF:
         path.write_bytes(data)
 
     def change_preference(self, gui):
-        gui.command('xdotool', 'key', '--clearmodifiers', 'F8')
+        # Invoke the real command through its palette. Xvfb/Wine function-key
+        # mappings vary; ordinary text input selects the same application action.
+        gui.command('xdotool', 'key', '--clearmodifiers', 'ctrl+k')
+        time.sleep(.5)
+        gui.command('xdotool', 'type', '--clearmodifiers', '--delay', '50', '>toolbar')
+        time.sleep(.5)
+        gui.command('xdotool', 'key', '--clearmodifiers', 'Return')
 
     def preference(self, prefix):
         settings = prefix / 'drive_c/users/Public/AppData/Local/SumatraPDF/SumatraPDF-settings.txt'
