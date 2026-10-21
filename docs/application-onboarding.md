@@ -128,8 +128,9 @@ recovery data, never build cleanup candidates. `cage storage` reports them.
 It prepares both publisher-pinned releases, builds both existing runtime paths,
 and tests installed Flatpak and AppImage plus persistent containers and OCI.
 Historical launchers/installers from Cage revision `10c295a` are isolated test
-fixtures, not a production downgrade option. ARM native containers also exercise
-their tracked historical state; untracked generic container migration is refused.
+fixtures, not a production downgrade option. ARM native containers and their
+standalone OCI exports also exercise tracked historical state; untracked generic
+container migration is refused.
 
 The shared GUI proof opens a deterministic two-page PDF, toggles the toolbar,
 saves through the real application's Save As dialog, migrates where supported,

@@ -38,8 +38,7 @@ def main():
     args = parser.parse_args(); kind = args.format; workflow = WORKFLOWS[args.application]()
     app = workflow.app_id
     baseline, candidate = (Path(p).resolve() if kind != 'oci' else p for p in (args.baseline, args.candidate))
-    legacy = Path(args.legacy).resolve() if args.legacy else None
-    if kind == 'oci' and legacy:raise ValueError('legacy OCI imports require a separately bound fixture')
+    legacy = (args.legacy if kind == 'oci' else Path(args.legacy).resolve()) if args.legacy else None
     evidence = Path(os.environ['CAGE_TEST_EVIDENCE']).resolve(); evidence.mkdir(parents=True, exist_ok=False)
     env = dict(os.environ); token = 'cage-onboarding-proof-' + uuid.uuid4().hex
     if kind == 'flatpak':
@@ -106,7 +105,8 @@ def main():
                 '--hostname', os.uname().nodename, '--security-opt', 'label=disable', '-e', 'PUID=' + str(os.getuid()), '-e', 'PGID=' + str(os.getgid()),
                 '-e', 'DISPLAY', '-e', 'XAUTHORITY=/tmp/cage-xauthority', '-v', env['XAUTHORITY'] + ':/tmp/cage-xauthority:ro',
                 '-v', '/tmp/.X11-unix:/tmp/.X11-unix:ro', '-v', str(state.parent) + ':/var/lib/cage/state',
-                '-v', str(documents) + ':/exports', str(package), *(['--cage-' + action] if action else []), '--', '/exports/' + document.name]
+                '-v', str(documents) + ':/exports', str(package), *(['--cage-' + action] if action else []),
+                *([] if package == legacy else ['--']), '/exports/' + document.name]
 
     def window():return gui.command('xdotool', 'search', '--onlyvisible', '--name', workflow.window_pattern).splitlines()[-1]
 

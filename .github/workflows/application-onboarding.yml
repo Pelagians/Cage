@@ -154,7 +154,13 @@ jobs:
             python -m cage export oci dist/onboarding-containers/sumatrapdf-portable-$version --engine podman --graphics desktop --tag localhost/cage-onboarding:$version --context-dir .cage/onboarding-oci-$version >dist/onboarding-evidence/oci-export-$version.json
             python scripts/test-storage-poc.py .cage/onboarding-oci-$version >dist/onboarding-evidence/storage-oci-$version.json
           done
-          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/oci" python scripts/test-onboarding-poc.py oci localhost/cage-onboarding:3.6 localhost/cage-onboarding:3.6.1
+          legacy_oci=()
+          if [ '${{ matrix.provider }}' = wine-arm64ec ]; then
+            python -m cage export oci dist/onboarding-containers/legacy --engine podman --graphics desktop --tag localhost/cage-onboarding:legacy --context-dir .cage/onboarding-oci-legacy >dist/onboarding-evidence/oci-export-legacy.json
+            python scripts/test-storage-poc.py .cage/onboarding-oci-legacy >dist/onboarding-evidence/storage-oci-legacy.json
+            legacy_oci=(--legacy localhost/cage-onboarding:legacy)
+          fi
+          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/oci" python scripts/test-onboarding-poc.py oci localhost/cage-onboarding:3.6 localhost/cage-onboarding:3.6.1 "${legacy_oci[@]}"
           SH
       - name: Collect records without following Wine drive links
         if: always()
