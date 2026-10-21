@@ -737,7 +737,7 @@ def build_parser():
     p.add_argument("--network", choices=["none", "bridge", "host"],
                    help="Runtime container network mode; defaults to bundle runtime.network")
     p.add_argument("--entrypoint", help="Named suite entrypoint id to run")
-    p.add_argument("--state-dir", help="Persistent native ARM container state directory")
+    p.add_argument("--state-dir", help="Persistent managed Wine container state directory")
     p.add_argument("--state-action", choices=["update", "rollback", "state-info", "migrate"], help="Explicit generation action; requires --state-dir")
     p.add_argument("--writable-files", action="store_true", help="Allow writes within the parent directories of explicitly passed files")
     p.add_argument("files", nargs="*", help="Host files to pass to the selected application entrypoint")
