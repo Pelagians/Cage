@@ -40,6 +40,10 @@ runs Wine as the caller's non-root UID and uses private persistent home/state
 directories. The universal x86 image retains `/init` for ordinary hosted and
 headless sessions; direct X11 is selected only explicitly. As with the existing
 ARM path, sharing an X11 display is a deliberate desktop trust grant.
+Managed standalone OCI images accept `-- /exports/document.pdf` for explicit
+Linux document paths. Raw Windows arguments without that delimiter retain their
+existing behavior. The Wine `Z:` drive maps only the container namespace and
+the mounts explicitly supplied by the caller.
 
 For another portable application:
 
@@ -81,6 +85,10 @@ cage migrate appimage managed-3.6.AppImage --previous-package legacy-3.6.AppImag
 cage run MANAGED_BASELINE --engine podman --graphics desktop \
   --state-dir EXISTING_STATE_PARENT --state-action migrate
 ```
+
+For explicit adoption, the existing executable must also match the managed
+baseline's pinned executable. This binds tracked v0 container state, whose old
+marker did not record an application version, to the supported portable baseline.
 
 Migration checks Wine is stopped and available space before copying. Under the
 existing lifecycle lock it snapshots the entire old prefix, state record and
@@ -152,6 +160,9 @@ Notepad++ and hosted/container contract tests remain separate regression gates.
 ARM64 CI uses 4 KiB pages; Asahi's 16 KiB host requires its own local proof and is
 reported separately. Success for these two pinned portable apps is not a claim
 that arbitrary Windows applications work.
+
+See [qualification results and limits](application-onboarding-qualification.md)
+for the hardware evidence and native CI matrix.
 
 Upstream references:
 [settings](https://www.sumatrapdfreader.org/docs/How-we-store-settings),
