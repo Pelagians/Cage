@@ -123,6 +123,8 @@ jobs:
             dist/update-evidence/**/*.json
             dist/update-evidence/**/*.log
             dist/update-evidence/**/*.png
+            dist/update-evidence/trusted-*/publisher-public.pem
+            dist/update-evidence/trusted-*/trusted-cache/releases/*/release.json.sig
 
   arm-container-updates:
     name: container-updates (${{ matrix.provider }})
@@ -191,5 +193,7 @@ jobs:
             dist/update-evidence/**/*.json
             dist/update-evidence/**/*.log
             dist/update-evidence/**/*.png
+            dist/update-evidence/trusted-*/publisher-public.pem
+            dist/update-evidence/trusted-*/trusted-cache/releases/*/release.json.sig
             dist/update-containers/*/metadata/*.json
             dist/update-containers/*/logs/*
