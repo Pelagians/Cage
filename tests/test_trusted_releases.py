@@ -39,12 +39,13 @@ class TrustedReleaseTests(unittest.TestCase):
         package.write_bytes(b'\x7fELF pinned application '+version.encode())
         plan={'format':kind,'branch':'stable','seedDigest':hashlib.sha256(version.encode()).hexdigest(),
               'sourceManifestDigest':'e'*64,'application':{'name':'proof','version':version},
-              'target':{'architecture':self.arch,'translation':{'hostPageSizes':[4096,16384]}},'state':{'managerVersion':1},
+              'target':{'architecture':self.arch,'translation':{'hostPageSizes':[4096,16384]}},'state':{'managerVersion':1,'namespace':'cage/appimage'},
               'desktop':{'id':'org.example.Proof','updates':{'profile':'proof/v1','settings':[],'documents':[]}}}
         receipt={'schemaVersion':'cage.'+kind+'-export-result/v0','sha256':r.hash_file(package),'plan':plan,'commit':version*64}
         Path(str(package)+'.json').write_text(json.dumps(receipt))
         proof={'status':'passed','format':kind,'architecture':self.arch,'pageSize':os.sysconf('SC_PAGE_SIZE'),
-               'settingsPreserved':True,'documentsPreserved':True,'rollback':True,'sessions':[{'identity':plan_identity(plan)}]}
+               'settingsPreserved':True,'documentsPreserved':True,'rollback':True,'sessions':[{'identity':plan_identity(plan)}],
+               'sourceArtifactHashes':{'baseline':r.hash_file(package)}}
         evidence=folder/'result.json';evidence.write_text(json.dumps(proof))
         spec={'sequence':sequence,'sourceRevision':'a'*40,'artifacts':[{'format':kind,'path':package.name,'evidence':evidence.name}],**extra}
         spec_path=folder/'spec.json';spec_path.write_text(json.dumps(spec))
@@ -144,6 +145,14 @@ class TrustedReleaseTests(unittest.TestCase):
     def test_unqualified_evidence_cannot_be_signed_or_cached(self):
         self.resign(self.old,lambda m:m['artifacts'][0]['evidence'].update(name=m['artifacts'][0]['package']['name'],**{k:m['artifacts'][0]['package'][k] for k in ('size','sha256')}))
         with self.assertRaises(r.ReleaseError):r.fetch_release(self.old,self.key,'appimage',cache=self.cache)
+
+    def test_successful_evidence_for_different_package_cannot_authorize_release(self):
+        evidence=self.old.parent/'result.json';proof=json.loads(evidence.read_text())
+        proof['sourceArtifactHashes']={'baseline':'f'*64};evidence.write_text(json.dumps(proof))
+        output=self.old.parent/'wrong-package.json'
+        with self.assertRaisesRegex(r.ReleaseError,'exact package'):
+            r.create_release(self.old.parent/'spec.json',self.private,output)
+        self.assertFalse(output.exists())
 
     def test_https_required_and_cross_origin_redirect_refused(self):
         for source in ('http://example.org/release.json','https://user:secret@example.org/release.json','https://example.org/release.json?q=1'):

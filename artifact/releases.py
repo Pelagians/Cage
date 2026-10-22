@@ -62,6 +62,11 @@ def hash_file(path):
     with Path(path).open('rb') as f:return hashlib.file_digest(f, 'sha256').hexdigest()
 
 
+def qualified_identity(proof, identity):
+    records=proof.get('sessions',[]) or proof.get('generations',{}).get('generations',[])
+    return any(item.get('identity')==identity for item in records)
+
+
 def regular(path):
     path = Path(path)
     if path.is_symlink() or not path.is_file():raise ReleaseError('expected a regular file: ' + str(path))
@@ -124,6 +129,7 @@ def verify_manifest(data, signature, key_path):
     manifest = parse(data)
     try:
         if manifest['schemaVersion'] != SCHEMA or manifest['publisherKeySha256'] != fingerprint:raise ValueError()
+        if set(manifest)!={'schemaVersion','publisherKeySha256','sequence','sourceRevision','application','artifacts'}:raise ValueError()
         if type(manifest['sequence']) is not int or not 0 < manifest['sequence'] < 2**53:raise ValueError()
         if not re.fullmatch(r'[a-f0-9]{40}|[a-f0-9]{64}', manifest['sourceRevision']):raise ValueError()
         app = manifest['application']
@@ -136,6 +142,9 @@ def verify_manifest(data, signature, key_path):
             kind, arch = entry['format'], entry['architecture']
             if kind not in FORMATS or arch not in ('x86_64','aarch64') or (kind,arch) in targets:raise ValueError()
             targets.add((kind,arch))
+            expected={'format','architecture','plan','identity','recipeDigest','hostPageSizes','testedPageSizes','package','evidence'}
+            expected|={'imageId'} if kind=='oci' else {'receipt','flatpakCommit'} if kind=='flatpak' else {'receipt'}
+            if set(entry)!=expected:raise ValueError()
             plan = entry['plan']
             if plan['desktop']['id'] != app['id'] or plan['application'] != {'name':app['name'],'version':app['version']}:raise ValueError()
             if plan.get('state',{}).get('managerVersion') != 1 or entry['identity'] != plan_identity(plan):raise ValueError()
@@ -145,10 +154,13 @@ def verify_manifest(data, signature, key_path):
             supported=plan['target'].get('translation',{}).get('hostPageSizes',[]) if arch=='aarch64' else [4096]
             if any(n not in supported for n in entry['hostPageSizes']):raise ValueError()
             if kind != 'oci' and (plan.get('format')!=kind or plan['target']['architecture']!=arch):raise ValueError()
+            if kind != 'oci' and entry['recipeDigest']!=plan['sourceManifestDigest']:raise ValueError()
+            if kind=='appimage' and plan['state'].get('namespace')!='cage/appimage':raise ValueError()
             if kind == 'flatpak' and not re.fullmatch('[a-f0-9]{64}',entry['flatpakCommit']):raise ValueError()
             if not isinstance(entry['testedPageSizes'],list) or not entry['testedPageSizes'] or any(p not in entry['hostPageSizes'] for p in entry['testedPageSizes']):raise ValueError()
             for asset in (entry['package'],entry['evidence'],*([entry['receipt']] if kind!='oci' else [])):
                 filename(asset['name'])
+                if set(asset)!={'name','size','sha256'}:raise ValueError()
                 if not re.fullmatch('[a-f0-9]{64}', asset['sha256']) or type(asset['size']) is not int or not 0 < asset['size'] <= 32*1024**3:raise ValueError()
                 if asset is not entry['package'] and asset['size']>LIMIT:raise ValueError()
             if kind == 'oci' and not re.fullmatch('sha256:[a-f0-9]{64}',entry['imageId']):raise ValueError()
@@ -231,9 +243,12 @@ def cached_release(folder, key, kind, *, arch=None, host=True):
         if not asset_valid(folder/asset['name'],asset):raise ReleaseError('retained release asset changed')
     proof=parse(small(folder/entry['evidence']['name']))
     if (proof.get('status')!='passed' or proof.get('architecture')!=arch or proof.get('format')!=kind
-        or not any(s.get('identity')==entry['identity'] for s in proof.get('sessions',[]))
+        or not qualified_identity(proof,entry['identity'])
         or not all(proof.get(k) is True for k in ('settingsPreserved','documentsPreserved','rollback'))):
         raise ReleaseError('release lacks matching successful application qualification evidence')
+    qualified=proof.get('sourceImageIds' if kind=='oci' else 'sourceArtifactHashes',{})
+    if (entry['imageId'] if kind=='oci' else entry['package']['sha256']) not in qualified.values():
+        raise ReleaseError('qualification does not bind the exact package/image bytes')
     if kind!='oci':
         receipt=parse(small(folder/entry['receipt']['name']))
         if receipt.get('plan')!=entry['plan'] or receipt.get('sha256')!=entry['package']['sha256']:raise ReleaseError('signed export receipt and package/plan differ')
@@ -338,9 +353,12 @@ def create_release(spec_path, private, output, *, engine='podman'):
         evidence=(spec_path.parent/item['evidence']).absolute()
         proof=parse(small(evidence))
         if (proof.get('status')!='passed' or proof.get('format')!=kind or proof.get('architecture')!=arch
-            or not any(s.get('identity')==plan_identity(plan) for s in proof.get('sessions',[]))
+            or not qualified_identity(proof,plan_identity(plan))
             or not all(proof.get(k) is True for k in ('settingsPreserved','documentsPreserved','rollback'))):
             raise ReleaseError('artifact has no matching successful application qualification evidence')
+        qualified=proof.get('sourceImageIds' if kind=='oci' else 'sourceArtifactHashes',{})
+        if (image_id if kind=='oci' else hash_file(source)) not in qualified.values():
+            raise ReleaseError('qualification does not bind the exact package/image bytes')
         entry={'format':kind,'architecture':arch,'plan':plan,'identity':plan_identity(plan),'recipeDigest':recipe,
                'hostPageSizes':plan['target'].get('translation',{}).get('hostPageSizes',[]) if arch=='aarch64' else [4096],
                'testedPageSizes':[proof['pageSize']], 'package':stage(source),

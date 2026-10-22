@@ -49,8 +49,8 @@ def _state(record, release):
         from artifact.updates import _state as flatpak_state
         info=flatpak_state({'plan':entry['plan']},dict(os.environ));return info.get('state')
     if kind=='appimage':
-        info=json.loads(r.command([package(release),'--cage-state-info'],capture_output=True,text=True).stdout)
-        return info.get('state')
+        data=Path(os.environ.get('XDG_DATA_HOME',str(Path.home()/'.local/share')))
+        return _read_generations(data/'cage/appimage'/app)
     return _read_generations(Path(record['stateDirectory'])/app)
 
 
@@ -198,6 +198,9 @@ def deploy(source, key, kind, *, action='install', cache=None, files=(), engine=
             previous=_selected(root,record,key,kind)
             _check_deployment(record,previous)
             if _state(record,previous) is None:raise r.ReleaseError('launch the installed baseline once before updating')
+            if (previous['entry']['identity']['runtimeDigest']!=release['entry']['identity']['runtimeDigest'] or
+                previous['entry']['plan']['desktop']['updates']['profile']!=release['entry']['plan']['desktop']['updates']['profile']):
+                raise r.ReleaseError('runtime or migration profile changed; no deployment changed')
             if manifest['application']['name']!=previous['manifest']['application']['name']:raise r.ReleaseError('application name changed')
             if any(retained(root,d,key,kind)['entry']['identity']==release['entry']['identity'] for d in record['releases']):
                 raise r.ReleaseError('release has no new application generation')

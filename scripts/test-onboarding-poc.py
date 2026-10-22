@@ -44,6 +44,14 @@ def main():
     app = workflow.app_id
     baseline, candidate = (Path(p).resolve() if kind != 'oci' else p for p in (args.baseline, args.candidate))
     legacy = (args.legacy if kind == 'oci' else Path(args.legacy).resolve()) if args.legacy else None
+    def source_identities():
+        if kind in ('flatpak','appimage'):
+            return {'sourceArtifactHashes':{'baseline':sha(baseline),'candidate':sha(candidate)}}
+        if kind=='oci':
+            return {'sourceImageIds':{name:subprocess.check_output(['podman','image','inspect','--format','{{.Id}}',image],text=True).strip()
+                                      for name,image in (('baseline',baseline),('candidate',candidate))}}
+        return {}
+    original_sources=source_identities()
     evidence = Path(os.environ['CAGE_TEST_EVIDENCE']).resolve(); evidence.mkdir(parents=True, exist_ok=False)
     env = dict(os.environ); token = 'cage-onboarding-proof-' + uuid.uuid4().hex
     if kind == 'flatpak':
@@ -73,7 +81,7 @@ def main():
     expected = document.read_bytes(); original = document; original_hash = sha(original)
     installed = None
     first_package = legacy or baseline
-    release_urls={}; server=None; key=None; release_cache=evidence/'trusted-cache'
+    release_urls={}; server=None; key=None; release_cache=evidence/'trusted-cache';baseline_version=None
     if args.trusted:
         assert not legacy and kind!='container' and args.qualification
         from artifact import releases
@@ -92,8 +100,10 @@ def main():
             item={'format':kind,'path':str(artifact) if kind!='oci' else str(producer/('application-'+str(sequence)+'.oci.tar')),
                   'evidence':str(Path(args.qualification).resolve())}
             if kind=='oci':item['image']=artifact
-            spec_path.write_text(json.dumps({'sequence':sequence,'sourceRevision':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(), 'artifacts':[item]}))
+            revision=os.environ.get('CAGE_TEST_SOURCE_REVISION') or subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+            spec_path.write_text(json.dumps({'sequence':sequence,'sourceRevision':revision,'artifacts':[item]}))
             releases.create_release(spec_path,private,output)
+            if sequence==1:baseline_version=releases.parse(output.read_bytes())['application']['version']
             release_urls[str(artifact)]='http://127.0.0.1:'+str(server.server_port)+'/'+output.name
         private.unlink()  # Ephemeral test identity, never a real publisher key.
         old_env=dict(os.environ)
@@ -291,10 +301,12 @@ def main():
                   'settingsPreserved': True, 'documentsPreserved': True, 'rollback': True, 'menuRelaunch': kind in ('appimage', 'flatpak'),
                   'preference': preference, 'sourceExecutableHashes': {'baseline': old_executable, 'candidate': new_executable},
                   'generations': _read_generations(state), 'originalDocumentSha256': original_hash}
+        assert source_identities()==original_sources,'source package/image changed during qualification'
+        result.update(original_sources)
         if args.trusted:
             info=json.loads(subprocess.check_output([sys.executable,'-m','cage','release','info',app,
                             '--key',str(key),'--format',kind,'--cache-dir',str(release_cache)],env=env,text=True))
-            assert info['highWater']==2 and info['activeVersion']=='3.6'
+            assert info['highWater']==2 and info['activeVersion']==baseline_version
             # No network is needed for retained, signed rollback/run history.
             server.shutdown();server.server_close();server=None
             subprocess.run([sys.executable,'-m','cage','release','info',app,'--key',str(key),

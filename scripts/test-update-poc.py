@@ -39,6 +39,7 @@ def main():
         baseline, candidate = image_ids['baseline'], image_ids['candidate']
     else:
         baseline, candidate = Path(baseline).resolve(), Path(candidate).resolve()
+    source_packages={name:sha(value) for name,value in (('baseline',baseline),('candidate',candidate))} if kind in ('flatpak','appimage') else None
     evidence = Path(os.environ['CAGE_TEST_EVIDENCE']).resolve()
     evidence.mkdir(parents=True, exist_ok=False)
     env = dict(os.environ)
@@ -316,10 +317,15 @@ def main():
                   'externalDocument': str(document), 'externalDocumentContents': document.read_text(),
                   'prefixDocumentsCarriedForward': True, 'originalGenerationsRetained': True,
                   'saveAndRelaunchAfterUpdateAndRollback': True}
+        result.update(settingsPreserved=True,documentsPreserved=True,rollback=True)
+        if source_packages:
+            assert source_packages=={name:sha(value) for name,value in (('baseline',baseline),('candidate',candidate))}
+            result['sourceArtifactHashes']=source_packages
         if desktop_proof:
             result['desktopIntegration'] = {'mimeHandler': True, 'desktopFileForwarding': kind == 'flatpak', 'readOnlyOriginalPreserved': True, 'saveAs': True, 'newFileFromLauncher': True, 'selectedWritableSaveAndRelaunch': True, 'logicalDpi': 192, 'dpiPreservedAcrossUpdateAndRollback': True}
         if image_ids:
             result['ociImageIds'] = image_ids
+            result['sourceImageIds'] = image_ids
         (evidence / 'result.json').write_text(json.dumps(result, indent=2, sort_keys=True) + '\n')
         print(json.dumps(result, indent=2))
         if os.environ.get('CAGE_TEST_DISCARD_PREFIXES') == '1':

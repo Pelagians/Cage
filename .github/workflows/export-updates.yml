@@ -29,11 +29,12 @@ jobs:
             recipe: notepadplusplus-portable-arm64
             store: .cage/flatpak-arm64
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
+    timeout-minutes: 140
     env:
       PYTHONDONTWRITEBYTECODE: '1'
       CAGE_TEST_DISCARD_PREFIXES: '1'
       CAGE_TEST_DESKTOP_INTEGRATION: '1'
+      CAGE_TEST_SOURCE_REVISION: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,7 +44,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y flatpak podman uidmap slirp4netns fuse-overlayfs rpm2cpio squashfs-tools binutils xvfb openbox xdotool scrot xdg-utils x11-xserver-utils xdg-desktop-portal xdg-desktop-portal-gtk desktop-file-utils
-          python -m pip install PyYAML pytest setuptools wheel
+          python -m pip install PyYAML pytest setuptools wheel 'cryptography>=43'
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           mkdir -p "$HOME/.config/containers"
           printf '[engine]\ncgroup_manager="cgroupfs"\nevents_logger="file"\n' > "$HOME/.config/containers/containers.conf"
@@ -75,6 +76,7 @@ jobs:
           done
           export FLATPAK_USER_DIR="$PWD/${{ matrix.store }}"
           CAGE_TEST_EVIDENCE="$PWD/dist/update-evidence/flatpak" python scripts/test-update-poc.py flatpak dist/update-8.8.8.flatpak dist/update-8.8.9.flatpak
+          CAGE_TEST_EVIDENCE="$PWD/dist/update-evidence/trusted-flatpak" python scripts/test-onboarding-poc.py flatpak dist/update-8.8.8.flatpak dist/update-8.8.9.flatpak --application notepadplusplus --trusted --qualification dist/update-evidence/flatpak/result.json
           SH
       - name: Export both AppImages and prove clean consumer update and rollback
         run: |
@@ -86,7 +88,7 @@ jobs:
           # Wine and the application come exclusively from the AppImages.
           podman build -t localhost/cage-update-proof-tools -f - . <<'CONTAINER'
           FROM registry.fedoraproject.org/fedora:44
-          RUN dnf -y --setopt=install_weak_deps=False install python3 xdotool scrot xdg-utils desktop-file-utils xrdb glibc-langpack-en && dnf clean all
+          RUN dnf -y --setopt=install_weak_deps=False install python3 python3-pyyaml python3-cryptography xdotool scrot xdg-utils desktop-file-utils xrdb glibc-langpack-en && dnf clean all
           CONTAINER
           mkdir -p .cage/update-consumer-home .cage/update-appimage-tmp
           dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24' bash -eu -o pipefail <<'SH'
@@ -98,6 +100,13 @@ jobs:
             -e TMPDIR="$PWD/.cage/update-appimage-tmp" -e CAGE_TEST_DISCARD_PREFIXES=1 -e CAGE_TEST_DESKTOP_INTEGRATION=1 \
             -e CAGE_TEST_EVIDENCE="$PWD/dist/update-evidence/appimage" \
             localhost/cage-update-proof-tools python3 scripts/test-update-poc.py appimage dist/update-8.8.8.AppImage dist/update-8.8.9.AppImage
+          podman run --rm --net=none --userns=keep-id --user "$(id -u):$(id -g)" --hostname "$(hostname)" \
+            --security-opt label=disable -v "$PWD:$PWD" -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+            -v "$XAUTHORITY:$XAUTHORITY:ro" -w "$PWD" -e DISPLAY -e XAUTHORITY \
+            -e HOME="$PWD/.cage/update-consumer-home" -e APPIMAGE_EXTRACT_AND_RUN=1 \
+            -e TMPDIR="$PWD/.cage/update-appimage-tmp" -e CAGE_TEST_DISCARD_PREFIXES=1 -e CAGE_TEST_SOURCE_REVISION \
+            -e CAGE_TEST_EVIDENCE="$PWD/dist/update-evidence/trusted-appimage" \
+            localhost/cage-update-proof-tools python3 scripts/test-onboarding-poc.py appimage dist/update-8.8.8.AppImage dist/update-8.8.9.AppImage --application notepadplusplus --trusted --qualification dist/update-evidence/appimage/result.json
           SH
           rm -rf -- .cage/update-appimage-tmp
       - name: Retain qualification evidence
@@ -116,8 +125,23 @@ jobs:
             dist/update-evidence/**/*.png
 
   arm-container-updates:
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 90
+    name: container-updates (${{ matrix.provider }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            provider: wine-arm64ec
+            version: '11.20'
+            recipe: notepadplusplus-portable-arm64
+            arch: aarch64
+          - runner: ubuntu-24.04
+            provider: wine
+            version: '11.0'
+            recipe: notepadplusplus-portable
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 140
     env:
       PYTHONDONTWRITEBYTECODE: '1'
       CAGE_TEST_DISCARD_PREFIXES: '1'
@@ -130,7 +154,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y podman uidmap slirp4netns fuse-overlayfs rpm2cpio xvfb openbox xdotool scrot xdg-utils
-          python -m pip install PyYAML pytest setuptools wheel
+          python -m pip install PyYAML pytest setuptools wheel 'cryptography>=43'
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           mkdir -p "$HOME/.config/containers"
           printf '[engine]\ncgroup_manager="cgroupfs"\nevents_logger="file"\n' > "$HOME/.config/containers/containers.conf"
@@ -138,7 +162,7 @@ jobs:
           python scripts/prepare-update-poc.py
           python - <<'PY'
           from container.manager import build_container
-          result = build_container('wine-arm64ec', '11.20', build_cmd='podman')
+          result = build_container('${{ matrix.provider }}', '${{ matrix.version }}', build_cmd='podman')
           print(result.log)
           assert result.success
           PY
@@ -147,20 +171,21 @@ jobs:
           mkdir -p dist/update-evidence
           dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24' bash -eu -o pipefail <<'SH'
           openbox >dist/update-evidence/window-manager-container.log 2>&1 &
-          python -m cage build recipes/notepadplusplus-portable-arm64.cage.yaml --engine podman --output dist/update-containers >dist/update-evidence/container-baseline-build.json
-          python -m cage build dist/update-recipes/notepadplusplus-portable-arm64.cage.yaml --engine podman --output dist/update-containers >dist/update-evidence/container-candidate-build.json
-          CAGE_TEST_EVIDENCE="$PWD/dist/update-evidence/container" python scripts/test-update-poc.py container dist/update-containers/notepadplusplus-portable-arm64-8.8.8 dist/update-containers/notepadplusplus-portable-arm64-8.8.9
+          python -m cage build recipes/${{ matrix.recipe }}.cage.yaml --engine podman --output dist/update-containers >dist/update-evidence/container-baseline-build.json
+          python -m cage build dist/update-recipes/${{ matrix.recipe }}.cage.yaml --engine podman --output dist/update-containers >dist/update-evidence/container-candidate-build.json
+          CAGE_TEST_EVIDENCE="$PWD/dist/update-evidence/container" python scripts/test-update-poc.py container dist/update-containers/${{ matrix.recipe }}-8.8.8 dist/update-containers/${{ matrix.recipe }}-8.8.9
           for version in 8.8.8 8.8.9; do
-            python -m cage export oci dist/update-containers/notepadplusplus-portable-arm64-$version --engine podman --graphics desktop --tag localhost/cage-update-oci-proof:$version --context-dir .cage/update-oci-context-$version >dist/update-evidence/oci-export-$version.json
+            python -m cage export oci dist/update-containers/${{ matrix.recipe }}-$version --engine podman --graphics desktop --tag localhost/cage-update-oci-proof:$version --context-dir .cage/update-oci-context-$version >dist/update-evidence/oci-export-$version.json
             python scripts/test-storage-poc.py .cage/update-oci-context-$version >dist/update-evidence/storage-oci-$version.json
           done
           CAGE_TEST_EVIDENCE="$PWD/dist/update-evidence/oci" python scripts/test-update-poc.py oci localhost/cage-update-oci-proof:8.8.8 localhost/cage-update-oci-proof:8.8.9
+          CAGE_TEST_EVIDENCE="$PWD/dist/update-evidence/trusted-oci" python scripts/test-onboarding-poc.py oci localhost/cage-update-oci-proof:8.8.8 localhost/cage-update-oci-proof:8.8.9 --application notepadplusplus --trusted --qualification dist/update-evidence/oci/result.json
           SH
       - name: Retain container qualification evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: container-updates-aarch64-${{ github.sha }}
+          name: container-updates-${{ matrix.arch }}-${{ github.sha }}
           retention-days: 14
           path: |
             dist/update-evidence/**/*.json
