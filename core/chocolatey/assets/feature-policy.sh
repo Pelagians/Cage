@@ -8,13 +8,7 @@ logs_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/logs/chocolatey"
 policy_json="$metadata_dir/chocolatey-feature-policy.json"
 diagnostic_json="$metadata_dir/chocolatey-diagnostic.json"
 feature_list_log="$logs_dir/feature-list.log"
-powershell_host_policy='{{POWERSHELL_HOST_POLICY}}'
-allow_global_confirmation_policy='{{ALLOW_GLOBAL_CONFIRMATION_POLICY}}'
 mkdir -p "$metadata_dir" "$logs_dir"
-if [ "$powershell_host_policy" != "disabled" ] || [ "$allow_global_confirmation_policy" != "disabled" ]; then
-  echo "[cage] ERROR: unsupported Chocolatey feature policy in runtime profile" >&2
-  exit 64
-fi
 
 choco_working_directory="$wine_prefix/drive_c"
 test -d "$choco_working_directory"
@@ -33,28 +27,26 @@ normalized_log="$feature_list_log.normalized"
 tr -d '\r' < "$feature_list_log" > "$normalized_log"
 mv -f "$normalized_log" "$feature_list_log"
 set +e
-grep -Eiq '^{{POWERSHELL_HOST_FEATURE}}\|(disabled|false)(\||$)' "$feature_list_log"
+grep -Eiq '^powershellHost\|(disabled|false)(\||$)' "$feature_list_log"
 powershell_host_disabled_rc="$?"
 grep -Eiq '^allowGlobalConfirmation\|(disabled|false)(\||$)' "$feature_list_log"
 global_confirmation_disabled_rc="$?"
 set -e
 
-python3 - "$policy_json" "$diagnostic_json" "$powershell_host_policy" "$allow_global_confirmation_policy" "$feature_list_rc" "$feature_list_settle_rc" "$powershell_host_disabled_rc" "$global_confirmation_disabled_rc" <<'PY'
+python3 - "$policy_json" "$diagnostic_json" "$feature_list_rc" "$feature_list_settle_rc" "$powershell_host_disabled_rc" "$global_confirmation_disabled_rc" <<'PY'
 import json
 import sys
 from pathlib import Path
 path = Path(sys.argv[1])
 diagnostic_path = Path(sys.argv[2])
-powershell_host_policy = sys.argv[3]
-allow_global_confirmation_policy = sys.argv[4]
-values = [int(value) for value in sys.argv[5:]]
+values = [int(value) for value in sys.argv[3:]]
 passed = all(value == 0 for value in values)
 payload = {
     "schemaVersion": "cage.chocolatey-feature-policy/v0",
     "status": "passed" if passed else "failed",
     "features": {
-        "powershellHost": powershell_host_policy if values[2] == 0 else "unknown",
-        "allowGlobalConfirmation": allow_global_confirmation_policy if values[3] == 0 else "unknown",
+        "powershellHost": "disabled" if values[2] == 0 else "unknown",
+        "allowGlobalConfirmation": "disabled" if values[3] == 0 else "unknown",
     },
     "persistentGlobalConfirmationModified": False,
     "returnCodes": {

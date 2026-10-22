@@ -11,7 +11,10 @@ import json
 from pathlib import Path
 import re
 from typing import Any, cast
+
 import xml.etree.ElementTree as ET
+
+from core.chocolatey.assets.runtime_artifact import profile_identity
 
 GRAPH_SCHEMA_VERSION = "cage.execution-graph/v0"
 MANIFEST_SCHEMA_VERSIONS = {"cage.app/v0", "cage.dev/v0"}
@@ -470,17 +473,12 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
             and status.get("state") == "planned"
             and status.get("runnable") is False
         )
-        identities = {
-            (
-                artifact.get("id"),
-                artifact.get("manifestSha256"),
-                artifact.get("wineImage"),
-                tuple(artifact.get("wineVersions") or []),
-                tuple(sorted((artifact.get("environment") or {}).items())),
-            )
-            for artifact in cfw_artifacts
-        }
-        artifact = cfw_artifacts[0] if len(cfw_artifacts) == 1 and len(identities) == 1 else None
+        try:
+            identities = {profile_identity(artifact) for artifact in cfw_artifacts}
+        except (KeyError, TypeError, ValueError):
+            identities = set()
+        artifact = (cfw_artifacts[0]
+                    if len(cfw_artifacts) == cfw_module_count and len(identities) == 1 else None)
         expected_cfw_image = artifact.get("wineImage") if artifact else None
         expected_environment = artifact.get("environment") if artifact else None
         expected_digest = (
@@ -489,8 +487,7 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
             else None
         )
         cfw_trust_ok = blocked_dry_run or (
-            cfw_module_count == 1
-            and artifact is not None
+            artifact is not None
             and artifact.get("wineVersions") == ["wine-11.0"]
             and expected_environment == {"WINEDLLOVERRIDES": ""}
             and expected_cfw_image is not None

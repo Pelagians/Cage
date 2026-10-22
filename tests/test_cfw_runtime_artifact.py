@@ -17,7 +17,7 @@ from core.manifest import Manifest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HELPER = ROOT / "core/chocolatey/assets/runtime-artifact.py"
+HELPER = ROOT / "core/chocolatey/assets/runtime_artifact.py"
 IMAGE = "ghcr.io/pelagians/cage-wine@sha256:" + "d" * 64
 
 
@@ -80,6 +80,21 @@ def _records():
 
 
 class CfwRuntimeArtifactTests(unittest.TestCase):
+    def test_host_and_embedded_verifier_reject_the_same_invalid_profiles(self):
+        from core.modules.chocolatey import ChocolateyModule, ModuleError
+        verify = _helper()["validate_profile"]
+        for changes in ({"url": "https://invalid_host/runtime"},
+                        {"url": "https://user@example.invalid/runtime"},
+                        {"manifestUrl": "/tmp/manifest'quoted"},
+                        {"unexpected": True}, {"wineVersions": ["wine-10.0"]},
+                        {"environment": {}}, {"sessionContract": "other/v1"}):
+            profile = {**_records()[0], **changes}
+            with self.subTest(changes=changes):
+                with self.assertRaises(ValueError):
+                    verify(profile)
+                with self.assertRaises(ModuleError):
+                    ChocolateyModule(install={"packages": [], "runtimeArtifact": profile}).validate()
+
     def test_verification_rejects_missing_required_provenance(self):
         verify = _helper()["validate_records"]
         for field in ("sourceRevision", "contractSha256", "installerSha256", "runtimeInputsSha256", "wine"):

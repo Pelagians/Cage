@@ -1,5 +1,6 @@
 """Tests for Cage bundle inspect/verify commands."""
 from __future__ import annotations
+import copy
 import json
 import subprocess
 import sys
@@ -76,6 +77,41 @@ class BundleInspectionTests(unittest.TestCase):
         check = next(check for check in result["checks"] if check["id"] == "graph-runtime-match")
         self.assertFalse(check["ok"])
         self.assertIn("image", "; ".join(result["errors"]))
+
+    def _ordered_cfw_bundle(self, temporary):
+        return create_bundle(Manifest.from_dict({
+            "schemaVersion": "cage.app/v0", "name": "ordered-cfw", "version": "1.0.0",
+            "runtime": {"provider": "wine", "version": "11.0"},
+            "modules": [{"type": "chocolatey", "install": {"packages": [package]}}
+                        for package in ("7zip", "git")],
+            "launch": {"entrypoint": "C:/Program Files/App/App.exe"},
+        }), Path(temporary), dry_run=True)
+
+    def test_ordered_chocolatey_modules_share_one_verifiable_trust_root(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = self._ordered_cfw_bundle(temporary)
+            result = verify_bundle(bundle)
+        self.assertTrue(result["valid"], result["errors"])
+
+    def test_ordered_chocolatey_trust_root_rejects_missing_or_conflicting_artifacts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = self._ordered_cfw_bundle(temporary)
+            path = bundle / "manifest.cage.json"
+            original = json.loads(path.read_text())
+            for changes in (None, {"manifestSha256": "a" * 64},
+                            {"sessionContract": None}, {"wineImage": "ghcr.io/pelagians/cage-wine@sha256:" + "e" * 64},
+                            {"url": "https://invalid_host/runtime"}):
+                with self.subTest(changes=changes):
+                    record = copy.deepcopy(original)
+                    install = record["modules"][1]["install"]
+                    if changes is None:
+                        install.pop("runtimeArtifact")
+                    else:
+                        install["runtimeArtifact"].update(changes)
+                    path.write_text(json.dumps(record))
+                    result = verify_bundle(bundle)
+                    trust = next(check for check in result["checks"] if check["id"] == "cfw-runtime-trust-root")
+                    self.assertFalse(trust["ok"])
 
     def test_verify_bundle_rejects_coherent_runtime_image_tampering_against_cfw_pin(self):
         pinned = "ghcr.io/pelagians/cage-wine@sha256:" + "d" * 64

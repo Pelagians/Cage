@@ -1,3 +1,48 @@
+# Reused at separate capture points; each call keeps its own timeout and log.
+cage_chocolatey_process_snapshot() {
+  timeout "$1" python3 - "$2" <<'PY'
+import sys
+from pathlib import Path
+
+limit = int(sys.argv[1])
+processes = []
+for path in Path("/proc").iterdir():
+    if not path.name.isdigit():
+        continue
+    try:
+        status = (path / "status").read_text(encoding="utf-8")
+        fields = dict(
+            line.split(":", 1) for line in status.splitlines() if ":" in line
+        )
+        command = (path / "cmdline").read_bytes().replace(b"\0", b" ").decode(
+            "utf-8", errors="replace"
+        ).strip() or fields.get("Name", "").strip()
+        processes.append((int(path.name), fields.get("PPid", "").strip(), fields.get("State", "").strip(), command))
+    except (OSError, ValueError):
+        continue
+for pid, parent_pid, state, command in sorted(processes)[:limit]:
+    print(f"{pid}\t{parent_pid}\t{state}\t{command}")
+if len(processes) > limit:
+    print(f"[truncated after {limit} processes]")
+PY
+}
+
+cage_chocolatey_file_inventory() {
+  timeout "$1" python3 - "$2" "$3" <<'PY'
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+limit = int(sys.argv[2])
+count = 0
+for path in sorted(item for item in root.rglob("*") if item.is_file()):
+    if count >= limit:
+        print(f"[truncated after {limit} files]")
+        break
+    print(f"{path.stat().st_size}\t{path}")
+    count += 1
+PY
+}
+
 # Failure-only Chocolatey evidence collector. Call only after a required check fails.
 cage_chocolatey_collect_failure_diagnostics() {
   local diagnostic_json="$1"
@@ -24,89 +69,17 @@ cage_chocolatey_collect_failure_diagnostics() {
   timeout "${CAGE_CHOCOLATEY_DEBUG_TIMEOUT:-15s}" "${choco_launcher[@]}" --version > "$probe_dir/choco-live-probe.log" 2>&1 &
   live_probe_pid="$!"
   sleep "$live_snapshot_delay"
-  timeout "$inventory_timeout" python3 - "$inventory_limit" > "$probe_dir/choco-live-process-tree.log" 2>&1 <<'PY'
-import sys
-from pathlib import Path
-
-limit = int(sys.argv[1])
-processes = []
-for path in Path("/proc").iterdir():
-    if not path.name.isdigit():
-        continue
-    try:
-        status = (path / "status").read_text(encoding="utf-8")
-        fields = dict(
-            line.split(":", 1) for line in status.splitlines() if ":" in line
-        )
-        command = (path / "cmdline").read_bytes().replace(b"\0", b" ").decode(
-            "utf-8", errors="replace"
-        ).strip() or fields.get("Name", "").strip()
-        processes.append((int(path.name), fields.get("PPid", "").strip(), fields.get("State", "").strip(), command))
-    except (OSError, ValueError):
-        continue
-for pid, parent_pid, state, command in sorted(processes)[:limit]:
-    print(f"{pid}\t{parent_pid}\t{state}\t{command}")
-if len(processes) > limit:
-    print(f"[truncated after {limit} processes]")
-PY
+  cage_chocolatey_process_snapshot "$inventory_timeout" "$inventory_limit" > "$probe_dir/choco-live-process-tree.log" 2>&1
   live_process_tree_rc="$?"
   wait "$live_probe_pid"
   live_probe_rc="$?"
-  timeout "$inventory_timeout" python3 - "$canonical_choco_dir" "$inventory_limit" > "$probe_dir/promoted-files.log" 2>&1 <<'PY'
-import sys
-from pathlib import Path
-root = Path(sys.argv[1])
-limit = int(sys.argv[2])
-count = 0
-for path in sorted(item for item in root.rglob("*") if item.is_file()):
-    if count >= limit:
-        print(f"[truncated after {limit} files]")
-        break
-    print(f"{path.stat().st_size}\t{path}")
-    count += 1
-PY
+  cage_chocolatey_file_inventory "$inventory_timeout" "$canonical_choco_dir" "$inventory_limit" > "$probe_dir/promoted-files.log" 2>&1
   promoted_rc="$?"
   timeout "$inventory_timeout" sh -c 'wine reg query "HKCU\Software\Wine" /s 2>&1 | head -n "$1"' sh "$inventory_limit" > "$probe_dir/registry-wine-dump.log" 2>&1
   registry_dump_rc="$?"
-  timeout "$inventory_timeout" python3 - "$inventory_limit" > "$probe_dir/process-tree.log" 2>&1 <<'PY'
-import sys
-from pathlib import Path
-
-limit = int(sys.argv[1])
-processes = []
-for path in Path("/proc").iterdir():
-    if not path.name.isdigit():
-        continue
-    try:
-        status = (path / "status").read_text(encoding="utf-8")
-        fields = dict(
-            line.split(":", 1) for line in status.splitlines() if ":" in line
-        )
-        command = (path / "cmdline").read_bytes().replace(b"\0", b" ").decode(
-            "utf-8", errors="replace"
-        ).strip() or fields.get("Name", "").strip()
-        processes.append((int(path.name), fields.get("PPid", "").strip(), fields.get("State", "").strip(), command))
-    except (OSError, ValueError):
-        continue
-for pid, parent_pid, state, command in sorted(processes)[:limit]:
-    print(f"{pid}\t{parent_pid}\t{state}\t{command}")
-if len(processes) > limit:
-    print(f"[truncated after {limit} processes]")
-PY
+  cage_chocolatey_process_snapshot "$inventory_timeout" "$inventory_limit" > "$probe_dir/process-tree.log" 2>&1
   process_tree_rc="$?"
-  timeout "$inventory_timeout" python3 - "$wine_prefix/drive_c" "$inventory_limit" > "$probe_dir/prefix-files.log" 2>&1 <<'PY'
-import sys
-from pathlib import Path
-root = Path(sys.argv[1])
-limit = int(sys.argv[2])
-count = 0
-for path in sorted(item for item in root.rglob("*") if item.is_file()):
-    if count >= limit:
-        print(f"[truncated after {limit} files]")
-        break
-    print(f"{path.stat().st_size}\t{path}")
-    count += 1
-PY
+  cage_chocolatey_file_inventory "$inventory_timeout" "$wine_prefix/drive_c" "$inventory_limit" > "$probe_dir/prefix-files.log" 2>&1
   prefix_inventory_rc="$?"
   set -e
   python3 - "$diagnostic_json" "$failure_trigger" "$loader_rc" "$seh_rc" "$live_probe_rc" "$live_process_tree_rc" "$promoted_rc" "$registry_dump_rc" "$process_tree_rc" "$prefix_inventory_rc" <<'PY'

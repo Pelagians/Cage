@@ -88,7 +88,7 @@ class ChocolateyAssetContractTests(unittest.TestCase):
             "fetch-verified.sh",
             "failure-diagnostics.sh",
             "seed-cfw-runtime.sh",
-            "runtime-artifact.py",
+            "runtime_artifact.py",
             "verify-chocolatey.sh",
             "feature-policy.sh",
             "smoke-lifecycle.sh",
@@ -121,7 +121,7 @@ class ChocolateyAssetContractTests(unittest.TestCase):
 
     def test_seed_asset_verifies_archive_evidence_and_prefix_outputs(self):
         seed = load_asset("seed-cfw-runtime.sh")
-        helper = load_asset("runtime-artifact.py")
+        helper = load_asset("runtime_artifact.py")
         self.assertIn("CFW_RUNTIME_PROFILE_BASE64", seed)
         self.assertIn("cfw.prepared-runtime-manifest/v1", helper)
         self.assertIn("runtime archive does not match manifest", helper)

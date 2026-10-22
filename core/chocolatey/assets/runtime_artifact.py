@@ -23,8 +23,12 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 IMAGE_RE = re.compile(r"^ghcr\.io/pelagians/cage-wine@sha256:[0-9a-f]{64}$")
 RUNTIME_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
-WINE_VERSION_RE = re.compile(r"^wine-[0-9]+(?:\.[0-9]+){1,2}$")
-UNSAFE_SOURCE_RE = re.compile(r"[\x00-\x1f\x7f$`;&|<>]")
+UNSAFE_SOURCE_RE = re.compile(r"[\x00-\x1f\x7f$`';&|<>]")
+HOSTNAME_RE = re.compile(
+    r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$"
+)
+PROFILE_FIELDS = {"id", "url", "evidenceUrl", "manifestUrl", "manifestSha256",
+                  "wineImage", "wineVersions", "environment", "sessionContract"}
 REQUIRED_INTERFACE = "chocolatey"
 MAX_MEMBERS = 250_000
 MAX_UNCOMPRESSED_BYTES = 32 * 1024 * 1024 * 1024
@@ -50,41 +54,52 @@ def _sha256(path: Path) -> str:
 
 
 def _validate_source(field: str, value: str) -> None:
-    _require(UNSAFE_SOURCE_RE.search(value) is None, f"runtime profile {field} contains unsafe characters")
+    _require(UNSAFE_SOURCE_RE.search(value) is None, f"chocolatey runtimeArtifact.{field} contains unsafe characters")
     parsed = urlparse(value)
     if parsed.scheme == "https":
-        _require(bool(parsed.hostname) and parsed.username is None and parsed.password is None,
-                 f"runtime profile {field} must be a plain HTTPS URL")
+        _require(bool(parsed.hostname) and HOSTNAME_RE.fullmatch(parsed.hostname) is not None
+                 and parsed.username is None and parsed.password is None,
+                 f"chocolatey runtimeArtifact.{field} must be a plain HTTPS URL")
         return
     if parsed.scheme == "file":
         _require(parsed.netloc in ("", "localhost") and parsed.path.startswith("/"),
-                 f"runtime profile {field} must use an absolute file URL")
+                 f"chocolatey runtimeArtifact.{field} must use an absolute file URL")
         return
     _require(value.startswith("/"),
-             f"runtime profile {field} must use https://, file://, or an absolute path")
+             f"chocolatey runtimeArtifact.{field} must use https://, file://, or an absolute path")
 
 
 def validate_profile(profile: dict[str, Any]) -> None:
-    runtime_id = profile.get("id")
-    _require(isinstance(runtime_id, str) and RUNTIME_ID_RE.fullmatch(runtime_id) is not None,
-             "runtime profile id is missing or unsafe")
-    image = profile.get("wineImage")
-    _require(isinstance(image, str) and IMAGE_RE.fullmatch(image) is not None,
-             "runtime profile Wine image is not digest-pinned")
-    versions = profile.get("wineVersions")
-    _require(isinstance(versions, list) and bool(versions) and all(
-        isinstance(value, str) and WINE_VERSION_RE.fullmatch(value) is not None for value in versions
-    ), "runtime profile Wine versions are invalid")
-    for field in ("url", "evidenceUrl", "manifestUrl"):
+    _require(isinstance(profile, dict), "chocolatey install.runtimeArtifact must be an object")
+    unknown = sorted(set(profile) - PROFILE_FIELDS)
+    if unknown:
+        raise ValueError(f"unknown Chocolatey runtimeArtifact field: {unknown[0]}")
+    for field in ("id", "url", "evidenceUrl", "manifestUrl", "manifestSha256", "wineImage"):
         value = profile.get(field)
-        if not isinstance(value, str) or not value:
-            raise ValueError(f"runtime profile {field} is missing")
-        _validate_source(field, value)
-    manifest_digest = profile.get("manifestSha256")
-    _require(isinstance(manifest_digest, str) and SHA256_RE.fullmatch(manifest_digest) is not None,
-             "runtime profile manifest digest is invalid")
+        _require(isinstance(value, str) and bool(value),
+                 f"chocolatey runtimeArtifact.{field} must be a non-empty string")
+    _require(RUNTIME_ID_RE.fullmatch(profile["id"]) is not None,
+             "chocolatey runtimeArtifact.id must be a safe cache identifier")
+    _require(SHA256_RE.fullmatch(profile["manifestSha256"]) is not None,
+             "chocolatey runtimeArtifact.manifestSha256 must be a complete lowercase sha256")
+    _require(IMAGE_RE.fullmatch(profile["wineImage"]) is not None,
+             "chocolatey runtimeArtifact.wineImage must be a digest-pinned ghcr.io/pelagians/cage-wine image")
+    for field in ("url", "evidenceUrl", "manifestUrl"):
+        _validate_source(field, profile[field])
+    _require(profile.get("wineVersions") == ["wine-11.0"],
+             "Chocolatey Phase 1 supports exactly Wine 11 (wine-11.0)")
+    _require(profile.get("sessionContract") in (None, "cage.selkies-wayland/v1"),
+             "chocolatey runtimeArtifact.sessionContract must be cage.selkies-wayland/v1")
     _require(profile.get("environment") == {"WINEDLLOVERRIDES": ""},
-             "runtime profile environment is missing or invalid")
+             "chocolatey runtimeArtifact.environment must be exactly {'WINEDLLOVERRIDES': ''} for Phase 1")
+
+
+def profile_identity(profile: dict[str, Any]) -> tuple[object, ...]:
+    """Compare producer trust roots without resolving a new default for old bundles."""
+    validate_profile(profile)
+    return (profile["id"], profile["manifestSha256"], profile["wineImage"],
+            tuple(profile["wineVersions"]), tuple(sorted(profile["environment"].items())),
+            profile.get("sessionContract"))
 
 
 def _validate_bound_fields(record: dict[str, Any], label: str) -> None:
@@ -332,7 +347,6 @@ def _manifest_fields(profile_path: Path, manifest_path: Path) -> None:
     validate_manifest(profile, manifest)
     print(manifest["archive"]["sha256"])
     print(manifest["runtimeEvidence"]["sha256"])
-    print(manifest["archive"]["bytes"])
     print(manifest["interfaces"][REQUIRED_INTERFACE]["windowsPath"])
     print(manifest["interfaces"][REQUIRED_INTERFACE]["prefixRelativePath"])
     print(manifest["interfaces"][REQUIRED_INTERFACE]["queryLauncher"])
@@ -342,9 +356,8 @@ def _manifest_fields(profile_path: Path, manifest_path: Path) -> None:
 def _profile_fields(profile_path: Path) -> None:
     profile = _read_json(profile_path)
     validate_profile(profile)
-    for field in ("id", "url", "evidenceUrl", "manifestUrl", "manifestSha256", "wineImage"):
+    for field in ("id", "url", "evidenceUrl", "manifestUrl", "manifestSha256"):
         print(profile[field])
-    print(",".join(profile["wineVersions"]))
 
 
 def _producer_image_identity(environment: dict[str, str]) -> str:
