@@ -247,6 +247,12 @@ class TrustedReleaseTests(unittest.TestCase):
         self.assertEqual(args[-3:],['--cage-update','--','/exports/café.pdf'])
         with self.assertRaisesRegex(r.ReleaseError,'exports directory'):delivery._container_args(record,release,[self.root/'secret'])
 
+    def test_podman_bare_json_and_prefixed_format_image_ids_are_equivalent(self):
+        self.assertEqual(r.oci_image_id('a'*64),'sha256:'+'a'*64)
+        self.assertEqual(r.qualified_hashes({'sourceImageIds':{'baseline':'a'*64,'candidate':'sha256:'+'b'*64}},'oci'),
+                         {'sha256:'+'a'*64,'sha256:'+'b'*64})
+        with self.assertRaises(r.ReleaseError):r.oci_image_id('latest')
+
     def test_changed_installed_flatpak_commit_is_refused_before_any_helper_runs(self):
         self.fake_runtime();path=self.release('4',4,kind='flatpak')
         with patch('artifact.release_install._flatpak_commit',return_value='4'*64):

@@ -67,6 +67,21 @@ def qualified_identity(proof, identity):
     return any(item.get('identity')==identity for item in records)
 
 
+def oci_image_id(value):
+    if isinstance(value,str) and re.fullmatch('[a-f0-9]{64}',value):return 'sha256:'+value
+    if isinstance(value,str) and re.fullmatch('sha256:[a-f0-9]{64}',value):return value
+    raise ReleaseError('container engine/evidence returned an invalid image identity')
+
+
+def qualified_hashes(proof, kind):
+    values=proof.get('sourceImageIds' if kind=='oci' else 'sourceArtifactHashes',{})
+    if not isinstance(values,dict):raise ReleaseError('invalid package/image qualification bindings')
+    if kind=='oci':return {oci_image_id(value) for value in values.values()}
+    if any(not isinstance(value,str) or not re.fullmatch('[a-f0-9]{64}',value) for value in values.values()):
+        raise ReleaseError('invalid qualified package hash')
+    return set(values.values())
+
+
 def regular(path):
     path = Path(path)
     if path.is_symlink() or not path.is_file():raise ReleaseError('expected a regular file: ' + str(path))
@@ -234,8 +249,7 @@ def verify_evidence(entry, proof):
         or not qualified_identity(proof,entry['identity'])
         or not all(proof.get(k) is True for k in ('settingsPreserved','documentsPreserved','rollback'))):
         raise ReleaseError('release lacks matching successful application qualification evidence')
-    qualified=proof.get('sourceImageIds' if kind=='oci' else 'sourceArtifactHashes',{})
-    if (entry['imageId'] if kind=='oci' else entry['package']['sha256']) not in qualified.values():
+    if (entry['imageId'] if kind=='oci' else entry['package']['sha256']) not in qualified_hashes(proof,kind):
         raise ReleaseError('qualification does not bind the exact package/image bytes')
     if proof.get('pageSize') not in entry['testedPageSizes']:raise ReleaseError('qualification page size differs from signed evidence')
 
@@ -309,8 +323,7 @@ def command(args, **kwargs):
 
 def oci_metadata(image, engine):
     record=json.loads(command([engine,'image','inspect',image],capture_output=True,text=True).stdout)[0]
-    image_id=record['Id']
-    if not re.fullmatch('sha256:[a-f0-9]{64}',image_id):raise ReleaseError('container engine returned an invalid image identity')
+    image_id=oci_image_id(record['Id'])
     if record.get('Config',{}).get('Labels',{}).get('io.cage.graphics')!='desktop':raise ReleaseError('trusted OCI desktop releases require a managed desktop image')
     arch={'amd64':'x86_64','arm64':'aarch64'}.get(record.get('Architecture'))
     cid=command([engine,'create','--network=none',image_id],capture_output=True,text=True).stdout.strip()
@@ -366,8 +379,7 @@ def create_release(spec_path, private, output, *, engine='podman'):
             or not qualified_identity(proof,plan_identity(plan))
             or not all(proof.get(k) is True for k in ('settingsPreserved','documentsPreserved','rollback'))):
             raise ReleaseError('artifact has no matching successful application qualification evidence')
-        qualified=proof.get('sourceImageIds' if kind=='oci' else 'sourceArtifactHashes',{})
-        if (image_id if kind=='oci' else hash_file(source)) not in qualified.values():
+        if (image_id if kind=='oci' else hash_file(source)) not in qualified_hashes(proof,kind):
             raise ReleaseError('qualification does not bind the exact package/image bytes')
         entry={'format':kind,'architecture':arch,'plan':plan,'identity':plan_identity(plan),'recipeDigest':recipe,
                'hostPageSizes':plan['target'].get('translation',{}).get('hostPageSizes',[]) if arch=='aarch64' else [4096],
