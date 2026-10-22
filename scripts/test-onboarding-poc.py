@@ -34,6 +34,45 @@ def sha(path):
     with Path(path).open('rb') as f:return hashlib.file_digest(f, 'sha256').hexdigest()
 
 
+def shutdown_diagnostics(process, destination):
+    """Inspect only this failed proof's descendants, before normal cleanup."""
+    pending = [process.pid]; seen = set(); records = []
+    while pending and len(seen) < 128:
+        pid = pending.pop()
+        if pid in seen:continue
+        seen.add(pid); root = Path('/proc') / str(pid)
+        record = {'pid': pid}
+        for name in ('comm', 'status', 'wchan', 'syscall', 'maps'):
+            try:record[name] = (root / name).read_text()[:128 * 1024]
+            except OSError as exc:record[name] = str(exc)
+        threads = []
+        try:
+            for thread in list((root / 'task').iterdir())[:256]:
+                entry = {'tid': thread.name}
+                for name in ('comm', 'wchan', 'syscall', 'stack'):
+                    try:entry[name] = (thread / name).read_text()[:4096]
+                    except OSError as exc:entry[name] = str(exc)
+                threads.append(entry)
+                try:pending.extend(map(int, (thread / 'children').read_text().split()))
+                except OSError:pass
+        except OSError:pass
+        record['threads'] = threads; records.append(record)
+    destination.with_suffix('.json').write_text(json.dumps(records, indent=2) + '\n')
+    # CI-only debugger, no auto-loaded scripts or network symbol fetching.
+    # Attaching is diagnostic after failure; it cannot turn the trial into a pass.
+    if os.environ.get('GITHUB_ACTIONS') == 'true' and shutil.which('gdb'):
+        for record in records:
+            if record.get('comm', '').strip() != 'SumatraPDF.exe':continue
+            with destination.with_name(destination.name + '-' + str(record['pid']) + '.log').open('w') as output:
+                try:
+                    subprocess.run(['sudo', '-n', 'gdb', '--batch', '--nx', '--nh',
+                                    '-iex', 'set auto-load off', '-iex', 'set debuginfod enabled off',
+                                    '-p', str(record['pid']), '-ex', 'set pagination off',
+                                    '-ex', 'thread apply all bt', '-ex', 'detach'],
+                                   stdout=output, stderr=subprocess.STDOUT, timeout=30, check=False)
+                except (OSError, subprocess.TimeoutExpired) as exc:output.write(str(exc) + '\n')
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('format', choices=['flatpak', 'appimage', 'container', 'oci'])
@@ -250,7 +289,11 @@ def main():
         gui.wait_for(lambda: not subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', '^Save As$'], capture_output=True).stdout, 'Save As closed')
         subprocess.run(['scrot', str(evidence / (label + '.png'))], check=True)
         gui.command('xdotool', 'key', '--clearmodifiers', 'alt+F4')
-        assert process.wait(timeout=120) == 0, 'application/launcher failed; retained log'
+        try:
+            assert process.wait(timeout=120) == 0, 'application/launcher failed; retained log'
+        except subprocess.TimeoutExpired:
+            shutdown_diagnostics(process, evidence / (label + '-shutdown'))
+            raise
         def idle():
             try:
                 with lifecycle_lock(state):return True

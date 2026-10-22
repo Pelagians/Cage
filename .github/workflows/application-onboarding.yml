@@ -42,7 +42,7 @@ jobs:
       - name: Prepare tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak podman uidmap slirp4netns fuse-overlayfs rpm2cpio squashfs-tools binutils xvfb openbox xdotool scrot xdg-utils x11-xserver-utils xdg-desktop-portal xdg-desktop-portal-gtk desktop-file-utils
+          sudo apt-get install -y flatpak podman uidmap slirp4netns fuse-overlayfs rpm2cpio squashfs-tools binutils xvfb openbox xdotool scrot xdg-utils x11-xserver-utils xdg-desktop-portal xdg-desktop-portal-gtk desktop-file-utils gdb
           python -m pip install PyYAML pytest setuptools wheel 'cryptography>=43'
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           mkdir -p "$HOME/.config/containers" "$HOME/Documents" dist/onboarding-evidence
@@ -60,7 +60,8 @@ jobs:
             appimage-native-${{ matrix.arch }}-
       - name: Prepare pinned application sources
         run: python scripts/prepare-sumatrapdf-poc.py --runtime ${{ matrix.provider }}
-      - name: Build shared recipes and qualify historical Flatpak migration
+      - name: Build shared recipes and Flatpak packages
+        id: desktop-build
         run: |
           dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24' bash -eu -o pipefail <<'SH'
           openbox >dist/onboarding-evidence/window-manager-flatpak.log 2>&1 &
@@ -79,11 +80,17 @@ jobs:
           python scripts/prepare-legacy-poc.py flatpak dist/onboarding-bundles/sumatrapdf-portable-3.6 --flatpak-store ${{ matrix.store }} --output dist/onboarding-legacy.flatpak >dist/onboarding-evidence/legacy-flatpak-export.json
           python scripts/test-storage-poc.py dist/onboarding-legacy.flatpak.build >dist/onboarding-evidence/storage-legacy-flatpak.json
           wait "$candidate_pid"
+          SH
+      - name: Qualify historical and trusted Flatpak delivery
+        run: |
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24' bash -eu -o pipefail <<'SH'
+          openbox >dist/onboarding-evidence/window-manager-flatpak-proof.log 2>&1 &
           export FLATPAK_USER_DIR="$PWD/${{ matrix.store }}"
           CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/flatpak" python scripts/test-onboarding-poc.py flatpak dist/onboarding-3.6.flatpak dist/onboarding-3.6.1.flatpak --legacy dist/onboarding-legacy.flatpak
           CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/trusted-flatpak" python scripts/test-onboarding-poc.py flatpak dist/onboarding-3.6.flatpak dist/onboarding-3.6.1.flatpak --trusted --qualification dist/onboarding-evidence/flatpak/result.json
           SH
       - name: Qualify AppImage in a clean consumer without host Wine or Cage installation
+        if: ${{ !cancelled() && steps.desktop-build.outcome == 'success' }}
         run: |
           for version in 3.6 3.6.1; do
             python -m cage export appimage dist/onboarding-bundles/sumatrapdf-portable-$version --allow-host-access --flatpak-store ${{ matrix.store }} --output dist/onboarding-$version.AppImage >dist/onboarding-evidence/appimage-export-$version.json
