@@ -250,7 +250,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         artifact = serialized["modules"][0]["install"]["runtimeArtifact"]
         self.assertEqual(artifact, _RUNTIME)
 
-    def test_released_default_runtime_profile_is_pinned_to_cfw_v106(self):
+    def test_released_default_runtime_profile_is_pinned_to_cfw_v107(self):
         from core.modules.chocolatey import (
             DEFAULT_CFW_RUNTIME_ARTIFACT,
             DEFAULT_CFW_RUNTIME_PROFILE_ID,
@@ -260,12 +260,12 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         assert DEFAULT_CFW_RUNTIME_ARTIFACT is not None
         self.assertEqual(
             DEFAULT_CFW_RUNTIME_PROFILE_ID,
-            "cfw-chocolatey-2.6.0-powershell-7.6.5-synchro-4.2.0",
+            "cfw-chocolatey-2.7.4-powershell-7.6.5-synchro-4.2.0",
         )
         self.assertEqual(DEFAULT_CFW_RUNTIME_ARTIFACT["id"], DEFAULT_CFW_RUNTIME_PROFILE_ID)
         self.assertEqual(
             DEFAULT_CFW_RUNTIME_ARTIFACT["manifestSha256"],
-            "b61d2b71f5bb5d8782b080eb809d1b1abf00dd4d632fd06185dc89f3b62ee70b",
+            "75d2e2449400070c4daf3bf0ab9b8283008f93202e073f9b9ab2c16bf09efe61",
         )
         self.assertEqual(
             DEFAULT_CFW_RUNTIME_ARTIFACT["wineImage"],
@@ -273,7 +273,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         )
         for field in ("url", "evidenceUrl", "manifestUrl"):
             self.assertIn("github.com/noahgiroux/CFW/releases/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
-            self.assertIn("/cfw-runtime-v1.0.6/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
+            self.assertIn("/cfw-runtime-v1.0.7/", DEFAULT_CFW_RUNTIME_ARTIFACT[field])
 
     def test_multiple_chocolatey_modules_seed_once_and_install_in_order(self):
         data = {
