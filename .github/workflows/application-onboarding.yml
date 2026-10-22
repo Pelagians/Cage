@@ -103,7 +103,7 @@ jobs:
           RUN dnf -y --setopt=install_weak_deps=False install python3 python3-pyyaml python3-cryptography xdotool scrot xdg-utils desktop-file-utils xrdb glibc-langpack-en && dnf clean all
           CONTAINER
           mkdir -p .cage/onboarding-consumer-home .cage/onboarding-appimage-tmp
-          dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24' bash -eu -o pipefail <<'SH'
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24 -extension MIT-SHM' bash -eu -o pipefail <<'SH'
           openbox >dist/onboarding-evidence/window-manager-appimage.log 2>&1 &
           podman run --rm --net=none --userns=keep-id --user "$(id -u):$(id -g)" --hostname "$(hostname)" \
             --security-opt label=disable -v "$PWD:$PWD" -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
@@ -170,7 +170,7 @@ jobs:
           PY
       - name: Qualify persistent containers and standalone OCI
         run: |
-          dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24' bash -eu -o pipefail <<'SH'
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24 -extension MIT-SHM' bash -eu -o pipefail <<'SH'
           openbox >dist/onboarding-evidence/window-manager-container.log 2>&1 &
           for version in 3.6 3.6.1; do
             python -m cage build dist/onboarding-recipes/${{ matrix.provider }}/$version.json --engine podman --output dist/onboarding-containers >dist/onboarding-evidence/container-build-$version.json

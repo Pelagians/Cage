@@ -67,10 +67,32 @@ def shutdown_diagnostics(process, destination):
                 try:
                     subprocess.run(['sudo', '-n', 'gdb', '--batch', '--nx', '--nh',
                                     '-iex', 'set auto-load off', '-iex', 'set debuginfod enabled off',
+                                    '-iex', 'set sysroot /proc/' + str(record['pid']) + '/root',
                                     '-p', str(record['pid']), '-ex', 'set pagination off',
+                                    '-ex', 'info registers', '-ex', 'x/256gx $sp',
                                     '-ex', 'thread apply all bt', '-ex', 'detach'],
                                    stdout=output, stderr=subprocess.STDOUT, timeout=30, check=False)
                 except (OSError, subprocess.TimeoutExpired) as exc:output.write(str(exc) + '\n')
+            # Native unwinding cannot cross Wine's syscall/ARM64EC frames.
+            # Ask the already packaged debugger for Windows frames, inside the
+            # failed Flatpak's namespaces and prefix. Never inspect another app.
+            if shutil.which('flatpak') and '/app/' in record.get('maps', ''):
+                try:
+                    values = (Path('/proc') / str(record['pid']) / 'environ').read_bytes().split(b'\0')
+                    prefix = next(v.decode() for v in values if v.startswith(b'WINEPREFIX='))
+                    command = ['flatpak', 'enter', str(record['pid']), '/usr/bin/env', prefix,
+                               'WINEDEBUG=-all', '/app/bin/wine', 'winedbg', '--command']
+                    listing = subprocess.run([*command, 'info proc\nquit'], capture_output=True, text=True, timeout=20)
+                    import re
+                    target = re.search(r'(?mi)^\s*(?:=>)?\s*([0-9a-f]+)\s+.*SumatraPDF', listing.stdout)
+                    output_path = destination.with_name(destination.name + '-windows.log')
+                    with output_path.open('w') as output:
+                        output.write(listing.stdout + listing.stderr); output.flush()
+                        if target:
+                            subprocess.run([*command, 'bt\ninfo threads\ndetach\nquit', str(int(target[1], 16))],
+                                           stdout=output, stderr=subprocess.STDOUT, timeout=30)
+                except (OSError, StopIteration, subprocess.TimeoutExpired) as exc:
+                    destination.with_name(destination.name + '-windows-error.log').write_text(str(exc))
 
 
 def main():
@@ -290,7 +312,8 @@ def main():
         subprocess.run(['scrot', str(evidence / (label + '.png'))], check=True)
         gui.command('xdotool', 'key', '--clearmodifiers', 'alt+F4')
         try:
-            assert process.wait(timeout=120) == 0, 'application/launcher failed; retained log'
+            code = process.wait(timeout=120)
+            assert code == 0, f'application/launcher exited {code}; retained log'
         except subprocess.TimeoutExpired:
             shutdown_diagnostics(process, evidence / (label + '-shutdown'))
             raise
