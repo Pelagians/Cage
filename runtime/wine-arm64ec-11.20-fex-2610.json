@@ -1,6 +1,6 @@
 {
   "schemaVersion": "cage.desktop-runtime/v0",
-  "id": "wine-arm64ec-11.20-fex-2610-aarch64",
+  "id": "wine-arm64ec-11.20-fex-2610-cage1-aarch64",
   "os": "linux",
   "architecture": "aarch64",
   "windowsArchitecture": "x86_64",
@@ -19,7 +19,12 @@
     "hostPageSizes": [
       4096,
       16384
-    ]
+    ],
+    "terminationGuard": {
+      "id": "fex-2610-cage1",
+      "sourceSha256": "7bf67ea94febdf2f4e60251f7d90749326db067e717b7c0da8a9d80858a053b7",
+      "rpmDllSha256": "6599276fb6897bac2c8182b33842f49328e36d8b7c15d220aae0f1e1a3cf4cae"
+    }
   },
   "payload": "rpm",
   "packages": [
@@ -61,5 +66,6 @@
   "containerBase": "registry.fedoraproject.org/fedora@sha256:d458dbabce9d9400db66c046ec07bec6b75759f85ea737b1e3235ef2b702f036",
   "sessionContract": "cage.native-wine/v1",
   "qualification": "experimental; per-application acceptance required",
-  "payloadDigest": "e1be53dcd30bf7a9cd6dee073573fdf9a5815fc64ed794455fc38234061503d7"
+  "payloadDigest": "d9b8cfe658cedb4eb3b881e32ca14ab64a3ac723e6d660a79314447b48696823",
+  "rpmPayloadDigest": "e1be53dcd30bf7a9cd6dee073573fdf9a5815fc64ed794455fc38234061503d7"
 }

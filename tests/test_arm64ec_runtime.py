@@ -1,5 +1,6 @@
 """ARM CPU translation identity and additive container/desktop boundaries."""
 import io
+import hashlib
 import json
 from pathlib import Path
 import stat
@@ -14,7 +15,7 @@ from artifact.inspection import verify_bundle
 from artifact.desktop import desktop_target, validate_desktop_recipe
 from builder.executor import _immutable_image_ref
 from core.manifest import load_manifest, ManifestError
-from runtime.arm64ec import extract_cpio, runtime_target, verify_container_runtime
+from runtime.arm64ec import extract_cpio, runtime_target, verify_container_runtime, install_termination_guard
 from runtime.desktop_launch import DesktopError, digest_json
 from runtime.providers import resolve_runtime, resolve_manifest_runtime
 from tests.bundle_fixtures import materialize_runnable_prefix
@@ -34,6 +35,37 @@ def cpio(entries):
 
 
 class ARMRuntimeTests(unittest.TestCase):
+    def test_guard_installs_exact_bundled_dll_without_mutating_rpm_hardlink(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            dll = root / 'lib64/wine-wow64/wine/aarch64-windows/libarm64ecfex.dll'
+            dll.parent.mkdir(parents=True)
+            dll.write_bytes(b'pinned RPM fixture'); dll.chmod(0o755)
+            retained = root / 'retained-rpm.dll'
+            retained.hardlink_to(dll)
+            target = runtime_target()
+            target['translation']['terminationGuard']['rpmDllSha256'] = hashlib.sha256(dll.read_bytes()).hexdigest()
+            with patch('runtime.arm64ec.runtime_target', return_value=target):
+                install_termination_guard(root)
+            source = json.loads((ROOT / 'runtime/vendor/fex-2610-cage1/source.json').read_text())
+            self.assertEqual(hashlib.sha256(dll.read_bytes()).hexdigest(), source['dll']['sha256'])
+            self.assertEqual(dll.stat().st_size, source['dll']['size'])
+            self.assertEqual(stat.S_IMODE(dll.stat().st_mode), 0o755)
+            self.assertEqual(retained.read_bytes(), b'pinned RPM fixture')
+            self.assertFalse(dll.with_suffix('.dll.cage-new').exists())
+
+    def test_guard_refuses_foreign_dll_or_source_identity_and_retains_bytes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            dll = root / 'lib64/wine-wow64/wine/aarch64-windows/libarm64ecfex.dll'
+            dll.parent.mkdir(parents=True); dll.write_bytes(b'foreign')
+            with self.assertRaisesRegex(DesktopError, 'exact pinned RPM'):
+                install_termination_guard(root)
+            target = runtime_target(); target['translation']['terminationGuard']['sourceSha256'] = '0' * 64
+            with patch('runtime.arm64ec.runtime_target', return_value=target), self.assertRaisesRegex(DesktopError, 'source/build identity'):
+                install_termination_guard(root)
+            self.assertEqual(dll.read_bytes(), b'foreign')
+
     def test_catalog_runtime_is_available_through_container_build_cli(self):
         from cage.cli import main
         from container.manager import ContainerBuildResult

@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "cage.runtime-source/v1",
+  "id": "fex-2610-cage1",
+  "source": {
+    "url": "https://github.com/FEX-Emu/FEX.git",
+    "commit": "14c92681f4d62cf84d901460e0358de09c8847a7",
+    "version": "FEX-2610"
+  },
+  "toolchain": {
+    "url": "https://github.com/bylaws/llvm-mingw/releases/download/20250920/llvm-mingw-20250920-ucrt-ubuntu-22.04-aarch64.tar.xz",
+    "sha256": "bce5cc755c613515fd44e1ee9523123d854103abae147571adb645450036274d",
+    "directory": "llvm-mingw-20250920-ucrt-ubuntu-22.04-aarch64"
+  },
+  "providerPatches": [
+    {
+      "url": "https://raw.githubusercontent.com/lacamar/wine-arm64ec-rpm/9d4dab54af9ae2b80977cf865743bc50167d8d04/fex-emu-wine/fex-emu-wine-git-host-page-size.patch",
+      "sha256": "95008864c3fde2aace712b928301dd5fb8684e688b7da5c414a60559d48b00a5"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lacamar/wine-arm64ec-rpm/9d4dab54af9ae2b80977cf865743bc50167d8d04/fex-emu-wine/fex-emu-wine-git-smc-untrap-host-page.patch",
+      "sha256": "b561f72d5974e88502230906186d076c7b6dc1ce5b9dfaf4dcf0abf603026d2d"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lacamar/wine-arm64ec-rpm/9d4dab54af9ae2b80977cf865743bc50167d8d04/fex-emu-wine/fex-emu-wine-git-callback-code-buffer.patch",
+      "sha256": "34bb0319c19031284d50f653e936b895d532c4e4662d37817670b22c0d2d2322"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lacamar/wine-arm64ec-rpm/9d4dab54af9ae2b80977cf865743bc50167d8d04/fex-emu-wine/fex-emu-wine-smc-untrappable-host-page.patch",
+      "sha256": "0853db65ff909ef96bd24b2e48adfd0bccc4b1687b1a496274e7e10c53633f9a"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lacamar/wine-arm64ec-rpm/9d4dab54af9ae2b80977cf865743bc50167d8d04/fex-emu-wine/fex-emu-wine-precise-faults.patch",
+      "sha256": "789dfc338b7f5aeef2fb8f933fe067300917e95e1422b4c127690bd3df7e7219"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lacamar/wine-arm64ec-rpm/9d4dab54af9ae2b80977cf865743bc50167d8d04/fex-emu-wine/fex-emu-wine-git-suspend-backedge.patch",
+      "sha256": "bb528e134a640d414d0cadf29c7800ebf2479ab76c944e77681fe60e1bfa12cd"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lacamar/wine-arm64ec-rpm/9d4dab54af9ae2b80977cf865743bc50167d8d04/fex-emu-wine/fex-emu-wine-git-dispatcher-rethrow.patch",
+      "sha256": "de6ed7c1af8b46484529b01b01de89b254363ecd59ad542289ea2c52aa87964e"
+    }
+  ],
+  "patch": {
+    "path": "../../patches/fex-2610-process-termination.patch",
+    "sha256": "8c56c4ce4303d2312fb76295761b77fcee0dfeb0f05310bbea84da25e8f93f3e"
+  },
+  "sourceDateEpoch": 1791331200,
+  "dll": {
+    "path": "libarm64ecfex.dll.xz",
+    "sha256": "8e84d8deb007e6951e10696d9fe19e8dc7ca6044406220effd7503d4ab218b6a",
+    "compressedSha256": "6bbea8af5c62921a14d4c65f8db4c7bdf17cd3273f300e8122430e0466c9438d",
+    "size": 5566464
+  },
+  "submodules": [
+    "Source/Common/cpp-optparse",
+    "External/fmt",
+    "External/xxhash",
+    "External/range-v3",
+    "External/unordered_dense",
+    "External/rpmalloc"
+  ]
+}

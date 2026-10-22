@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import lzma
 import os
 from pathlib import Path, PurePosixPath
 import shutil
@@ -11,7 +12,7 @@ import subprocess
 import tempfile
 import urllib.request
 
-from runtime.desktop_launch import DesktopError, inventory_tree, verify_inventory
+from runtime.desktop_launch import DesktopError, inventory_tree, verify_inventory, copy_file
 
 LOCK = Path(__file__).with_name("wine-arm64ec-11.20-fex-2610.json")
 
@@ -26,6 +27,41 @@ def sha256_file(path):
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def install_termination_guard(root):
+    """Replace one verified RPM DLL; the compiler is build/reproduction-only."""
+    target = runtime_target()
+    patch = target['translation']['terminationGuard']
+    vendor = Path(__file__).parent / 'vendor/fex-2610-cage1'
+    source = vendor / 'source.json'
+    if sha256_file(source) != patch['sourceSha256']:
+        raise DesktopError('FEX source/build identity mismatch')
+    record = json.loads(source.read_text())['dll']
+    archive = vendor / 'libarm64ecfex.dll.xz'
+    if sha256_file(archive) != record['compressedSha256']:
+        raise DesktopError('FEX termination guard archive checksum mismatch')
+    decoder = lzma.LZMADecompressor(memlimit=128 * 1024**2)
+    data = decoder.decompress(archive.read_bytes(), max_length=record['size'] + 1)
+    if (not decoder.eof or decoder.unused_data or len(data) != record['size']
+            or hashlib.sha256(data).hexdigest() != record['sha256']):
+        raise DesktopError('FEX termination guard DLL checksum mismatch')
+    destination = Path(root) / 'lib64/wine-wow64/wine/aarch64-windows/libarm64ecfex.dll'
+    if destination.is_symlink() or not destination.is_file() or sha256_file(destination) != patch['rpmDllSha256']:
+        raise DesktopError('FEX termination guard requires the exact pinned RPM DLL')
+    temporary = destination.with_suffix('.dll.cage-new')
+    try:
+        with temporary.open('xb') as output:
+            output.write(data)
+        temporary.chmod(stat.S_IMODE(destination.stat().st_mode))
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+    notices = Path(root) / 'share/licenses/cage-fex-2610-cage1'
+    notices.mkdir(parents=True, exist_ok=True)
+    for original in (source, vendor / 'LICENSES.txt',
+                     Path(__file__).parent / 'patches/fex-2610-process-termination.patch'):
+        shutil.copyfile(original, notices / original.name)
 
 
 def acquire_packages(cache):
@@ -143,7 +179,8 @@ def _materialize_payload(cache):
     from runtime.desktop_launch import digest_json
     cache = Path(cache).resolve()
     packages = acquire_packages(cache / "packages")
-    payload, receipt = cache / "files", cache / "inventory.json"
+    # Retain the original immutable cache: old export contexts may still use it.
+    payload, receipt = cache / "files-fex-cage1", cache / "inventory-fex-cage1.json"
     if payload.exists():
         inventory = json.loads(receipt.read_text())
         if digest_json(inventory) != runtime_target()["payloadDigest"]:
@@ -155,7 +192,15 @@ def _materialize_payload(cache):
     with tempfile.TemporaryDirectory(dir=cache) as td:
         root = Path(td) / "files"
         root.mkdir()
-        for package in packages:
+        base, base_receipt = cache / 'files', cache / 'inventory.json'
+        reused = False
+        if base.is_dir() and base_receipt.is_file():
+            inventory = json.loads(base_receipt.read_text())
+            if digest_json(inventory) == runtime_target()['rpmPayloadDigest']:
+                verify_inventory(base, inventory)
+                shutil.copytree(base, root, symlinks=True, dirs_exist_ok=True, copy_function=copy_file)
+                reused = True
+        for package in ([] if reused else packages):
             with subprocess.Popen(["rpm2cpio", str(package)], stdout=subprocess.PIPE) as process:
                 try:
                     extract_cpio(process.stdout, root)
@@ -167,8 +212,12 @@ def _materialize_payload(cache):
                     raise
                 if process.wait(timeout=30):
                     raise DesktopError("rpm2cpio failed")
-        for name, target in (("wine", "wine64"), ("wineserver", "wineserver64")):
-            (root / "bin" / name).symlink_to(target)
+        if not reused:
+            for name, target in (("wine", "wine64"), ("wineserver", "wineserver64")):
+                (root / "bin" / name).symlink_to(target)
+        if digest_json(inventory_tree(root)) != runtime_target()['rpmPayloadDigest']:
+            raise DesktopError('extracted ARM runtime differs from pinned RPM payload')
+        install_termination_guard(root)
         inventory = inventory_tree(root)
         if digest_json(inventory) != runtime_target()["payloadDigest"]:
             raise DesktopError("extracted ARM runtime payload differs from the pinned inventory")
@@ -183,6 +232,7 @@ def install_container_runtime(cache):
         raise DesktopError("Wine ARM64EC requires an aarch64 container")
     packages = acquire_packages(cache)
     subprocess.run(["dnf", "-y", "--setopt=install_weak_deps=False", "install", *map(str, packages)], check=True)
+    install_termination_guard('/usr')
 
 
 def verify_container_runtime(engine, image):

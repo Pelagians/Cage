@@ -52,7 +52,7 @@ jobs:
       - name: Install build and GUI test tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak podman uidmap slirp4netns fuse-overlayfs rpm2cpio xvfb openbox xdotool scrot xdg-utils
+          sudo apt-get install -y flatpak podman uidmap slirp4netns fuse-overlayfs rpm2cpio xvfb openbox xdotool scrot xdg-utils cmake ninja-build
           python -m pip install PyYAML pytest setuptools wheel
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           # The GUI proof creates a private D-Bus session, not a systemd user bus.
@@ -63,6 +63,8 @@ jobs:
           getconf PAGE_SIZE
       - name: Preserve existing contracts
         run: python -m pytest tests/ -q
+      - name: Reproduce the pinned ARM64EC termination guard from source
+        run: python scripts/rebuild-fex-shutdown.py --work "$RUNNER_TEMP/cage-fex-rebuild" --jobs 2
       - name: Cache native platform and pinned payload
         uses: actions/cache@v4
         with:
