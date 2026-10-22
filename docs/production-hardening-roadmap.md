@@ -93,7 +93,7 @@ Cage does not reconstruct CLR, GAC, PowerShell, Synchro, Chocolatey bootstrap, p
 |---|---|
 | `noahgiroux/CFW` | Compatibility construction, exact inputs, runtime proofs, prepared-prefix archive, evidence, and detached manifest |
 | `core/modules/chocolatey.py` | Strict recipe/profile validation and declaration-order consumer steps |
-| `core/chocolatey/assets/runtime-artifact.py` | Manifest/evidence verification and safe temporary extraction/promotion |
+| `core/chocolatey/assets/runtime_artifact.py` | Manifest/evidence verification and safe temporary extraction/promotion |
 | readiness/policy/lifecycle assets | Verification of imported behavior and requested package execution, without compatibility reconstruction |
 
 ### Acceptance criteria

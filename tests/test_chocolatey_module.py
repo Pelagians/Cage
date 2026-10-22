@@ -152,7 +152,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
         self.assertIn(_RUNTIME["manifestUrl"], script)
         self.assertIn(_RUNTIME["manifestSha256"], script)
         self.assertIn(_RUNTIME["wineImage"], script)
-        self.assertIn("runtime-artifact.py", script)
+        self.assertIn("runtime_artifact.py", script)
         self.assertIn("cfw-chocolatey-runtime", script)
         self.assertNotIn("KB3AIK_EN.iso", script)
         self.assertNotIn("Win7AndW2K8R2-KB3191566-x64.zip", script)
@@ -172,7 +172,7 @@ class ChocolateyModuleUnitTests(unittest.TestCase):
     def test_runtime_artifact_is_strictly_verified(self):
         steps = _manifest().modules[0].foundation_steps()
         seed = _commands_for(steps, "Seed CFW prepared prefix")
-        helper = (Path(__file__).resolve().parents[1] / "core/chocolatey/assets/runtime-artifact.py").read_text(encoding="utf-8")
+        helper = (Path(__file__).resolve().parents[1] / "core/chocolatey/assets/runtime_artifact.py").read_text(encoding="utf-8")
         self.assertIn("cage_fetch_verified", seed)
         self.assertIn("sha256sum", seed)
         self.assertIn("runtime evidence status is not passed", helper)

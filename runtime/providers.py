@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
+from core.chocolatey.assets.runtime_artifact import profile_identity
+
 from core.manifest import ManifestError, RuntimeSpec
 from runtime.catalog import (
     list_catalog_providers,
@@ -167,14 +169,7 @@ def required_cfw_runtime_artifact(manifest) -> dict[str, Any] | None:
         if isinstance(artifact, dict):
             normalized = dict(artifact)
             artifacts.append(normalized)
-            identities.add((
-                normalized["id"],
-                normalized["manifestSha256"],
-                normalized["wineImage"],
-                tuple(normalized["wineVersions"]),
-                tuple(sorted(normalized["environment"].items())),
-                normalized.get("sessionContract"),
-            ))
+            identities.add(profile_identity(normalized))
     if len(identities) > 1:
         raise ManifestError("Chocolatey modules declare conflicting CFW prepared runtimes")
     return artifacts[0] if artifacts else None

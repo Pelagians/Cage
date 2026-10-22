@@ -56,7 +56,7 @@ Cage's Chocolatey CI must not be green because the real lifecycle was skipped. U
 - Runtime-profile values are validated before build-script generation and transported as encoded data, not interpolated shell fragments.
 - Archive members are validated and extracted into temporary storage; the destination prefix is replaced only after paths, links, types, sizes, and required files pass.
 - A CFW-backed recipe cannot also select `runtime.runner`; Wine identity comes exclusively from the exact producer image digest.
-- A recipe contains exactly one Chocolatey module so the prepared prefix is materialized once.
+- Ordered Chocolatey modules share one coherent producer artifact and package source. The prepared prefix is materialized once; each module installs its packages at its declared position.
 - The first pinned CFW release activates a mandatory non-skipped lifecycle proof.
 
 ## Rejected alternatives

@@ -10,47 +10,23 @@ from typing import Any
 from urllib.parse import urlparse
 
 from core.chocolatey import asset_sha256, load_asset, load_asset_bytes, render_asset
+from core.chocolatey.assets.runtime_artifact import HOSTNAME_RE, UNSAFE_SOURCE_RE, validate_profile
 
 from .base import ModuleBase, ModuleError
 from ..build_step import BuildStep
 
 _PACKAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+\-]*$")
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_HOSTNAME_RE = re.compile(
-    r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$"
-)
-_WINE_IMAGE_RE = re.compile(r"^ghcr\.io/pelagians/cage-wine@sha256:[0-9a-f]{64}$")
-_RUNTIME_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
-_WINE_VERSION_RE = re.compile(r"^wine-[0-9]+(?:\.[0-9]+){1,2}$")
-_UNSAFE_SOURCE_RE = re.compile(r"[\x00-\x1f\x7f$`';&|<>]")
 _DEFAULT_CFW_RUNTIME_ASSET = "cfw-runtime-v1.0.7-wine-11.0.json"
 DEFAULT_CFW_RUNTIME_ARTIFACT: dict[str, Any] = json.loads(load_asset(_DEFAULT_CFW_RUNTIME_ASSET))
 DEFAULT_CFW_RUNTIME_PROFILE_ID = DEFAULT_CFW_RUNTIME_ARTIFACT["id"]
 CFW_RUNTIME_PROVIDER = "cfw-chocolatey-runtime"
 DEFAULT_CHOCOLATEY_PACKAGE_SOURCE = "https://community.chocolatey.org/api/v2/"
 
-_FAILURE_DIAGNOSTIC_ASSETS = {
-    "verify-chocolatey.sh",
-    "feature-policy.sh",
-    "smoke-lifecycle.sh",
-}
-_POST_SEED_STEP_SPECS = (
-    ("verify-chocolatey.sh", "Diagnose Chocolatey readiness", "wine-run", 600),
-    ("feature-policy.sh", "Verify Chocolatey external-host policy", "wine-run", 360),
-    ("smoke-lifecycle.sh", "Prove Chocolatey local package lifecycle", "wine-run", 1800),
-    ("install-package.sh", "Install Chocolatey packages", "wine-run", 1800),
+_READINESS_STEPS = (
+    ("verify-chocolatey.sh", "Diagnose Chocolatey readiness", 600, "diagnostic", "metadata/chocolatey-diagnostic.json"),
+    ("feature-policy.sh", "Verify Chocolatey external-host policy", 360, "featurePolicyEvidence", "metadata/chocolatey-feature-policy.json"),
+    ("smoke-lifecycle.sh", "Prove Chocolatey local package lifecycle", 1800, "smokeEvidence", "metadata/chocolatey-smoke.json"),
 )
-_RUNTIME_FIELDS = {
-    "id",
-    "url",
-    "evidenceUrl",
-    "manifestUrl",
-    "manifestSha256",
-    "wineImage",
-    "wineVersions",
-    "environment",
-    "sessionContract",
-}
 
 
 def _record_command(runtime: dict[str, Any] | None, asset_hashes: dict[str, str]) -> str:
@@ -80,40 +56,17 @@ class ChocolateyModule(ModuleBase):
     packages: list[str] | None = None
     package_source: str | None = None
 
-    @staticmethod
-    def _validate_runtime_source(field_name: str, value: str) -> None:
-        if _UNSAFE_SOURCE_RE.search(value):
-            raise ModuleError(f"chocolatey runtimeArtifact.{field_name} contains unsafe characters")
-        parsed = urlparse(value)
-        if parsed.scheme == "https":
-            if (
-                not parsed.hostname
-                or _HOSTNAME_RE.fullmatch(parsed.hostname) is None
-                or parsed.username
-                or parsed.password
-            ):
-                raise ModuleError(f"chocolatey runtimeArtifact.{field_name} must be a plain HTTPS URL")
-            return
-        if parsed.scheme == "file":
-            if parsed.netloc not in ("", "localhost") or not parsed.path.startswith("/"):
-                raise ModuleError(f"chocolatey runtimeArtifact.{field_name} must use an absolute file URL")
-            return
-        if not value.startswith("/"):
-            raise ModuleError(
-                f"chocolatey runtimeArtifact.{field_name} must use https://, file://, or an absolute path"
-            )
-
     def validate(self) -> None:
         self._packages()
         self._runtime_artifact()
         source = self.package_source or DEFAULT_CHOCOLATEY_PACKAGE_SOURCE
-        if _UNSAFE_SOURCE_RE.search(source):
+        if UNSAFE_SOURCE_RE.search(source):
             raise ModuleError("chocolatey packageSource contains unsafe characters")
         parsed = urlparse(source)
         if (
             parsed.scheme != "https"
             or not parsed.hostname
-            or _HOSTNAME_RE.fullmatch(parsed.hostname) is None
+            or HOSTNAME_RE.fullmatch(parsed.hostname) is None
             or parsed.username
             or parsed.password
         ):
@@ -147,78 +100,29 @@ class ChocolateyModule(ModuleBase):
         runtime = (self.install or {}).get("runtimeArtifact", DEFAULT_CFW_RUNTIME_ARTIFACT)
         if runtime is None:
             return None
-        if not isinstance(runtime, dict):
-            raise ModuleError("chocolatey install.runtimeArtifact must be an object")
-        unknown = sorted(set(runtime) - _RUNTIME_FIELDS)
-        if unknown:
-            raise ModuleError(f"unknown Chocolatey runtimeArtifact field: {unknown[0]}")
-        for field_name in ("id", "url", "evidenceUrl", "manifestUrl", "manifestSha256", "wineImage"):
-            value = runtime.get(field_name)
-            if not isinstance(value, str) or not value:
-                raise ModuleError(f"chocolatey runtimeArtifact.{field_name} must be a non-empty string")
-        if not _RUNTIME_ID_RE.fullmatch(runtime["id"]):
-            raise ModuleError("chocolatey runtimeArtifact.id must be a safe cache identifier")
-        for field_name in ("manifestSha256",):
-            if not _SHA256_RE.fullmatch(runtime[field_name]):
-                raise ModuleError(f"chocolatey runtimeArtifact.{field_name} must be a complete lowercase sha256")
-        if not _WINE_IMAGE_RE.fullmatch(runtime["wineImage"]):
-            raise ModuleError(
-                "chocolatey runtimeArtifact.wineImage must be a digest-pinned "
-                "ghcr.io/pelagians/cage-wine image"
-            )
-        for field_name in ("url", "evidenceUrl", "manifestUrl"):
-            self._validate_runtime_source(field_name, runtime[field_name])
-        wine_versions = runtime.get("wineVersions")
-        if wine_versions != ["wine-11.0"]:
-            raise ModuleError("Chocolatey Phase 1 supports exactly Wine 11 (wine-11.0)")
-        session_contract = runtime.get("sessionContract")
-        if session_contract is not None and session_contract != "cage.selkies-wayland/v1":
-            raise ModuleError(
-                "chocolatey runtimeArtifact.sessionContract must be cage.selkies-wayland/v1"
-            )
-        environment = runtime.get("environment")
-        if environment != {"WINEDLLOVERRIDES": ""}:
-            raise ModuleError(
-                "chocolatey runtimeArtifact.environment must be exactly "
-                "{'WINEDLLOVERRIDES': ''} for Phase 1"
-            )
-        return {
-            "id": runtime["id"],
-            "url": runtime["url"],
-            "evidenceUrl": runtime["evidenceUrl"],
-            "manifestUrl": runtime["manifestUrl"],
-            "manifestSha256": runtime["manifestSha256"],
-            "wineImage": runtime["wineImage"],
-            "wineVersions": ["wine-11.0"],
-            "environment": {"WINEDLLOVERRIDES": ""},
-            **({
-                "sessionContract": session_contract,
-            } if session_contract else {}),
-        }
+        try:
+            validate_profile(runtime)
+        except ValueError as exc:
+            raise ModuleError(str(exc)) from exc
+        return {**{key: value for key, value in runtime.items() if value is not None},
+                "wineVersions": list(runtime["wineVersions"]),
+                "environment": dict(runtime["environment"])}
 
-    def _all_steps(self) -> list[BuildStep]:
+    def foundation_steps(self) -> list[BuildStep]:
+        """Verify and seed the producer runtime once, before application modules."""
         self.validate()
-        packages = self._packages()
         runtime = self._runtime_artifact()
         values = {
-            "PACKAGE_ARGS": " ".join(shlex.quote(package) for package in packages),
-            "PACKAGE_SOURCE": self.package_source or DEFAULT_CHOCOLATEY_PACKAGE_SOURCE,
-            "SOURCE_ARG": " -s '" + (self.package_source or DEFAULT_CHOCOLATEY_PACKAGE_SOURCE) + "'",
             "SMOKE_NUPKG_BASE64": base64.b64encode(
                 load_asset_bytes("cage-chocolatey-smoke.0.1.0.nupkg")
             ).decode("ascii"),
             "SMOKE_NUPKG_SHA256": asset_sha256("cage-chocolatey-smoke.0.1.0.nupkg"),
-            "POWERSHELL_HOST_FEATURE": "powershellHost",
-            "POWERSHELL_HOST_POLICY": "disabled",
-            "ALLOW_GLOBAL_CONFIRMATION_POLICY": "disabled",
-            "REQUESTED_PACKAGES_JSON": json.dumps(packages, separators=(",", ":")),
-            "PACKAGE_EVIDENCE_HELPER_BASE64": base64.b64encode(load_asset_bytes("package-evidence.py")).decode("ascii"),
         }
         asset_names = (
             "fetch-verified.sh",
             "failure-diagnostics.sh",
             "seed-cfw-runtime.sh",
-            "runtime-artifact.py",
+            "runtime_artifact.py",
             "verify-chocolatey.sh",
             "feature-policy.sh",
             "smoke-lifecycle.sh",
@@ -258,7 +162,7 @@ class ChocolateyModule(ModuleBase):
                 "CFW_RUNTIME_PROFILE_BASE64": base64.b64encode(profile_json).decode("ascii"),
                 "CFW_RUNTIME_PROFILE_KEY": runtime["manifestSha256"],
                 "CFW_RUNTIME_HELPER_BASE64": base64.b64encode(
-                    load_asset_bytes("runtime-artifact.py")
+                    load_asset_bytes("runtime_artifact.py")
                 ).decode("ascii"),
             })
             common_metadata.update({
@@ -281,51 +185,49 @@ class ChocolateyModule(ModuleBase):
                 },
             ))
         failure_helper = load_asset("failure-diagnostics.sh").rstrip()
-        for asset_name, description, kind, timeout in _POST_SEED_STEP_SPECS:
-            if asset_name == "install-package.sh" and not packages:
-                continue
-            script = render_asset(asset_name, values)
-            if asset_name in _FAILURE_DIAGNOSTIC_ASSETS:
-                script = failure_helper + "\n\n" + script
-            metadata: dict[str, Any] = {
-                **common_metadata,
-                "scriptAsset": f"core/chocolatey/assets/{asset_name}",
-                "scriptSha256": asset_hashes[asset_name],
-            }
-            if asset_name == "verify-chocolatey.sh":
-                metadata["diagnostic"] = "metadata/chocolatey-diagnostic.json"
-            elif asset_name == "feature-policy.sh":
-                metadata["featurePolicyEvidence"] = "metadata/chocolatey-feature-policy.json"
-            elif asset_name == "smoke-lifecycle.sh":
-                metadata["smokeEvidence"] = "metadata/chocolatey-smoke.json"
-            elif asset_name == "install-package.sh":
-                metadata.update({"packageEvidence": "metadata/chocolatey-package-evidence.json", "requestedPackages": packages})
+        for asset_name, description, timeout, evidence_key, evidence_path in _READINESS_STEPS:
             steps.append(BuildStep(
-                commands=[script],
-                description=(
-                    f"Install Chocolatey packages: {' '.join(packages)}"
-                    if asset_name == "install-package.sh" else description
-                ),
-                kind=kind,
+                commands=[failure_helper + "\n\n" + render_asset(asset_name, values)],
+                description=description,
+                kind="wine-run",
                 timeout=timeout,
-                metadata=metadata,
+                metadata={**common_metadata, "scriptAsset": f"core/chocolatey/assets/{asset_name}",
+                          "scriptSha256": asset_hashes[asset_name], evidence_key: evidence_path},
             ))
         return steps
 
-    def foundation_steps(self) -> list[BuildStep]:
-        """Producer verification and readiness operations, compiled once before modules."""
-        return [step for step in self._all_steps()
-                if step.kind == "prefix-seed" or step.kind == "metadata"
-                or step.description in {
-                    "Diagnose Chocolatey readiness",
-                    "Verify Chocolatey external-host policy",
-                    "Prove Chocolatey local package lifecycle",
-                }]
-
     def build(self) -> list[BuildStep]:
         """Only install packages at this module's declared position."""
-        return [step for step in self._all_steps()
-                if step.description.startswith("Install Chocolatey packages:")]
+        self.validate()
+        packages = self._packages()
+        if not packages:
+            return []
+        runtime = self._runtime_artifact()
+        source = self.package_source or DEFAULT_CHOCOLATEY_PACKAGE_SOURCE
+        values = {
+            "PACKAGE_ARGS": " ".join(shlex.quote(package) for package in packages),
+            "PACKAGE_SOURCE": source,
+            "SOURCE_ARG": " -s '" + source + "'",
+            "REQUESTED_PACKAGES_JSON": json.dumps(packages, separators=(",", ":")),
+            "PACKAGE_EVIDENCE_HELPER_BASE64": base64.b64encode(load_asset_bytes("package-evidence.py")).decode("ascii"),
+        }
+        return [BuildStep(
+            commands=[render_asset("install-package.sh", values)],
+            description=f"Install Chocolatey packages: {' '.join(packages)}",
+            kind="wine-run",
+            timeout=1800,
+            metadata={
+                "runtimeId": runtime["id"] if runtime else DEFAULT_CFW_RUNTIME_PROFILE_ID,
+                "runtimeProvider": CFW_RUNTIME_PROVIDER,
+                "runtimeAvailable": runtime is not None,
+                "scriptAsset": "core/chocolatey/assets/install-package.sh",
+                "scriptSha256": asset_sha256("install-package.sh"),
+                "packageEvidence": "metadata/chocolatey-package-evidence.json",
+                "requestedPackages": packages,
+                **({"runtimeManifestSha256": runtime["manifestSha256"], "wineImage": runtime["wineImage"],
+                    "wineVersions": runtime["wineVersions"]} if runtime else {}),
+            },
+        )]
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {"type": self.type}

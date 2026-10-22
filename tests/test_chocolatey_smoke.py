@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import runpy
 import shutil
 import subprocess
@@ -165,17 +166,13 @@ class ChocolateySmokePackageTests(unittest.TestCase):
         self.assertFalse(any(name.startswith("Install Chocolatey packages:") for name in descriptions))
 
         workflow = (ROOT / ".github/workflows/chocolatey-smoke.yml").read_text(encoding="utf-8")
-        self.assertIn("Check for released CFW runtime", workflow)
-        self.assertIn("runtime-profile:", workflow)
-        self.assertIn("image: ${{ steps.runtime.outputs.image }}", workflow)
         self.assertIn("CAGE_RUNTIME_IMAGE: cage-wine-cfw-candidate:${{ github.sha }}", workflow)
-        self.assertIn("needs: runtime-profile", workflow)
-        self.assertIn("qualified: ${{ steps.runtime.outputs.qualified }}", workflow)
         self.assertIn("docker build", workflow)
         self.assertIn("--requalify-cfw-runtime", workflow)
         self.assertNotIn("if: needs.runtime-profile.outputs.qualified == 'true'", workflow)
         self.assertNotIn("if: steps.runtime.outputs.available == 'true'", workflow)
-        self.assertIn("DEFAULT_CFW_RUNTIME_ARTIFACT", workflow)
+        self.assertIn("validate_profile(DEFAULT_CFW_RUNTIME_ARTIFACT)", workflow)
+        self.assertNotIn("runtime-profile:", workflow)
         self.assertIn("CFW runtime evidence", workflow)
         self.assertIn("chocolatey-diagnostic.json", workflow)
         self.assertIn("chocolatey-feature-policy.json", workflow)
@@ -235,6 +232,46 @@ class ChocolateyDiagnosticTierTests(unittest.TestCase):
         self.assertIn("choco-live-process-tree.log", helper)
         self.assertNotIn("ps -eo", helper)
 
+    def test_failure_collector_retains_both_snapshots_and_bounded_inventories(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prefix = root / "prefix"
+            choco = prefix / "drive_c/ProgramData/chocolatey"
+            choco.mkdir(parents=True)
+            (choco / "choco.exe").write_bytes(b"choco")
+            (choco / "extra.txt").write_text("extra")
+            binary = root / "bin"
+            binary.mkdir()
+            wine = binary / "wine"
+            wine.write_text("#!/bin/sh\necho fake-wine\nexit 1\n")
+            wine.chmod(0o755)
+            metadata = root / "bundle/metadata/diagnostic.json"
+            metadata.parent.mkdir(parents=True)
+            metadata.write_text('{"status":"failed"}')
+            helper = root / "failure-diagnostics.sh"
+            helper.write_text(load_asset("failure-diagnostics.sh"))
+            result = subprocess.run(
+                ["bash", "-c", 'source "$1"; cage_chocolatey_collect_failure_diagnostics "$2" test',
+                 "bash", str(helper), str(metadata)],
+                env={**os.environ, "PATH": f"{binary}:{os.environ['PATH']}",
+                     "WINEPREFIX": str(prefix), "CAGE_BUNDLE_MOUNT": str(root / "bundle"),
+                     "CFW_CHOCOLATEY_WINDOWS_PATH": r"C:\ProgramData\chocolatey\choco.exe",
+                     "CFW_CHOCOLATEY_PREFIX_PATH": str(choco / "choco.exe"),
+                     "CFW_CHOCOLATEY_QUERY_LAUNCHER": "wine",
+                     "CAGE_CHOCOLATEY_LIVE_SNAPSHOT_DELAY": "0",
+                     "CAGE_CHOCOLATEY_FAILURE_INVENTORY_TIMEOUT": "5s",
+                     "CAGE_CHOCOLATEY_FAILURE_INVENTORY_LIMIT": "1"},
+                capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            evidence = json.loads(metadata.read_text())["tiers"]["failureOnly"]
+            self.assertTrue(all(evidence["checks"].values()), evidence)
+            logs = root / "bundle/logs/chocolatey-diagnostics"
+            for name in ("choco-live-process-tree.log", "process-tree.log", "promoted-files.log", "prefix-files.log"):
+                self.assertTrue((logs / name).is_file(), name)
+            for name in ("promoted-files.log", "prefix-files.log"):
+                self.assertIn("[truncated after 1 files]", (logs / name).read_text())
+
     def test_advisory_checks_do_not_determine_overall_status(self):
         verify = load_asset("verify-chocolatey.sh")
         self.assertIn('"status": "passed" if not failed else "failed"', verify)
@@ -245,10 +282,10 @@ class ChocolateyDiagnosticTierTests(unittest.TestCase):
         package = load_asset("install-package.sh")
         self.assertNotIn("feature disable", policy)
         self.assertNotIn("feature enable", policy)
-        self.assertIn("{{POWERSHELL_HOST_POLICY}}", policy)
-        self.assertIn("{{ALLOW_GLOBAL_CONFIRMATION_POLICY}}", policy)
+        self.assertNotIn("{{POWERSHELL_HOST_POLICY}}", policy)
+        self.assertNotIn("{{ALLOW_GLOBAL_CONFIRMATION_POLICY}}", policy)
         self.assertIn("feature-list.log", policy)
-        self.assertIn("^{{POWERSHELL_HOST_FEATURE}}\\|(disabled|false)", policy)
+        self.assertIn("^powershellHost\\|(disabled|false)", policy)
         self.assertIn("^allowGlobalConfirmation\\|(disabled|false)", policy)
         self.assertNotIn("disable-powershellHost.log", policy)
         self.assertIn("cage_chocolatey_collect_failure_diagnostics", policy)

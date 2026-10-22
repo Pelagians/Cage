@@ -35,42 +35,8 @@ permissions:
   packages: read
 
 jobs:
-  runtime-profile:
-    name: resolve immutable CFW runtime
-    runs-on: ubuntu-latest
-    outputs:
-      available: ${{ steps.runtime.outputs.available }}
-      qualified: ${{ steps.runtime.outputs.qualified }}
-      image: ${{ steps.runtime.outputs.image }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
-      - name: Check for released CFW runtime
-        id: runtime
-        shell: bash
-        run: |
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          from core.modules.chocolatey import DEFAULT_CFW_RUNTIME_ARTIFACT
-          artifact = DEFAULT_CFW_RUNTIME_ARTIFACT
-          print(f"available={'true' if artifact else 'false'}")
-          print(f"qualified={'true' if artifact and artifact.get('sessionContract') == 'cage.selkies-wayland/v1' else 'false'}")
-          print(f"image={artifact['wineImage'] if artifact else ''}")
-          PY
-
-      - name: Explain blocked consumer lifecycle
-        if: steps.runtime.outputs.qualified != 'true'
-        run: |
-          echo '::notice title=CFW lifecycle blocked::The pinned CFW producer image does not yet declare cage.selkies-wayland/v1.'
-          echo 'CFW must publish a digest-pinned universal Selkies runtime before this consumer lifecycle can run.'
-
   lifecycle:
     name: prove CFW consumer lifecycle
-    needs: runtime-profile
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -92,6 +58,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e .
+
+      - name: Validate released CFW runtime
+        shell: bash
+        run: |
+          python - <<'PY'
+          from core.chocolatey.assets.runtime_artifact import validate_profile
+          from core.modules.chocolatey import DEFAULT_CFW_RUNTIME_ARTIFACT
+          validate_profile(DEFAULT_CFW_RUNTIME_ARTIFACT)
+          if DEFAULT_CFW_RUNTIME_ARTIFACT.get('sessionContract') != 'cage.selkies-wayland/v1':
+              raise ValueError('CFW runtime must declare cage.selkies-wayland/v1')
+          PY
 
       - name: Build universal Wine 11 CFW candidate
         run: |
