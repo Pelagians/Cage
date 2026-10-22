@@ -278,6 +278,20 @@ class TrustedReleaseTests(unittest.TestCase):
                          {'sha256:'+'a'*64,'sha256:'+'b'*64})
         with self.assertRaises(r.ReleaseError):r.oci_image_id('latest')
 
+    def test_directory_aliases_cannot_bypass_cache_or_document_boundaries(self):
+        cache=r.directory(self.root/'cache')
+        alias=r.directory(self.root/'alias/../cache')
+        self.assertEqual(cache,alias)
+        exports=r.directory(self.root/'documents')
+        outside=self.root/'outside.txt';outside.write_text('not exported')
+        record={'engine':'podman','stateDirectory':str(self.root/'state'),'exportsDirectory':str(exports)}
+        release={'entry':{'imageId':'sha256:'+'a'*64}}
+        with self.assertRaisesRegex(r.ReleaseError,'exports directory'):
+            delivery._container_args(record,release,[exports/'../outside.txt'])
+        (exports/'linked.txt').symlink_to(outside)
+        with self.assertRaisesRegex(r.ReleaseError,'exports directory'):
+            delivery._container_args(record,release,[exports/'linked.txt'])
+
     def test_changed_installed_flatpak_commit_is_refused_before_any_helper_runs(self):
         self.fake_runtime();path=self.release('4',4,kind='flatpak')
         with patch('artifact.release_install._flatpak_commit',return_value='4'*64):

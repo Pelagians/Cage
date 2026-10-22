@@ -93,6 +93,7 @@ def directory(path):
     path = Path(path).absolute()
     # Refuse links inside the selected private cache, including its root.
     if path.is_symlink():raise ReleaseError('linked release directory: ' + str(path))
+    path=path.resolve()
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
     return path
 

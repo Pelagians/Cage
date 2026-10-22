@@ -99,9 +99,9 @@ def _container_load(release, engine):
 def _container_args(record, release, files, action=None):
     # Match the already qualified direct desktop OCI workflow. No host network,
     # home directory, daemon socket or arbitrary mount from release metadata.
-    env=os.environ;exports=Path(record['exportsDirectory']);mapped=[]
+    env=os.environ;exports=Path(record['exportsDirectory']).resolve();mapped=[]
     for name in files:
-        path=Path(name).absolute()
+        path=Path(name).resolve()
         if not path.is_relative_to(exports):raise r.ReleaseError('container documents must be inside the explicitly selected exports directory')
         mapped.append('/exports/'+path.relative_to(exports).as_posix())
     args=[record['engine'],'run','--rm','--pull=never','--userns=keep-id','--user','0:0','--network=none',
