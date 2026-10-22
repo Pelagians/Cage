@@ -318,7 +318,7 @@ def tool_hashes():
 def protected_roots():
     data = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share')))
     return [Path.home() / '.var/app', data / 'cage/appimage', data / 'cage/appimages',
-            data / 'cage/package-updates']
+            data / 'cage/package-updates', data / 'cage/releases']
 
 
 def prune_tools(cache, *, min_age_hours=24, apply=False):

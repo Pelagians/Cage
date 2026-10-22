@@ -392,6 +392,33 @@ def cmd_package_update(args):
     return 0
 
 
+def cmd_release(args):
+    from artifact import releases
+    from artifact.release_install import deploy, operate
+    import subprocess
+    try:
+        operation = args.release_command
+        if operation == 'keygen':
+            result = releases.generate_key(args.private_key, args.public_key)
+        elif operation == 'create':
+            result = releases.create_release(args.spec, args.private_key, args.output, engine=args.engine)
+        elif operation == 'fetch':
+            value = releases.fetch_release(args.release, args.key, args.format, cache=args.cache_dir)
+            result = {'verified': True, 'releaseSha256': value['digest'], 'directory': value['directory'],
+                      'publisherKeySha256': value['manifest']['publisherKeySha256']}
+        elif operation in ('install', 'update'):
+            result = deploy(args.release, args.key, args.format, action=operation, cache=args.cache_dir,
+                            files=args.files, engine=args.engine, state_dir=args.state_dir, exports_dir=args.exports_dir)
+        else:
+            result = operate(args.application, args.key, args.format, action=operation,
+                             cache=args.cache_dir, files=getattr(args, 'files', ()))
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
+        raise releases.ReleaseError(str(exc)) from exc
+
+
 def cmd_recover_flatpak(args):
     from artifact.updates import recover_flatpak
     print(json.dumps(recover_flatpak(args.directory), indent=2, sort_keys=True))
@@ -770,6 +797,32 @@ def build_parser():
     p.add_argument("directory", help="Recovery directory printed by cage update")
     p.set_defaults(func=cmd_recover_flatpak)
 
+    p = sub.add_parser('release', help='Create, verify and deploy publisher-signed application releases')
+    rsub = p.add_subparsers(dest='release_command', required=True)
+    rp = rsub.add_parser('keygen', help='Generate an explicit publisher keypair; never replaces keys')
+    rp.add_argument('--private-key', required=True)
+    rp.add_argument('--public-key', required=True)
+    rp.set_defaults(func=cmd_release)
+    rp = rsub.add_parser('create', help='Sign a release from qualified exports and evidence')
+    rp.add_argument('spec')
+    rp.add_argument('--private-key', required=True)
+    rp.add_argument('--output', required=True)
+    rp.add_argument('--engine', default='podman')
+    rp.set_defaults(func=cmd_release)
+    for operation in ('fetch', 'install', 'update', 'run', 'rollback', 'recover', 'info'):
+        rp = rsub.add_parser(operation)
+        rp.add_argument('release' if operation in ('fetch', 'install', 'update') else 'application')
+        rp.add_argument('--key', required=True, help='Publisher public key obtained through a trusted channel')
+        rp.add_argument('--format', required=True, choices=['flatpak', 'appimage', 'oci'])
+        rp.add_argument('--cache-dir', help='Private retained release cache and installation ledger')
+        if operation in ('install', 'update'):
+            rp.add_argument('--engine', default='podman')
+            rp.add_argument('--state-dir', help='OCI persistent state parent, fixed at installation')
+            rp.add_argument('--exports-dir', help='OCI document directory, fixed at installation')
+        if operation in ('install', 'update', 'run', 'rollback'):
+            rp.add_argument('files', nargs='*', help='Documents to open during launch or trial')
+        rp.set_defaults(func=cmd_release)
+
     # image
     p = sub.add_parser("image", help="Inspect and verify Cage application OCI images")
     isub = p.add_subparsers(dest="image_command", required=True)
@@ -1021,7 +1074,8 @@ def main(argv=None):
         # positional after optional arguments in a subparser.  Cage supports
         # Python 3.11, so recover only non-option run-file arguments while
         # continuing to reject misspelled or unsupported flags.
-        if args.command in {"run", "update", "rollback", "migrate"} and all(not item.startswith("-") for item in unknown):
+        if (args.command in {"run", "update", "rollback", "migrate"} or
+            args.command == 'release' and getattr(args, 'release_command', '') in {'install', 'update', 'run', 'rollback'}) and all(not item.startswith("-") for item in unknown):
             args.files.extend(unknown)
         else:
             parser.error(f"unrecognized arguments: {' '.join(unknown)}")

@@ -29,7 +29,7 @@ jobs:
             store: .cage/flatpak-arm64
             provider: wine-arm64ec
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 100
+    timeout-minutes: 140
     env:
       PYTHONDONTWRITEBYTECODE: '1'
       CAGE_TEST_DISCARD_PREFIXES: '1'
@@ -42,7 +42,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y flatpak podman uidmap slirp4netns fuse-overlayfs rpm2cpio squashfs-tools binutils xvfb openbox xdotool scrot xdg-utils x11-xserver-utils xdg-desktop-portal xdg-desktop-portal-gtk desktop-file-utils
-          python -m pip install PyYAML pytest setuptools wheel
+          python -m pip install PyYAML pytest setuptools wheel 'cryptography>=43'
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           mkdir -p "$HOME/.config/containers" "$HOME/Documents" dist/onboarding-evidence
           printf '[engine]\ncgroup_manager="cgroupfs"\nevents_logger="file"\n' > "$HOME/.config/containers/containers.conf"
@@ -80,6 +80,7 @@ jobs:
           wait "$candidate_pid"
           export FLATPAK_USER_DIR="$PWD/${{ matrix.store }}"
           CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/flatpak" python scripts/test-onboarding-poc.py flatpak dist/onboarding-3.6.flatpak dist/onboarding-3.6.1.flatpak --legacy dist/onboarding-legacy.flatpak
+          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/trusted-flatpak" python scripts/test-onboarding-poc.py flatpak dist/onboarding-3.6.flatpak dist/onboarding-3.6.1.flatpak --trusted --qualification dist/onboarding-evidence/flatpak/result.json
           SH
       - name: Qualify AppImage in a clean consumer without host Wine or Cage installation
         run: |
@@ -91,7 +92,7 @@ jobs:
           python scripts/test-storage-poc.py dist/onboarding-legacy.AppImage.build >dist/onboarding-evidence/storage-legacy-appimage.json
           podman build -t localhost/cage-onboarding-tools -f - . <<'CONTAINER'
           FROM registry.fedoraproject.org/fedora:44
-          RUN dnf -y --setopt=install_weak_deps=False install python3 xdotool scrot xdg-utils desktop-file-utils xrdb glibc-langpack-en && dnf clean all
+          RUN dnf -y --setopt=install_weak_deps=False install python3 python3-pyyaml python3-cryptography xdotool scrot xdg-utils desktop-file-utils xrdb glibc-langpack-en && dnf clean all
           CONTAINER
           mkdir -p .cage/onboarding-consumer-home .cage/onboarding-appimage-tmp
           dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24' bash -eu -o pipefail <<'SH'
@@ -103,6 +104,13 @@ jobs:
             -e TMPDIR="$PWD/.cage/onboarding-appimage-tmp" -e CAGE_TEST_DISCARD_PREFIXES=1 \
             -e CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/appimage" \
             localhost/cage-onboarding-tools python3 scripts/test-onboarding-poc.py appimage dist/onboarding-3.6.AppImage dist/onboarding-3.6.1.AppImage --legacy dist/onboarding-legacy.AppImage
+          podman run --rm --net=none --userns=keep-id --user "$(id -u):$(id -g)" --hostname "$(hostname)" \
+            --security-opt label=disable -v "$PWD:$PWD" -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+            -v "$XAUTHORITY:$XAUTHORITY:ro" -w "$PWD" -e DISPLAY -e XAUTHORITY \
+            -e HOME="$PWD/.cage/onboarding-consumer-home" -e APPIMAGE_EXTRACT_AND_RUN=1 \
+            -e TMPDIR="$PWD/.cage/onboarding-appimage-tmp" -e CAGE_TEST_DISCARD_PREFIXES=1 \
+            -e CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/trusted-appimage" \
+            localhost/cage-onboarding-tools python3 scripts/test-onboarding-poc.py appimage dist/onboarding-3.6.AppImage dist/onboarding-3.6.1.AppImage --trusted --qualification dist/onboarding-evidence/appimage/result.json
           SH
       - name: Collect records without following Wine drive links
         if: always()
@@ -127,7 +135,7 @@ jobs:
             provider: wine-arm64ec
             version: '11.20'
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 100
+    timeout-minutes: 140
     env:
       PYTHONDONTWRITEBYTECODE: '1'
       CAGE_TEST_DISCARD_PREFIXES: '1'
@@ -140,7 +148,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y podman uidmap slirp4netns fuse-overlayfs rpm2cpio xvfb openbox xdotool scrot xdg-utils x11-xserver-utils
-          python -m pip install PyYAML setuptools wheel
+          python -m pip install PyYAML setuptools wheel 'cryptography>=43'
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           mkdir -p "$HOME/.config/containers" dist/onboarding-evidence
           printf '[engine]\ncgroup_manager="cgroupfs"\nevents_logger="file"\n' > "$HOME/.config/containers/containers.conf"
@@ -175,6 +183,7 @@ jobs:
             legacy_oci=(--legacy localhost/cage-onboarding:legacy)
           fi
           CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/oci" python scripts/test-onboarding-poc.py oci localhost/cage-onboarding:3.6 localhost/cage-onboarding:3.6.1 "${legacy_oci[@]}"
+          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/trusted-oci" python scripts/test-onboarding-poc.py oci localhost/cage-onboarding:3.6 localhost/cage-onboarding:3.6.1 --trusted --qualification dist/onboarding-evidence/oci/result.json
           SH
       - name: Collect records without following Wine drive links
         if: always()

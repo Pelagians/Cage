@@ -5,6 +5,7 @@ from artifact.storage import build_lock, record_export
 
 import hashlib
 import json
+import re
 from pathlib import Path
 import shutil
 from xml.sax.saxutils import escape
@@ -108,6 +109,9 @@ def export_flatpak(bundle, *, output, store, context_dir=None, timeout=900):
                      *plan["permissions"], str(build_dir)], store=store, timeout=timeout)
         repo = context.resolve() / "repository"
         run_flatpak(["build-export", str(repo), str(build_dir), "stable"], store=store, timeout=timeout)
+        commit = (repo / 'refs/heads/app' / plan['desktop']['id'] / plan['target']['architecture'] / 'stable').read_text().strip()
+        if not re.fullmatch('[a-f0-9]{64}', commit):
+            raise DesktopError('Flatpak repository returned an invalid application commit')
         temporary = Path(str(output) + ".partial")
         run_flatpak(["build-bundle", "--runtime-repo=" + plan["target"]["remoteUrl"],
                      str(repo), str(temporary), plan["desktop"]["id"], "stable"], store=store, timeout=timeout)
@@ -117,7 +121,8 @@ def export_flatpak(bundle, *, output, store, context_dir=None, timeout=900):
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 h.update(chunk)
         result = {"schemaVersion": "cage.flatpak-export-result/v0", "success": True, "output": str(output),
-                  "sha256": h.hexdigest(), "bytes": output.stat().st_size, "context": str(context.resolve()), "plan": plan}
+                  "sha256": h.hexdigest(), "bytes": output.stat().st_size, "context": str(context.resolve()), "plan": plan,
+                  "commit": commit}
         Path(str(output) + ".json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
         result['storage'] = record_export(context, bundle, 'flatpak', {'kind': 'file', 'path': str(output), 'sha256': result['sha256']})
         return result

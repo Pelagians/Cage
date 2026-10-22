@@ -7,6 +7,8 @@ workflow drivers; format adapters share the same lifecycle assertions.
 from pathlib import Path
 import argparse
 import fcntl
+import functools
+import http.server
 import hashlib
 import importlib.util
 import json
@@ -16,6 +18,7 @@ import struct
 import subprocess
 import sys
 import time
+import threading
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +38,8 @@ def main():
     parser.add_argument('format', choices=['flatpak', 'appimage', 'container', 'oci'])
     parser.add_argument('baseline'); parser.add_argument('candidate')
     parser.add_argument('--legacy'); parser.add_argument('--application', choices=WORKFLOWS, default='sumatrapdf')
+    parser.add_argument('--trusted', action='store_true', help='Drive the same proof through signed release delivery')
+    parser.add_argument('--qualification', help='Completed matching application proof to bind in test releases')
     args = parser.parse_args(); kind = args.format; workflow = WORKFLOWS[args.application]()
     app = workflow.app_id
     baseline, candidate = (Path(p).resolve() if kind != 'oci' else p for p in (args.baseline, args.candidate))
@@ -68,7 +73,37 @@ def main():
     expected = document.read_bytes(); original = document; original_hash = sha(original)
     installed = None
     first_package = legacy or baseline
-    if kind == 'flatpak':
+    release_urls={}; server=None; key=None; release_cache=evidence/'trusted-cache'
+    if args.trusted:
+        assert not legacy and kind!='container' and args.qualification
+        from artifact import releases
+        from artifact.release_install import deploy
+        key=evidence/'publisher-public.pem'; private=evidence/'publisher-private.pem'
+        releases.generate_key(private,key)
+        producer=Path(baseline).parent if kind!='oci' else evidence/'producer'
+        producer.mkdir(parents=True,exist_ok=True)
+        class Handler(http.server.SimpleHTTPRequestHandler):
+            def log_message(self,*args):pass
+        server=http.server.ThreadingHTTPServer(('127.0.0.1',0),functools.partial(Handler,directory=str(producer)))
+        threading.Thread(target=server.serve_forever,daemon=True).start()
+        for sequence,artifact in enumerate((baseline,candidate),1):
+            spec_path=producer/(token+'-'+kind+'-'+str(sequence)+'.spec.json')
+            output=producer/(token+'-'+kind+'-'+str(sequence)+'.json')
+            item={'format':kind,'path':str(artifact) if kind!='oci' else str(producer/('application-'+str(sequence)+'.oci.tar')),
+                  'evidence':str(Path(args.qualification).resolve())}
+            if kind=='oci':item['image']=artifact
+            spec_path.write_text(json.dumps({'sequence':sequence,'sourceRevision':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(), 'artifacts':[item]}))
+            releases.create_release(spec_path,private,output)
+            release_urls[str(artifact)]='http://127.0.0.1:'+str(server.server_port)+'/'+output.name
+        private.unlink()  # Ephemeral test identity, never a real publisher key.
+        old_env=dict(os.environ)
+        try:
+            os.environ.update(env)
+            deploy(release_urls[str(baseline)],key,kind,cache=release_cache,
+                   state_dir=state.parent if kind=='oci' else None,exports_dir=documents if kind=='oci' else None)
+        finally:os.environ.clear();os.environ.update(old_env)
+        if kind=='appimage':installed={'installed':str(Path(env['XDG_DATA_HOME'])/'cage/appimages'/app/'application.AppImage')}
+    elif kind == 'flatpak':
         subprocess.run(['flatpak', 'install', '--user', '--noninteractive', '--reinstall', '-y', '--no-related', '--no-deps', '--bundle', str(first_package)], env=env, check=True)
     elif kind == 'appimage':
         installed = json.loads(subprocess.check_output([str(first_package), '--cage-install'], env=env, text=True))
@@ -90,6 +125,11 @@ def main():
         return 'Z:' + name.replace('/', '\\')
 
     def command(package, action=None, previous=None):
+        if args.trusted:
+            operation=action or 'run'
+            return [sys.executable,'-m','cage','release',operation,
+                    release_urls[str(package)] if operation=='update' else app,
+                    '--key',str(key),'--format',kind,'--cache-dir',str(release_cache),str(document)]
         if kind == 'flatpak':
             if action:
                 return [sys.executable, '-m', 'cage', action, 'flatpak', str(package), '--previous-package', str(previous),
@@ -251,6 +291,15 @@ def main():
                   'settingsPreserved': True, 'documentsPreserved': True, 'rollback': True, 'menuRelaunch': kind in ('appimage', 'flatpak'),
                   'preference': preference, 'sourceExecutableHashes': {'baseline': old_executable, 'candidate': new_executable},
                   'generations': _read_generations(state), 'originalDocumentSha256': original_hash}
+        if args.trusted:
+            info=json.loads(subprocess.check_output([sys.executable,'-m','cage','release','info',app,
+                            '--key',str(key),'--format',kind,'--cache-dir',str(release_cache)],env=env,text=True))
+            assert info['highWater']==2 and info['activeVersion']=='3.6'
+            # No network is needed for retained, signed rollback/run history.
+            server.shutdown();server.server_close();server=None
+            subprocess.run([sys.executable,'-m','cage','release','info',app,'--key',str(key),
+                            '--format',kind,'--cache-dir',str(release_cache)],env=env,check=True)
+            result.update(trustedRelease=True,highWater=info['highWater'],retainedSignedReleases=info['retainedReleases'])
         (evidence / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
         if kind == 'appimage':
             subprocess.run([installed['installed'], '--cage-uninstall'], env=env, check=True)
@@ -260,6 +309,7 @@ def main():
         subprocess.run(['scrot', str(evidence / 'failure.png')], check=False)
         raise
     finally:
+        if server:server.shutdown();server.server_close()
         # Close only windows owned by this proof, allowing Wine's launcher to
         # finish its normal shutdown even when an assertion failed.
         for handle in reversed(handles):

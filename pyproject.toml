@@ -29,6 +29,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+releases = ["cryptography>=43"]
 dev = [
   "pytest>=7.0",
 ]

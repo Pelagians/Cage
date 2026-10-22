@@ -12,7 +12,8 @@ for directory, folders, files in os.walk(source, followlinks=False):
                   and not (root / name).is_symlink()]
     for name in files:
         path = root / name
-        if path.is_symlink() or not path.is_file() or path.suffix not in {'.json', '.log', '.png'}:continue
+        if path.is_symlink() or not path.is_file():continue
+        if path.suffix not in {'.json', '.log', '.png', '.sig'} and path.name != 'publisher-public.pem':continue
         target = destination / path.relative_to(source)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, target)
