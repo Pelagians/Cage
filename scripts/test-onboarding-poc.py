@@ -17,6 +17,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 import threading
 import uuid
@@ -86,7 +87,9 @@ def main():
         assert not legacy and kind!='container' and args.qualification
         from artifact import releases
         from artifact.release_install import deploy
-        key=evidence/'publisher-public.pem'; private=evidence/'publisher-private.pem'
+        key=evidence/'publisher-public.pem'
+        key_temp=tempfile.TemporaryDirectory(prefix='cage-release-proof-key-')
+        private=Path(key_temp.name)/'publisher-private.pem'
         releases.generate_key(private,key)
         producer=Path(baseline).parent if kind!='oci' else evidence/'producer'
         producer.mkdir(parents=True,exist_ok=True)
@@ -105,7 +108,7 @@ def main():
             releases.create_release(spec_path,private,output)
             if sequence==1:baseline_version=releases.parse(output.read_bytes())['application']['version']
             release_urls[str(artifact)]='http://127.0.0.1:'+str(server.server_port)+'/'+output.name
-        private.unlink()  # Ephemeral test identity, never a real publisher key.
+        key_temp.cleanup()  # Private material is never in the served/uploaded tree.
         old_env=dict(os.environ)
         try:
             os.environ.update(env)

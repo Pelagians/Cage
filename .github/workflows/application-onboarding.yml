@@ -3,9 +3,9 @@ name: Application onboarding and legacy migration
 on:
   workflow_dispatch:
   push:
-    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/sumatrapdf*', 'recipes/assets/**', 'scripts/*onboarding*', 'scripts/application_workflows.py', 'scripts/prepare-legacy-poc.py', 'scripts/prepare-sumatrapdf-poc.py', 'tests/**', '.github/workflows/application-onboarding.yml']
+    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'pyproject.toml', 'recipes/sumatrapdf*', 'recipes/assets/**', 'scripts/*onboarding*', 'scripts/application_workflows.py', 'scripts/prepare-legacy-poc.py', 'scripts/prepare-sumatrapdf-poc.py', 'tests/**', '.github/workflows/application-onboarding.yml']
   pull_request:
-    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/sumatrapdf*', 'recipes/assets/**', 'scripts/*onboarding*', 'scripts/application_workflows.py', 'scripts/prepare-legacy-poc.py', 'scripts/prepare-sumatrapdf-poc.py', 'tests/**', '.github/workflows/application-onboarding.yml']
+    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'pyproject.toml', 'recipes/sumatrapdf*', 'recipes/assets/**', 'scripts/*onboarding*', 'scripts/application_workflows.py', 'scripts/prepare-legacy-poc.py', 'scripts/prepare-sumatrapdf-poc.py', 'tests/**', '.github/workflows/application-onboarding.yml']
 
 permissions:
   contents: read

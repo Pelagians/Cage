@@ -3,9 +3,9 @@ name: Export update and rollback proof
 on:
   workflow_dispatch:
   push:
-    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/notepadplusplus*', 'pyproject.toml', 'scripts/*update*poc.py', 'scripts/*storage*poc.py', 'tests/test_*updates.py', 'tests/test_storage.py', 'tests/test_desktop_integration.py', '.github/workflows/export-updates.yml']
+    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/notepadplusplus*', 'pyproject.toml', 'scripts/*update*poc.py', 'scripts/test-onboarding-poc.py', 'scripts/application_workflows.py', 'tests/test_trusted_releases.py', 'scripts/*storage*poc.py', 'tests/test_*updates.py', 'tests/test_storage.py', 'tests/test_desktop_integration.py', '.github/workflows/export-updates.yml']
   pull_request:
-    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/notepadplusplus*', 'pyproject.toml', 'scripts/*update*poc.py', 'scripts/*storage*poc.py', 'tests/test_*updates.py', 'tests/test_storage.py', 'tests/test_desktop_integration.py', '.github/workflows/export-updates.yml']
+    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/notepadplusplus*', 'pyproject.toml', 'scripts/*update*poc.py', 'scripts/test-onboarding-poc.py', 'scripts/application_workflows.py', 'tests/test_trusted_releases.py', 'scripts/*storage*poc.py', 'tests/test_*updates.py', 'tests/test_storage.py', 'tests/test_desktop_integration.py', '.github/workflows/export-updates.yml']
 
 permissions:
   contents: read
