@@ -70,7 +70,7 @@ class TrustedReleaseTests(unittest.TestCase):
 
     def test_real_signature_and_cached_offline_verification(self):
         value=r.fetch_release(self.old,self.key,'appimage',cache=self.cache)
-        with patch('artifact.releases.urlopen',side_effect=AssertionError('offline')):
+        with patch('artifact.releases.build_opener',side_effect=AssertionError('offline')):
             cached=r.cached_release(value['directory'],self.key,'appimage')
         self.assertEqual(cached['digest'],value['digest'])
         self.assertTrue((Path(value['directory'])/value['entry']['package']['name']).stat().st_mode&0o100)
@@ -142,6 +142,15 @@ class TrustedReleaseTests(unittest.TestCase):
         with self.assertRaises(OSError):r.fetch_release(self.old,self.key,'appimage',cache=self.cache)
         self.assertEqual(outside.read_text(),'safe')
 
+    def test_hardlinked_partial_never_truncates_a_document(self):
+        folder=self.root/'partial-cache';folder.mkdir()
+        document=self.root/'document.txt';document.write_text('protected document')
+        os.link(document,folder/'package.partial')
+        asset={'name':'package','size':10,'sha256':'a'*64}
+        with self.assertRaisesRegex(r.ReleaseError,'exclusively owned'):
+            r._fetch_asset(self.root/'unused',folder,asset)
+        self.assertEqual(document.read_text(),'protected document')
+
     def test_unqualified_evidence_cannot_be_signed_or_cached(self):
         self.resign(self.old,lambda m:m['artifacts'][0]['evidence'].update(name=m['artifacts'][0]['package']['name'],**{k:m['artifacts'][0]['package'][k] for k in ('size','sha256')}))
         with self.assertRaises(r.ReleaseError):r.fetch_release(self.old,self.key,'appimage',cache=self.cache)
@@ -160,8 +169,24 @@ class TrustedReleaseTests(unittest.TestCase):
         class Response:
             def geturl(self):return 'http://127.0.0.1:444/other'
             def close(self):pass
-        with patch('artifact.releases.urlopen',return_value=Response()):
+        with patch('artifact.releases.build_opener') as opener:
+            opener.return_value.open.return_value=Response()
             with self.assertRaisesRegex(r.ReleaseError,'cross-origin'):r.read_source('https://example.org/release.json',10)
+
+    def test_cross_origin_redirect_is_not_contacted(self):
+        contacted=[]
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self,*args):pass
+            def do_GET(self):
+                contacted.append(self.path)
+                self.send_response(302);self.send_header('Location','http://127.0.0.1:1/must-not-contact');self.end_headers()
+        server=http.server.ThreadingHTTPServer(('127.0.0.1',0),Handler)
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        try:
+            with self.assertRaisesRegex(r.ReleaseError,'before following'):
+                r.small('http://127.0.0.1:'+str(server.server_port)+'/redirect')
+            self.assertEqual(contacted,['/redirect'])
+        finally:server.shutdown();server.server_close();thread.join()
 
     def test_flatpak_commit_is_bound_in_signed_metadata(self):
         path=self.release('3',3,kind='flatpak');value=r.fetch_release(path,self.key,'flatpak',cache=self.cache)

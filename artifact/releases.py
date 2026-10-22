@@ -12,10 +12,11 @@ from pathlib import Path
 import platform
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 from urllib.parse import urlsplit, urljoin
-from urllib.request import Request, urlopen
+from urllib.request import Request, HTTPRedirectHandler, build_opener
 
 from runtime.desktop_launch import (DesktopError, copy_file, digest_json,
                                     lifecycle_lock, plan_identity, validate_update_policy)
@@ -197,8 +198,14 @@ def _origin(source):
 def read_source(source, limit):
     uri = _origin(source)
     if uri:
+        class SameOriginRedirect(HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                target=_origin(newurl)
+                if not target or (target.scheme,target.netloc)!=(uri.scheme,uri.netloc):
+                    raise ReleaseError('cross-origin release redirect refused before following it')
+                return super().redirect_request(req,fp,code,msg,headers,newurl)
         request = Request(str(source), headers={'User-Agent':'Cage-trusted-releases/1','Accept-Encoding':'identity'})
-        response = urlopen(request, timeout=60)
+        response = build_opener(SameOriginRedirect()).open(request, timeout=60)
         final = _origin(response.geturl())
         if not final or (final.scheme,final.netloc)!=(uri.scheme,uri.netloc):
             response.close();raise ReleaseError('cross-origin release redirect refused')
@@ -230,8 +237,19 @@ def _fetch_asset(source, folder, asset):
     partial=folder/(asset['name']+'.partial')
     # Only an unverified, private partial download may be restarted. Never
     # truncate a retained asset or any file in an application state directory.
-    fd=os.open(partial,os.O_CREAT|os.O_WRONLY|os.O_TRUNC|os.O_NOFOLLOW,0o600)
-    with os.fdopen(fd,'wb') as output, read_source(source,asset['size']) as response:
+    fd=os.open(partial,os.O_CREAT|os.O_WRONLY|os.O_NOFOLLOW,0o600)
+    with os.fdopen(fd,'wb') as output:
+        info=os.fstat(output.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink!=1 or info.st_uid!=os.getuid():
+            raise ReleaseError('partial download is not an exclusively owned regular file; retained')
+        output.truncate(0)
+        _download_bytes(source,output,asset)
+    partial.replace(path)
+    return path
+
+
+def _download_bytes(source, output, asset):
+    with read_source(source,asset['size']) as response:
         total=0; digest=hashlib.sha256()
         while chunk:=response.read(min(1024**2,asset['size']-total+1)):
             total+=len(chunk)
@@ -239,8 +257,6 @@ def _fetch_asset(source, folder, asset):
             output.write(chunk);digest.update(chunk)
         output.flush();os.fsync(output.fileno())
     if total!=asset['size'] or digest.hexdigest()!=asset['sha256']:raise ReleaseError('release asset hash/size mismatch; partial retained')
-    partial.replace(path)
-    return path
 
 
 def verify_evidence(entry, proof):
@@ -309,6 +325,9 @@ def fetch_release(source, key, kind, *, cache=None, arch=None, preflight=None):
         verify_evidence(entry,parse(small(folder/entry['evidence']['name'])))
         if kind!='oci':verify_receipt(entry,parse(small(folder/entry['receipt']['name'])))
         _fetch_asset(sibling(source,entry['package']['name']),folder,entry['package'])
+        descriptor=os.open(folder,os.O_RDONLY|os.O_DIRECTORY)
+        try:os.fsync(descriptor)
+        finally:os.close(descriptor)
     return cached_release(folder,key,kind,arch=arch)
 
 
