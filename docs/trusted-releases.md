@@ -102,7 +102,8 @@ use the same root for subsequent commands. It contains:
 Update authorization and both packages are retained before a trial can commit.
 The application's durable generation record chooses the active release. A failure
 after commit therefore selects the new package; failure before commit keeps the
-previous generation. An unfinished delivery requires explicit recovery:
+previous generation. Close the application before updating, rolling back or
+recovering. An unfinished delivery requires explicit recovery:
 
 ```sh
 cage release recover io.github.Pelagians.Cage.SumatraPDF \
@@ -159,7 +160,10 @@ a trusted release.
 A producer spec uses one version and sequence across its artifacts. Paths are
 relative to the spec file, or absolute. Include up to six distinct Linux
 format/architecture pairs. Packages must have unique plain filenames; their
-export receipts remain adjacent. For example:
+export receipts remain adjacent. Plans must agree on the desktop application ID
+and recipe application name/version. Existing architecture-specific recipe names
+(such as Notepad++'s ARM64 recipe) use separate release envelopes; the client still
+installs each under the shared desktop application ID. For example:
 
 ```json
 {
@@ -214,6 +218,11 @@ inspection. Unit tests additionally exercise real signatures, bad keys, altered
 metadata/payloads, stale sequences, interrupted downloads, low space, unsafe paths,
 wrong architectures, runtime changes and interruptions around the durable commit.
 CI signing identities are ephemeral and private keys are excluded from artifacts.
+Notepad++ passed all six format/architecture targets. SumatraPDF ARM64 desktop
+trusted delivery remains unqualified after repeated shutdown hangs; its ARM64
+AppImage proof was not reached. Do not advertise those targets as qualified
+trusted releases. See the [qualification report](trusted-release-qualification.md)
+for successful cases, failed attempts and remaining acceptance criteria.
 
 These remain per-application portable Wine proofs. Registry conversion, runtime
 upgrades, arbitrary legacy imports, macOS exports, automatic remote discovery and
@@ -221,7 +230,14 @@ unqualified Windows applications are outside this release. ARM64 CI's 4 KiB
 results do not replace a final 16 KiB Asahi hardware qualification. The existing
 Asahi evidence and local storage restrictions remain separately documented.
 
+Signatures authenticate immutable delivered artifacts. They do not authenticate
+later edits inside a mutable Wine prefix, installed plugins or the local user
+account. The qualified recipes disable their own application updaters; existing
+filesystem, network and desktop trust boundaries still apply.
+
 Implementation references:
 [Ed25519 API](https://cryptography.io/en/latest/hazmat/primitives/asymmetric/ed25519/),
 [Flatpak commit inspection](https://docs.flatpak.org/en/latest/flatpak-command-reference.html),
 [OCI archive export](https://docs.podman.io/en/latest/markdown/podman-save.1.html).
+
+See [qualification results and remaining limits](trusted-release-qualification.md).
