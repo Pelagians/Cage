@@ -189,6 +189,9 @@ def deploy(source, key, kind, *, action='install', cache=None, files=(), engine=
                 record.update(engine=engine,stateDirectory=str(state),exportsDirectory=str(exports))
             record['pending']={'action':'install','target':release['digest']};_save(folder,record)
             _install(record,release)
+            existing_state=_state(record,release)
+            if existing_state and _generation(existing_state,existing_state['active'])['identity']!=release['entry']['identity']:
+                raise r.ReleaseError('existing application state differs from signed baseline; no prefix imported or reset')
             record.pop('pending');_save(folder,record)
             if files:_launch(record,release,files)
         elif action=='update':
@@ -234,11 +237,14 @@ def operate(app, key, kind, *, action='run', cache=None, files=()):
             elif kind=='flatpak' and (folder/'flatpak-transaction/transaction.json').exists():
                 from artifact.updates import recover_flatpak
                 journal=r.parse(r.small(folder/'flatpak-transaction/transaction.json'))
-                authorized={rel['entry']['package']['sha256']:rel['entry']['identity'] for rel in
-                            (retained(root,d,key,kind) for d in record['releases'])}
+                history=[retained(root,d,key,kind) for d in record['releases']]
+                if _flatpak_commit(history[0]) not in {rel['entry']['flatpakCommit'] for rel in history}:
+                    raise r.ReleaseError('installed Flatpak commit is not in signed history; no recovery helper executed')
+                authorized={rel['entry']['package']['sha256']:{'sha256':rel['entry']['package']['sha256'],
+                            'identity':rel['entry']['identity'],'plan':rel['entry']['plan']} for rel in history}
                 for field in ('candidate','previous'):
                     entry=journal[field]
-                    if authorized.get(entry['sha256'])!=entry['identity']:raise r.ReleaseError('recovery journal refers to an unsigned package; all state retained')
+                    if authorized.get(entry['sha256'])!=entry:raise r.ReleaseError('recovery journal refers to an unsigned package/plan; all state retained')
                 recover_flatpak(folder/'flatpak-transaction')
             selected=_selected(root,record,key,kind)
             record.pop('pending',None);_save(folder,record)

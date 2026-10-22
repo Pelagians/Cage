@@ -14,6 +14,7 @@ CFW-backed recipe must not declare `runtime.runner` or a Cage `compatibility` bl
 - [Container Architecture](container-architecture.md) - OCI image structure
 - [Desktop Exports](desktop-exports.md) - Flatpak and AppImage packaging
 - [Desktop Integration](desktop-integration.md) - File access, scaling and qualification
+- [Trusted Releases](trusted-releases.md) - Publisher verification, install, update and retained rollback
 
 ## Specifications
 

@@ -33,13 +33,13 @@ class TrustedReleaseTests(unittest.TestCase):
         self.arch={'arm64':'aarch64','amd64':'x86_64'}.get(platform.machine(),platform.machine())
         self.old=self.release('1',1);self.new=self.release('2',2)
 
-    def release(self, version, sequence, kind='appimage', **extra):
+    def release(self, version, sequence, kind='appimage', runtime='same', **extra):
         folder=self.root/(kind+'-'+version);folder.mkdir()
         package=folder/('app-'+version+'.'+('AppImage' if kind=='appimage' else 'flatpak'))
         package.write_bytes(b'\x7fELF pinned application '+version.encode())
         plan={'format':kind,'branch':'stable','seedDigest':hashlib.sha256(version.encode()).hexdigest(),
               'sourceManifestDigest':'e'*64,'application':{'name':'proof','version':version},
-              'target':{'architecture':self.arch,'translation':{'hostPageSizes':[4096,16384]}},'state':{'managerVersion':1,'namespace':'cage/appimage'},
+              'target':{'architecture':self.arch,'runtimeRevision':runtime,'translation':{'hostPageSizes':[4096,16384]}},'state':{'managerVersion':1,'namespace':'cage/appimage'},
               'desktop':{'id':'org.example.Proof','updates':{'profile':'proof/v1','settings':[],'documents':[]}}}
         receipt={'schemaVersion':'cage.'+kind+'-export-result/v0','sha256':r.hash_file(package),'plan':plan,'commit':version*64}
         Path(str(package)+'.json').write_text(json.dumps(receipt))
@@ -210,6 +210,23 @@ class TrustedReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(r.ReleaseError,'stale'):delivery.deploy(self.old,self.key,'appimage',action='update',cache=self.cache)
             download.assert_not_called()
 
+    def test_unqualified_runtime_change_refused_before_trial_or_high_water_change(self):
+        self.fake_runtime();self.install_run();other=self.release('3',3,runtime='different')
+        with patch('artifact.release_install._launch') as launch:
+            with self.assertRaisesRegex(r.ReleaseError,'runtime or migration'):delivery.deploy(other,self.key,'appimage',action='update',cache=self.cache)
+            launch.assert_not_called()
+        self.assertEqual(delivery.operate('org.example.Proof',self.key,'appimage',action='info',cache=self.cache)['highWater'],1)
+
+    def test_storage_reports_pending_release_recovery_without_pruning_history(self):
+        self.fake_runtime();self.install_run();self.fail='before'
+        with self.assertRaises(r.ReleaseError):delivery.deploy(self.new,self.key,'appimage',action='update',cache=self.cache)
+        from artifact.storage import storage_status
+        report=storage_status(output_dir=self.root/'empty',package_dirs=[self.cache])
+        release=[p for p in report['packages'] if p['category']=='trusted-release-cache'][0]
+        self.assertTrue(release['protected'])
+        self.assertIn('cage release recover',release['installations'][0]['recoveryHint'])
+        self.assertEqual(len(list((self.cache/'releases').iterdir())),2)
+
     def test_failed_trial_and_post_commit_interruption_recover_from_actual_state(self):
         for failure,expected in (('before','1'),('after','2')):
             with self.subTest(failure=failure):
@@ -237,6 +254,18 @@ class TrustedReleaseTests(unittest.TestCase):
         with patch('artifact.release_install._flatpak_commit',return_value='f'*64),patch('artifact.release_install._state') as state:
             with self.assertRaisesRegex(r.ReleaseError,'commit'):delivery.operate('org.example.Proof',self.key,'flatpak',cache=self.cache)
             state.assert_not_called()
+
+    def test_flatpak_recovery_refuses_foreign_commit_before_any_helper_runs(self):
+        self.fake_runtime();path=self.release('5',5,kind='flatpak')
+        delivery.deploy(path,self.key,'flatpak',cache=self.cache)
+        folder=delivery.installation(self.cache,'org.example.Proof','flatpak')
+        transaction=folder/'flatpak-transaction';transaction.mkdir()
+        value=r.parse(path.read_bytes())['artifacts'][0]
+        entry={'sha256':value['package']['sha256'],'identity':value['identity'],'plan':value['plan']}
+        (transaction/'transaction.json').write_text(json.dumps({'candidate':entry,'previous':entry}))
+        with patch('artifact.release_install._flatpak_commit',return_value='f'*64),patch('artifact.updates.recover_flatpak') as recover,patch('artifact.release_install._state') as state:
+            with self.assertRaisesRegex(r.ReleaseError,'no recovery helper'):delivery.operate('org.example.Proof',self.key,'flatpak',action='recover',cache=self.cache)
+            recover.assert_not_called();state.assert_not_called()
 
 
 if __name__=='__main__':unittest.main()

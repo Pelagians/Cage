@@ -406,6 +406,30 @@ def inspect_state(path):
     return result
 
 
+def inspect_release_cache(path):
+    result = {'path': str(path), 'category': 'trusted-release-cache', 'protected': True,
+              'signatureVerification': 'not-checked; use cage release info with the trusted public key',
+              'installations': []}
+    try:
+        path = real_path(path)
+        result['usage'] = usage(path)
+        for receipt in sorted((path / 'installed').glob('*/*/installation.json')):
+            record = read_json(real_path(receipt))
+            if record.get('schemaVersion') != 'cage.release-installation/v1':
+                raise StorageError('unknown trusted installation ledger; retained')
+            app, kind = record['applicationId'], record['format']
+            if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_.-]{2,180}', app) or kind not in {'flatpak','appimage','oci'}:
+                raise StorageError('invalid trusted installation identity; retained')
+            entry = {key: record.get(key) for key in ('applicationId','format','highWater','pending','stateDirectory','exportsDirectory')}
+            entry['retainedReleaseCount'] = len(record.get('releases', []))
+            if record.get('pending'):
+                entry['recoveryHint'] = 'cage release recover ' + app + ' --format ' + kind + ' --key TRUSTED_PUBLIC_KEY --cache-dir ' + str(path)
+            result['installations'].append(entry)
+    except (OSError, ValueError, KeyError, TypeError, StorageError) as exc:
+        result['error'] = str(exc)
+    return result
+
+
 def inspect_packages(path):
     result = {'path': str(path), 'category': 'retained-packages', 'protected': True, 'files': []}
     try:
@@ -481,6 +505,18 @@ def storage_status(*, output_dir='dist', index_path=None, build_dirs=(), state_d
                 issues.append(str(receipt) + ': ' + str(exc))
     data = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share')))
     package_roots = {Path(os.path.abspath(p)) for p in package_dirs}
+    release_roots = {p for p in package_roots if (p / 'installed').is_dir() and (p / 'releases').is_dir()}
+    if (data / 'cage/releases').exists():
+        release_roots.add(data / 'cage/releases')
+        package_roots.add(data / 'cage/releases')
+    release_reports = {p: inspect_release_cache(p) for p in release_roots}
+    for report in release_reports.values():
+        for entry in report['installations']:
+            ids.add(entry['applicationId'])
+            if entry['format'] == 'oci' and isinstance(entry.get('stateDirectory'), str):
+                state = Path(entry['stateDirectory']) / entry['applicationId']
+                if state.is_absolute() and (state.exists() or state.is_symlink()):
+                    states.add(state)
     for base in (data / 'cage/appimage', data / 'cage/appimages', data / 'cage/package-updates/flatpak'):
         try:
             base = real_path(base)
@@ -500,7 +536,7 @@ def storage_status(*, output_dir='dist', index_path=None, build_dirs=(), state_d
         for path in (data / 'cage/appimages' / app_id, data / 'cage/package-updates/flatpak' / app_id):
             if path.exists() or path.is_symlink():
                 package_roots.add(path)
-    packages = exports + [inspect_packages(p) for p in sorted(package_roots)]
+    packages = exports + [release_reports[p] if p in release_reports else inspect_packages(p) for p in sorted(package_roots)]
     protected = [Path(b['path']) for b in bundles] + list(states) + list(package_roots) + protected_roots()
     contexts_out = []
     for context in sorted(contexts):

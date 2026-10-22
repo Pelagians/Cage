@@ -661,3 +661,7 @@ without manually configuring Wine.
 [Application onboarding and supported legacy migration](docs/application-onboarding.md)
 adds a second pinned portable application, SumatraPDF, using the same recipe for
 Flatpak, AppImage and containers, with explicit recovery snapshots before adoption.
+
+[Trusted releases](docs/trusted-releases.md) add publisher signatures, exact-package
+qualification and explicit install/update/rollback commands over the same state
+manager, with retained offline recovery and no required hosted service.

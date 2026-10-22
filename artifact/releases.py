@@ -228,6 +228,26 @@ def _fetch_asset(source, folder, asset):
     return path
 
 
+def verify_evidence(entry, proof):
+    kind=entry['format'];arch=entry['architecture']
+    if (proof.get('status')!='passed' or proof.get('architecture')!=arch or proof.get('format')!=kind
+        or not qualified_identity(proof,entry['identity'])
+        or not all(proof.get(k) is True for k in ('settingsPreserved','documentsPreserved','rollback'))):
+        raise ReleaseError('release lacks matching successful application qualification evidence')
+    qualified=proof.get('sourceImageIds' if kind=='oci' else 'sourceArtifactHashes',{})
+    if (entry['imageId'] if kind=='oci' else entry['package']['sha256']) not in qualified.values():
+        raise ReleaseError('qualification does not bind the exact package/image bytes')
+    if proof.get('pageSize') not in entry['testedPageSizes']:raise ReleaseError('qualification page size differs from signed evidence')
+
+
+def verify_receipt(entry, receipt):
+    kind=entry['format']
+    if kind!='oci':
+        if receipt.get('plan')!=entry['plan'] or receipt.get('sha256')!=entry['package']['sha256']:raise ReleaseError('signed export receipt and package/plan differ')
+        if entry['receipt']['name']!=entry['package']['name']+'.json':raise ReleaseError('export receipt must be adjacent to its package')
+        if kind=='flatpak' and receipt.get('commit')!=entry['flatpakCommit']:raise ReleaseError('Flatpak commit differs from signed receipt')
+
+
 def cached_release(folder, key, kind, *, arch=None, host=True):
     folder=Path(folder)
     if folder.is_symlink() or folder.parent.is_symlink():raise ReleaseError('linked retained release directory')
@@ -241,20 +261,8 @@ def cached_release(folder, key, kind, *, arch=None, host=True):
     if host and os.sysconf('SC_PAGE_SIZE') not in entry['hostPageSizes']:raise ReleaseError('host page size unsupported by this release runtime')
     for asset in (entry['package'],entry['evidence'],*([entry['receipt']] if kind!='oci' else [])):
         if not asset_valid(folder/asset['name'],asset):raise ReleaseError('retained release asset changed')
-    proof=parse(small(folder/entry['evidence']['name']))
-    if (proof.get('status')!='passed' or proof.get('architecture')!=arch or proof.get('format')!=kind
-        or not qualified_identity(proof,entry['identity'])
-        or not all(proof.get(k) is True for k in ('settingsPreserved','documentsPreserved','rollback'))):
-        raise ReleaseError('release lacks matching successful application qualification evidence')
-    qualified=proof.get('sourceImageIds' if kind=='oci' else 'sourceArtifactHashes',{})
-    if (entry['imageId'] if kind=='oci' else entry['package']['sha256']) not in qualified.values():
-        raise ReleaseError('qualification does not bind the exact package/image bytes')
-    if kind!='oci':
-        receipt=parse(small(folder/entry['receipt']['name']))
-        if receipt.get('plan')!=entry['plan'] or receipt.get('sha256')!=entry['package']['sha256']:raise ReleaseError('signed export receipt and package/plan differ')
-        if entry['receipt']['name']!=entry['package']['name']+'.json':raise ReleaseError('export receipt must be adjacent to its package')
-        if kind=='flatpak' and receipt.get('commit')!=entry['flatpakCommit']:raise ReleaseError('Flatpak commit differs from signed receipt')
-    if proof.get('pageSize') not in entry['testedPageSizes']:raise ReleaseError('qualification page size differs from signed evidence')
+    verify_evidence(entry,parse(small(folder/entry['evidence']['name'])))
+    if kind!='oci':verify_receipt(entry,parse(small(folder/entry['receipt']['name'])))
     if kind=='appimage':regular(folder/entry['package']['name']).chmod(0o755)
     return {'manifest':manifest,'entry':entry,'directory':str(folder),'digest':folder.name}
 
@@ -282,9 +290,11 @@ def fetch_release(source, key, kind, *, cache=None, arch=None, preflight=None):
                 if regular(target).read_bytes()!=value:raise ReleaseError('retained signed metadata changed')
             else:
                 with target.open('xb') as f:f.write(value);f.flush();os.fsync(f.fileno())
-        for asset in (entry['evidence'],*([entry['receipt']] if kind!='oci' else []),entry['package']):
-            if asset is not entry['package'] and asset['size']>LIMIT:raise ReleaseError('release evidence/receipt too large')
+        for asset in (entry['evidence'],*([entry['receipt']] if kind!='oci' else [])):
             _fetch_asset(sibling(source,asset['name']),folder,asset)
+        verify_evidence(entry,parse(small(folder/entry['evidence']['name'])))
+        if kind!='oci':verify_receipt(entry,parse(small(folder/entry['receipt']['name'])))
+        _fetch_asset(sibling(source,entry['package']['name']),folder,entry['package'])
     return cached_release(folder,key,kind,arch=arch)
 
 
