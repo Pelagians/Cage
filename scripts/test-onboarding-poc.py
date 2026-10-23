@@ -25,7 +25,7 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from runtime.desktop_launch import inventory_tree, _read_generations, _generation, lifecycle_lock
-from application_workflows import WORKFLOWS
+from application_workflows import WORKFLOWS, share_test_windows
 spec = importlib.util.spec_from_file_location('gui', ROOT / 'scripts/test-flatpak-poc.py')
 gui = importlib.util.module_from_spec(spec); spec.loader.exec_module(gui)
 
@@ -226,27 +226,6 @@ def main():
     def window():return gui.command('xdotool', 'search', '--onlyvisible', '--name', workflow.window_pattern).splitlines()[-1]
 
     shared_windows = set()
-    def share_windows():
-        # Optional local Btrfs test-space optimization, never enabled by CI or
-        # production launch. Kernel equality checks preserve every private file.
-        source = os.environ.get('CAGE_TEST_SHARE_WINDOWS')
-        if not source:return
-        with lifecycle_lock(state):
-            before = (state / 'state.json').read_bytes()
-            for entry in _read_generations(state)['generations']:
-                if entry['prefix'] in shared_windows:continue
-                windows = state / entry['prefix'] / 'drive_c/windows'
-                for target in windows.rglob('*'):
-                    src = Path(source) / target.relative_to(windows)
-                    if target.is_symlink() or src.is_symlink() or not target.is_file() or not src.is_file():continue
-                    size = target.stat().st_size
-                    if size < 1024**2 or size != src.stat().st_size:continue
-                    with src.open('rb') as a, target.open('r+b') as b:
-                        data = bytearray(struct.pack('=QQHHI', 0, size, 1, 0, 0) + struct.pack('=qQQiI', b.fileno(), 0, 0, 0, 0))
-                        fcntl.ioctl(a.fileno(), 0xc0189436, data, True)
-                        if struct.unpack_from('=i', data, 48)[0] not in (0, 1):raise RuntimeError('extent verification refused')
-                shared_windows.add(entry['prefix'])
-            assert before == (state / 'state.json').read_bytes()
 
     processes = []; handles = []; logs = []; sessions = []
     def run(package, label, action=None, previous=None, preference=False, menu=False):
@@ -330,7 +309,7 @@ def main():
         record = _read_generations(state); active = _generation(record, record['active'])
         sessions.append({'phase': label, 'identity': active['identity'], 'prefix': record['active'], 'savedSha256': sha(saved)})
         print(kind, label, 'passed', flush=True)
-        share_windows()
+        share_test_windows(state, shared_windows)
 
     try:
         subprocess.run(['xrdb', '-merge'], input='Xft.dpi: 192\n', text=True, check=True)

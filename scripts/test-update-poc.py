@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT))
 spec = importlib.util.spec_from_file_location('gui', ROOT / 'scripts/test-flatpak-poc.py')
 gui = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gui)
+from application_workflows import share_test_windows
 
 
 def sha(path):
@@ -182,6 +183,7 @@ def main():
         gui.command('xdotool', 'type', '--clearmodifiers', '--delay', '10', text)
         gui.command('xdotool', 'key', '--clearmodifiers', 'Return', 'ctrl+s')
         gui.wait_for(lambda: document.read_text() == text + '\n', 'exact saved document')
+    shared_windows = set()
     def close(process):
         gui.command('xdotool', 'key', '--clearmodifiers', 'alt+F4')
         assert process.wait(timeout=90) == 0, 'launcher failed; see retained log'
@@ -197,6 +199,7 @@ def main():
         gui.wait_for(stopped, 'Wine cleanup', seconds=60)
         gui.wait_for(lambda: not subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', 'Notepad\\+\\+'],
                     capture_output=True).stdout, 'GUI shutdown')
+        share_test_windows(state, shared_windows)
     def executable_hash():
         assert not (prefix() / "drive_c/Program Files/Notepad++/updater").exists(), "bundled self-updater must be excluded"
         return sha(prefix() / 'drive_c/Program Files/Notepad++/notepad++.exe')
@@ -247,8 +250,14 @@ def main():
         assert executable_hash() == source_hashes['8.8.8']
         original_zoom = zoom()
         assert original_zoom != '0'
-        account = config().relative_to(first).parts[2]
-        relative = Path('drive_c/users') / account / 'Documents/local.txt'
+        # Cross-host Wine seeds may map the current login's Documents to the
+        # host. Exercise prefix-document migration in an ordinary seed account
+        # instead; a proof fixture must never write through a host-folder link.
+        local_folders = [p for p in first.glob('drive_c/users/*/Documents')
+                         if p.is_dir() and not p.is_symlink() and not p.parent.is_symlink()
+                         and p.resolve().is_relative_to(first.resolve())]
+        assert local_folders, 'proof requires an ordinary in-prefix Documents directory'
+        relative = local_folders[0].relative_to(first) / 'local.txt'
         (first / relative).write_text('prefix document before update')
         process = start(candidate, 'update')
         save('saved after update')

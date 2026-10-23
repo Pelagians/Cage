@@ -1,8 +1,46 @@
 """Small application-specific GUI actions; package/state assertions stay shared."""
 from pathlib import Path
+import fcntl
+import os
 import re
+import struct
 import time
 import xml.etree.ElementTree as ET
+
+
+def share_test_windows(state, shared):
+    """Optional Btrfs proof-space optimization; retain every independent file.
+
+    Called only after successful normal shutdown. Never enabled by production
+    or CI. Kernel equality checks keep differing Windows bytes unchanged.
+    """
+    source = os.environ.get('CAGE_TEST_SHARE_WINDOWS')
+    if not source:
+        return
+    from runtime.desktop_launch import lifecycle_lock, _read_generations
+    with lifecycle_lock(state):
+        before = (state / 'state.json').read_bytes()
+        for entry in _read_generations(state)['generations']:
+            if entry['prefix'] in shared:
+                continue
+            windows = state / entry['prefix'] / 'drive_c/windows'
+            for target in windows.rglob('*'):
+                src = Path(source) / target.relative_to(windows)
+                if target.is_symlink() or src.is_symlink() or not target.is_file() or not src.is_file():
+                    continue
+                size = target.stat().st_size
+                if size < 1024**2 or size != src.stat().st_size:
+                    continue
+                with src.open('rb') as a, target.open('r+b') as b:
+                    for offset in range(0, size, 16 * 1024**2):
+                        length = min(16 * 1024**2, size - offset)
+                        data = bytearray(struct.pack('=QQHHI', offset, length, 1, 0, 0)
+                                         + struct.pack('=qQQiI', b.fileno(), offset, 0, 0, 0))
+                        fcntl.ioctl(a.fileno(), 0xc0189436, data, True)
+                        if struct.unpack_from('=i', data, 48)[0] not in (0, 1):
+                            raise RuntimeError('extent verification refused')
+            shared.add(entry['prefix'])
+        assert before == (state / 'state.json').read_bytes()
 
 
 class SumatraPDF:
