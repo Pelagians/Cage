@@ -5,6 +5,7 @@ Only fresh private state is used. Application-specific actions live in the small
 workflow drivers; format adapters share the same lifecycle assertions.
 """
 from pathlib import Path
+from contextlib import contextmanager
 import argparse
 import fcntl
 import functools
@@ -34,6 +35,74 @@ def sha(path):
     with Path(path).open('rb') as f:return hashlib.file_digest(f, 'sha256').hexdigest()
 
 
+def proof_container_processes(container_state):
+    """Resolve host PIDs only after matching this proof's private state mount."""
+    matched = []; pids = []
+    containers = subprocess.check_output(
+        ['podman', 'ps', '--all', '--filter', 'volume=/var/lib/cage/state', '--format', '{{.ID}}'],
+        text=True, timeout=10).splitlines()
+    for container in containers:
+        details = json.loads(subprocess.check_output(['podman', 'inspect', container], text=True, timeout=10))[0]
+        if not any(mount.get('Source') == str(container_state) and mount.get('Destination') == '/var/lib/cage/state'
+                   for mount in details.get('Mounts', [])):continue
+        state = details.get('State', {})
+        matched.append({'id': container, 'state': state})
+        for key in ('Pid', 'ConmonPid'):
+            pid = state.get(key)
+            if isinstance(pid, int) and pid > 0:pids.append(pid)
+        if state.get('Running', True):
+            output = subprocess.check_output(['podman', 'top', container, 'hpid'], text=True, timeout=10)
+            pids.extend(int(pid.strip()) for pid in output.splitlines() if pid.strip().isdigit())
+    return matched, sorted(set(pids))
+
+
+@contextmanager
+def shutdown_trace(destination, executable, container_state):
+    """Opt-in CI observer: attach after save, detach before failure diagnostics.
+
+    Trace the owned Wine processes, not the Podman client (which proxies signals).
+    No runtime image, application environment or exit status is changed.
+    """
+    if os.environ.get('CAGE_TEST_TRACE_SHUTDOWN') != '1':
+        yield
+        return
+    if os.environ.get('GITHUB_ACTIONS') != 'true' or container_state is None or not shutil.which('strace'):
+        raise RuntimeError('shutdown tracing requires CI, strace and a private container state mount')
+    containers, pids = proof_container_processes(container_state)
+    targets = []; names = set()
+    for pid in pids:
+        try:name = (Path('/proc') / str(pid) / 'comm').read_text().strip().casefold()
+        except OSError:continue
+        if name in {Path(executable).name[:15].casefold(), 'wineserver', 'wineserver64'}:
+            targets.append(pid); names.add(name)
+    if (len(containers) != 1 or Path(executable).name[:15].casefold() not in names
+            or not names.intersection({'wineserver', 'wineserver64'})):
+        raise RuntimeError('cannot identify this proof application and Wine server for shutdown tracing')
+    with destination.with_name(destination.name + '-attach.log').open('w') as output:
+        trace = subprocess.Popen(['sudo', '-n', 'strace', '-f', '-ttt', '-e', 'trace=%process,%signal',
+                                  '-o', str(destination.with_suffix('.log')),
+                                  *[arg for pid in targets for arg in ('-p', str(pid))]],
+                                 stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+        try:
+            def attached():
+                if trace.poll() is not None:raise RuntimeError('shutdown tracer exited before attachment')
+                for pid in targets:
+                    status = (Path('/proc') / str(pid) / 'status').read_text()
+                    if '\nTracerPid:\t0\n' in '\n' + status:return False
+                return True
+            gui.wait_for(attached, 'shutdown tracer attached to private Wine processes', seconds=10)
+            yield
+        finally:
+            # The new process group contains only sudo/strace. Attached Wine
+            # processes retain their own groups; SIGINT detaches the observer.
+            if trace.poll() is None:
+                result = subprocess.run(['sudo', '-n', 'kill', '-INT', '--', '-' + str(trace.pid)],
+                                        capture_output=True, timeout=10)
+                if result.returncode and trace.poll() is None:
+                    raise RuntimeError('could not detach the private shutdown tracer')
+                trace.wait(timeout=10)
+
+
 def shutdown_diagnostics(process, destination, executable, *, container_state=None, kernel=False):
     """Inspect this failed proof, including reparented processes in its container."""
     if kernel and os.environ.get('GITHUB_ACTIONS') == 'true':
@@ -53,21 +122,8 @@ def shutdown_diagnostics(process, destination, executable, *, container_state=No
         # Rootless conmon/Wine need not remain descendants of the release CLI.
         # Match the unique private proof mount, then verify the mount explicitly.
         try:
-            containers = subprocess.check_output(
-                ['podman', 'ps', '--all', '--filter', 'volume=/var/lib/cage/state', '--format', '{{.ID}}'],
-                text=True, timeout=10).splitlines()
-            for container in containers:
-                details = json.loads(subprocess.check_output(['podman', 'inspect', container], text=True, timeout=10))[0]
-                if not any(mount.get('Source') == str(container_state) and mount.get('Destination') == '/var/lib/cage/state'
-                           for mount in details.get('Mounts', [])):continue
-                state = details.get('State', {})
-                matched_containers.append({'id': container, 'state': state})
-                for key in ('Pid', 'ConmonPid'):
-                    pid = state.get(key)
-                    if isinstance(pid, int) and pid > 0:pending.append(pid)
-                if not state.get('Running', True):continue
-                pids = subprocess.check_output(['podman', 'top', container, 'hpid'], text=True, timeout=10)
-                pending.extend(int(pid.strip()) for pid in pids.splitlines() if pid.strip().isdigit())
+            matched_containers, pids = proof_container_processes(container_state)
+            pending.extend(pids)
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
             destination.with_name(destination.name + '-container-error.log').write_text(str(exc))
         destination.with_name(destination.name + '-containers.json').write_text(json.dumps(matched_containers, indent=2) + '\n')
@@ -77,7 +133,7 @@ def shutdown_diagnostics(process, destination, executable, *, container_state=No
         seen.add(pid); root = Path('/proc') / str(pid)
         record = {'pid': pid}
         for name in ('comm', 'status', 'wchan', 'syscall', 'maps', 'cmdline'):
-            try:record[name] = (root / name).read_text()[:128 * 1024]
+            try:record[name] = (root / name).read_text()[:(1024 if name == 'maps' else 128) * 1024]
             except OSError as exc:record[name] = str(exc)
         threads = []
         try:
@@ -144,6 +200,9 @@ def main():
     stress_relaunches = int(os.environ.get('CAGE_TEST_RELAUNCHES', '0'))
     if not 0 <= stress_relaunches <= 25:
         parser.error('CAGE_TEST_RELAUNCHES must be between 0 and 25')
+    initial_relaunches = int(os.environ.get('CAGE_TEST_INITIAL_RELAUNCHES', '0'))
+    if not 0 <= initial_relaunches <= 25:
+        parser.error('CAGE_TEST_INITIAL_RELAUNCHES must be between 0 and 25')
     app = workflow.app_id
     baseline, candidate = (Path(p).resolve() if kind != 'oci' else p for p in (args.baseline, args.candidate))
     legacy = (args.legacy if kind == 'oci' else Path(args.legacy).resolve()) if args.legacy else None
@@ -332,9 +391,11 @@ def main():
         workflow.validate_saved(saved, expected)
         gui.wait_for(lambda: not subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', '^Save As$'], capture_output=True).stdout, 'Save As closed')
         subprocess.run(['scrot', str(evidence / (label + '.png'))], check=True)
-        gui.command('xdotool', 'key', '--clearmodifiers', 'alt+F4')
         try:
-            code = process.wait(timeout=120)
+            with shutdown_trace(evidence / (label + '-trace'), workflow.executable,
+                                state.parent if kind in ('container', 'oci') else None):
+                gui.command('xdotool', 'key', '--clearmodifiers', 'alt+F4')
+                code = process.wait(timeout=120)
             if code != 0:
                 shutdown_diagnostics(process, evidence / (label + '-nonzero'), workflow.executable,
                                      container_state=state.parent if kind in ('container', 'oci') else None, kernel=True)
@@ -363,6 +424,11 @@ def main():
         run(first_package, '1-original', preference=True)
         preference = workflow.preference(prefix()); assert preference not in (None, 'true', '0')
         first = prefix()
+        initial_identity = _read_generations(state)
+        for index in range(initial_relaunches):
+            run(first_package, '1-initial-' + str(index + 1))
+            assert prefix() == first and workflow.preference(first) == preference
+            assert _read_generations(state) == initial_identity and sha(original) == original_hash
         internal = Path('drive_c/users/Public/Documents/onboarding.txt')
         (first / internal).parent.mkdir(parents=True, exist_ok=True); (first / internal).write_text('before update')
         if legacy:
@@ -416,6 +482,7 @@ def main():
         if args.runtime_migration:
             result['runtimeMigrations'] = [{'from': old_identity, 'to': new_identity}]
         if stress_relaunches:result['stressRelaunches'] = stress_relaunches
+        if initial_relaunches:result['initialRelaunches'] = initial_relaunches
         if args.trusted:
             info=json.loads(subprocess.check_output([sys.executable,'-m','cage','release','info',app,
                             '--key',str(key),'--format',kind,'--cache-dir',str(release_cache)],env=env,text=True))

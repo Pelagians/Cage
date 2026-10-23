@@ -113,3 +113,58 @@ def test_failure_kernel_records_are_bounded_and_ci_only(tmp_path, monkeypatch, c
     else:
         command.assert_not_called()
         assert not kernel.exists() and not (tmp_path / 'failure-memory.json').exists()
+
+
+def test_shutdown_trace_is_ci_only_and_opt_in(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / 'scripts'))
+    spec = importlib.util.spec_from_file_location('onboarding_trace', ROOT / 'scripts/test-onboarding-poc.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    monkeypatch.delenv('CAGE_TEST_TRACE_SHUTDOWN', raising=False)
+    with patch.object(module.subprocess, 'Popen') as launch:
+        with module.shutdown_trace(tmp_path / 'trace', 'app.exe', None):pass
+        launch.assert_not_called()
+        monkeypatch.setenv('CAGE_TEST_TRACE_SHUTDOWN', '1')
+        monkeypatch.setenv('GITHUB_ACTIONS', 'false')
+        with pytest.raises(RuntimeError, match='requires CI'):
+            with module.shutdown_trace(tmp_path / 'trace', 'app.exe', tmp_path):pass
+        launch.assert_not_called()
+
+
+def test_shutdown_trace_attaches_only_owned_wine_and_detaches_on_failure(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / 'scripts'))
+    spec = importlib.util.spec_from_file_location('onboarding_trace_owned', ROOT / 'scripts/test-onboarding-poc.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    monkeypatch.setenv('CAGE_TEST_TRACE_SHUTDOWN', '1'); monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+    names = {101: 'SumatraPDF.exe', 102: 'wineserver64', 103: 'podman', 104: 'python3'}
+    real_read = Path.read_text
+    def read(path, *args, **kwargs):
+        if path.parent.parent == Path('/proc'):
+            pid = int(path.parent.name)
+            if path.name == 'comm':return names[pid] + '\n'
+            if path.name == 'status':return 'TracerPid:\t999\n'
+        return real_read(path, *args, **kwargs)
+    with patch.object(module, 'proof_container_processes', return_value=([{'id': 'owned'}], list(names))), \
+         patch.object(Path, 'read_text', read), patch.object(module.shutil, 'which', return_value='/usr/bin/strace'), \
+         patch.object(module.subprocess, 'Popen') as launch, patch.object(module.subprocess, 'run') as detach:
+        observer = launch.return_value; observer.pid = 999; observer.poll.return_value = None
+        detach.return_value.returncode = 0
+        with pytest.raises(subprocess.TimeoutExpired):
+            with module.shutdown_trace(tmp_path / 'trace', 'SumatraPDF.exe', tmp_path):
+                raise subprocess.TimeoutExpired('application', 120)
+        args = launch.call_args.args[0]
+        assert args[-4:] == ['-p', '101', '-p', '102']
+        assert launch.call_args.kwargs['start_new_session'] is True
+        detach.assert_called_once_with(['sudo', '-n', 'kill', '-INT', '--', '-999'], capture_output=True, timeout=10)
+        observer.wait.assert_called_once_with(timeout=10)
+
+
+def test_shutdown_trace_refuses_ambiguous_container_ownership(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / 'scripts'))
+    spec = importlib.util.spec_from_file_location('onboarding_trace_ambiguous', ROOT / 'scripts/test-onboarding-poc.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    monkeypatch.setenv('CAGE_TEST_TRACE_SHUTDOWN', '1'); monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+    with patch.object(module, 'proof_container_processes', return_value=([{'id': 'one'}, {'id': 'two'}], [])), \
+         patch.object(module.shutil, 'which', return_value='/usr/bin/strace'), patch.object(module.subprocess, 'Popen') as launch:
+        with pytest.raises(RuntimeError, match='cannot identify'):
+            with module.shutdown_trace(tmp_path / 'trace', 'app.exe', tmp_path):pass
+        launch.assert_not_called()

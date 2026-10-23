@@ -2,6 +2,12 @@ name: Application onboarding and legacy migration
 
 on:
   workflow_dispatch:
+    inputs:
+      shutdown_relaunches:
+        description: 'Repeat initial container sessions with shutdown signal tracing (no retries)'
+        type: choice
+        options: ['0', '25']
+        default: '0'
   push:
     paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'pyproject.toml', 'recipes/sumatrapdf*', 'recipes/assets/**', 'scripts/*onboarding*', 'scripts/application_workflows.py', 'scripts/prepare-legacy-poc.py', 'scripts/prepare-sumatrapdf-poc.py', 'tests/**', '.github/workflows/application-onboarding.yml']
   pull_request:
@@ -11,11 +17,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.shutdown_relaunches || '0' }}
   cancel-in-progress: false
 
 jobs:
   desktop:
+    if: ${{ inputs.shutdown_relaunches != '25' }}
     strategy:
       fail-fast: false
       matrix:
@@ -148,6 +155,8 @@ jobs:
     env:
       PYTHONDONTWRITEBYTECODE: '1'
       CAGE_TEST_DISCARD_PREFIXES: '1'
+      CAGE_TEST_INITIAL_RELAUNCHES: ${{ inputs.shutdown_relaunches || '0' }}
+      CAGE_TEST_TRACE_SHUTDOWN: ${{ inputs.shutdown_relaunches == '25' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -156,7 +165,7 @@ jobs:
       - name: Prepare tools and pinned sources
         run: |
           sudo apt-get update
-          sudo apt-get install -y podman uidmap slirp4netns fuse-overlayfs rpm2cpio xvfb openbox xdotool scrot xdg-utils x11-xserver-utils
+          sudo apt-get install -y podman uidmap slirp4netns fuse-overlayfs rpm2cpio xvfb openbox xdotool scrot xdg-utils x11-xserver-utils strace gdb
           python -m pip install PyYAML setuptools wheel 'cryptography>=43'
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           mkdir -p "$HOME/.config/containers" dist/onboarding-evidence
