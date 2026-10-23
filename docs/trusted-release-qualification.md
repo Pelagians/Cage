@@ -6,6 +6,15 @@ previous runtime pin for existing sealed native bundles. Trusted delivery builds
 on `a3f710c` and the existing Cage/CFW baseline at `ba80078`. See
 [trusted releases](trusted-releases.md) for usage and scope.
 
+The subsequent [installed Asahi qualification](asahi-installed-qualification.md)
+passed **48 native desktop sessions** on 16 KiB pages, with eight independently
+verified signatures and unchanged existing application/recovery data. It uses
+the same pinned FEX runtime, the shared document-mapping repair at `873b7cf`,
+and proof-driver changes at `c8f3267`. The complete follow-up source suite passed
+**579 tests and 197 subtests**. The earlier CI matrix below remains identified
+by its original source revision; the Asahi report records each native input and
+the later regression runs separately.
+
 ## Source and native transport checks
 
 Python 3.13 with the optional `cryptography` dependency: **575 tests and 194
@@ -118,7 +127,8 @@ change and normal-close sessions passed**. Shutdown took 0.243–0.752 seconds
 This used a loose AppDir inside the pinned SDK build sandbox with private state;
 it does not establish a full installed Flatpak/AppImage update-and-rollback
 hardware proof. Evidence: `.cage/shutdown-asahi/final-stress-summary.json` and
-`final-stress-results.json`.
+`final-stress-results.json`. The separate installed 16 KiB proof is now complete;
+see the [native application matrix](asahi-installed-qualification.md).
 
 A separate ordinary ARM64 OCI attempt at `cb45cba` returned **247** after its
 second save/close, rather than hanging. It remained failed, with its state and
@@ -142,14 +152,16 @@ Records: `.cage/onboarding/shutdown-cb45-arm-container`,
 
 ## Boundaries
 
-The existing installed Notepad++ Flatpak/AppImage, documents, settings and prior
-desktop recovery snapshots were not changed. Large new Wine/package builds were
-not attempted on the nearly full Asahi host, and OSTree's free-space reserve was
-not reduced. Final application CI uses 4 KiB kernels; the 25-session Asahi shutdown
-stress proof is separate from full installed-package 16 KiB hardware qualification.
-Existing packages and rollback generations retain their original runtime; this
-repair does not authorize in-place runtime migration or manually replacing a DLL
-inside a user's prefix.
+The existing installed Notepad++ Flatpak/AppImage data, launchers and prior
+desktop recovery snapshots passed the before/after comparison; the normal
+Flatpak commit is unchanged. Recoverable cleanup preceded the native package
+builds, and OSTree's free-space reserve was not reduced. CI's 4 KiB results,
+the earlier loose-AppDir shutdown stress and the completed installed Asahi
+16 KiB matrix are distinct evidence. Native desktop testing uses a private
+software-rendered X11 display; the user's Wayland session and GPU acceleration
+remain unqualified. Existing packages and rollback generations retain their
+original runtime. Cross-runtime migration and enrollment of older package
+contracts require separate qualification; no DLL is replaced inside user data.
 
 No production publisher key or public binary release was created. Signature
 trust is explicitly pinned by the user; qualification evidence is the publisher's

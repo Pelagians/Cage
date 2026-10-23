@@ -227,8 +227,13 @@ CI evidence, container results and remaining hardware boundaries.
 These remain per-application portable Wine proofs. Registry conversion, runtime
 upgrades, arbitrary legacy imports, macOS exports, automatic remote discovery and
 unqualified Windows applications are outside this release. ARM64 CI's 4 KiB
-results do not replace a final 16 KiB Asahi hardware qualification. The existing
-Asahi evidence and local storage restrictions remain separately documented.
+results are separate from the completed [installed 16 KiB Asahi
+qualification](asahi-installed-qualification.md): 48 native GUI sessions across
+both applications and both desktop formats, with settings/documents/rollback
+checks and unchanged existing application data. That proof uses a private
+software-rendered X11 display; it does not qualify Wayland or GPU acceleration.
+The report records exact package inputs, recoverable cleanup and the remaining
+runtime/package-contract migration boundaries.
 
 Signatures authenticate immutable delivered artifacts. They do not authenticate
 later edits inside a mutable Wine prefix, installed plugins or the local user
