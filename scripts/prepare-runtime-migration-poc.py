@@ -26,7 +26,7 @@ def read_plan(path):
 
 
 def prepare(recipe, pairs, output):
-    manifest = load_manifest(recipe)
+    manifest = load_manifest(Path(recipe))
     payload = manifest.to_dict()
     policy = payload['desktop']['updates']
     migrations = list(policy.get('runtimeMigrations', []))

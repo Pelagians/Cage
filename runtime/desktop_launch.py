@@ -127,32 +127,45 @@ def configure_fonts(plan, prefix, wine, server, environment, root, lock_fd):
         path.unlink(missing_ok=True)
 
 
-def configure_display(plan, root, prefix, wine, server, environment, lock_fd):
+def configure_display(plan, root, prefix, wine, server, environment, lock_fd, *, previous_prefix=None):
     if not plan.get('display'):
         return  # Container and older package launch contracts remain unchanged.
     preference = display_preferences(root)
     selected = preference['dpi']
-    if selected == 'preserve':
+    if selected == 'preserve' and previous_prefix is None:
         return
     current = prefix_dpi(prefix)
     marker = _real_path(prefix, '.cage-display.json')
-    previous = json.loads(marker.read_text()).get('dpi') if marker.exists() else None
-    if selected == 'auto' and current is not None and (
-            previous is None and current != 96 or previous is not None and current != previous):
+    source = previous_prefix if previous_prefix is not None else prefix
+    source_dpi = prefix_dpi(source) if previous_prefix is not None else current
+    source_marker = _real_path(source, '.cage-display.json')
+    previous = json.loads(source_marker.read_text()).get('dpi') if source_marker.exists() else None
+    if selected == 'auto' and source_dpi is not None and (
+            previous is None and source_dpi != 96 or previous is not None and source_dpi != previous):
         # Preserve pre-existing custom Wine DPI, including through future updates.
-        if not 96 <= current <= 384:
+        if not 96 <= source_dpi <= 384:
+            if previous_prefix is not None:
+                raise DesktopError('custom Wine DPI outside the qualified migration range; old state retained')
             _write_state_record(root / 'display.json', {'dpi': 'preserve'})
             return
-        _write_state_record(root / 'display.json', {'dpi': current})
-        selected = current
-    desired = host_dpi() if selected == 'auto' else selected
+        _write_state_record(root / 'display.json', {'dpi': source_dpi})
+        selected = source_dpi
+    if selected == 'preserve':
+        if source_dpi is None:
+            return
+        if not 96 <= source_dpi <= 384:
+            raise DesktopError('custom Wine DPI outside the qualified migration range; old state retained')
+        desired = source_dpi
+    else:
+        desired = host_dpi() if selected == 'auto' else selected
     if current != desired:
         result = _run_application([wine, 'reg.exe', 'add', r'HKCU\Control Panel\Desktop',
                                   '/v', 'LogPixels', '/t', 'REG_DWORD', '/d', str(desired), '/f'],
                                  server, environment, prefix, root, locked=True, lock_fd=lock_fd)
         if result:
             raise DesktopError('could not configure Wine display DPI; application state retained')
-    _write_state_record(marker, {'dpi': desired})
+    if selected != 'preserve':
+        _write_state_record(marker, {'dpi': desired})
 
 
 class DesktopError(ValueError):
@@ -865,7 +878,9 @@ def _launch_locked(metadata_path, files, plan, inventory, state_root, identity, 
     prefix, pending = prepare_generation(seed, inventory, state_root, identity, plan, action)
     environment["WINEPREFIX"] = str(prefix)
     configure_fonts(plan, prefix, wine, server, environment, state_root, lock_fd)
-    configure_display(plan, state_root, prefix, wine, server, environment, lock_fd)
+    previous_prefix = (_real_path(state_root, pending['previous']) if pending is not None
+                       and _generation(pending, pending['active']).get('runtimeMigration') else None)
+    configure_display(plan, state_root, prefix, wine, server, environment, lock_fd, previous_prefix=previous_prefix)
     # This maps the Flatpak namespace, not an unrestricted host filesystem.
     zdrive = prefix / "dosdevices/z:"
     if not zdrive.exists() and not zdrive.is_symlink():

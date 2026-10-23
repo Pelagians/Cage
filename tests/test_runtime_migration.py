@@ -3,6 +3,8 @@ import json
 import os
 from pathlib import Path
 import runpy
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -31,7 +33,9 @@ class RuntimeRecipeTests(unittest.TestCase):
                 paths[0].write_text(json.dumps({'plan': previous})); paths[1].write_text(json.dumps(candidate))
                 pairs.append(paths)
             output = root / 'recipe.json'
-            result = prepare(recipe, pairs, output)
+            command = [sys.executable, str(ROOT / 'scripts/prepare-runtime-migration-poc.py'), str(recipe)]
+            for pair in pairs:command.extend(['--pair', *map(str, pair)])
+            result = json.loads(subprocess.check_output([*command, '--output', str(output)], text=True))
             self.assertEqual(len(result['runtimeMigrations']), 2)
             self.assertIn('proposal only', result['qualification'])
             updated = load_manifest(output)

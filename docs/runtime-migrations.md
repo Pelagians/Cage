@@ -64,6 +64,12 @@ remain literal links without traversing their host targets. Unknown links,
 special files and foreign identities remain errors. No automatic cleanup removes
 packages, failed candidates, signed history or rollback prefixes.
 
+Cage's display preference remains outside the prefix. Supported custom Wine DPI
+values (96–384) are reapplied to the new candidate through `reg.exe`, including
+`preserve` mode and an existing custom value in automatic mode. Whole registry
+hives are never copied. Other registry-dependent preferences require separate
+application-profile qualification; they are not implicitly imported.
+
 Flatpak owns deployment and its shared platform runtime. This transaction retains
 the exported Wine payload and prefix, without pinning or rewinding unrelated
 system-managed platform updates. AppImage still relies on host glibc and graphics

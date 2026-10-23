@@ -118,6 +118,27 @@ class IntegrationTests(unittest.TestCase):
             with self.assertRaises(launch.DesktopError):
                 launch.display_preferences(root)
 
+    def test_runtime_migration_preserves_custom_dpi_without_copying_registry_hives(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); old = root / 'old'; candidate = root / 'candidate'
+            old.mkdir(); candidate.mkdir()
+            old_registry = '[Control Panel\\\\Desktop]\n"LogPixels"=dword:000000f0\n\n[Other]\n"private"="old value"\n'
+            new_registry = '[Control Panel\\\\Desktop]\n"LogPixels"=dword:00000060\n\n[Other]\n"private"="new seed"\n'
+            (old / 'user.reg').write_text(old_registry); (candidate / 'user.reg').write_text(new_registry)
+            preference = root / 'display.json'; preference.write_text('{"dpi":"preserve"}')
+            with patch.object(launch, '_run_application', return_value=0) as run:
+                launch.configure_display({'display': True}, root, candidate, 'wine', 'server', {}, None, previous_prefix=old)
+                self.assertIn('240', run.call_args.args[0])
+                self.assertEqual(run.call_args.args[3], candidate)
+            self.assertEqual((old / 'user.reg').read_text(), old_registry)
+            self.assertEqual((candidate / 'user.reg').read_text(), new_registry)  # reg.exe owns mutation.
+            self.assertEqual(preference.read_text(), '{"dpi":"preserve"}')
+            preference.write_text('{"dpi":"auto"}')
+            with patch.object(launch, 'host_dpi', return_value=192), patch.object(launch, '_run_application', return_value=0) as run:
+                launch.configure_display({'display': True}, root, candidate, 'wine', 'server', {}, None, previous_prefix=old)
+                self.assertIn('240', run.call_args.args[0])
+            self.assertEqual(json.loads(preference.read_text()), {'dpi': 240})
+
     def test_explicit_auto_can_replace_custom_dpi_without_resetting_other_settings(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)

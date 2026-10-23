@@ -58,6 +58,25 @@ jobs:
           key: runtime-migration-${{ matrix.arch }}-${{ hashFiles('runtime/desktop-wine-11.0.json', 'runtime/wine-arm64ec-11.20-fex-2610.json') }}
           restore-keys: |
             runtime-migration-${{ matrix.arch }}-
+      - name: Fetch exact historical RPMs with bounded transport retries
+        if: matrix.arch == 'aarch64'
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,time,urllib.error
+          from runtime.arm64ec import acquire_packages,runtime_target
+          historical=json.loads(Path('runtime/legacy/wine-arm64ec-11.20-fex-2610.json').read_text())
+          assert historical['packages']==runtime_target()['packages'],'update the source-prefetch fixture when selecting a different RPM transition'
+          for attempt in range(3):
+              try:
+                  acquire_packages('.cage/flatpak-migration/arm64ec/packages')
+                  break
+              except (urllib.error.URLError,TimeoutError) as exc:
+                  if isinstance(exc,urllib.error.HTTPError) and exc.code not in (429,500,502,503,504):raise
+                  if attempt==2:raise
+                  print('Pinned RPM transport failed; retrying download only:',type(exc).__name__,flush=True)
+                  time.sleep(3)
+          PY
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.BASELINE_SOURCE }}
