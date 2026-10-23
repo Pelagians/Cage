@@ -66,12 +66,19 @@ was pending. Neither is claimed as passed here.
 A separate [ordinary Notepad++ update regression](https://github.com/Pelagians/Cage/actions/runs/39917829887)
 hit a timeout waiting for the first trusted ARM OCI session to exit. Its raw
 uploader also followed a Wine `Z:` link and lost the failure artifact. This does
-not invalidate the completed SumatraPDF runtime-migration records, but ordinary
-Notepad++ ARM regression acceptance remains on hold. The follow-up uses the
-shared safe collector and captures app-specific stacks only from the failed
-proof's process tree or a container with its exact private state mount. It leaves
-the 120-second shutdown deadline and pass/fail assertions unchanged.
-[Follow-up update regression](https://github.com/Pelagians/Cage/actions/runs/39933053996).
+not invalidate the completed SumatraPDF runtime-migration records. The
+[follow-up ARM cell](https://github.com/Pelagians/Cage/actions/runs/39933053996/job/120345799241)
+passed direct container, OCI and trusted OCI update/rollback with the original
+120-second shutdown deadline and assertions. The retained three proof records
+and two Ed25519 signatures were independently verified; see
+`verified-notepad-regression-4b6b88c.json` in the local qualification folder.
+The original timeout's cause is still unknown; this strict retry is not a runtime
+shutdown fix. Other cells of that broader follow-up were still queued.
+
+The shared safe collector now retains evidence without following Wine links or
+uploading state/documents. App-specific shutdown diagnostics inspect only the
+failed proof's descendants or a container with its exact private state mount.
+No application timeout or shutdown assertion was relaxed.
 
 All **25,112 previously protected entries** retain their original contents,
 modes and literal symlink targets, and the normally installed Flatpak commit is
