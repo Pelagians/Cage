@@ -295,3 +295,58 @@ No additional translator patch is justified by this diagnosis: `cage1` already
 contains the repair. Its safe application is an explicit, identified runtime
 migration. The original immutable runtime retains the defect, its failed trials
 remain failed, and its strict launch/rollback qualification is unchanged.
+
+## CI reruns at `1e1677c`
+
+The [update/rollback rerun](https://github.com/Pelagians/Cage/actions/runs/40031256547)
+passed all four matrix cells. Independent verification covers 14 cases and 12
+release signatures, including settings, documents, retained generations,
+desktop file access and DPI through update and rollback on both architectures.
+The [AppImage proof](https://github.com/Pelagians/Cage/actions/runs/40031256597),
+[Flatpak proof](https://github.com/Pelagians/Cage/actions/runs/40031256591) and
+[ARM Wine/FEX proof](https://github.com/Pelagians/Cage/actions/runs/40031256575)
+also passed. The ARM proof's container and Flatpak records independently verify
+save/relaunch, unchanged seed state and the guarded `cage1` target identity.
+
+The [onboarding rerun](https://github.com/Pelagians/Cage/actions/runs/40031256525)
+finished successfully in all four matrix cells, including ARM Flatpak and
+AppImage. Independent verification covers all 14 cases, 76 GUI sessions and 12
+release signatures, with exact document hashes, retained toolbar preferences,
+legacy adoption and update/rollback generation identities. The preceding
+[onboarding run at `b1a275c`](https://github.com/Pelagians/Cage/actions/runs/40027188814)
+also verified separately with the same complete coverage. ARM onboarding's
+legacy fixtures use the guarded runtime; they do not qualify the original FEX
+runtime used below.
+
+The [runtime-migration rerun](https://github.com/Pelagians/Cage/actions/runs/40031256587)
+remains failed. Both desktop cells and x86_64 containers passed; their retained
+records independently verify 11 cases, 55 GUI sessions, ten release signatures
+and different original/candidate runtime payloads. These are partial results,
+not full matrix acceptance.
+
+The [ARM container job](https://github.com/Pelagians/Cage/actions/runs/40031256587/job/120679778894)
+again timed out at the unchanged 120-second deadline in trusted OCI
+`6-relaunch`, after rollback restored the original runtime. Its log shows the
+preceding ordinary container/OCI trials completed. Evidence collection ran,
+but GitHub's artifact creation endpoint timed out on all five transport
+attempts, so this job has no retained downloadable proof artifact. The raw job
+log is preserved locally. The phase matches the earlier original-runtime
+failure; without its missing dump, this trial does not independently establish
+the exact lock state diagnosed above. It remains a failed trial, and neither
+its earlier sessions nor signatures are included in the independently verified
+11-case subtotal.
+
+The download review retained only small proof records, signatures and logs;
+package binaries were not downloaded. Verification receipts are
+`verified-updates-1e1677c.json`, `verified-runtime-migrations-1e1677c.json` (explicitly
+partial), `verified-onboarding-1e1677c.json` and `verified-arm-fex-1e1677c.json` under
+`.cage/asahi-installed-qualification/`. The failed job log is
+`.cage/original-oci-shutdown/ci-1e-arm.log`.
+
+This review did not launch or modify installed applications, settings,
+documents or rollback generations. No production runtime change is supported
+by these reruns: the existing identified `cage1` migration remains the repair,
+and the original runtime's strict qualification remains red. No application
+trial was retried, timeout relaxed, payload substituted or failure masked.
+These CI proofs use 4 KiB runners and private X11 displays; they do not replace
+the separately recorded Asahi/16 KiB recovery or installed desktop proofs.
