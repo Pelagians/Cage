@@ -200,15 +200,17 @@ def build_container(
     except ValueError as exc:
         return ContainerBuildResult(provider, entry.tag, local_tag, str(dockerfile), False,
                                     'Runtime retention failed: ' + str(exc), tuple(retained))
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         return ContainerBuildResult(
             provider, entry.tag, local_tag, str(dockerfile), False,
-            "Build timed out after 600s",
+            f"Container operation timed out after {exc.timeout}s; retained images kept",
+            tuple(retained),
         )
     except FileNotFoundError:
         return ContainerBuildResult(
             provider, entry.tag, local_tag, str(dockerfile), False,
             f"Command '{build_cmd}' not found. Install Docker or Podman.",
+            tuple(retained),
         )
 
 

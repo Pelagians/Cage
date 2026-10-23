@@ -71,13 +71,16 @@ class ContainerManagerTests(unittest.TestCase):
     def test_failed_build_keeps_the_retained_old_runtime(self):
         self.runtime_retention_case(build_failure=True)
 
+    def test_build_timeout_reports_and_keeps_the_retained_old_runtime(self):
+        self.runtime_retention_case(build_timeout=True)
+
     def test_foreign_retention_tag_is_not_overwritten_and_build_does_not_start(self):
         self.runtime_retention_case(foreign_tag=True)
 
     def test_failed_retention_refuses_build_before_the_runtime_tag_can_move(self):
         self.runtime_retention_case(tag_failure=True)
 
-    def runtime_retention_case(self, *, build_failure=False, foreign_tag=False, tag_failure=False):
+    def runtime_retention_case(self, *, build_failure=False, build_timeout=False, foreign_tag=False, tag_failure=False):
         old, new, digest = 'sha256:' + 'a'*64, 'sha256:' + 'b'*64, 'sha256:' + 'c'*64
         reference = get_local_image_ref('wine-arm64ec', '11.20')
         repository = reference.rpartition(':')[0]
@@ -104,6 +107,7 @@ class ContainerManagerTests(unittest.TestCase):
             elif args[1] == 'build':
                 builds.append(args)
                 self.assertEqual(references.get(retained), old)
+                if build_timeout:raise subprocess.TimeoutExpired(args, 1800)
                 if build_failure:code = 1; error = 'build failed'
                 else:
                     for index, value in enumerate(args[:-1]):
@@ -117,7 +121,7 @@ class ContainerManagerTests(unittest.TestCase):
                 self.assertEqual(references[reference], old)
                 if foreign_tag:self.assertEqual(references[retained], new)
             else:
-                self.assertEqual(result.success, not build_failure)
+                self.assertEqual(result.success, not (build_failure or build_timeout))
                 self.assertIn(retained, result.to_dict()['retainedImages'])
                 self.assertEqual(command(['podman','image','inspect',repository+'@'+digest]).returncode, 0)
                 self.assertEqual(references[retained], old)
