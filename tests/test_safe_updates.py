@@ -169,6 +169,76 @@ class SafeUpdateTests(unittest.TestCase):
                     launch(metadata, args)
         self.assertFalse((self.state / 'generations').exists())
 
+    def test_standard_external_document_mapping_survives_update_and_rollback_without_traversal(self):
+        home = self.root / 'host-home'
+        documents = home / 'Documents'
+        documents.mkdir(parents=True)
+        external = documents / 'outside.txt'
+        external.write_text('host document')
+        external.chmod(0o444)
+        relative = 'drive_c/users/another-login/Documents'
+        mapped = self.previous / relative
+        mapped.parent.mkdir(parents=True)
+        mapped.symlink_to(documents)
+        original_rglob = Path.rglob
+        def no_mapping_traversal(path, *args, **kwargs):
+            if path.is_symlink() and path.name == 'Documents':
+                self.fail('external document mapping was traversed')
+            return original_rglob(path, *args, **kwargs)
+        with patch.dict(os.environ, {'HOME': str(home)}), patch.object(Path, 'rglob', no_mapping_traversal):
+            self.assertEqual(launch(self.new, ['--cage-update']), 0)
+            self.assertTrue((self.active() / relative).is_symlink())
+            self.assertEqual(os.readlink(self.active() / relative), str(documents))
+            self.assertEqual((self.active() / 'drive_c/App.exe').read_text(), '2')
+            self.assertEqual(launch(self.old, ['--cage-rollback']), 0)
+            self.assertEqual(os.readlink(self.active() / relative), str(documents))
+            self.assertEqual((self.active() / 'drive_c/App.exe').read_text(), '1')
+        self.assertEqual(external.read_text(), 'host document')
+        self.assertEqual(external.stat().st_mode & 0o777, 0o444)
+        self.assertEqual(os.readlink(mapped), str(documents))
+
+    def test_arbitrary_relative_and_in_prefix_document_links_remain_refused(self):
+        mapped = self.previous / 'drive_c/users/another-login/Documents'
+        mapped.parent.mkdir(parents=True)
+        for target in (str(self.root), '../cage/Documents', str(self.previous / 'drive_c')):
+            with self.subTest(target=target):
+                mapped.symlink_to(target)
+                with self.assertRaisesRegex(DesktopError, 'document mapping'):
+                    launch(self.new, ['--cage-update'])
+                self.assertEqual(self.active(), self.previous)
+                self.assertEqual(self.external.read_text(), 'external document')
+                mapped.unlink()
+
+    def test_settings_link_to_standard_document_folder_is_not_a_document_mapping(self):
+        home = self.root / 'host-home'
+        documents = home / 'Documents'
+        documents.mkdir(parents=True)
+        settings = self.previous / 'drive_c/users/cage/AppData/Roaming/Proof'
+        settings.rename(settings.with_name('retained-settings'))
+        settings.symlink_to(documents)
+        with patch.dict(os.environ, {'HOME': str(home)}), self.assertRaisesRegex(DesktopError, 'linked'):
+            launch(self.new, ['--cage-update'])
+        self.assertEqual(self.active(), self.previous)
+        self.assertEqual(list(documents.iterdir()), [])
+
+    def test_rollback_rejects_changed_destination_document_mapping(self):
+        home = self.root / 'host-home'
+        documents = home / 'Documents'
+        documents.mkdir(parents=True)
+        relative = 'drive_c/users/another-login/Documents'
+        mapped = self.previous / relative
+        mapped.parent.mkdir(parents=True)
+        mapped.symlink_to(documents)
+        with patch.dict(os.environ, {'HOME': str(home)}):
+            self.assertEqual(launch(self.new, ['--cage-update']), 0)
+            current = self.active()
+            mapped.unlink()
+            mapped.symlink_to(self.root)
+            with self.assertRaisesRegex(DesktopError, 'document mapping'):
+                launch(self.old, ['--cage-rollback'])
+            self.assertEqual(self.active(), current)
+            self.assertEqual((current / 'drive_c/App.exe').read_text(), '2')
+
     def test_opt_in_policy_is_required(self):
         plan = json.loads(self.new.read_text())
         del plan['desktop']['updates']

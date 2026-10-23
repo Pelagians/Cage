@@ -445,7 +445,23 @@ def _real_path(root, relative):
     return path
 
 
-def _migrate_paths(source, destination, patterns, *, replace_missing=False):
+def _migration_path(root, relative, external_documents):
+    parts = Path(relative).parts
+    if (not external_documents or len(parts) != 4 or parts[:2] != ('drive_c', 'users')
+            or parts[-1] not in {'Documents', 'Desktop', 'Pictures', 'Music', 'Videos'}):
+        return _real_path(root, relative)
+    # Wine creates these mappings when a portable seed meets a different Unix
+    # login. Only the terminal, standard host-folder mapping is permitted. Never
+    # traverse it, treat settings as mappings, or accept linked parent paths.
+    path = _real_path(root, Path(relative).parent) / parts[-1]
+    if path.is_symlink():
+        target = Path.home() / parts[-1]
+        if os.readlink(path) != str(target) or target.is_relative_to(Path(root).absolute()):
+            raise DesktopError('unrecognized document mapping; data retained')
+    return path
+
+
+def _migrate_paths(source, destination, patterns, *, replace_missing=False, external_documents=False):
     users = _real_path(source, "drive_c/users")
     accounts = {p.name for p in users.iterdir()} if users.exists() else set()
     if replace_missing:
@@ -458,11 +474,25 @@ def _migrate_paths(source, destination, patterns, *, replace_missing=False):
             raise DesktopError("linked or invalid Wine user; migration refused")
         for pattern in patterns:
             relative = pattern.replace("/users/*/", "/users/" + account.name + "/", 1)
-            src = _real_path(source, relative)
+            src = _migration_path(source, relative, external_documents)
+            dst = _migration_path(destination, relative, external_documents)
+            if src.is_symlink():
+                # Preserve the mapping itself, not the host's files. Removing a
+                # destination link must never remove or rewrite its target.
+                if dst.is_symlink():
+                    dst.unlink()
+                elif dst.is_dir():
+                    shutil.rmtree(dst)
+                elif dst.exists():
+                    dst.unlink()
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                dst.symlink_to(os.readlink(src))
+                continue
             if not src.exists():
                 if replace_missing:
-                    dst = _real_path(destination, relative)
-                    if dst.is_dir():
+                    if dst.is_symlink():
+                        dst.unlink()
+                    elif dst.is_dir():
                         shutil.rmtree(dst)
                     elif dst.exists():
                         dst.unlink()
@@ -474,8 +504,9 @@ def _migrate_paths(source, destination, patterns, *, replace_missing=False):
                 mode = member.lstat().st_mode
                 if not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)) or mode & 0o6000:
                     raise DesktopError("migration requires ordinary files/directories; data retained")
-            dst = _real_path(destination, relative)
-            if dst.exists():
+            if dst.is_symlink():
+                dst.unlink()
+            elif dst.exists():
                 if dst.is_dir():
                     shutil.rmtree(dst)
                 else:
@@ -603,7 +634,8 @@ def prepare_generation(seed, inventory, root, identity, plan, action):
     if action == "update":
         verify_inventory(prefix, inventory)
         _migrate_paths(_real_path(root, current["prefix"]), prefix, policy["settings"])
-    _migrate_paths(_real_path(root, current["prefix"]), prefix, policy["documents"], replace_missing=True)
+    _migrate_paths(_real_path(root, current["prefix"]), prefix, policy["documents"],
+                   replace_missing=True, external_documents=True)
     _write_state_record(prefix / ".cage-state.json", identity)
     # Check the application before it can write to the candidate.
     if not windows_path(prefix, plan["launch"]["entrypoint"]).is_file():
