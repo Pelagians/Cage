@@ -58,7 +58,7 @@ jobs:
                         status = subprocess.check_output(['podman', 'inspect', '--format', '{{.State.ExitCode}} {{.State.OOMKilled}}', token], text=True).strip().split()
                         assert len(status) == 2 and status[0].isdigit() and status[1] in ('true', 'false')
                         record = {'exitCode': int(status[0]), 'oomKilled': status[1] == 'true'}
-                        (evidence / (label + '-container-exit.json')).write_text(json.dumps(record) + '\n')
+                        (evidence / (label + '-container-exit.json')).write_text(json.dumps(record))
                         subprocess.run(['podman', 'rm', token], check=True, capture_output=True)
                         assert not record['oomKilled'], 'qualification container reported OOM kill'
         ''' + needle
