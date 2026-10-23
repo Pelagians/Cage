@@ -5,7 +5,6 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-import signal
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -71,7 +70,7 @@ def test_shutdown_diagnostics_only_includes_container_with_exact_proof_mount(tmp
 
 
 @pytest.mark.parametrize('parent', [99999999, 1])
-def test_go_dump_only_signals_the_failed_ci_launchers_direct_podman_child(tmp_path, monkeypatch, parent):
+def test_debugger_only_attaches_to_the_failed_ci_launchers_direct_podman_child(tmp_path, monkeypatch, parent):
     monkeypatch.syspath_prepend(str(ROOT / 'scripts'))
     spec = importlib.util.spec_from_file_location('onboarding_dump', ROOT / 'scripts/test-onboarding-poc.py')
     module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
@@ -85,8 +84,12 @@ def test_go_dump_only_signals_the_failed_ci_launchers_direct_podman_child(tmp_pa
         if args[1] == 'inspect':return json.dumps([{'Mounts': [{'Source': str(tmp_path), 'Destination': '/var/lib/cage/state'}]}])
         return 'HPID\n99999998\n'
     with patch.object(module.subprocess, 'check_output', side_effect=command), \
-         patch.object(Path, 'read_text', read), patch.object(module.os, 'kill') as kill, \
-         patch.object(module.shutil, 'which', return_value=None), patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'}):
+         patch.object(Path, 'read_text', read), patch.object(module.subprocess, 'run') as debugger, \
+         patch.object(module.shutil, 'which', return_value='/usr/bin/gdb'), patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'}):
         module.shutdown_diagnostics(SimpleNamespace(pid=99999999), tmp_path / 'shutdown', 'app.exe', container_state=tmp_path)
-    if parent == 99999999:kill.assert_called_once_with(99999998, signal.SIGQUIT)
-    else:kill.assert_not_called()
+    if parent == 99999999:
+        debugger.assert_called_once()
+        args = debugger.call_args.args[0]
+        assert args[args.index('-p') + 1] == '99999998'
+        assert 'thread apply all bt' in args and 'detach' in args
+    else:debugger.assert_not_called()

@@ -13,7 +13,6 @@ import hashlib
 import importlib.util
 import json
 import os
-import signal
 import shutil
 import struct
 import subprocess
@@ -81,21 +80,14 @@ def shutdown_diagnostics(process, destination, executable, *, container_state=No
         except OSError:pass
         record['threads'] = threads; records.append(record)
     destination.with_suffix('.json').write_text(json.dumps(records, indent=2) + '\n')
-    # Go's SIGQUIT dump diagnoses a stuck foreground Podman client, including
-    # goroutines waiting on container attach/cleanup. This ends only this failed
-    # CI proof's descendant client, never the container or an unrelated process.
-    # The caller still raises the original timeout; no trial can pass this way.
-    if os.environ.get('GITHUB_ACTIONS') == 'true':
-        for record in records:
-            if (record['pid'] != process.pid and record.get('comm', '').strip() == 'podman'
-                    and 'PPid:\t' + str(process.pid) in record.get('status', '').splitlines()):
-                try:os.kill(record['pid'], signal.SIGQUIT)
-                except ProcessLookupError:pass
     # CI-only debugger, no auto-loaded scripts or network symbol fetching.
     # Attaching is diagnostic after failure; it cannot turn the trial into a pass.
     if os.environ.get('GITHUB_ACTIONS') == 'true' and shutil.which('gdb'):
         for record in records:
-            if record.get('comm', '').strip().casefold() != Path(executable).name[:15].casefold():continue
+            application_process = record.get('comm', '').strip().casefold() == Path(executable).name[:15].casefold()
+            client_process = (record['pid'] != process.pid and record.get('comm', '').strip() == 'podman'
+                              and 'PPid:\t' + str(process.pid) in record.get('status', '').splitlines())
+            if not application_process and not client_process:continue
             with destination.with_name(destination.name + '-' + str(record['pid']) + '.log').open('w') as output:
                 try:
                     subprocess.run(['sudo', '-n', 'gdb', '--batch', '--nx', '--nh',
@@ -109,7 +101,7 @@ def shutdown_diagnostics(process, destination, executable, *, container_state=No
             # Native unwinding cannot cross Wine's syscall/ARM64EC frames.
             # Ask the already packaged debugger for Windows frames, inside the
             # failed Flatpak's namespaces and prefix. Never inspect another app.
-            if shutil.which('flatpak') and '/app/' in record.get('maps', ''):
+            if application_process and shutil.which('flatpak') and '/app/' in record.get('maps', ''):
                 try:
                     values = (Path('/proc') / str(record['pid']) / 'environ').read_bytes().split(b'\0')
                     prefix = next(v.decode() for v in values if v.startswith(b'WINEPREFIX='))
