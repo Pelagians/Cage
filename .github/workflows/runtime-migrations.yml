@@ -217,10 +217,15 @@ jobs:
           python scripts/prepare-sumatrapdf-poc.py --runtime ${{ matrix.provider }}
           python - <<'PY'
           from pathlib import Path
-          import json
+          import json,time
           from container.manager import build_container
-          result=build_container('${{ matrix.provider }}','${{ matrix.baseline }}',build_cmd='podman')
-          print(result.log);assert result.success
+          for attempt in range(3):
+              result=build_container('${{ matrix.provider }}','${{ matrix.baseline }}',build_cmd='podman')
+              print(result.log,flush=True)
+              if result.success:break
+              transient=any(s in result.log for s in ('TimeoutError: The read operation timed out','HTTP Error 503','HTTP Error 502','HTTP Error 504','HTTP Error 429'))
+              if not transient or attempt==2:raise RuntimeError('historical runtime build failed; no application trial retried')
+              time.sleep(3)
           path=Path('dist/onboarding-recipes/${{ matrix.provider }}/3.6.json');recipe=json.loads(path.read_text())
           recipe['runtime']['version']='${{ matrix.baseline }}';path.write_text(json.dumps(recipe))
           PY
@@ -243,9 +248,15 @@ jobs:
           python scripts/test-storage-poc.py .cage/migration-oci-baseline >dist/onboarding-evidence/oci-baseline-storage.json
           python scripts/prepare-sumatrapdf-poc.py --runtime ${{ matrix.provider }}
           python - <<'PY'
+          import time
           from container.manager import build_container
-          result=build_container('${{ matrix.provider }}','${{ matrix.candidate }}',build_cmd='podman')
-          print(result.log);assert result.success
+          for attempt in range(3):
+              result=build_container('${{ matrix.provider }}','${{ matrix.candidate }}',build_cmd='podman')
+              print(result.log,flush=True)
+              if result.success:break
+              transient=any(s in result.log for s in ('TimeoutError: The read operation timed out','HTTP Error 503','HTTP Error 502','HTTP Error 504','HTTP Error 429'))
+              if not transient or attempt==2:raise RuntimeError('candidate runtime build failed; no application trial retried')
+              time.sleep(3)
           PY
           dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24' bash -eu -o pipefail <<'SH'
           openbox >dist/onboarding-evidence/container-candidate-window-manager.log 2>&1 &
