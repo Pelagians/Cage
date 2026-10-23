@@ -175,8 +175,10 @@ def shutdown_diagnostics(process, destination, executable, *, container_state=No
                 commands += ['set $cage_frame = *(unsigned long long*)($x18+0x378)',
                              'x/102gx $cage_frame',
                              'x/512gx *(unsigned long long*)($cage_frame+0xf8)',
+                             'x/128gx *(unsigned long long*)($cage_frame+0xe8)',
                              'x/16gx *(unsigned long long*)($cage_frame+0x98)',
-                             'x/16gx *(unsigned long long*)($cage_frame+0xa0)']
+                             'x/16gx *(unsigned long long*)($cage_frame+0xa0)',
+                             'x/8hx *(unsigned long long*)($cage_frame+0xa8)']
             commands.append('detach')
             with destination.with_name(destination.name + '-' + str(record['pid']) + '.log').open('w') as output:
                 try:

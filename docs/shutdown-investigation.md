@@ -204,3 +204,94 @@ failures did not recur in this bounded investigation. A future failed trace must
 identify the affected process and sender; a timeout additionally needs the
 retained native/Windows stack. The original payload remains an immutable
 historical target, and the existing `cage1` repair does not alter it retroactively.
+
+## Original OCI diagnosis, 2026-10-23
+
+A private Asahi OCI reproduction used the original carrier and a read-only
+sealed Sumatra 3.6 bundle, with fresh private state and an authenticated private
+X11 display. It completed 69 normal save/close sessions, then failed session 70
+at the unchanged 120-second deadline. The saved PDF matched the original bytes
+and Sumatra logged exit zero. The failed container was retained for live capture;
+its later diagnostic cleanup is not counted as successful shutdown.
+
+The only remaining application thread was in `RtlWaitOnAddress`. Wine's saved
+ARM syscall frame exposed the FEX stack, with return addresses resolving to
+`WaitOnAddress+0x24`, `WritePriorityMutex::lock_shared+0x110`,
+`LookupCache::FindBlock+0x84` and `ContextImpl::CompileBlock+0x88`. The main Windows
+stack also contains `RtlProcessFlsData`, `LdrShutdownProcess` and
+`RtlExitUserProcess`. A direct read of the lookup-cache mutex at
+`0x7ff4e0130080` returned `0xc0000000`: FEX's pinned
+[writer-owned and reader-waiter bits](https://github.com/FEX-Emu/FEX/blob/14c92681f4d62cf84d901460e0358de09c8847a7/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h).
+This confirms the stranded-writer defect in the original OCI runtime during
+FLS/JIT cleanup. The dump does not identify the departed writer's thread ID.
+
+Expanded CI diagnostics captured the same FEX return-address sequence on a
+4 KiB ARM runner in
+[job 120666225563](https://github.com/Pelagians/Cage/actions/runs/40027188808/job/120666225563),
+at `b1a275c`. Ordinary container and OCI migration proofs passed; trusted OCI
+failed in `6-relaunch` after rollback restored the original runtime. Its two
+retained release signatures verified against that source revision and identify
+the original and guarded targets separately. This is another failed trial, not
+a failure in the guarded candidate. The CI dump retains the same wait path and
+expected writer bits; the direct live mutex read above is from Asahi.
+
+The repair is the existing pinned `fex-2610-cage1` termination guard: drain
+translator writers before Wine terminates peer threads, then release the
+barrier before final cleanup. It requires its own runtime identity. Changing
+the original DLL under an old image identity, retiring its launch eligibility,
+or masking its shutdown result would violate this investigation's strict gate.
+
+The collector now retains Wine 11.20's bounded saved ARM context, Windows SP/FP
+stack words and wait-target words after an owned application failure. These
+reads do not change Wine, timeouts or application exit codes. The existing
+runtime-migration workflow can stress the exact original OCI target separately:
+
+```sh
+gh workflow run runtime-migrations.yml \
+  --ref codex/safe-export-updates \
+  -f original_oci_relaunches=25 -f container_stress_relaunches=0
+```
+
+This adds 25 initial save/close sessions, stops at the first failure, and retains
+the ordinary migration, relaunch, rollback and trusted-delivery assertions.
+[Focused run 40027445937](https://github.com/Pelagians/Cage/actions/runs/40027445937)
+passed its six container/OCI cases: 55 GUI sessions and four independently
+verified signatures. Its success is a bounded observation of an intermittent
+defect; the independent Asahi and ordinary CI failures remain failed.
+
+Private reproduction records, guest-stack captures, symbolized return addresses
+and recovery proofs are under `.cage/original-oci-shutdown/`. Runtime repair is
+validated through an explicitly allowed migration on a separate copy of the
+failed state, retaining the forensic original and its rollback runtime.
+
+A separate carrier layer applies the existing verified guard to the original
+carrier and declares the guarded target's own identity. Cage's ordinary builder
+and runtime-migration recipe helper produced the sealed candidate; no DLL was
+rewritten in the failed prefix. On an independent reflinked copy of that state,
+the explicit update and subsequent save/close/relaunch sequence passed 100
+guarded sessions. A further real GUI Save As wrote a PDF inside the prefix,
+followed by exact-original-runtime rollback, guarded re-upgrade and relaunch.
+All 104 recovery sessions exited zero before the unchanged deadline and retained
+the selected toolbar preference and exact document bytes. The original external
+documents remain unchanged, and the internal PDF survived rollback and
+re-upgrade. Four generations remain, including the unchanged original prefix.
+The forensic source-state digest and original DLL SHA-256 also remain unchanged.
+
+This native 16 KiB proof mounts sealed bundles read-only in verified OCI carriers;
+it establishes failed-prefix recovery and rollback behavior separately from
+standalone image distribution and installed desktop qualification. An initial
+private attempt failed before Wine launch because of a Podman storage lookup;
+another recovery harness attempt collided with existing Save As filenames.
+Both are retained as unqualified harness attempts. The corrected driver uses
+unique filenames and rejects pre-existing outputs before invoking Save As.
+
+The final unit suite passed 614 tests and 214 subtests. A fresh installed-state
+comparison checked 59,051 existing entries with no changed or added paths, and
+the normal Notepad++ Flatpak commit is unchanged. No installed application was
+launched or replaced. The private receipts are `verified-recovery.json`,
+`verified-focused-ci.json` and `protected-after.json` in the directory above.
+
+No additional translator patch is justified by this diagnosis: `cage1` already
+contains the repair. Its safe application is an explicit, identified runtime
+migration. The original immutable runtime retains the defect, its failed trials
+remain failed, and its strict launch/rollback qualification is unchanged.

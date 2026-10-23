@@ -122,6 +122,8 @@ def test_saved_arm_context_only_captured_for_owned_wine_application(tmp_path, mo
     if expected:
         assert 'x/102gx $cage_frame' in args  # Exactly the pinned 0x330-byte frame.
         assert 'x/512gx *(unsigned long long*)($cage_frame+0xf8)' in args
+        assert 'x/128gx *(unsigned long long*)($cage_frame+0xe8)' in args
+        assert 'x/8hx *(unsigned long long*)($cage_frame+0xa8)' in args
         assert debugger.call_args.kwargs['timeout'] == 30
 
 

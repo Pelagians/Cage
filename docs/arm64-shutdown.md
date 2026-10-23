@@ -96,3 +96,10 @@ and trusted delivery assertions. Results and exact CI runs are recorded in the
 [trusted release qualification report](trusted-release-qualification.md).
 Loose AppDir stress sessions on Asahi establish a separate 16 KiB shutdown check;
 they do not replace full installed-package qualification.
+
+The [original OCI diagnosis and recovery](shutdown-investigation.md#original-oci-diagnosis-2026-10-23)
+also confirms this lock path in native Asahi OCI and 4 KiB CI captures. Recovery
+of the actually failed private prefix through an explicit `cage1` runtime
+migration passed 104 normal sessions, including original-runtime rollback and
+guarded re-upgrade, with settings, documents and four generations retained.
+The original runtime's failed trials remain failed under the strict gate.
