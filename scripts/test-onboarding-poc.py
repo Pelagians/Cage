@@ -13,6 +13,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import signal
 import shutil
 import struct
 import subprocess
@@ -36,28 +37,35 @@ def sha(path):
 
 def shutdown_diagnostics(process, destination, executable, *, container_state=None):
     """Inspect this failed proof, including reparented processes in its container."""
-    pending = [process.pid]; seen = set(); records = []
+    pending = [process.pid]; seen = set(); records = []; matched_containers = []
     if container_state is not None:
         # Rootless conmon/Wine need not remain descendants of the release CLI.
         # Match the unique private proof mount, then verify the mount explicitly.
         try:
             containers = subprocess.check_output(
-                ['podman', 'ps', '--filter', 'volume=' + str(container_state), '--format', '{{.ID}}'],
+                ['podman', 'ps', '--all', '--filter', 'volume=/var/lib/cage/state', '--format', '{{.ID}}'],
                 text=True, timeout=10).splitlines()
             for container in containers:
                 details = json.loads(subprocess.check_output(['podman', 'inspect', container], text=True, timeout=10))[0]
                 if not any(mount.get('Source') == str(container_state) and mount.get('Destination') == '/var/lib/cage/state'
                            for mount in details.get('Mounts', [])):continue
+                state = details.get('State', {})
+                matched_containers.append({'id': container, 'state': state})
+                for key in ('Pid', 'ConmonPid'):
+                    pid = state.get(key)
+                    if isinstance(pid, int) and pid > 0:pending.append(pid)
+                if not state.get('Running', True):continue
                 pids = subprocess.check_output(['podman', 'top', container, 'hpid'], text=True, timeout=10)
                 pending.extend(int(pid.strip()) for pid in pids.splitlines() if pid.strip().isdigit())
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
             destination.with_name(destination.name + '-container-error.log').write_text(str(exc))
+        destination.with_name(destination.name + '-containers.json').write_text(json.dumps(matched_containers, indent=2) + '\n')
     while pending and len(seen) < 128:
         pid = pending.pop()
         if pid in seen:continue
         seen.add(pid); root = Path('/proc') / str(pid)
         record = {'pid': pid}
-        for name in ('comm', 'status', 'wchan', 'syscall', 'maps'):
+        for name in ('comm', 'status', 'wchan', 'syscall', 'maps', 'cmdline'):
             try:record[name] = (root / name).read_text()[:128 * 1024]
             except OSError as exc:record[name] = str(exc)
         threads = []
@@ -73,6 +81,16 @@ def shutdown_diagnostics(process, destination, executable, *, container_state=No
         except OSError:pass
         record['threads'] = threads; records.append(record)
     destination.with_suffix('.json').write_text(json.dumps(records, indent=2) + '\n')
+    # Go's SIGQUIT dump diagnoses a stuck foreground Podman client, including
+    # goroutines waiting on container attach/cleanup. This ends only this failed
+    # CI proof's descendant client, never the container or an unrelated process.
+    # The caller still raises the original timeout; no trial can pass this way.
+    if os.environ.get('GITHUB_ACTIONS') == 'true':
+        for record in records:
+            if (record['pid'] != process.pid and record.get('comm', '').strip() == 'podman'
+                    and 'PPid:\t' + str(process.pid) in record.get('status', '').splitlines()):
+                try:os.kill(record['pid'], signal.SIGQUIT)
+                except ProcessLookupError:pass
     # CI-only debugger, no auto-loaded scripts or network symbol fetching.
     # Attaching is diagnostic after failure; it cannot turn the trial into a pass.
     if os.environ.get('GITHUB_ACTIONS') == 'true' and shutil.which('gdb'):
