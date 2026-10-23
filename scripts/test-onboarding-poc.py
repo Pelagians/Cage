@@ -34,8 +34,20 @@ def sha(path):
     with Path(path).open('rb') as f:return hashlib.file_digest(f, 'sha256').hexdigest()
 
 
-def shutdown_diagnostics(process, destination, executable, *, container_state=None):
+def shutdown_diagnostics(process, destination, executable, *, container_state=None, kernel=False):
     """Inspect this failed proof, including reparented processes in its container."""
+    if kernel and os.environ.get('GITHUB_ACTIONS') == 'true':
+        try:
+            result = subprocess.run(['sudo', '-n', 'dmesg', '--color=never', '--ctime'],
+                                    capture_output=True, text=True, timeout=10, check=False)
+            destination.with_name(destination.name + '-kernel.log').write_text((result.stdout + result.stderr)[-256 * 1024:])
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            destination.with_name(destination.name + '-kernel.log').write_text(str(exc))
+        memory = {}
+        for name in ('memory.events', 'memory.current', 'memory.peak'):
+            try:memory[name] = (Path('/sys/fs/cgroup') / name).read_text()[:4096]
+            except OSError as exc:memory[name] = str(exc)
+        destination.with_name(destination.name + '-memory.json').write_text(json.dumps(memory, indent=2) + '\n')
     pending = [process.pid]; seen = set(); records = []; matched_containers = []
     if container_state is not None:
         # Rootless conmon/Wine need not remain descendants of the release CLI.
@@ -323,10 +335,13 @@ def main():
         gui.command('xdotool', 'key', '--clearmodifiers', 'alt+F4')
         try:
             code = process.wait(timeout=120)
+            if code != 0:
+                shutdown_diagnostics(process, evidence / (label + '-nonzero'), workflow.executable,
+                                     container_state=state.parent if kind in ('container', 'oci') else None, kernel=True)
             assert code == 0, f'application/launcher exited {code}; retained log'
         except subprocess.TimeoutExpired:
             shutdown_diagnostics(process, evidence / (label + '-shutdown'), workflow.executable,
-                                 container_state=state.parent if kind in ('container', 'oci') else None)
+                                 container_state=state.parent if kind in ('container', 'oci') else None, kernel=True)
             raise
         def idle():
             try:

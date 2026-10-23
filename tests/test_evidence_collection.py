@@ -93,3 +93,23 @@ def test_debugger_only_attaches_to_the_failed_ci_launchers_direct_podman_child(t
         assert args[args.index('-p') + 1] == '99999998'
         assert 'thread apply all bt' in args and 'detach' in args
     else:debugger.assert_not_called()
+
+
+@pytest.mark.parametrize('ci', ['true', 'false'])
+def test_failure_kernel_records_are_bounded_and_ci_only(tmp_path, monkeypatch, ci):
+    monkeypatch.syspath_prepend(str(ROOT / 'scripts'))
+    spec = importlib.util.spec_from_file_location('onboarding_kernel', ROOT / 'scripts/test-onboarding-poc.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    destination = tmp_path / 'failure'
+    with patch.object(module.subprocess, 'run', return_value=SimpleNamespace(stdout='x' * (300 * 1024), stderr='warning')) as command, \
+         patch.object(module.shutil, 'which', return_value=None), patch.dict(os.environ, {'GITHUB_ACTIONS': ci}):
+        module.shutdown_diagnostics(SimpleNamespace(pid=99999999), destination, 'app.exe', kernel=True)
+    kernel = tmp_path / 'failure-kernel.log'
+    if ci == 'true':
+        command.assert_called_once_with(['sudo', '-n', 'dmesg', '--color=never', '--ctime'],
+                                        capture_output=True, text=True, timeout=10, check=False)
+        assert len(kernel.read_text()) == 256 * 1024 and kernel.read_text().endswith('warning')
+        assert set(json.loads((tmp_path / 'failure-memory.json').read_text())) == {'memory.events', 'memory.current', 'memory.peak'}
+    else:
+        command.assert_not_called()
+        assert not kernel.exists() and not (tmp_path / 'failure-memory.json').exists()
