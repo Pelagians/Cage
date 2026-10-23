@@ -8,6 +8,11 @@ on:
         type: choice
         default: '0'
         options: ['0', '25']
+      original_oci_relaunches:
+        description: 'Extra original ARM OCI save/close sessions before migration; first failure stops qualification'
+        type: choice
+        default: '0'
+        options: ['0', '25']
   push:
     paths: ['runtime/**', 'container/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'scripts/*runtime-migration*', 'scripts/test-onboarding-poc.py', 'scripts/application_workflows.py', 'tests/**', '.github/workflows/runtime-migrations.yml']
   pull_request:
@@ -29,7 +34,7 @@ env:
 
 jobs:
   desktop:
-    if: github.event_name != 'workflow_dispatch' || inputs.container_stress_relaunches == '0'
+    if: github.event_name != 'workflow_dispatch' || (inputs.container_stress_relaunches == '0' && inputs.original_oci_relaunches == '0')
     strategy:
       fail-fast: false
       matrix:
@@ -295,7 +300,7 @@ jobs:
           dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24' bash -eu -o pipefail <<'SH'
           openbox >dist/onboarding-evidence/container-proof-window-manager.log 2>&1 &
           CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/container" python scripts/test-onboarding-poc.py container dist/runtime-migration/baseline/sumatrapdf-portable-3.6 dist/runtime-migration/candidate/sumatrapdf-portable-3.6 --runtime-migration
-          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/oci" python scripts/test-onboarding-poc.py oci localhost/cage-runtime-migration:baseline localhost/cage-runtime-migration:candidate --runtime-migration
+          CAGE_TEST_INITIAL_RELAUNCHES="${{ matrix.arch == 'aarch64' && inputs.original_oci_relaunches || '0' }}" CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/oci" python scripts/test-onboarding-poc.py oci localhost/cage-runtime-migration:baseline localhost/cage-runtime-migration:candidate --runtime-migration
           CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/trusted-oci" python scripts/test-onboarding-poc.py oci localhost/cage-runtime-migration:baseline localhost/cage-runtime-migration:candidate --runtime-migration --trusted --qualification dist/onboarding-evidence/oci/result.json
           SH
       - name: Collect records without following Wine drive links

@@ -95,6 +95,36 @@ def test_debugger_only_attaches_to_the_failed_ci_launchers_direct_podman_child(t
     else:debugger.assert_not_called()
 
 
+@pytest.mark.parametrize('name,maps,expected', [
+    ('app.exe', '/usr/lib64/wine/aarch64-unix/ntdll.so', True),
+    ('app.exe', '/usr/lib64/wine/x86_64-unix/ntdll.so', False),
+    ('podman', '/usr/lib64/wine/aarch64-unix/ntdll.so', False),
+])
+def test_saved_arm_context_only_captured_for_owned_wine_application(tmp_path, monkeypatch, name, maps, expected):
+    monkeypatch.syspath_prepend(str(ROOT / 'scripts'))
+    spec = importlib.util.spec_from_file_location('onboarding_arm_stack', ROOT / 'scripts/test-onboarding-poc.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    real_read = Path.read_text
+    def read(path, *args, **kwargs):
+        if path == Path('/proc/99999998/comm'):return name + '\n'
+        if path == Path('/proc/99999998/maps'):return maps
+        if path == Path('/proc/99999998/status'):return 'PPid:\t99999999\n'
+        return real_read(path, *args, **kwargs)
+    with patch.object(module, 'proof_container_processes', return_value=([{'id': 'owned'}], [99999998])), \
+         patch.object(Path, 'read_text', read), patch.object(module.subprocess, 'run') as debugger, \
+         patch.object(module.shutil, 'which', side_effect=lambda tool: '/usr/bin/gdb' if tool == 'gdb' else None), \
+         patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'}):
+        module.shutdown_diagnostics(SimpleNamespace(pid=99999999), tmp_path / 'shutdown', 'app.exe', container_state=tmp_path)
+    debugger.assert_called_once()
+    args = debugger.call_args.args[0]
+    assert args[args.index('-p') + 1] == '99999998' and args[-1] == 'detach'
+    assert any('$cage_frame' in arg for arg in args) is expected
+    if expected:
+        assert 'x/102gx $cage_frame' in args  # Exactly the pinned 0x330-byte frame.
+        assert 'x/512gx *(unsigned long long*)($cage_frame+0xf8)' in args
+        assert debugger.call_args.kwargs['timeout'] == 30
+
+
 @pytest.mark.parametrize('ci', ['true', 'false'])
 def test_failure_kernel_records_are_bounded_and_ci_only(tmp_path, monkeypatch, ci):
     monkeypatch.syspath_prepend(str(ROOT / 'scripts'))

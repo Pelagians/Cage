@@ -166,14 +166,25 @@ def shutdown_diagnostics(process, destination, executable, *, container_state=No
             client_process = (record['pid'] != process.pid and record.get('comm', '').strip() == 'podman'
                               and 'PPid:\t' + str(process.pid) in record.get('status', '').splitlines())
             if not application_process and not client_process:continue
+            commands = ['info registers', 'x/256gx $sp', 'thread apply all bt']
+            if application_process and '/aarch64-unix/ntdll.so' in record.get('maps', ''):
+                # Pinned Wine 11.20: TEB+0x378 holds its 0x330-byte syscall
+                # frame (signal_arm64.c). Native unwinding stops at this frame;
+                # retain saved Windows registers/SP and bounded stack/lock words.
+                # Read only after failure, while attached to this proof's PID.
+                commands += ['set $cage_frame = *(unsigned long long*)($x18+0x378)',
+                             'x/102gx $cage_frame',
+                             'x/512gx *(unsigned long long*)($cage_frame+0xf8)',
+                             'x/16gx *(unsigned long long*)($cage_frame+0x98)',
+                             'x/16gx *(unsigned long long*)($cage_frame+0xa0)']
+            commands.append('detach')
             with destination.with_name(destination.name + '-' + str(record['pid']) + '.log').open('w') as output:
                 try:
                     subprocess.run(['sudo', '-n', 'gdb', '--batch', '--nx', '--nh',
                                     '-iex', 'set auto-load off', '-iex', 'set debuginfod enabled off',
                                     '-iex', 'set sysroot /proc/' + str(record['pid']) + '/root',
                                     '-p', str(record['pid']), '-ex', 'set pagination off',
-                                    '-ex', 'info registers', '-ex', 'x/256gx $sp',
-                                    '-ex', 'thread apply all bt', '-ex', 'detach'],
+                                    *[arg for command in commands for arg in ('-ex', command)]],
                                    stdout=output, stderr=subprocess.STDOUT, timeout=30, check=False)
                 except (OSError, subprocess.TimeoutExpired) as exc:output.write(str(exc) + '\n')
             # Native unwinding cannot cross Wine's syscall/ARM64EC frames.
