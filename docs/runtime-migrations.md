@@ -42,6 +42,11 @@ user-data selection changes. It writes a new recipe without overwriting an
 existing output or touching installations. This is a proposal, not qualification;
 rebuild and export through the normal adapters before testing it.
 
+For a later application-version update, derive from the shared base recipe and
+omit the old `runtimeMigrations` rules. Those rules qualify a same-version runtime
+transition, not a combined runtime/application change. The already retained
+runtime-upgrade packages and their signed rules stay unchanged for rollback.
+
 One recipe can contain separate exact rules for each adapter/architecture, whose
 runtime and contract identities differ. CFW construction remains producer-owned:
 Chocolatey recipes cannot opt into this portable-runtime migration path. Existing
@@ -125,6 +130,9 @@ Transitions remain unqualified until their exact workflow succeeds. Existing
 installed Asahi and onboarding evidence does not qualify these new transitions.
 CI uses 4 KiB pages; Asahi 16 KiB acceptance must be recorded separately before
 claiming a transition on the user's installation.
+
+The [qualification report](runtime-migration-qualification.md) records completed
+transitions, preservation checks and remaining hardware/regression boundaries.
 
 ## Graphics direction
 

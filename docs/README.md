@@ -16,6 +16,7 @@ CFW-backed recipe must not declare `runtime.runner` or a Cage `compatibility` bl
 - [Desktop Integration](desktop-integration.md) - File access, scaling and qualification
 - [Trusted Releases](trusted-releases.md) - Publisher verification, install, update and retained rollback
 - [Runtime Migrations](runtime-migrations.md) - Qualified runtime upgrades, preserved data and rollback
+- [Runtime Migration Qualification](runtime-migration-qualification.md) - Tested transitions, preservation evidence and limits
 
 ## Specifications
 
