@@ -141,7 +141,7 @@ def test_shutdown_trace_attaches_only_owned_wine_and_detaches_on_failure(tmp_pat
         if path.parent.parent == Path('/proc'):
             pid = int(path.parent.name)
             if path.name == 'comm':return names[pid] + '\n'
-            if path.name == 'status':return 'TracerPid:\t999\n'
+            if path.name == 'status':return f'TracerPid:\t999\nNSpid:\t{pid}\t{pid - 90}\n'
         return real_read(path, *args, **kwargs)
     with patch.object(module, 'proof_container_processes', return_value=([{'id': 'owned'}], list(names))), \
          patch.object(Path, 'read_text', read), patch.object(module.shutil, 'which', return_value='/usr/bin/strace'), \
@@ -156,6 +156,11 @@ def test_shutdown_trace_attaches_only_owned_wine_and_detaches_on_failure(tmp_pat
         assert launch.call_args.kwargs['start_new_session'] is True
         detach.assert_called_once_with(['sudo', '-n', 'kill', '-INT', '--', '-999'], capture_output=True, timeout=10)
         observer.wait.assert_called_once_with(timeout=10)
+        record = json.loads((tmp_path / 'trace.json').read_text())
+        assert record['container'] == 'owned' and record['targets'] == [101, 102]
+        assert record['processes'] == [
+            {'hostPid': pid, 'comm': name.casefold(), 'namespacePids': [pid, pid - 90]}
+            for pid, name in names.items()]
 
 
 def test_shutdown_trace_refuses_ambiguous_container_ownership(tmp_path, monkeypatch):

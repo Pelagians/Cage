@@ -69,15 +69,25 @@ def shutdown_trace(destination, executable, container_state):
     if os.environ.get('GITHUB_ACTIONS') != 'true' or container_state is None or not shutil.which('strace'):
         raise RuntimeError('shutdown tracing requires CI, strace and a private container state mount')
     containers, pids = proof_container_processes(container_state)
-    targets = []; names = set()
+    targets = []; names = set(); owned = []
     for pid in pids:
-        try:name = (Path('/proc') / str(pid) / 'comm').read_text().strip().casefold()
+        try:
+            root = Path('/proc') / str(pid)
+            name = (root / 'comm').read_text().strip().casefold()
+            status = (root / 'status').read_text()
         except OSError:continue
+        # strace prefixes use host PIDs, but kill()/tgkill() arguments use the
+        # traced container's PID namespace. Retain both to identify the victim.
+        namespace_pids = next((list(map(int, line.split()[1:])) for line in status.splitlines()
+                               if line.startswith('NSpid:')), [])
+        owned.append({'hostPid': pid, 'comm': name, 'namespacePids': namespace_pids})
         if name in {Path(executable).name[:15].casefold(), 'wineserver', 'wineserver64'}:
             targets.append(pid); names.add(name)
     if (len(containers) != 1 or Path(executable).name[:15].casefold() not in names
             or not names.intersection({'wineserver', 'wineserver64'})):
         raise RuntimeError('cannot identify this proof application and Wine server for shutdown tracing')
+    destination.with_suffix('.json').write_text(json.dumps(
+        {'container': containers[0]['id'], 'targets': targets, 'processes': owned}, indent=2) + '\n')
     with destination.with_name(destination.name + '-attach.log').open('w') as output:
         trace = subprocess.Popen(['sudo', '-n', 'strace', '-f', '-ttt', '-e', 'trace=%process,%signal',
                                   '-o', str(destination.with_suffix('.log')),
