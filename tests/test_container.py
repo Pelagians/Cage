@@ -5,7 +5,9 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 import json
+import os
 import subprocess
+import tempfile
 from unittest.mock import patch
 
 from container.manager import (
@@ -79,6 +81,32 @@ class ContainerManagerTests(unittest.TestCase):
 
     def test_failed_retention_refuses_build_before_the_runtime_tag_can_move(self):
         self.runtime_retention_case(tag_failure=True)
+
+    def test_shell_builder_keeps_the_previous_runtime_using_the_shared_retention_policy(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); images = root / 'images.json'; engine = root / 'engine'
+            old = 'sha256:' + 'a'*64; new = 'sha256:' + 'b'*64
+            images.write_text(json.dumps({'cage/wine:11.0': old}))
+            engine.write_text('#!/usr/bin/env python3\nimport json,os,sys,pathlib\n'
+                'p=pathlib.Path(os.environ["CAGE_TEST_IMAGES"]); refs=json.loads(p.read_text()); args=sys.argv[1:]\n'
+                'if args[:2]==["image","inspect"]:\n'
+                ' if args[2] not in refs:sys.exit(1)\n'
+                ' print(json.dumps([{"Id":refs[args[2]]}]))\n'
+                'elif args[0]=="tag":refs[args[2]]=refs[args[1]];p.write_text(json.dumps(refs))\n'
+                'elif args[0]=="build":\n'
+                ' assert refs["cage/wine:cage-rollback-"+"a"*64]=="sha256:"+"a"*64\n'
+                ' for i,value in enumerate(args[:-1]):\n'
+                '  if value in ("-t","--tag"):refs[args[i+1]]="sha256:"+"b"*64\n'
+                ' p.write_text(json.dumps(refs))\n'
+                'else:sys.exit(2)\n')
+            engine.chmod(0o755)
+            environment = {**os.environ, 'BUILD_CMD': str(engine), 'CAGE_TEST_IMAGES': str(images), 'REGISTRY': '', 'PUSH': ''}
+            result = subprocess.run(['bash', 'container/build.sh', 'wine', 'default'], cwd=Path(__file__).resolve().parents[1],
+                                    env=environment, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            refs = json.loads(images.read_text())
+            self.assertEqual(refs['cage/wine:11.0'], new)
+            self.assertEqual(refs['cage/wine:cage-rollback-'+'a'*64], old)
 
     def runtime_retention_case(self, *, build_failure=False, build_timeout=False, foreign_tag=False, tag_failure=False):
         old, new, digest = 'sha256:' + 'a'*64, 'sha256:' + 'b'*64, 'sha256:' + 'c'*64

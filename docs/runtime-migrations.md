@@ -82,6 +82,8 @@ Podman's original `repository@digest` resolution when the normal version tag
 moves. Existing retention tags are verified, never overwritten with foreign
 images; a retention failure refuses the rebuild. Build results report
 `retainedImages`. These tags add no image layers and are not automatically pruned.
+The existing shell builder calls the same retention function before its build;
+its build flags and publication behavior remain unchanged.
 The failure was reproduced with native Podman on Asahi/16 KiB pages using
 temporary tags on existing Cage proof images: replacing a tag lost its old
 repository digest without retention, while the retained reference kept it

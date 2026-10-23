@@ -49,6 +49,19 @@ build_entry() {
     cmd+=( -f "$dockerfile" )
     cmd+=( "$@" )
     cmd+=( . )
+    # Share the Python builder's retention policy before any existing tag moves.
+    python3 - "${cmd[@]}" <<'PY'
+import sys
+from container.manager import _retain_runtime_image
+args=sys.argv[1:]
+references=[]
+for index,value in enumerate(args):
+    if value in ('-t','--tag'):references.append(args[index+1])
+    elif value.startswith('--tag='):references.append(value.split('=',1)[1])
+for reference in dict.fromkeys(references):
+    retained=_retain_runtime_image(args[0],reference)
+    if retained:print('Retained rollback runtime: '+retained,flush=True)
+PY
     "${cmd[@]}"
 
     if [ -n "$PUSH" ] && [ -n "$REGISTRY" ]; then
