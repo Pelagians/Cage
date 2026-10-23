@@ -1,0 +1,104 @@
+name: ARM64 shutdown resource diagnosis
+'on':
+  workflow_dispatch: null
+  push:
+    paths:
+    - .github/workflows/arm64-shutdown-diagnosis.yml
+permissions:
+  contents: read
+concurrency:
+  group: arm64-shutdown-diagnosis-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - runner: ubuntu-24.04-arm
+          provider: wine-arm64ec
+          version: '11.20'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      CAGE_TEST_DISCARD_PREFIXES: '1'
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+    - name: Prepare tools and pinned sources
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y podman uidmap slirp4netns fuse-overlayfs rpm2cpio xvfb openbox xdotool scrot xdg-utils x11-xserver-utils
+        python -m pip install PyYAML setuptools wheel 'cryptography>=43'
+        sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        mkdir -p "$HOME/.config/containers" dist/onboarding-evidence
+        printf '[engine]\ncgroup_manager="cgroupfs"\nevents_logger="file"\n' > "$HOME/.config/containers/containers.conf"
+        python scripts/prepare-sumatrapdf-poc.py --runtime ${{ matrix.provider }}
+        python - <<'PY'
+        from container.manager import build_container
+        result = build_container('${{ matrix.provider }}', '${{ matrix.version }}', build_cmd='podman')
+        print(result.log)
+        assert result.success
+        PY
+    - name: Inspect only each private OCI proof container exit
+      run: |
+        python - <<'SCOPED'
+        from pathlib import Path
+        p=Path('scripts/test-onboarding-poc.py')
+        s=p.read_text()
+        old="return ['podman', 'run', '--rm', '--pull=never', '--name', token"
+        new="return ['podman', 'run', '--pull=never', '--name', token"
+        assert old in s
+        s=s.replace(old,new)
+        needle="            assert code == 0, f'application/launcher exited {code}; retained log'"
+        replacement='''            if kind == 'oci' and not args.trusted:
+                        status = subprocess.check_output(['podman', 'inspect', '--format', '{{.State.ExitCode}} {{.State.OOMKilled}}', token], text=True).strip().split()
+                        assert len(status) == 2 and status[0].isdigit() and status[1] in ('true', 'false')
+                        record = {'exitCode': int(status[0]), 'oomKilled': status[1] == 'true'}
+                        (evidence / (label + '-container-exit.json')).write_text(json.dumps(record) + '\n')
+                        subprocess.run(['podman', 'rm', token], check=True, capture_output=True)
+                        assert not record['oomKilled'], 'qualification container reported OOM kill'
+        ''' + needle
+        assert needle in s
+        s=s.replace(needle,replacement)
+        p.write_text(s)
+        SCOPED
+    - name: Qualify persistent containers and standalone OCI
+      run: |
+        dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24 -extension MIT-SHM' bash -eu -o pipefail <<'SH'
+        openbox >dist/onboarding-evidence/window-manager-container.log 2>&1 &
+        for version in 3.6 3.6.1; do
+          python -m cage build dist/onboarding-recipes/${{ matrix.provider }}/$version.json --engine podman --output dist/onboarding-containers >dist/onboarding-evidence/container-build-$version.json
+        done
+        legacy=()
+        if [ '${{ matrix.provider }}' = wine-arm64ec ]; then
+          python scripts/prepare-legacy-poc.py container dist/onboarding-containers/sumatrapdf-portable-3.6 --output dist/onboarding-containers/legacy >dist/onboarding-evidence/legacy-container.json
+          legacy=(--legacy dist/onboarding-containers/legacy)
+        fi
+        CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/container" python scripts/test-onboarding-poc.py container dist/onboarding-containers/sumatrapdf-portable-3.6 dist/onboarding-containers/sumatrapdf-portable-3.6.1 "${legacy[@]}"
+        for version in 3.6 3.6.1; do
+          python -m cage export oci dist/onboarding-containers/sumatrapdf-portable-$version --engine podman --graphics desktop --tag localhost/cage-onboarding:$version --context-dir .cage/onboarding-oci-$version >dist/onboarding-evidence/oci-export-$version.json
+          python scripts/test-storage-poc.py .cage/onboarding-oci-$version >dist/onboarding-evidence/storage-oci-$version.json
+        done
+        legacy_oci=()
+        if [ '${{ matrix.provider }}' = wine-arm64ec ]; then
+          python -m cage export oci dist/onboarding-containers/legacy --engine podman --graphics desktop --tag localhost/cage-onboarding:legacy --context-dir .cage/onboarding-oci-legacy >dist/onboarding-evidence/oci-export-legacy.json
+          python scripts/test-storage-poc.py .cage/onboarding-oci-legacy >dist/onboarding-evidence/storage-oci-legacy.json
+          legacy_oci=(--legacy localhost/cage-onboarding:legacy)
+        fi
+        CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/oci" python scripts/test-onboarding-poc.py oci localhost/cage-onboarding:3.6 localhost/cage-onboarding:3.6.1 "${legacy_oci[@]}"
+        CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/trusted-oci" python scripts/test-onboarding-poc.py oci localhost/cage-onboarding:3.6 localhost/cage-onboarding:3.6.1 --trusted --qualification dist/onboarding-evidence/oci/result.json
+        SH
+    - name: Collect records without following Wine drive links
+      if: always()
+      run: python scripts/collect-onboarding-evidence.py
+    - name: Retain qualification evidence
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: application-onboarding-containers-${{ matrix.provider }}-${{ github.sha }}
+        retention-days: 14
+        path: dist/onboarding-ci-evidence
