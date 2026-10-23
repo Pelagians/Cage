@@ -129,6 +129,9 @@ def main():
     parser.add_argument('--qualification', help='Completed matching application proof to bind in test releases')
     parser.add_argument('--runtime-migration', action='store_true', help='Qualify a same-application-version, explicitly allowed runtime transition')
     args = parser.parse_args(); kind = args.format; workflow = WORKFLOWS[args.application]()
+    stress_relaunches = int(os.environ.get('CAGE_TEST_RELAUNCHES', '0'))
+    if not 0 <= stress_relaunches <= 25:
+        parser.error('CAGE_TEST_RELAUNCHES must be between 0 and 25')
     app = workflow.app_id
     baseline, candidate = (Path(p).resolve() if kind != 'oci' else p for p in (args.baseline, args.candidate))
     legacy = (args.legacy if kind == 'oci' else Path(args.legacy).resolve()) if args.legacy else None
@@ -382,6 +385,12 @@ def main():
         assert (first / internal).read_text() == 'before update'
         rolled = prefix(); run(baseline, '6-relaunch', menu=True)
         assert prefix() == rolled and sha(original) == original_hash
+        # Optional failure reproduction uses the same real workflow and exact
+        # retained rollback target. A timeout fails immediately; nothing retries.
+        for index in range(stress_relaunches):
+            run(baseline, '7-stress-' + str(index + 1))
+            assert prefix() == rolled and workflow.preference(prefix()) == preference
+            assert sha(original) == original_hash
         result = {'status': 'passed', 'application': args.application, 'format': kind, 'architecture': os.uname().machine,
                   'pageSize': os.sysconf('SC_PAGE_SIZE'), 'sessions': sessions, 'legacyMigration': bool(legacy),
                   'settingsPreserved': True, 'documentsPreserved': True, 'rollback': True, 'menuRelaunch': kind in ('appimage', 'flatpak'),
@@ -391,6 +400,7 @@ def main():
         result.update(original_sources)
         if args.runtime_migration:
             result['runtimeMigrations'] = [{'from': old_identity, 'to': new_identity}]
+        if stress_relaunches:result['stressRelaunches'] = stress_relaunches
         if args.trusted:
             info=json.loads(subprocess.check_output([sys.executable,'-m','cage','release','info',app,
                             '--key',str(key),'--format',kind,'--cache-dir',str(release_cache)],env=env,text=True))

@@ -2,6 +2,12 @@ name: Runtime migration and rollback proof
 
 on:
   workflow_dispatch:
+    inputs:
+      container_stress_relaunches:
+        description: 'Extra ARM container rollback save/close/relaunch cycles; any failure fails the proof'
+        type: choice
+        default: '0'
+        options: ['0', '25']
   push:
     paths: ['runtime/**', 'container/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'scripts/*runtime-migration*', 'scripts/test-onboarding-poc.py', 'scripts/application_workflows.py', 'tests/**', '.github/workflows/runtime-migrations.yml']
   pull_request:
@@ -11,7 +17,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.container_stress_relaunches || '0' }}
   cancel-in-progress: false
 
 env:
@@ -23,6 +29,7 @@ env:
 
 jobs:
   desktop:
+    if: github.event_name != 'workflow_dispatch' || inputs.container_stress_relaunches == '0'
     strategy:
       fail-fast: false
       matrix:
@@ -199,6 +206,8 @@ jobs:
             candidate: '11.20'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 140
+    env:
+      CAGE_TEST_RELAUNCHES: ${{ matrix.arch == 'aarch64' && inputs.container_stress_relaunches || '0' }}
     steps:
       - uses: actions/checkout@v4
         with:
