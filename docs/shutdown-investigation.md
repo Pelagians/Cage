@@ -123,14 +123,81 @@ sandbox packaging/socket permissions passed when rerun with their ordinary local
 fixtures. The subsequent PID-mapping addition passed all 11 diagnostic tests;
 that addition is not part of run `40011309865`.
 
-The ordinary [migration](https://github.com/Pelagians/Cage/actions/runs/40011294723),
-[onboarding](https://github.com/Pelagians/Cage/actions/runs/40011294763) and
-[update/rollback](https://github.com/Pelagians/Cage/actions/runs/40011294700) runs
-have passed their container cells on both architectures and their x86_64 desktop
-cells. ARM desktop jobs remain in progress. Downloaded migration/onboarding
-records from the completed cells independently verified 104 GUI sessions,
-document preservation and 16 release signatures; these are partial matrix
-results, not completed ARM desktop qualification.
+The ordinary [migration](https://github.com/Pelagians/Cage/actions/runs/40011294723)
+and [onboarding](https://github.com/Pelagians/Cage/actions/runs/40011294763) runs at
+`64928ff` subsequently passed all four matrix cells, including ARM desktop.
+Downloaded records independently verified all 14 cases and 70 GUI sessions for
+runtime migration, and all 14 cases and 76 GUI sessions for onboarding. Each
+matrix verified document/settings preservation, rollback identities and 12
+retained release signatures. The concurrent
+[update/rollback run](https://github.com/Pelagians/Cage/actions/runs/40011294700)
+was cancelled by the superseding `707e69a` push; it is not counted as a pass.
+
+## Regression results at `707e69a`
+
+The superseding
+[update/rollback run 40015101147](https://github.com/Pelagians/Cage/actions/runs/40015101147)
+passed all four matrix cells. Its 14 cases and 12 retained release signatures
+verified independently, including desktop MIME handling, read-only original
+protection, Save As, selected-file save/relaunch and DPI preservation through
+update and rollback on both architectures. The ordinary
+[AppImage proof](https://github.com/Pelagians/Cage/actions/runs/40015101288),
+[x86_64 Flatpak proof](https://github.com/Pelagians/Cage/actions/runs/40015101222)
+and [ARM Wine/FEX proof](https://github.com/Pelagians/Cage/actions/runs/40015101067)
+also passed. ARM AppImage's clean Ubuntu and Fedora consumer records both show
+save/relaunch using the same state generation without host Wine or Python.
+These CI runners use 4 KiB pages; installed Asahi qualification remains separate.
+
+The final
+[onboarding run 40015101040](https://github.com/Pelagians/Cage/actions/runs/40015101040)
+also passed all four matrix cells, including both ARM desktop formats.
+Independent verification covered all 14 cases, 76 GUI sessions and 12 retained
+release signatures, with exact document hashes, retained preferences and
+legacy-adoption/update/rollback generation identities. All remaining desktop
+checks are complete. ARM legacy-onboarding fixtures use the repaired `cage1`
+runtime; the runtime-migration baseline below retains the original FEX payload.
+
+The ARM container cell of
+[runtime migration run 40015101138](https://github.com/Pelagians/Cage/actions/runs/40015101138)
+failed in standalone OCI's `1-original` session, before migration or the candidate
+runtime started. Its preceding persistent-container proof passed all five
+sessions. Sumatra saved the expected PDF and logged `Exiting with exit code: 0`,
+but its process remained alive beyond the unchanged 120-second shutdown deadline.
+The container was still running and reported `OOMKilled: false`.
+
+Both desktop matrix cells passed Flatpak and AppImage migration, trusted delivery
+and rollback. The x86_64 container cell also passed. Independently verified
+successful records cover 12 cases, 60 GUI sessions and 10 retained release
+signatures. The overall workflow remains failed: ordinary ARM OCI failed its
+initial session, and trusted ARM OCI was not reached. The partial verification
+receipt explicitly records both unqualified cases rather than reporting a full
+matrix pass.
+
+The failing target is the original
+`wine-arm64ec-11.20-fex-2610-aarch64`, not the candidate
+`wine-arm64ec-11.20-fex-2610-cage1-aarch64`. The retained process tree shows the
+launcher waiting for the application, whose only remaining thread is waiting in
+a futex. Its native return address resolves to `NtWaitForAlertByThreadId+0x144`;
+a saved Windows return address resolves to `RtlWaitOnAddress+0x1f4`. The captured
+stack does not establish the guest wait address or FEX lock owner, so this trial
+cannot yet be attributed to the precise translator mutex diagnosed previously.
+The evidence is retained under
+`.cage/asahi-installed-qualification/runtime-migration-arm-failure-707e69a/`.
+
+The strict qualification gate remains in force, as explicitly requested after
+this failure was reported. Historical runtime payloads and rollback eligibility
+are unchanged. The failed trial remains a failure; no retry, longer deadline,
+success normalization or recovery-only runtime policy substitutes for diagnosis.
+The next diagnostic reproduction needs the owned OCI process's Windows/FEX stack
+and guest wait address alongside the native stack and thread ownership. A normal
+shutdown on another trial does not establish the cause or qualify this failure.
+
+This CI follow-up did not launch or replace installed applications. A fresh
+preservation baseline includes the user's previously acknowledged Notepad++
+changes. All 59,051 recorded entries subsequently matched, with no added or
+changed paths and the normal Notepad++ Flatpak commit unchanged. The private
+receipt is
+`.cage/asahi-installed-qualification/arm-regression-707e69a-protected-after.json`.
 
 No new production shutdown repair is claimed. The remaining repaired-runtime
 failures did not recur in this bounded investigation. A future failed trace must
