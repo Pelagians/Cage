@@ -65,6 +65,22 @@ jobs:
         assert needle in s
         s=s.replace(needle,replacement)
         p.write_text(s)
+        from pathlib import Path
+        p=Path('runtime/desktop_launch.py')
+        s=p.read_text()
+        old="""        return subprocess.run(command, env=environment, cwd=cwd,
+                                      pass_fds=() if lock_fd is None else (lock_fd,)).returncode"""
+        new="""        result = subprocess.run(command, env=environment, cwd=cwd,
+                                      pass_fds=() if lock_fd is None else (lock_fd,)).returncode
+                if result:print('Private proof Wine child return code:', result, file=sys.stderr)
+                return result"""
+        assert old in s
+        s=s.replace(old,new);compile(s,'diagnostic launch helper','exec');p.write_text(s)
+        p=Path('runtime/container_init.py');s=p.read_text()
+        old='        code = child.wait()'
+        new=old+"\n        if code:print('Private proof task return code:', code, file=sys.stderr)"
+        assert old in s
+        s=s.replace(old,new);compile(s,'diagnostic task helper','exec');p.write_text(s)
         SCOPED
     - name: Qualify persistent containers and standalone OCI
       run: |
