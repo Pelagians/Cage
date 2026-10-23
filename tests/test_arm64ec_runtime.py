@@ -15,7 +15,7 @@ from artifact.inspection import verify_bundle
 from artifact.desktop import desktop_target, validate_desktop_recipe
 from builder.executor import _immutable_image_ref
 from core.manifest import load_manifest, ManifestError
-from runtime.arm64ec import extract_cpio, runtime_target, verify_container_runtime, install_termination_guard
+from runtime.arm64ec import extract_cpio, runtime_target, verify_container_runtime, install_termination_guard, existing_runtime_target
 from runtime.desktop_launch import DesktopError, digest_json
 from runtime.providers import resolve_runtime, resolve_manifest_runtime
 from tests.bundle_fixtures import materialize_runnable_prefix
@@ -35,6 +35,42 @@ def cpio(entries):
 
 
 class ARMRuntimeTests(unittest.TestCase):
+    def test_previous_sealed_native_bundle_keeps_its_exact_carrier_and_target(self):
+        previous = json.loads((ROOT / 'runtime/legacy/wine-arm64ec-11.20-fex-2610.json').read_text())
+        manifest = self.recipe()
+        from runtime.arm64ec import seal_native_bundle
+        from runtime.desktop_launch import inventory_tree
+        from runtime.launcher import build_run_plan
+        with tempfile.TemporaryDirectory() as td:
+            # Reproduce an artifact produced before the target changed.
+            with patch('runtime.arm64ec.runtime_target', return_value=previous):
+                bundle = create_bundle(manifest, Path(td), dry_run=True)
+                materialize_runnable_prefix(bundle, entrypoint=manifest.launch.entrypoint)
+                (bundle / 'prefix/dosdevices').mkdir()
+                (bundle / 'prefix/dosdevices/c:').symlink_to('../drive_c')
+                seal_native_bundle(bundle, manifest, build_execution_graph(manifest)['runnerRuntime']['image'])
+            before = inventory_tree(bundle / 'prefix')
+            self.assertTrue(verify_bundle(bundle)['valid'])
+            plan = build_run_plan(bundle, engine='podman', state_dir=Path(td) / 'retained-state')
+            self.assertEqual(plan['runtime']['executionTarget'], previous)
+            graph = json.loads((bundle / 'metadata/graph.json').read_text())
+            self.assertEqual(plan['runtime']['baseImage'], graph['runnerRuntime']['image'])
+            self.assertEqual(inventory_tree(bundle / 'prefix'), before)
+            self.assertFalse((Path(td) / 'retained-state').exists())
+            foreign = dict(previous, payloadDigest='0' * 64)
+            with self.assertRaisesRegex(DesktopError, 'unknown ARM64EC'):
+                existing_runtime_target(foreign)
+
+    def test_previous_image_is_accepted_only_for_its_explicit_sealed_target(self):
+        previous = json.loads((ROOT / 'runtime/legacy/wine-arm64ec-11.20-fex-2610.json').read_text())
+        image = subprocess.CompletedProcess([], 0, json.dumps([{'Architecture': 'arm64', 'Config': {'Labels': {
+            'org.pelagian.cage.session-contract': 'cage.native-wine/v1',
+            'io.cage.runtime.target-sha256': digest_json(previous)}}}]), '')
+        with patch('runtime.arm64ec.subprocess.run', return_value=image):
+            verify_container_runtime('podman', 'old-immutable-image', execution_target=previous)
+            with self.assertRaises(DesktopError):
+                verify_container_runtime('podman', 'old-immutable-image')
+
     def test_guard_installs_exact_bundled_dll_without_mutating_rpm_hardlink(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

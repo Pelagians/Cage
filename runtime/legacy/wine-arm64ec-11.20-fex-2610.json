@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "cage.desktop-runtime/v0",
+  "id": "wine-arm64ec-11.20-fex-2610-aarch64",
+  "os": "linux",
+  "architecture": "aarch64",
+  "windowsArchitecture": "x86_64",
+  "prefixArchitecture": "win64",
+  "provider": "wine-arm64ec",
+  "version": "11.20",
+  "wineVersionOutput": "wine-11.20 (Staging)",
+  "graphics": "x11",
+  "translation": {
+    "provider": "fex",
+    "version": "2610",
+    "modules": [
+      "libarm64ecfex.dll",
+      "libwow64fex.dll"
+    ],
+    "hostPageSizes": [
+      4096,
+      16384
+    ]
+  },
+  "payload": "rpm",
+  "packages": [
+    {
+      "name": "fex-emu-wine",
+      "version": "2610-1.fc44",
+      "url": "https://download.copr.fedorainfracloud.org/results/lacamar/wine-arm64ec/fedora-44-aarch64/Packages/f/fex-emu-wine-2610-1.fc44.aarch64.rpm",
+      "sha256": "d34ab5563ef9a243f0785563627fb32a57522ebe0ecd2eb50e761ede75cc7caf"
+    },
+    {
+      "name": "wine-common",
+      "version": "11.20-ec1.fc44",
+      "url": "https://download.copr.fedorainfracloud.org/results/lacamar/wine-arm64ec/fedora-44-aarch64/Packages/w/wine-common-11.20-ec1.fc44.noarch.rpm",
+      "sha256": "63c5e57ce9ff792682cbadd8c824c10ef7a24b1e5407cc3033020b8713b0b94c"
+    },
+    {
+      "name": "wine-core",
+      "version": "11.20-ec1.fc44",
+      "url": "https://download.copr.fedorainfracloud.org/results/lacamar/wine-arm64ec/fedora-44-aarch64/Packages/w/wine-core-11.20-ec1.fc44.aarch64.rpm",
+      "sha256": "980a27a056e39a8c46bd07c8b47df2bf2e7e13b63acaf5e75fa1e22226325f6c"
+    },
+    {
+      "name": "wine-filesystem",
+      "version": "11.20-ec1.fc44",
+      "url": "https://download.copr.fedorainfracloud.org/results/lacamar/wine-arm64ec/fedora-44-aarch64/Packages/w/wine-filesystem-11.20-ec1.fc44.noarch.rpm",
+      "sha256": "6c2d3658fff162bb3f1b12a6ac83e787de07fb0c07c1907a46bbe36f85961b3d"
+    }
+  ],
+  "baseSource": "https://github.com/lacamar/wine-arm64ec-rpm/tree/9d4dab54af9ae2b80977cf865743bc50167d8d04",
+  "platform": "org.freedesktop.Platform",
+  "sdk": "org.freedesktop.Sdk",
+  "branch": "26.08",
+  "platformCommit": "81382f606af1aa8da7186ef8403a4c429d84968021fa0999fae4f2ffe81aed98",
+  "sdkCommit": "44466f5d282215c4c2ab29db7e3f30ce6506d1b309a4761bab7541f23a65eeff",
+  "remote": "flathub",
+  "remoteUrl": "https://dl.flathub.org/repo/flathub.flatpakrepo",
+  "wine": "bin/wine",
+  "wineserver": "bin/wineserver",
+  "containerBase": "registry.fedoraproject.org/fedora@sha256:d458dbabce9d9400db66c046ec07bec6b75759f85ea737b1e3235ef2b702f036",
+  "sessionContract": "cage.native-wine/v1",
+  "qualification": "experimental; per-application acceptance required",
+  "payloadDigest": "e1be53dcd30bf7a9cd6dee073573fdf9a5815fc64ed794455fc38234061503d7"
+}

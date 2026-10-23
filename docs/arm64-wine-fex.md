@@ -20,6 +20,11 @@ the native Flatpak platform/SDK commits and the Fedora container base digest.
 This Wine build includes the upstream packaging project's ARM64EC/Asahi patches;
 an arbitrary Wine 11.20 binary is not an equivalent runtime.
 
+The lock also binds the `fex-2610-cage1` termination guard, its exact replacement
+ARM64EC DLL and resulting inventory. The same bytes are used by all ARM export
+adapters. Its source, notices, rebuild procedure and state boundaries are documented
+in [ARM64EC shutdown guard](arm64-shutdown.md).
+
 `recipes/notepadplusplus-portable-arm64.cage.yaml` is used unchanged for the
 container and Flatpak builds. Its application source, file mappings and launch
 contract match the existing portable recipe. Its runtime selection is:

@@ -689,8 +689,13 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
                    if desktop_graph else graphics.get("defaultMode") in modes and
                    ({"headless", "desktop"} == set(modes) if native_graph else {"headless", "selkies"}.issubset(set(modes))))
     if native_graph:
-        from runtime.arm64ec import runtime_target
-        graphics_ok = (graphics_ok and runtime.get("executionTarget") == runtime_target()
+        from runtime.arm64ec import existing_runtime_target
+        try:
+            existing_runtime_target(runtime.get('executionTarget'))
+            recognized_target = True
+        except ValueError:
+            recognized_target = False
+        graphics_ok = (graphics_ok and recognized_target
                        and graph.get("builderRuntime", {}).get("executionTarget") == runtime.get("executionTarget")
                        and graph.get("runnerRuntime", {}).get("executionTarget") == runtime.get("executionTarget")
                        and runtime.get("architecture") == "aarch64" and graphics.get("sessionBackend") == "x11")

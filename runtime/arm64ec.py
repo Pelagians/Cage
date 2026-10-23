@@ -21,6 +21,20 @@ def runtime_target():
     return json.loads(LOCK.read_text())
 
 
+def existing_runtime_target(target):
+    """Read/launch old sealed bundles without changing their runtime identity.
+
+    Producers still use runtime_target(). Only the exact previously shipped
+    pin is accepted here; this does not permit cross-runtime prefix migration.
+    """
+    if target == runtime_target():
+        return target
+    previous = json.loads((LOCK.parent / 'legacy/wine-arm64ec-11.20-fex-2610.json').read_text())
+    if target == previous:
+        return target
+    raise DesktopError('unknown ARM64EC runtime identity; retained state was not changed')
+
+
 def sha256_file(path):
     digest = hashlib.sha256()
     with Path(path).open("rb") as stream:
@@ -235,14 +249,15 @@ def install_container_runtime(cache):
     install_termination_guard('/usr')
 
 
-def verify_container_runtime(engine, image):
+def verify_container_runtime(engine, image, *, execution_target=None):
     from runtime.desktop_launch import digest_json
+    target = existing_runtime_target(execution_target) if execution_target is not None else runtime_target()
     result = subprocess.run([engine, "image", "inspect", image], capture_output=True, text=True, timeout=30)
     if result.returncode:
         raise DesktopError("cannot inspect ARM64EC runtime image: " + image)
     data = json.loads(result.stdout)[0]
     labels = data.get("Config", {}).get("Labels", {}) or {}
-    if data.get("Architecture") != "arm64" or labels.get("org.pelagian.cage.session-contract") != "cage.native-wine/v1" or labels.get("io.cage.runtime.target-sha256") != digest_json(runtime_target()):
+    if data.get("Architecture") != "arm64" or labels.get("org.pelagian.cage.session-contract") != "cage.native-wine/v1" or labels.get("io.cage.runtime.target-sha256") != digest_json(target):
         raise DesktopError("ARM64EC image architecture, session contract or pinned Wine/FEX identity mismatch")
 
 
@@ -277,7 +292,8 @@ def native_launch_script(bundle, file_arguments, state_action=None):
     plan = json.loads((bundle / "metadata/native-launch.json").read_text())
     inventory = json.loads((bundle / "metadata/seed-inventory.json").read_text())
     graph = json.loads((bundle / "metadata/graph.json").read_text())
-    if (plan["target"] != {**runtime_target(), "carrierImage": graph["runnerRuntime"]["image"]}
+    target = existing_runtime_target(graph['runnerRuntime'].get('executionTarget'))
+    if (plan["target"] != {**target, "carrierImage": graph["runnerRuntime"]["image"]}
             or plan["seedDigest"] != digest_json(inventory)
             or plan["sourceManifestDigest"] != digest_json(json.loads((bundle / "manifest.cage.json").read_text()))):
         raise DesktopError("native container seed/runtime/recipe seal mismatch; rebuild with the selected ARM runtime")

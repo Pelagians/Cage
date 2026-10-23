@@ -237,6 +237,7 @@ def build_run_plan(
             "network": selected_network,
             "image": image,
             "baseImage": base_image,
+            **({"executionTarget": runtime['executionTarget']} if runtime.get('executionTarget') else {}),
             "derivedRuntimeImage": derived_image,
             "linuxStateIdentity": derived_identity,
             "requiresExactRuntime": bool(
@@ -281,7 +282,8 @@ def execute_run_plan(plan: dict[str, Any], *, timeout: int | None = None) -> dic
         raise RunError("run plan container.argv must be a list of strings")
     if plan.get("runtime", {}).get("provider") == "wine-arm64ec":
         from runtime.arm64ec import verify_container_runtime
-        verify_container_runtime(plan["container"]["engine"], plan["runtime"]["baseImage"])
+        verify_container_runtime(plan["container"]["engine"], plan["runtime"]["baseImage"],
+                                 execution_target=plan['runtime'].get('executionTarget'))
     if plan.get("stateDirectory"):
         Path(plan["stateDirectory"]).mkdir(parents=True, exist_ok=True, mode=0o700)
 
