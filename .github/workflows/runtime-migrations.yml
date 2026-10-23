@@ -3,9 +3,9 @@ name: Runtime migration and rollback proof
 on:
   workflow_dispatch:
   push:
-    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'scripts/*runtime-migration*', 'scripts/test-onboarding-poc.py', 'scripts/application_workflows.py', 'tests/**', '.github/workflows/runtime-migrations.yml']
+    paths: ['runtime/**', 'container/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'scripts/*runtime-migration*', 'scripts/test-onboarding-poc.py', 'scripts/application_workflows.py', 'tests/**', '.github/workflows/runtime-migrations.yml']
   pull_request:
-    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'scripts/*runtime-migration*', 'scripts/test-onboarding-poc.py', 'scripts/application_workflows.py', 'tests/**', '.github/workflows/runtime-migrations.yml']
+    paths: ['runtime/**', 'container/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'scripts/*runtime-migration*', 'scripts/test-onboarding-poc.py', 'scripts/application_workflows.py', 'tests/**', '.github/workflows/runtime-migrations.yml']
 
 permissions:
   contents: read

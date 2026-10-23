@@ -4,6 +4,8 @@ Uses runtime/catalog.json as the source of truth for available runtime
 container builds and image references.
 """
 from __future__ import annotations
+import json
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -40,6 +42,7 @@ class ContainerBuildResult:
     dockerfile_path: str
     success: bool
     log: str = ""
+    retained_images: tuple[str, ...] = ()
 
     def to_dict(self):
         return {
@@ -49,7 +52,42 @@ class ContainerBuildResult:
             "dockerfile": self.dockerfile_path,
             "success": self.success,
             "log": self.log,
+            **({"retainedImages": list(self.retained_images)} if self.retained_images else {}),
         }
+
+
+def _retain_runtime_image(engine, reference):
+    """Keep the old repository digest resolvable when its build tag moves."""
+    def inspect(name):
+        result = subprocess.run([engine, 'image', 'inspect', name], capture_output=True, text=True, timeout=30)
+        if result.returncode:
+            return None
+        records = json.loads(result.stdout)
+        if not isinstance(records, list) or len(records) != 1:
+            raise ValueError('ambiguous runtime image inspection')
+        identity = records[0].get('Id', '')
+        if not isinstance(identity, str) or not re.fullmatch(r'(?:sha256:)?[a-f0-9]{64}', identity):
+            raise ValueError('runtime image has no immutable content identity')
+        return identity.removeprefix('sha256:')
+    previous = inspect(reference)
+    if previous is None:
+        return None
+    # Use the same repository: preserving a differently named image alone can
+    # still let Podman drop the original repository@digest alias on retagging.
+    repository, separator, tag = reference.rpartition(':')
+    if not separator or '/' in tag:
+        raise ValueError('runtime build reference must have an explicit tag')
+    retained = repository + ':cage-rollback-' + previous
+    existing = inspect(retained)
+    if existing is not None and existing != previous:
+        raise ValueError('retained runtime tag belongs to another image; rebuild refused')
+    if existing is None:
+        result = subprocess.run([engine, 'tag', reference, retained], capture_output=True, text=True, timeout=30)
+        if result.returncode:
+            raise ValueError('could not retain previous runtime image; rebuild refused: ' + result.stderr[-1000:])
+    if inspect(retained) != previous or inspect(reference) != previous:
+        raise ValueError('runtime image changed during retention; rebuild refused')
+    return retained
 
 
 def list_definitions() -> list[dict[str, Any]]:
@@ -123,7 +161,13 @@ def build_container(
         for alias_tag in entry.publish_tags:
             cmd.extend(["-t", f"{entry.local_image}:{alias_tag}"])
 
+    retained = []
     try:
+        references = dict.fromkeys(cmd[index + 1] for index, value in enumerate(cmd[:-1]) if value == '-t')
+        for reference in references:
+            saved = _retain_runtime_image(build_cmd, reference)
+            if saved and saved not in retained:
+                retained.append(saved)
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=1800 if provider == "wine-arm64ec" else 600,
         )
@@ -132,6 +176,7 @@ def build_container(
             return ContainerBuildResult(
                 provider, entry.tag, local_tag, str(dockerfile), False,
                 f"Build failed (exit {result.returncode}):\n{log[-2000:]}",
+                tuple(retained),
             )
 
         if push and published_tag:
@@ -144,13 +189,17 @@ def build_container(
                 return ContainerBuildResult(
                     provider, entry.tag, published_tag, str(dockerfile), False,
                     f"Push failed (exit {push_result.returncode}):\n{log[-2000:]}",
+                    tuple(retained),
                 )
 
         return ContainerBuildResult(
             provider, entry.tag, published_tag or local_tag,
-            str(dockerfile), True, log,
+            str(dockerfile), True, log, tuple(retained),
         )
 
+    except ValueError as exc:
+        return ContainerBuildResult(provider, entry.tag, local_tag, str(dockerfile), False,
+                                    'Runtime retention failed: ' + str(exc), tuple(retained))
     except subprocess.TimeoutExpired:
         return ContainerBuildResult(
             provider, entry.tag, local_tag, str(dockerfile), False,

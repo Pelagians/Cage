@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+import json
+import subprocess
+from unittest.mock import patch
 
 from container.manager import (
     build_container,
@@ -61,6 +64,63 @@ class ContainerManagerTests(unittest.TestCase):
         result = build_container("wine", "latest", build_cmd="nonexistent-docker")
         self.assertFalse(result.success)
         self.assertIn("not found", result.log.lower())
+
+    def test_rebuilding_a_runtime_preserves_its_original_repository_digest(self):
+        self.runtime_retention_case()
+
+    def test_failed_build_keeps_the_retained_old_runtime(self):
+        self.runtime_retention_case(build_failure=True)
+
+    def test_foreign_retention_tag_is_not_overwritten_and_build_does_not_start(self):
+        self.runtime_retention_case(foreign_tag=True)
+
+    def test_failed_retention_refuses_build_before_the_runtime_tag_can_move(self):
+        self.runtime_retention_case(tag_failure=True)
+
+    def runtime_retention_case(self, *, build_failure=False, foreign_tag=False, tag_failure=False):
+        old, new, digest = 'sha256:' + 'a'*64, 'sha256:' + 'b'*64, 'sha256:' + 'c'*64
+        reference = get_local_image_ref('wine-arm64ec', '11.20')
+        repository = reference.rpartition(':')[0]
+        retained = repository + ':cage-rollback-' + 'a'*64
+        references = {reference: old}
+        if foreign_tag:references[retained] = new
+        builds = []
+        def command(args, **kwargs):
+            code = 0; output = ''; error = ''
+            if args[1:3] == ['image', 'inspect']:
+                name = args[3]
+                image = references.get(name)
+                if '@' in name:
+                    # Podman may drop a repository@digest alias when no tag in
+                    # that repository still points at the original image.
+                    repo, wanted = name.split('@')
+                    image = old if wanted == digest and any(tag.startswith(repo + ':') and identity == old
+                                                           for tag, identity in references.items()) else None
+                if image:output = json.dumps([{'Id': image}])
+                else:code = 1
+            elif args[1] == 'tag':
+                if tag_failure:code = 1; error = 'cannot retain'
+                else:references[args[3]] = references[args[2]]
+            elif args[1] == 'build':
+                builds.append(args)
+                self.assertEqual(references.get(retained), old)
+                if build_failure:code = 1; error = 'build failed'
+                else:
+                    for index, value in enumerate(args[:-1]):
+                        if value == '-t':references[args[index + 1]] = new
+            else:self.fail('unexpected container command: ' + str(args))
+            return subprocess.CompletedProcess(args, code, output, error)
+        with patch('container.manager.subprocess.run', side_effect=command):
+            result = build_container('wine-arm64ec', '11.20', build_cmd='podman')
+            if foreign_tag or tag_failure:
+                self.assertFalse(result.success);self.assertFalse(builds)
+                self.assertEqual(references[reference], old)
+                if foreign_tag:self.assertEqual(references[retained], new)
+            else:
+                self.assertEqual(result.success, not build_failure)
+                self.assertIn(retained, result.to_dict()['retainedImages'])
+                self.assertEqual(command(['podman','image','inspect',repository+'@'+digest]).returncode, 0)
+                self.assertEqual(references[retained], old)
 
 
 class RuntimeCatalogTests(unittest.TestCase):

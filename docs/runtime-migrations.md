@@ -76,6 +76,18 @@ system-managed platform updates. AppImage still relies on host glibc and graphic
 drivers. Container rollback retains the digest-pinned runtime image and mount
 paths.
 
+Before rebuilding a runtime, Cage retains each replaced build-tag image under
+`<same-repository>:cage-rollback-<image-id>`. Keeping the same repository preserves
+Podman's original `repository@digest` resolution when the normal version tag
+moves. Existing retention tags are verified, never overwritten with foreign
+images; a retention failure refuses the rebuild. Build results report
+`retainedImages`. These tags add no image layers and are not automatically pruned.
+The failure was reproduced with native Podman on Asahi/16 KiB pages using
+temporary tags on existing Cage proof images: replacing a tag lost its old
+repository digest without retention, while the retained reference kept it
+resolvable. Original image IDs, digests and tags were unchanged after cleanup.
+This metadata-only check is separate from a native Wine application migration.
+
 ## Qualification
 
 `scripts/test-onboarding-poc.py --runtime-migration` requires identical application
