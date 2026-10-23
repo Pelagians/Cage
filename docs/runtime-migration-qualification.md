@@ -4,7 +4,114 @@ Implementation source: `85fc1881b3c085b452350bb76d990254e08eaa10`.
 Date: 2026-10-23. Usage and compatibility policy:
 [safe runtime migrations](runtime-migrations.md).
 
-## Current result
+## Final CI result on 2026-10-23
+
+All six workflows completed successfully at source
+`270e1879472a7cf575ffc3da016c80f666407029`:
+
+| Workflow | Result |
+| --- | --- |
+| [Runtime migration and rollback](https://github.com/Pelagians/Cage/actions/runs/40000471514) | All four cells passed |
+| [Application onboarding and legacy migration](https://github.com/Pelagians/Cage/actions/runs/40000471490) | All four cells passed |
+| [Application update and rollback](https://github.com/Pelagians/Cage/actions/runs/40000471613) | All four cells passed |
+| [Flatpak](https://github.com/Pelagians/Cage/actions/runs/40000471516) | Passed |
+| [AppImage](https://github.com/Pelagians/Cage/actions/runs/40000471444) | Both architectures passed |
+| [ARM Wine/FEX](https://github.com/Pelagians/Cage/actions/runs/40000471519) | Passed |
+
+The final runtime matrix independently verified **14 cases, 70 GUI sessions and
+12 Ed25519 signatures**, including different actual ARM translator and x86_64
+7-Zip payload hashes. Evidence records are in
+`.cage/asahi-installed-qualification/runtime-migration-ci-270e187/`;
+`verify-runtime-migrations-270e187.py` and
+`verified-runtime-migrations-270e187.json` are in its parent qualification folder.
+The separate stress proof below adds **105 sessions and four signatures**. These
+are software CI proofs on 4 KiB kernels, not new installed Asahi/16 KiB migration
+qualification. Package/image bindings were verified through signed receipts and
+CI records; consumer binaries were not downloaded and independently rehashed.
+
+A final rehash confirmed all **25,112 original protected entries** and the normal
+installed Flatpak commit unchanged. Evidence:
+`runtime-migration-ci-followup-user-state-final.json` and its `.log` counterpart.
+No normal application installation was upgraded and no user recovery data was
+pruned. The metadata-only native test never started its temporary container.
+
+Changes in this follow-up concern CI evidence collection and optional bounded
+stress. No production Wine payload or generation transaction was changed.
+Earlier failed attempts remain recorded below. Passing reruns and stress tests
+do not establish the causes of their intermittent shutdown failures, which are
+still unconfirmed. No application failure was converted into a passing trial.
+
+## CI follow-up investigation on 2026-10-23
+
+At source `4b6b88c33f3b287be126a04d6c0726d324ef31d9`, all five regression
+workflows passed: [onboarding](https://github.com/Pelagians/Cage/actions/runs/39933053958),
+[application updates and rollback](https://github.com/Pelagians/Cage/actions/runs/39933053996),
+[Flatpak](https://github.com/Pelagians/Cage/actions/runs/39933054145),
+[AppImage](https://github.com/Pelagians/Cage/actions/runs/39933054082), and
+[ARM Wine/FEX](https://github.com/Pelagians/Cage/actions/runs/39933053961).
+
+The repeated [runtime migration matrix](https://github.com/Pelagians/Cage/actions/runs/39933054117)
+passed both desktop cells and x86_64 containers but failed the final trusted ARM
+OCI relaunch after rollback. The application logged exit code zero and its GUI
+closed; the launcher still waited for Podman at the 120-second deadline. This
+alone does not establish whether Wine cleanup or the container client hung.
+The restored baseline uses the original, unrepaired FEX payload. No failed trial
+is counted as passed, and no signing/qualification gate or timeout was relaxed.
+
+The later [source-65 ARM desktop cell](https://github.com/Pelagians/Cage/actions/runs/39994050603/job/120552853060)
+also timed out on the first trusted AppImage baseline session, before migration.
+Its retained snapshot shows a single Sumatra thread waiting on a futex after the
+application logged exit zero. This again used the unrepaired baseline translator;
+it is not evidence of a candidate-runtime failure. The snapshot does not establish
+the exact lock owner or cause. AppImage consumer diagnostics did not include a
+native debugger stack. Records are retained under
+`runtime-migration-arm-desktop-failure-65b693c/trusted-appimage/`.
+
+The failure exposed a diagnostic defect: Podman's volume filter matches a volume
+name or container mount destination, not the host bind-mount source. The probe
+now filters `/var/lib/cage/state`, then verifies the exact unique host source
+before collecting container state and host PIDs. It includes stopped containers
+and uses debugger attach/detach for the owned application or direct child client.
+No diagnostic signal is sent through Podman's default signal proxy.
+See the [Podman filter documentation](https://docs.podman.io/en/latest/markdown/podman-ps.1.html#filter-f-filter).
+The corrected selection also passed a native Asahi/16 KiB metadata test with one
+never-started read-only temporary container. It launched no Wine/application,
+changed no image tags, and removed only that container afterward.
+
+The final diagnostic source is
+`270e1879472a7cf575ffc3da016c80f666407029`. Its full local suite passed
+**608 tests and 214 subtests**. Fresh protected-state verification again confirms
+all **25,112 original entries** and the normal installed Flatpak commit unchanged.
+Evidence is under `.cage/asahi-installed-qualification/`:
+`runtime-migration-ci-fix-unit-tests.log`,
+`runtime-migration-ci-followup-user-state-check.json`, and
+`container-diagnostic-filter/result.json`. All final-source reruns passed as
+recorded above; the underlying intermittent shutdown timeout is not claimed fixed.
+
+The [bounded container stress run](https://github.com/Pelagians/Cage/actions/runs/39996341350)
+at `61b6d8fa33c74ca73a56a6a4dd58c24004edaa36` passed **105 GUI sessions**:
+90 ARM sessions across direct container, OCI and trusted OCI, plus 15 x86_64
+sessions. This includes **75 extra ARM save/close/relaunch cycles** against the
+exact retained rollback runtime. All saved hashes, preferences, directed runtime
+identities and four retained Ed25519 signatures were independently verified in
+`verified-runtime-migration-stress-61b6d8f.json`. A failed cycle immediately fails
+the proof; the mode does not retry failures. Its optional manual input is
+`container_stress_relaunches=25`; default `0` leaves the normal four-cell matrix
+and five-session proof unchanged. The stress-only run intentionally omits desktop
+cells and does not replace their qualification.
+
+A separate [older ARM onboarding cell](https://github.com/Pelagians/Cage/actions/runs/39994050734/job/120552854628)
+failed its first legacy-v0 session with exit 247 after the application logged
+exit zero. This uses the repaired FEX runtime with the sealed historical helper,
+so it cannot simply be attributed to the original unrepaired translator. Its
+actual cause is unestablished, including any possible memory-related kill.
+The retained record is `onboarding-arm-failure-65b693c/container/1-original.log`.
+Final diagnostics capture bounded kernel output and cgroup memory-event records
+on nonzero exits as well as timeouts, only in the ephemeral CI job. They preserve
+the original failure and never reinterpret a nonzero exit as success. Passing
+stress and retries do not establish that this separate legacy issue is fixed.
+
+## Initial qualification
 
 The [runtime migration matrix](https://github.com/Pelagians/Cage/actions/runs/39925674407)
 passed all four cells. The completed records independently verify **14 cases,
@@ -59,9 +166,9 @@ passed. The [ARM Wine/FEX regression](https://github.com/Pelagians/Cage/actions/
 passed an unchanged retry after its first pinned RPM download timed out before
 application testing. Its original failure log is retained locally. The separate
 [onboarding regression](https://github.com/Pelagians/Cage/actions/runs/39925674509)
-was still running at this snapshot; the
+and its
 [diagnostics follow-up](https://github.com/Pelagians/Cage/actions/runs/39933053958)
-was pending. Neither is claimed as passed here.
+both passed. Their ARM64 desktop cells completed successfully.
 
 A separate [ordinary Notepad++ update regression](https://github.com/Pelagians/Cage/actions/runs/39917829887)
 hit a timeout waiting for the first trusted ARM OCI session to exit. Its raw
@@ -73,7 +180,7 @@ passed direct container, OCI and trusted OCI update/rollback with the original
 and two Ed25519 signatures were independently verified; see
 `verified-notepad-regression-4b6b88c.json` in the local qualification folder.
 The original timeout's cause is still unknown; this strict retry is not a runtime
-shutdown fix. Other cells of that broader follow-up were still queued.
+shutdown fix. The other cells of that broader follow-up subsequently passed.
 
 The shared safe collector now retains evidence without following Wine links or
 uploading state/documents. App-specific shutdown diagnostics inspect only the
