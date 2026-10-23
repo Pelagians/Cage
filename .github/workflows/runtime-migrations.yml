@@ -22,7 +22,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.container_stress_relaunches || '0' }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.container_stress_relaunches || '0' }}-${{ inputs.original_oci_relaunches || '0' }}
   cancel-in-progress: false
 
 env:
