@@ -34,9 +34,24 @@ def sha(path):
     with Path(path).open('rb') as f:return hashlib.file_digest(f, 'sha256').hexdigest()
 
 
-def shutdown_diagnostics(process, destination):
-    """Inspect only this failed proof's descendants, before normal cleanup."""
+def shutdown_diagnostics(process, destination, executable, *, container_state=None):
+    """Inspect this failed proof, including reparented processes in its container."""
     pending = [process.pid]; seen = set(); records = []
+    if container_state is not None:
+        # Rootless conmon/Wine need not remain descendants of the release CLI.
+        # Match the unique private proof mount, then verify the mount explicitly.
+        try:
+            containers = subprocess.check_output(
+                ['podman', 'ps', '--filter', 'volume=' + str(container_state), '--format', '{{.ID}}'],
+                text=True, timeout=10).splitlines()
+            for container in containers:
+                details = json.loads(subprocess.check_output(['podman', 'inspect', container], text=True, timeout=10))[0]
+                if not any(mount.get('Source') == str(container_state) and mount.get('Destination') == '/var/lib/cage/state'
+                           for mount in details.get('Mounts', [])):continue
+                pids = subprocess.check_output(['podman', 'top', container, 'hpid'], text=True, timeout=10)
+                pending.extend(int(pid.strip()) for pid in pids.splitlines() if pid.strip().isdigit())
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            destination.with_name(destination.name + '-container-error.log').write_text(str(exc))
     while pending and len(seen) < 128:
         pid = pending.pop()
         if pid in seen:continue
@@ -62,7 +77,7 @@ def shutdown_diagnostics(process, destination):
     # Attaching is diagnostic after failure; it cannot turn the trial into a pass.
     if os.environ.get('GITHUB_ACTIONS') == 'true' and shutil.which('gdb'):
         for record in records:
-            if record.get('comm', '').strip() != 'SumatraPDF.exe':continue
+            if record.get('comm', '').strip().casefold() != Path(executable).name[:15].casefold():continue
             with destination.with_name(destination.name + '-' + str(record['pid']) + '.log').open('w') as output:
                 try:
                     subprocess.run(['sudo', '-n', 'gdb', '--batch', '--nx', '--nh',
@@ -84,7 +99,7 @@ def shutdown_diagnostics(process, destination):
                                'WINEDEBUG=-all', '/app/bin/wine', 'winedbg', '--command']
                     listing = subprocess.run([*command, 'info proc\nquit'], capture_output=True, text=True, timeout=20)
                     import re
-                    target = re.search(r'(?mi)^\s*(?:=>)?\s*([0-9a-f]+)\s+.*SumatraPDF', listing.stdout)
+                    target = re.search(r'(?mi)^\s*(?:=>)?\s*([0-9a-f]+)\s+.*' + re.escape(Path(executable).stem), listing.stdout)
                     output_path = destination.with_name(destination.name + '-windows.log')
                     with output_path.open('w') as output:
                         output.write(listing.stdout + listing.stderr); output.flush()
@@ -297,7 +312,8 @@ def main():
             code = process.wait(timeout=120)
             assert code == 0, f'application/launcher exited {code}; retained log'
         except subprocess.TimeoutExpired:
-            shutdown_diagnostics(process, evidence / (label + '-shutdown'))
+            shutdown_diagnostics(process, evidence / (label + '-shutdown'), workflow.executable,
+                                 container_state=state.parent if kind in ('container', 'oci') else None)
             raise
         def idle():
             try:

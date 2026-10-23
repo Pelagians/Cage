@@ -3,9 +3,9 @@ name: Export update and rollback proof
 on:
   workflow_dispatch:
   push:
-    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/notepadplusplus*', 'pyproject.toml', 'scripts/*update*poc.py', 'scripts/test-onboarding-poc.py', 'scripts/application_workflows.py', 'tests/test_trusted_releases.py', 'scripts/*storage*poc.py', 'tests/test_*updates.py', 'tests/test_storage.py', 'tests/test_desktop_integration.py', '.github/workflows/export-updates.yml']
+    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/notepadplusplus*', 'pyproject.toml', 'scripts/*update*poc.py', 'scripts/test-onboarding-poc.py', 'scripts/collect-onboarding-evidence.py', 'scripts/application_workflows.py', 'tests/test_trusted_releases.py', 'scripts/*storage*poc.py', 'tests/test_*updates.py', 'tests/test_storage.py', 'tests/test_desktop_integration.py', '.github/workflows/export-updates.yml']
   pull_request:
-    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/notepadplusplus*', 'pyproject.toml', 'scripts/*update*poc.py', 'scripts/test-onboarding-poc.py', 'scripts/application_workflows.py', 'tests/test_trusted_releases.py', 'scripts/*storage*poc.py', 'tests/test_*updates.py', 'tests/test_storage.py', 'tests/test_desktop_integration.py', '.github/workflows/export-updates.yml']
+    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/notepadplusplus*', 'pyproject.toml', 'scripts/*update*poc.py', 'scripts/test-onboarding-poc.py', 'scripts/collect-onboarding-evidence.py', 'scripts/application_workflows.py', 'tests/test_trusted_releases.py', 'scripts/*storage*poc.py', 'tests/test_*updates.py', 'tests/test_storage.py', 'tests/test_desktop_integration.py', '.github/workflows/export-updates.yml']
 
 permissions:
   contents: read
@@ -109,6 +109,9 @@ jobs:
             localhost/cage-update-proof-tools python3 scripts/test-onboarding-poc.py appimage dist/update-8.8.8.AppImage dist/update-8.8.9.AppImage --application notepadplusplus --trusted --qualification dist/update-evidence/appimage/result.json
           SH
           rm -rf -- .cage/update-appimage-tmp
+      - name: Collect records without following Wine drive links
+        if: always()
+        run: python scripts/collect-onboarding-evidence.py --source dist/update-evidence --destination dist/update-ci-evidence
       - name: Retain qualification evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -120,11 +123,7 @@ jobs:
             dist/update-*.AppImage.json
             dist/update-*.flatpak
             dist/update-*.flatpak.json
-            dist/update-evidence/**/*.json
-            dist/update-evidence/**/*.log
-            dist/update-evidence/**/*.png
-            dist/update-evidence/trusted-*/publisher-public.pem
-            dist/update-evidence/trusted-*/trusted-cache/releases/*/release.json.sig
+            dist/update-ci-evidence/
 
   arm-container-updates:
     name: container-updates (${{ matrix.provider }})
@@ -155,7 +154,7 @@ jobs:
       - name: Prepare tools and sources
         run: |
           sudo apt-get update
-          sudo apt-get install -y podman uidmap slirp4netns fuse-overlayfs rpm2cpio xvfb openbox xdotool scrot xdg-utils x11-xserver-utils
+          sudo apt-get install -y podman uidmap slirp4netns fuse-overlayfs rpm2cpio gdb xvfb openbox xdotool scrot xdg-utils x11-xserver-utils
           python -m pip install PyYAML pytest setuptools wheel 'cryptography>=43'
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           mkdir -p "$HOME/.config/containers"
@@ -183,6 +182,9 @@ jobs:
           CAGE_TEST_EVIDENCE="$PWD/dist/update-evidence/oci" python scripts/test-update-poc.py oci localhost/cage-update-oci-proof:8.8.8 localhost/cage-update-oci-proof:8.8.9
           CAGE_TEST_EVIDENCE="$PWD/dist/update-evidence/trusted-oci" python scripts/test-onboarding-poc.py oci localhost/cage-update-oci-proof:8.8.8 localhost/cage-update-oci-proof:8.8.9 --application notepadplusplus --trusted --qualification dist/update-evidence/oci/result.json
           SH
+      - name: Collect records without following Wine drive links
+        if: always()
+        run: python scripts/collect-onboarding-evidence.py --source dist/update-evidence --destination dist/update-ci-evidence
       - name: Retain container qualification evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -190,10 +192,4 @@ jobs:
           name: container-updates-${{ matrix.arch }}-${{ github.sha }}
           retention-days: 14
           path: |
-            dist/update-evidence/**/*.json
-            dist/update-evidence/**/*.log
-            dist/update-evidence/**/*.png
-            dist/update-evidence/trusted-*/publisher-public.pem
-            dist/update-evidence/trusted-*/trusted-cache/releases/*/release.json.sig
-            dist/update-containers/*/metadata/*.json
-            dist/update-containers/*/logs/*
+            dist/update-ci-evidence/
