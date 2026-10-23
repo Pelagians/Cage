@@ -210,7 +210,18 @@ and [Flatpak regression](https://github.com/Pelagians/Cage/actions/runs/39898584
 passed at `873b7cf`. At `c8f3267`, [all four update jobs](https://github.com/Pelagians/Cage/actions/runs/39900719833),
 the [AppImage regression](https://github.com/Pelagians/Cage/actions/runs/39900719766)
 and [ARM Wine/FEX proof](https://github.com/Pelagians/Cage/actions/runs/39900719765)
-passed. The follow-up onboarding matrix at `c8f3267` was still running its ARM
-desktop job when this report was finalized; its other three jobs passed.
+passed. The [follow-up onboarding matrix](https://github.com/Pelagians/Cage/actions/runs/39900719768)
+at `c8f3267` completed successfully, including the remaining ARM desktop job.
+All four jobs passed without a source change or retry. The retained records were
+independently checked: 14 cases, 76 GUI sessions, 12 verified release signatures,
+preserved settings and saved document hashes, and retained rollback generations.
+The ARM desktop cases cover six historical-migration sessions and five trusted
+delivery sessions for each of Flatpak and AppImage, including menu relaunch.
+These CI runners use 4 KiB pages; this evidence is separate from the 48 native
+Asahi sessions on 16 KiB pages recorded above. Local evidence is retained in
+`.cage/asahi-installed-qualification/ci-onboarding-c8f3267/`, with the verification
+summary in `verified-ci-onboarding-c8f3267.json` in the same qualification folder.
+This CI follow-up did not change installed applications, user state or rollback
+data. No additional runtime fix was needed.
 The earlier ARM runtime download returned HTTP 503 before application testing;
 the unchanged current-source retry passed with checksum checks intact.
