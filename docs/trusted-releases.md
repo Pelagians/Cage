@@ -218,11 +218,11 @@ inspection. Unit tests additionally exercise real signatures, bad keys, altered
 metadata/payloads, stale sequences, interrupted downloads, low space, unsafe paths,
 wrong architectures, runtime changes and interruptions around the durable commit.
 CI signing identities are ephemeral and private keys are excluded from artifacts.
-Notepad++ passed all six format/architecture targets. SumatraPDF ARM64 desktop
-trusted delivery remains unqualified after repeated shutdown hangs; its ARM64
-AppImage proof was not reached. Do not advertise those targets as qualified
-trusted releases. See the [qualification report](trusted-release-qualification.md)
-for successful cases, failed attempts and remaining acceptance criteria.
+Both pinned applications passed Flatpak and AppImage delivery on x86_64 and
+ARM64 after repairing the ARM64EC translator shutdown lock. The proofs retain
+normal-exit, settings, document and rollback checks. See the
+[qualification report](trusted-release-qualification.md) for exact source and
+CI evidence, container results and remaining hardware boundaries.
 
 These remain per-application portable Wine proofs. Registry conversion, runtime
 upgrades, arbitrary legacy imports, macOS exports, automatic remote discovery and
