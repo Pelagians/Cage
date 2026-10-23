@@ -386,7 +386,8 @@ def initialize_state(seed, inventory, state_root, identity):
 # Generations are private to one adapter/application state root. Package managers
 # own package bytes; this transaction owns only mutable Windows state.
 def validate_update_policy(policy):
-    if not isinstance(policy, dict) or set(policy) != {"profile", "settings", "documents"}:
+    required = {"profile", "settings", "documents"}
+    if not isinstance(policy, dict) or not required <= set(policy) or set(policy) - required - {"runtimeMigrations"}:
         raise DesktopError("desktop.updates requires profile, settings and documents")
     import re
     if not isinstance(policy["profile"], str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/v[0-9]+", policy["profile"]):
@@ -409,7 +410,80 @@ def validate_update_policy(policy):
             if any(folded == old or folded.startswith(old + "/") or old.startswith(folded + "/") for old in paths):
                 raise DesktopError("overlapping update paths")
             paths.append(folded)
+    if "runtimeMigrations" in policy:
+        migrations = policy["runtimeMigrations"]
+        if not isinstance(migrations, list) or not 1 <= len(migrations) <= 16:
+            raise DesktopError("runtimeMigrations requires 1 to 16 explicit runtime transitions")
+        seen = set()
+        for migration in migrations:
+            if not isinstance(migration, dict) or set(migration) != {"from", "toRuntimeDigest"}:
+                raise DesktopError("runtime migration requires from identity and toRuntimeDigest")
+            previous = migration["from"]
+            if (not isinstance(previous, dict) or set(previous) != {"schemaVersion", "seedDigest", "runtimeDigest", "contractDigest"}
+                    or previous["schemaVersion"] != "cage.desktop-state/v1"
+                    or any(not isinstance(previous[k], str) or not re.fullmatch(r"[a-f0-9]{64}", previous[k])
+                           for k in ("seedDigest", "runtimeDigest", "contractDigest"))
+                    or not isinstance(migration["toRuntimeDigest"], str)
+                    or not re.fullmatch(r"[a-f0-9]{64}", migration["toRuntimeDigest"])
+                    or previous["runtimeDigest"] == migration["toRuntimeDigest"]):
+                raise DesktopError("runtime migration requires exact, different managed runtime identities")
+            key = digest_json(migration)
+            if key in seen:
+                raise DesktopError("duplicate runtime migration")
+            seen.add(key)
     return policy
+
+
+def runtime_migration(previous, identity, plan):
+    """Authorize one directed transition, never a blanket runtime mismatch bypass.
+
+    The old contract includes its runtime, seed, adapter and recipe policy. Only
+    the candidate's already verified runtime seed supplies Windows system files.
+    Historical v0 prefixes must first be adopted with their original runtime.
+    """
+    if previous['identity'].get('runtimeDigest') == identity.get('runtimeDigest'):
+        return None
+    policy = validate_update_policy(plan.get('desktop', {}).get('updates'))
+    application = plan.get('application', {})
+    match = {'from': previous['identity'], 'toRuntimeDigest': identity.get('runtimeDigest')}
+    if (match not in policy.get('runtimeMigrations', [])
+            or identity.get('schemaVersion') != 'cage.desktop-state/v1'
+            or previous.get('profile') != policy['profile']
+            or not application.get('name') or not application.get('version')
+            or previous.get('application') != application):
+        raise DesktopError('runtime changes require an exact qualified runtime migration and the same application version; all state retained')
+    return match
+
+
+def validate_runtime_update(previous_plan, plan):
+    """Package-side preflight before deployment or ledger changes."""
+    old_policy = previous_plan['desktop']['updates']
+    if old_policy['profile'] != plan['desktop']['updates']['profile']:
+        raise DesktopError('runtime or migration profile changed; no deployment changed')
+    transition = runtime_migration({'identity': plan_identity(previous_plan), 'profile': old_policy['profile'],
+                                   'application': previous_plan.get('application')}, plan_identity(plan), plan)
+    if transition:
+        # A runtime-only transition cannot also change its adapter, application
+        # identity, user-data selection or a declared architecture/graphics ABI.
+        if (previous_plan['desktop']['id'] != plan['desktop']['id']
+                or previous_plan.get('format') != plan.get('format')
+                or any(previous_plan['target'].get(k) != plan['target'].get(k)
+                       for k in ('architecture', 'windowsArchitecture', 'prefixArchitecture', 'provider', 'graphics'))
+                or any(previous_plan['target'].get('runtime', {}).get(k) != plan['target'].get('runtime', {}).get(k)
+                       for k in ('architecture', 'provider', 'launcher', 'sessionContract'))
+                or any(old_policy[k] != plan['desktop']['updates'][k] for k in ('settings', 'documents'))):
+            raise DesktopError('runtime migration cannot change architecture, adapter or data policy; no deployment changed')
+    return transition
+
+
+def runtime_migration_rule(previous_plan, plan):
+    """Producer proposal only; signing additionally requires a completed proof."""
+    rule = {'from': plan_identity(previous_plan), 'toRuntimeDigest': digest_json(plan['target'])}
+    candidate = json.loads(json.dumps(plan))
+    candidate['desktop']['updates']['runtimeMigrations'] = [rule]
+    validate_update_policy(candidate['desktop']['updates'])
+    validate_runtime_update(previous_plan, candidate)
+    return rule
 
 
 def copy_file(source, destination):
@@ -580,6 +654,7 @@ def prepare_generation(seed, inventory, root, identity, plan, action):
         initialize_state(seed, inventory, root, identity)
         record = _read_generations(root)
     current = _generation(record, record["active"])
+    transition = runtime_migration(current, identity, plan) if action in {'update', 'migrate'} else None
     if action == 'migrate':
         # v0 markers do not record application versions. Bind explicit adoption
         # to the same pinned executable instead of guessing from a directory.
@@ -618,18 +693,32 @@ def prepare_generation(seed, inventory, root, identity, plan, action):
             raise DesktopError("rollback requires the previous package/runtime; see --cage-state-info")
         source = _real_path(root, original["prefix"])
     else:
-        if current["identity"].get("runtimeDigest") != identity.get("runtimeDigest"):
-            raise DesktopError("runtime changes require separate migration qualification; all state retained")
         source = Path(seed)
         verify_inventory(source, inventory)
+        if transition:
+            # Runtime upgrades deliberately keep application bytes fixed. Update
+            # the application separately after this transition has committed.
+            old_executable = windows_path(_real_path(root, current['prefix']), plan['launch']['entrypoint'])
+            new_executable = windows_path(source, plan['launch']['entrypoint'])
+            for executable, base in ((old_executable, _real_path(root, current['prefix'])), (new_executable, source)):
+                _real_path(base, executable.relative_to(base))
+                if not executable.is_file():
+                    raise DesktopError('runtime migration requires the same pinned executable; old state retained')
+            with old_executable.open('rb') as old, new_executable.open('rb') as new:
+                if hashlib.file_digest(old, 'sha256').digest() != hashlib.file_digest(new, 'sha256').digest():
+                    raise DesktopError('runtime migration requires the same pinned executable; update the application separately')
+            migration_space(root, source)
     import uuid
     parent = _real_path(root, "generations")
     parent.mkdir(mode=0o700, exist_ok=True)
     relative = "generations/" + uuid.uuid4().hex
     prefix = root / relative
     # Record preparation before any copy. A crash cannot make it active.
-    _write_state_record(root / "transaction.json", {"status": "preparing", "action": action,
-                        "candidate": relative, "previous": record["active"]})
+    transaction = {"status": "preparing", "action": action,
+                   "candidate": relative, "previous": record["active"]}
+    if transition:
+        transaction['runtimeMigration'] = transition
+    _write_state_record(root / "transaction.json", transaction)
     shutil.copytree(source, prefix, symlinks=True, copy_function=copy_file)
     if action == "update":
         verify_inventory(prefix, inventory)
@@ -643,9 +732,12 @@ def prepare_generation(seed, inventory, root, identity, plan, action):
     current.setdefault("profile", policy["profile"])
     record["previous"] = record["active"]
     record["active"] = relative
-    record["generations"].append({"prefix": relative, "identity": identity,
+    entry = {"prefix": relative, "identity": identity,
         "profile": policy["profile"], "application": plan.get("application", {}),
-        "action": action})
+        "action": action}
+    if transition:
+        entry['runtimeMigration'] = transition
+    record["generations"].append(entry)
     return prefix, record
 
 

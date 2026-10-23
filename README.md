@@ -665,3 +665,8 @@ Flatpak, AppImage and containers, with explicit recovery snapshots before adopti
 [Trusted releases](docs/trusted-releases.md) add publisher signatures, exact-package
 qualification and explicit install/update/rollback commands over the same state
 manager, with retained offline recovery and no required hosted service.
+
+[Safe runtime migrations](docs/runtime-migrations.md) extend those transactions
+with exact, qualified runtime transitions while retaining prior prefixes and
+packages. XWayland remains the default; native Wine Wayland is a separate future
+qualification path.

@@ -28,6 +28,8 @@ def managed_plan(bundle, image=None):
     if not desktop.get('updates'):
         raise state.DesktopError('persistent generation management requires desktop.updates')
     state.validate_update_policy(desktop['updates'])
+    if desktop['updates'].get('runtimeMigrations') and any(module.get('type') == 'chocolatey' for module in manifest.get('modules', [])):
+        raise state.DesktopError('prepared CFW runtime migrations require separate producer qualification; existing workflows remain unchanged')
     runtime = graph['runnerRuntime']
     if runtime.get('launcher') != 'wine' or runtime.get('runnerUrl'):
         raise state.DesktopError('managed container updates currently require builtin Wine; external runners/Proton retain their existing workflows')

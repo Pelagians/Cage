@@ -269,6 +269,18 @@ def verify_evidence(entry, proof):
     if (entry['imageId'] if kind=='oci' else entry['package']['sha256']) not in qualified_hashes(proof,kind):
         raise ReleaseError('qualification does not bind the exact package/image bytes')
     if proof.get('pageSize') not in entry['testedPageSizes']:raise ReleaseError('qualification page size differs from signed evidence')
+    for migration in entry['plan']['desktop']['updates'].get('runtimeMigrations', []):
+        if migration['toRuntimeDigest'] != entry['identity']['runtimeDigest']:
+            continue  # Shared recipes may describe other format/architecture pins.
+        expected = {'from': migration['from'], 'to': entry['identity']}
+        sessions = proof.get('sessions', [])
+        hashes = proof.get('sourceExecutableHashes', {})
+        if (expected not in proof.get('runtimeMigrations', [])
+                or any(sum(s.get('identity') == identity for s in sessions) < 2 for identity in expected.values())
+                or not isinstance(hashes.get('baseline'), str)
+                or not re.fullmatch('[a-f0-9]{64}', hashes['baseline'])
+                or hashes['baseline'] != hashes.get('candidate')):
+            raise ReleaseError('release lacks matching runtime migration, relaunch and rollback qualification')
 
 
 def verify_receipt(entry, receipt):

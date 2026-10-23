@@ -14,7 +14,7 @@ import subprocess
 
 from artifact import releases as r
 from runtime.desktop_launch import (lifecycle_lock, _write_state_record,
-                                    _read_generations, _generation)
+                                    _read_generations, _generation, validate_runtime_update, DesktopError)
 
 
 def installation(root, app, kind):
@@ -201,9 +201,10 @@ def deploy(source, key, kind, *, action='install', cache=None, files=(), engine=
             previous=_selected(root,record,key,kind)
             _check_deployment(record,previous)
             if _state(record,previous) is None:raise r.ReleaseError('launch the installed baseline once before updating')
-            if (previous['entry']['identity']['runtimeDigest']!=release['entry']['identity']['runtimeDigest'] or
-                previous['entry']['plan']['desktop']['updates']['profile']!=release['entry']['plan']['desktop']['updates']['profile']):
-                raise r.ReleaseError('runtime or migration profile changed; no deployment changed')
+            try:
+                validate_runtime_update(previous['entry']['plan'], release['entry']['plan'])
+            except DesktopError as exc:
+                raise r.ReleaseError('runtime or migration qualification refused: ' + str(exc)) from exc
             if manifest['application']['name']!=previous['manifest']['application']['name']:raise r.ReleaseError('application name changed')
             if any(retained(root,d,key,kind)['entry']['identity']==release['entry']['identity'] for d in record['releases']):
                 raise r.ReleaseError('release has no new application generation')

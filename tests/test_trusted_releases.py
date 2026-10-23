@@ -33,7 +33,7 @@ class TrustedReleaseTests(unittest.TestCase):
         self.arch={'arm64':'aarch64','amd64':'x86_64'}.get(platform.machine(),platform.machine())
         self.old=self.release('1',1);self.new=self.release('2',2)
 
-    def release(self, version, sequence, kind='appimage', runtime='same', **extra):
+    def release(self, version, sequence, kind='appimage', runtime='same', migrate_from=None, **extra):
         folder=self.root/(kind+'-'+version);folder.mkdir()
         package=folder/('app-'+version+'.'+('AppImage' if kind=='appimage' else 'flatpak'))
         package.write_bytes(b'\x7fELF pinned application '+version.encode())
@@ -41,11 +41,21 @@ class TrustedReleaseTests(unittest.TestCase):
               'sourceManifestDigest':'e'*64,'application':{'name':'proof','version':version},
               'target':{'architecture':self.arch,'runtimeRevision':runtime,'translation':{'hostPageSizes':[4096,16384]}},'state':{'managerVersion':1,'namespace':'cage/appimage'},
               'desktop':{'id':'org.example.Proof','updates':{'profile':'proof/v1','settings':[],'documents':[]}}}
+        if migrate_from:
+            previous = r.parse(migrate_from.read_bytes())['artifacts'][0]
+            plan['application'] = previous['plan']['application']
+            plan['desktop']['updates']['runtimeMigrations'] = [
+                {'from': previous['identity'], 'toRuntimeDigest': plan_identity(plan)['runtimeDigest']}]
         receipt={'schemaVersion':'cage.'+kind+'-export-result/v0','sha256':r.hash_file(package),'plan':plan,'commit':version*64}
         Path(str(package)+'.json').write_text(json.dumps(receipt))
         proof={'status':'passed','format':kind,'architecture':self.arch,'pageSize':os.sysconf('SC_PAGE_SIZE'),
                'settingsPreserved':True,'documentsPreserved':True,'rollback':True,'sessions':[{'identity':plan_identity(plan)}],
                'sourceArtifactHashes':{'baseline':r.hash_file(package)}}
+        if migrate_from:
+            proof['sessions'] = [{'identity': identity} for identity in (previous['identity'], plan_identity(plan)) for _ in range(2)]
+            proof['runtimeMigrations'] = [{'from': previous['identity'], 'to': plan_identity(plan)}]
+            proof['sourceExecutableHashes'] = {'baseline': 'f'*64, 'candidate': 'f'*64}
+            proof['sourceArtifactHashes'] = {'baseline': previous['package']['sha256'], 'candidate': r.hash_file(package)}
         evidence=folder/'result.json';evidence.write_text(json.dumps(proof))
         spec={'sequence':sequence,'sourceRevision':'a'*40,'artifacts':[{'format':kind,'path':package.name,'evidence':evidence.name}],**extra}
         spec_path=folder/'spec.json';spec_path.write_text(json.dumps(spec))
@@ -241,6 +251,38 @@ class TrustedReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(r.ReleaseError,'runtime or migration'):delivery.deploy(other,self.key,'appimage',action='update',cache=self.cache)
             launch.assert_not_called()
         self.assertEqual(delivery.operate('org.example.Proof',self.key,'appimage',action='info',cache=self.cache)['highWater'],1)
+
+    def test_signed_runtime_migration_update_and_rollback_keep_trust_history(self):
+        self.fake_runtime(); self.install_run()
+        migrated = self.release('runtime-next', 2, runtime='next', migrate_from=self.old)
+        delivery.deploy(migrated, self.key, 'appimage', action='update', cache=self.cache)
+        delivery.operate('org.example.Proof', self.key, 'appimage', action='rollback', cache=self.cache)
+        info = delivery.operate('org.example.Proof', self.key, 'appimage', action='info', cache=self.cache)
+        self.assertEqual((info['activeVersion'], info['highWater'], len(info['retainedReleases'])), ('1', 2, 2))
+
+    def test_runtime_allowlist_requires_matching_migration_relaunch_and_rollback_evidence(self):
+        migrated = self.release('runtime-next', 2, runtime='next', migrate_from=self.old)
+        entry = r.parse(migrated.read_bytes())['artifacts'][0]
+        original = json.loads((migrated.parent / 'result.json').read_text())
+        edits = [lambda p: p.pop('runtimeMigrations'),
+                 lambda p: p.update(sessions=p['sessions'][:2]),
+                 lambda p: p['sourceExecutableHashes'].update(candidate='a'*64),
+                 lambda p: p.update(rollback=False)]
+        for edit in edits:
+            with self.subTest(edit=edit):
+                proof = json.loads(json.dumps(original)); edit(proof)
+                with self.assertRaises(r.ReleaseError):r.verify_evidence(entry, proof)
+
+    def test_failed_signed_runtime_trial_retains_sequence_and_recovers_old_generation(self):
+        self.fake_runtime(); self.install_run()
+        migrated = self.release('runtime-next', 2, runtime='next', migrate_from=self.old)
+        self.fail = 'before'
+        with self.assertRaisesRegex(r.ReleaseError, 'before commit'):
+            delivery.deploy(migrated, self.key, 'appimage', action='update', cache=self.cache)
+        self.fail = None
+        delivery.operate('org.example.Proof', self.key, 'appimage', action='recover', cache=self.cache)
+        info = delivery.operate('org.example.Proof', self.key, 'appimage', action='info', cache=self.cache)
+        self.assertEqual((info['activeVersion'], info['highWater']), ('1', 2))
 
     def test_storage_reports_pending_release_recovery_without_pruning_history(self):
         self.fake_runtime();self.install_run();self.fail='before'

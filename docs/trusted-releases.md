@@ -9,6 +9,10 @@ keep their behavior.
 
 ## Install and use a release
 
+Exact, qualified runtime transitions can also use these commands. Their recipes
+must opt into the directed migration and their signed evidence must cover the
+transition, relaunch and rollback. See [safe runtime migrations](runtime-migrations.md).
+
 Install Cage with its optional, standard Ed25519 implementation:
 
 ```sh

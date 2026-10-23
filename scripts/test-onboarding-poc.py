@@ -102,10 +102,13 @@ def main():
     parser.add_argument('--legacy'); parser.add_argument('--application', choices=WORKFLOWS, default='sumatrapdf')
     parser.add_argument('--trusted', action='store_true', help='Drive the same proof through signed release delivery')
     parser.add_argument('--qualification', help='Completed matching application proof to bind in test releases')
+    parser.add_argument('--runtime-migration', action='store_true', help='Qualify a same-application-version, explicitly allowed runtime transition')
     args = parser.parse_args(); kind = args.format; workflow = WORKFLOWS[args.application]()
     app = workflow.app_id
     baseline, candidate = (Path(p).resolve() if kind != 'oci' else p for p in (args.baseline, args.candidate))
     legacy = (args.legacy if kind == 'oci' else Path(args.legacy).resolve()) if args.legacy else None
+    if args.runtime_migration and legacy:
+        parser.error('adopt the historical manager under its original runtime before qualifying a runtime migration')
     def source_identities():
         if kind in ('flatpak','appimage'):
             return {'sourceArtifactHashes':{'baseline':sha(baseline),'candidate':sha(candidate)}}
@@ -327,13 +330,22 @@ def main():
         migrated = prefix()
         assert workflow.preference(migrated) == preference
         old_executable = sha(migrated / workflow.executable)
+        old_identity = _generation(_read_generations(state), _read_generations(state)['active'])['identity']
         run(candidate, '3-update', 'update', baseline)
         updated = prefix(); new_executable = sha(updated / workflow.executable)
-        assert updated != migrated and new_executable != old_executable
+        assert updated != migrated
+        if args.runtime_migration:
+            assert new_executable == old_executable, 'update the application separately from its runtime'
+            record = _read_generations(state); active = _generation(record, record['active'])
+            new_identity = active['identity']
+            assert old_identity['runtimeDigest'] != new_identity['runtimeDigest']
+            assert active['runtimeMigration'] == {'from': old_identity, 'toRuntimeDigest': new_identity['runtimeDigest']}
+        else:
+            assert new_executable != old_executable
         if args.application == 'sumatrapdf':
             pins = json.loads((ROOT / 'recipes/sumatrapdf-portable.releases.json').read_text())
             assert old_executable == pins['3.6']['executableSha256']
-            assert new_executable == pins['3.6.1']['executableSha256']
+            assert new_executable == pins['3.6' if args.runtime_migration else '3.6.1']['executableSha256']
         assert workflow.preference(updated) == preference and (updated / internal).read_text() == 'before update'
         (updated / internal).write_text('latest document after update')
         run(candidate, '4-relaunch', menu=True)
@@ -351,6 +363,8 @@ def main():
                   'generations': _read_generations(state), 'originalDocumentSha256': original_hash}
         assert source_identities()==original_sources,'source package/image changed during qualification'
         result.update(original_sources)
+        if args.runtime_migration:
+            result['runtimeMigrations'] = [{'from': old_identity, 'to': new_identity}]
         if args.trusted:
             info=json.loads(subprocess.check_output([sys.executable,'-m','cage','release','info',app,
                             '--key',str(key),'--format',kind,'--cache-dir',str(release_cache)],env=env,text=True))

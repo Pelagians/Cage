@@ -1,0 +1,270 @@
+name: Runtime migration and rollback proof
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'scripts/*runtime-migration*', 'scripts/test-onboarding-poc.py', 'scripts/application_workflows.py', 'tests/**', '.github/workflows/runtime-migrations.yml']
+  pull_request:
+    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'scripts/*runtime-migration*', 'scripts/test-onboarding-poc.py', 'scripts/application_workflows.py', 'tests/**', '.github/workflows/runtime-migrations.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+  CAGE_TEST_DISCARD_PREFIXES: '1'
+  CAGE_TEST_SOURCE_REVISION: ${{ github.sha }}
+  # Existing generation-aware manager and original ARM Wine/FEX runtime.
+  BASELINE_SOURCE: dd9646ab9468008e775b66a196ac91fbe023345c
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+            provider: wine
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+            provider: wine-arm64ec
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 140
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Prepare isolated build tools and historical target
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak podman uidmap slirp4netns fuse-overlayfs rpm2cpio squashfs-tools binutils xvfb openbox xdotool scrot xdg-utils x11-xserver-utils desktop-file-utils
+          python -m pip install PyYAML pytest setuptools wheel 'cryptography>=43'
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          mkdir -p "$HOME/.config/containers" "$HOME/.config" "$HOME/Documents" dist/onboarding-evidence
+          printf '[engine]\ncgroup_manager="cgroupfs"\nevents_logger="file"\n' > "$HOME/.config/containers/containers.conf"
+          printf 'XDG_DOCUMENTS_DIR="$HOME/Documents"\n' > "$HOME/.config/user-dirs.dirs"
+          cp tests/fixtures/runtime-migration/desktop-baseline-x86_64.json "$RUNNER_TEMP/desktop-baseline-x86_64.json"
+      - name: Contracts and failure recovery
+        run: python -m pytest tests/ -q
+      - uses: actions/cache@v4
+        with:
+          path: .cage/flatpak-migration
+          key: runtime-migration-${{ matrix.arch }}-${{ hashFiles('runtime/desktop-wine-11.0.json', 'runtime/wine-arm64ec-11.20-fex-2610.json') }}
+          restore-keys: |
+            runtime-migration-${{ matrix.arch }}-
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASELINE_SOURCE }}
+          clean: false
+      - name: Build historical runtime packages with the existing manager
+        run: |
+          if [ '${{ matrix.arch }}' = x86_64 ]; then
+            cp "$RUNNER_TEMP/desktop-baseline-x86_64.json" runtime/desktop-wine-11.0.json
+          fi
+          python scripts/prepare-sumatrapdf-poc.py --runtime ${{ matrix.provider }}
+          mkdir -p dist/runtime-migration
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24' bash -eu -o pipefail <<'SH'
+          openbox >dist/onboarding-evidence/baseline-window-manager.log 2>&1 &
+          python -m cage build dist/onboarding-recipes/${{ matrix.provider }}/3.6.json --target flatpak --flatpak-store .cage/flatpak-migration --output dist/runtime-migration/baseline >dist/onboarding-evidence/baseline-build.json
+          python -m cage export flatpak dist/runtime-migration/baseline/sumatrapdf-portable-3.6 --flatpak-store .cage/flatpak-migration --output dist/runtime-migration/baseline.flatpak >dist/onboarding-evidence/baseline-flatpak-export.json
+          python scripts/test-storage-poc.py dist/runtime-migration/baseline.flatpak.build >dist/onboarding-evidence/baseline-flatpak-storage.json
+          python -m cage export appimage dist/runtime-migration/baseline/sumatrapdf-portable-3.6 --allow-host-access --flatpak-store .cage/flatpak-migration --output dist/runtime-migration/baseline.AppImage >dist/onboarding-evidence/baseline-appimage-export.json
+          python scripts/test-storage-poc.py dist/runtime-migration/baseline.AppImage.build >dist/onboarding-evidence/baseline-appimage-storage.json
+          SH
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json
+          from artifact.desktop import desktop_target
+          from builder.flatpak import run_flatpak
+          from runtime.arm64ec import materialize_payload
+          target=desktop_target('${{ matrix.provider }}');store=Path('.cage/flatpak-migration')
+          if target['provider']=='wine':
+              root=Path(run_flatpak(['info','--user','--show-location',target['base']],store=store))/'files'
+              file=root/'bin/7zz'
+          else:file=materialize_payload(store/'arm64ec')/'lib64/wine-wow64/wine/aarch64-windows/libarm64ecfex.dll'
+          Path('dist/onboarding-evidence/baseline-runtime.json').write_text(json.dumps({'sourceRevision':'${{ env.BASELINE_SOURCE }}','target':target,'payloadSha256':hashlib.sha256(file.read_bytes()).hexdigest()}))
+          PY
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          clean: false
+      - name: Build and bind the candidate from the shared recipe
+        run: |
+          python scripts/prepare-sumatrapdf-poc.py --runtime ${{ matrix.provider }}
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24' bash -eu -o pipefail <<'SH'
+          openbox >dist/onboarding-evidence/candidate-window-manager.log 2>&1 &
+          python -m cage build dist/onboarding-recipes/${{ matrix.provider }}/3.6.json --target flatpak --flatpak-store .cage/flatpak-migration --output dist/runtime-migration/probe >dist/onboarding-evidence/probe-build.json
+          python -m cage export flatpak dist/runtime-migration/probe/sumatrapdf-portable-3.6 --dry-run >dist/onboarding-evidence/candidate-flatpak-plan.json
+          python -m cage export appimage dist/runtime-migration/probe/sumatrapdf-portable-3.6 --allow-host-access --dry-run >dist/onboarding-evidence/candidate-appimage-plan.json
+          python scripts/prepare-runtime-migration-poc.py dist/onboarding-recipes/${{ matrix.provider }}/3.6.json --pair dist/runtime-migration/baseline.flatpak.json dist/onboarding-evidence/candidate-flatpak-plan.json --pair dist/runtime-migration/baseline.AppImage.json dist/onboarding-evidence/candidate-appimage-plan.json --output dist/runtime-migration/candidate-recipe.json >dist/onboarding-evidence/migration-proposal.json
+          python -m cage build dist/runtime-migration/candidate-recipe.json --target flatpak --flatpak-store .cage/flatpak-migration --output dist/runtime-migration/candidate >dist/onboarding-evidence/candidate-build.json
+          python -m cage export flatpak dist/runtime-migration/candidate/sumatrapdf-portable-3.6 --flatpak-store .cage/flatpak-migration --output dist/runtime-migration/candidate.flatpak >dist/onboarding-evidence/candidate-flatpak-export.json
+          python scripts/test-storage-poc.py dist/runtime-migration/candidate.flatpak.build >dist/onboarding-evidence/candidate-flatpak-storage.json
+          python -m cage export appimage dist/runtime-migration/candidate/sumatrapdf-portable-3.6 --allow-host-access --flatpak-store .cage/flatpak-migration --output dist/runtime-migration/candidate.AppImage >dist/onboarding-evidence/candidate-appimage-export.json
+          python scripts/test-storage-poc.py dist/runtime-migration/candidate.AppImage.build >dist/onboarding-evidence/candidate-appimage-storage.json
+          SH
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json
+          from artifact.desktop import desktop_target
+          from builder.flatpak import run_flatpak
+          from runtime.arm64ec import materialize_payload
+          target=desktop_target('${{ matrix.provider }}');store=Path('.cage/flatpak-migration')
+          if target['provider']=='wine':
+              root=Path(run_flatpak(['info','--user','--show-location',target['base']],store=store))/'files'
+              file=root/'bin/7zz'
+          else:file=materialize_payload(store/'arm64ec')/'lib64/wine-wow64/wine/aarch64-windows/libarm64ecfex.dll'
+          record={'sourceRevision':'${{ github.sha }}','target':target,'payloadSha256':hashlib.sha256(file.read_bytes()).hexdigest()}
+          assert record['payloadSha256']!=json.loads(Path('dist/onboarding-evidence/baseline-runtime.json').read_text())['payloadSha256'],'runtime payload must genuinely change'
+          Path('dist/onboarding-evidence/candidate-runtime.json').write_text(json.dumps(record))
+          PY
+      - name: Qualify Flatpak runtime migration and trusted delivery
+        run: |
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24' bash -eu -o pipefail <<'SH'
+          openbox >dist/onboarding-evidence/flatpak-window-manager.log 2>&1 &
+          export FLATPAK_USER_DIR="$PWD/.cage/flatpak-migration"
+          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/flatpak" python scripts/test-onboarding-poc.py flatpak dist/runtime-migration/baseline.flatpak dist/runtime-migration/candidate.flatpak --runtime-migration
+          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/trusted-flatpak" python scripts/test-onboarding-poc.py flatpak dist/runtime-migration/baseline.flatpak dist/runtime-migration/candidate.flatpak --runtime-migration --trusted --qualification dist/onboarding-evidence/flatpak/result.json
+          SH
+      - name: Qualify AppImage runtime migration without host Wine
+        if: ${{ !cancelled() && success() }}
+        run: |
+          podman build -t localhost/cage-migration-tools -f - . <<'CONTAINER'
+          FROM registry.fedoraproject.org/fedora:44
+          RUN dnf -y --setopt=install_weak_deps=False install python3 python3-pyyaml python3-cryptography xdotool scrot xdg-utils desktop-file-utils xrdb glibc-langpack-en && dnf clean all
+          CONTAINER
+          mkdir -p .cage/migration-consumer-home .cage/migration-appimage-tmp
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24 -extension MIT-SHM' bash -eu -o pipefail <<'SH'
+          openbox >dist/onboarding-evidence/appimage-window-manager.log 2>&1 &
+          for mode in ordinary trusted; do
+            options=()
+            if [ "$mode" = trusted ]; then options=(--trusted --qualification dist/onboarding-evidence/appimage/result.json); directory=trusted-appimage; else directory=appimage; fi
+            podman run --rm --net=none --userns=keep-id --user "$(id -u):$(id -g)" --hostname "$(hostname)" \
+              --security-opt label=disable -v "$PWD:$PWD" -v /tmp/.X11-unix:/tmp/.X11-unix:ro -v "$XAUTHORITY:$XAUTHORITY:ro" \
+              -w "$PWD" -e DISPLAY -e XAUTHORITY -e HOME="$PWD/.cage/migration-consumer-home" -e APPIMAGE_EXTRACT_AND_RUN=1 \
+              -e TMPDIR="$PWD/.cage/migration-appimage-tmp" -e CAGE_TEST_DISCARD_PREFIXES=1 -e CAGE_TEST_SOURCE_REVISION \
+              -e CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/$directory" \
+              localhost/cage-migration-tools python3 scripts/test-onboarding-poc.py appimage dist/runtime-migration/baseline.AppImage dist/runtime-migration/candidate.AppImage --runtime-migration "${options[@]}"
+          done
+          SH
+      - name: Collect records without following Wine drive links
+        if: always()
+        run: python scripts/collect-onboarding-evidence.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-migration-desktop-${{ matrix.arch }}-${{ github.sha }}
+          retention-days: 14
+          path: dist/onboarding-ci-evidence
+
+  containers:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+            provider: wine
+            baseline: '10.0'
+            candidate: '11.0'
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+            provider: wine-arm64ec
+            baseline: '11.20'
+            candidate: '11.20'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 140
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASELINE_SOURCE }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Prepare tools and historical runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman uidmap slirp4netns fuse-overlayfs rpm2cpio xvfb openbox xdotool scrot xdg-utils x11-xserver-utils
+          python -m pip install PyYAML pytest setuptools wheel 'cryptography>=43'
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          mkdir -p "$HOME/.config/containers" dist/onboarding-evidence dist/runtime-migration
+          printf '[engine]\ncgroup_manager="cgroupfs"\nevents_logger="file"\n' > "$HOME/.config/containers/containers.conf"
+          python scripts/prepare-sumatrapdf-poc.py --runtime ${{ matrix.provider }}
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          from container.manager import build_container
+          result=build_container('${{ matrix.provider }}','${{ matrix.baseline }}',build_cmd='podman')
+          print(result.log);assert result.success
+          path=Path('dist/onboarding-recipes/${{ matrix.provider }}/3.6.json');recipe=json.loads(path.read_text())
+          recipe['runtime']['version']='${{ matrix.baseline }}';path.write_text(json.dumps(recipe))
+          PY
+      - name: Build the existing container installation
+        run: |
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24' bash -eu -o pipefail <<'SH'
+          openbox >dist/onboarding-evidence/container-baseline-window-manager.log 2>&1 &
+          python -m cage build dist/onboarding-recipes/${{ matrix.provider }}/3.6.json --engine podman --output dist/runtime-migration/baseline >dist/onboarding-evidence/container-baseline-build.json
+          SH
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          clean: false
+      - name: Build the new runtime and bind shared migration policy
+        run: |
+          # The x86 container manager is injected at launch/export. Export its
+          # baseline with that same helper while retaining the old Wine image.
+          # Native ARM bundles retain their own sealed historical helper.
+          python -m cage export oci dist/runtime-migration/baseline/sumatrapdf-portable-3.6 --engine podman --graphics desktop --tag localhost/cage-runtime-migration:baseline --context-dir .cage/migration-oci-baseline >dist/onboarding-evidence/oci-baseline-export.json
+          python scripts/test-storage-poc.py .cage/migration-oci-baseline >dist/onboarding-evidence/oci-baseline-storage.json
+          python scripts/prepare-sumatrapdf-poc.py --runtime ${{ matrix.provider }}
+          python - <<'PY'
+          from container.manager import build_container
+          result=build_container('${{ matrix.provider }}','${{ matrix.candidate }}',build_cmd='podman')
+          print(result.log);assert result.success
+          PY
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24' bash -eu -o pipefail <<'SH'
+          openbox >dist/onboarding-evidence/container-candidate-window-manager.log 2>&1 &
+          python -m cage build dist/onboarding-recipes/${{ matrix.provider }}/3.6.json --engine podman --output dist/runtime-migration/probe >dist/onboarding-evidence/container-probe-build.json
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          from runtime.container_state import managed_plan
+          from artifact.releases import oci_metadata
+          root=Path('dist/runtime-migration');evidence=Path('dist/onboarding-evidence')
+          def plan(bundle):
+              path=bundle/'metadata/native-launch.json'
+              return json.loads(path.read_text()) if path.exists() else managed_plan(bundle)
+          baseline=plan(root/'baseline/sumatrapdf-portable-3.6');candidate=plan(root/'probe/sumatrapdf-portable-3.6')
+          (evidence/'baseline-container-plan.json').write_text(json.dumps(baseline))
+          (evidence/'candidate-container-plan.json').write_text(json.dumps(candidate))
+          previous,_,_,_=oci_metadata('localhost/cage-runtime-migration:baseline','podman')
+          (evidence/'baseline-oci-plan.json').write_text(json.dumps(previous))
+          PY
+          python scripts/prepare-runtime-migration-poc.py dist/onboarding-recipes/${{ matrix.provider }}/3.6.json --pair dist/onboarding-evidence/baseline-container-plan.json dist/onboarding-evidence/candidate-container-plan.json --pair dist/onboarding-evidence/baseline-oci-plan.json dist/onboarding-evidence/candidate-container-plan.json --output dist/runtime-migration/candidate-recipe.json >dist/onboarding-evidence/migration-proposal.json
+          python -m cage build dist/runtime-migration/candidate-recipe.json --engine podman --output dist/runtime-migration/candidate >dist/onboarding-evidence/container-candidate-build.json
+          python -m cage export oci dist/runtime-migration/candidate/sumatrapdf-portable-3.6 --engine podman --graphics desktop --tag localhost/cage-runtime-migration:candidate --context-dir .cage/migration-oci-candidate >dist/onboarding-evidence/oci-candidate-export.json
+          python scripts/test-storage-poc.py .cage/migration-oci-candidate >dist/onboarding-evidence/oci-candidate-storage.json
+          SH
+      - name: Qualify persistent container, OCI and trusted runtime upgrades
+        run: |
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24' bash -eu -o pipefail <<'SH'
+          openbox >dist/onboarding-evidence/container-proof-window-manager.log 2>&1 &
+          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/container" python scripts/test-onboarding-poc.py container dist/runtime-migration/baseline/sumatrapdf-portable-3.6 dist/runtime-migration/candidate/sumatrapdf-portable-3.6 --runtime-migration
+          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/oci" python scripts/test-onboarding-poc.py oci localhost/cage-runtime-migration:baseline localhost/cage-runtime-migration:candidate --runtime-migration
+          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/trusted-oci" python scripts/test-onboarding-poc.py oci localhost/cage-runtime-migration:baseline localhost/cage-runtime-migration:candidate --runtime-migration --trusted --qualification dist/onboarding-evidence/oci/result.json
+          SH
+      - name: Collect records without following Wine drive links
+        if: always()
+        run: python scripts/collect-onboarding-evidence.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-migration-containers-${{ matrix.arch }}-${{ github.sha }}
+          retention-days: 14
+          path: dist/onboarding-ci-evidence

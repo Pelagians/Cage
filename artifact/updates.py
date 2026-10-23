@@ -18,7 +18,8 @@ from core.manifest.errors import ManifestError
 
 from runtime.desktop_launch import (DesktopError, copy_file, lifecycle_lock,
                                    _write_state_record, _real_path, plan_identity,
-                                   _read_generations, _generation, snapshot_legacy, migration_space)
+                                   _read_generations, _generation, snapshot_legacy, migration_space,
+                                   validate_runtime_update)
 
 
 def identity(plan):
@@ -205,6 +206,8 @@ def update_flatpak(package, previous_package, *, rollback=False, files=(), cache
         raise DesktopError('update and previous bundle must have the same application ID, architecture and branch')
     if candidate['plan']['desktop']['updates'].get('profile') != previous['plan']['desktop']['updates'].get('profile'):
         raise DesktopError('incompatible migration profiles; no deployment changed')
+    if not rollback:
+        validate_runtime_update(previous['plan'], candidate['plan'])
     if candidate['identity'] == previous['identity']:
         raise DesktopError('package update has no new application/runtime generation')
     environment = dict(os.environ if environment is None else environment)

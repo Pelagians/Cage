@@ -8,8 +8,9 @@ bundle and runtime available until its rollback generation is no longer needed.
 This release starts with the pinned portable Notepad++ recipe and the
 8.8.8 → 8.8.9 → 8.8.8 proof. A matching profile is an application author's
 compatibility declaration, not a claim that arbitrary Windows programs or
-versions migrate safely. Runtime changes remain refused pending separate
-qualification. External Proton runners and CFW retain their existing workflows;
+versions migrate safely. Unlisted runtime changes remain refused. Explicit
+same-application transitions use the separate [runtime migration policy and
+qualification](runtime-migrations.md). External Proton runners and CFW retain their existing workflows;
 they do not acquire an unqualified migration policy.
 
 ## Shared recipe policy

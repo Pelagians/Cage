@@ -111,6 +111,41 @@ class FlatpakUpdateTests(unittest.TestCase):
             self.run_update()
         self.assertEqual(self.installed, [])
 
+    def runtime_packages(self):
+        for entry, path in (self.old, self.new):
+            entry['plan']['application'] = {'name': 'proof', 'version': '1'}
+            entry['plan']['seedDigest'] = hashlib.sha256(path.name.encode()).hexdigest()
+        self.old[0]['identity'] = updates.identity(self.old[0]['plan'])
+        self.new[0]['plan']['target']['runtimeRevision'] = 'new'
+        self.new[0]['plan']['desktop']['updates']['runtimeMigrations'] = [
+            {'from': self.old[0]['identity'], 'toRuntimeDigest': updates.identity(self.new[0]['plan'])['runtimeDigest']}]
+        self.new[0]['identity'] = updates.identity(self.new[0]['plan'])
+        self.current_identity = self.old[0]['identity']
+        for entry, path in (self.old, self.new):
+            Path(str(path) + '.json').write_text(json.dumps({'schemaVersion': 'cage.flatpak-export-result/v0',
+                                                           'sha256': entry['sha256'], 'plan': entry['plan']}))
+
+    def test_qualified_runtime_deployment_and_failed_trial_recovery_retain_both_packages(self):
+        self.runtime_packages()
+        self.fail_trial = True
+        with self.assertRaisesRegex(DesktopError, 'trial failed'):
+            self.run_update()
+        self.assertEqual(self.installed, [self.new[0]['sha256'], self.old[0]['sha256']])
+        self.assertEqual(self.current_identity, self.old[0]['identity'])
+        self.fail_trial = False
+        self.assertTrue(self.run_update()['updated'])
+        self.assertEqual(self.current_identity, self.new[0]['identity'])
+
+    def test_unlisted_runtime_deployment_is_refused_before_package_install(self):
+        self.runtime_packages()
+        self.new[0]['plan']['desktop']['updates'].pop('runtimeMigrations')
+        Path(str(self.new[1]) + '.json').write_text(json.dumps({'schemaVersion': 'cage.flatpak-export-result/v0',
+                                                            'sha256': self.new[0]['sha256'], 'plan': self.new[0]['plan']}))
+        with self.assertRaisesRegex(DesktopError, 'runtime changes'):
+            self.run_update()
+        self.assertEqual(self.commands, [])
+        self.assertFalse((self.root / 'cache/transaction.json').exists())
+
 
 if __name__ == '__main__':
     unittest.main()

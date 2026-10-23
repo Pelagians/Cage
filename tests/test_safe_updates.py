@@ -8,7 +8,8 @@ from unittest.mock import patch
 
 from core.manifest import load_manifest, ManifestError
 from runtime.desktop_launch import (DesktopError, digest_json, inventory_tree, launch,
-    lifecycle_lock, _read_generations, _generation, validate_update_policy)
+    lifecycle_lock, _read_generations, _generation, validate_update_policy, plan_identity,
+    validate_runtime_update)
 from tests.test_appimage_export import integration
 
 APP = 'org.example.UpdateProof'
@@ -145,6 +146,134 @@ class SafeUpdateTests(unittest.TestCase):
         with self.assertRaisesRegex(DesktopError, 'previous package/runtime'):
             launch(self.new, ['--cage-rollback'])
         self.assertEqual((self.active() / 'drive_c/App.exe').read_text(), '2')
+
+    def runtime_packages(self, **environment):
+        old = json.loads(self.old.read_text())
+        old.update(state={'managerVersion': 1}, application={'name': 'proof', 'version': '1'})
+        self.old.write_text(json.dumps(old))
+        # Exercise the supported v0 adoption before the runtime-only migration.
+        self.assertEqual(launch(self.old, ['--cage-migrate']), 0)
+        self.previous = self.active()
+        self.initial = json.loads((self.state / 'state.json').read_text())
+        candidate = self.package('runtime-candidate', **environment)
+        plan = json.loads(candidate.read_text())
+        plan.update(state={'managerVersion': 1}, application=old['application'])
+        plan['target']['runtimeVersion'] = 'qualified-next'
+        seed = candidate.parent / 'seed'
+        (seed / 'drive_c/App.exe').write_text('1')
+        (seed / 'drive_c/runtime.dll').write_text('new runtime system bytes')
+        (seed / 'system.reg').write_text('new runtime hive')
+        inventory = inventory_tree(seed)
+        plan['seedDigest'] = digest_json(inventory)
+        plan['desktop']['updates']['runtimeMigrations'] = [
+            {'from': plan_identity(old), 'toRuntimeDigest': digest_json(plan['target'])}]
+        candidate.write_text(json.dumps(plan))
+        (candidate.parent / 'seed-inventory.json').write_text(json.dumps(inventory))
+        return candidate
+
+    def test_qualified_runtime_upgrade_uses_new_system_seed_and_retains_old_runtime_state(self):
+        candidate = self.runtime_packages()
+        (self.previous / 'drive_c/runtime.dll').write_text('old runtime system bytes')
+        (self.previous / 'system.reg').write_text('old runtime hive')
+        self.assertEqual(launch(candidate, ['--cage-update']), 0)
+        updated = self.active()
+        self.assertEqual((updated / 'drive_c/runtime.dll').read_text(), 'new runtime system bytes')
+        self.assertEqual((updated / 'system.reg').read_text(), 'new runtime hive')
+        self.assertEqual(self.read(updated, 'AppData/Roaming/Proof/settings'), 'my settings')
+        self.assertEqual(self.read(updated, 'Documents/story.txt'), 'document v1')
+        self.assertEqual((self.previous / 'drive_c/runtime.dll').read_text(), 'old runtime system bytes')
+        self.assertEqual(launch(candidate, []), 0)
+        self.write(updated, 'Documents/story.txt', 'newest document')
+        self.write(updated, 'AppData/Roaming/Proof/settings', 'new runtime settings')
+        with self.assertRaisesRegex(DesktopError, 'runtime changes'):
+            launch(self.old, ['--cage-update'])
+        self.assertEqual(launch(self.old, ['--cage-rollback']), 0)
+        rolled = self.active()
+        self.assertEqual((rolled / 'drive_c/runtime.dll').read_text(), 'old runtime system bytes')
+        self.assertEqual((rolled / 'system.reg').read_text(), 'old runtime hive')
+        self.assertEqual(self.read(rolled, 'Documents/story.txt'), 'newest document')
+        self.assertEqual(self.read(rolled, 'AppData/Roaming/Proof/settings'), 'my settings')
+        self.assertEqual(self.read(updated, 'AppData/Roaming/Proof/settings'), 'new runtime settings')
+        self.assertEqual(launch(self.old, []), 0)
+        self.assertEqual(self.external.read_text(), 'external document')
+        self.assertTrue(any(g.get('runtimeMigration') for g in _read_generations(self.state)['generations']))
+
+    def test_runtime_migration_is_exact_directed_and_keeps_application_bytes_fixed(self):
+        candidate = self.runtime_packages()
+        original = json.loads(candidate.read_text())
+        changes = [('source contract', lambda p: p['desktop']['updates']['runtimeMigrations'][0]['from'].update(contractDigest='a'*64)),
+                   ('target runtime', lambda p: p['desktop']['updates']['runtimeMigrations'][0].update(toRuntimeDigest='b'*64)),
+                   ('application version', lambda p: p['application'].update(version='2')),
+                   ('profile', lambda p: p['desktop']['updates'].update(profile='other/v1'))]
+        for name, change in changes:
+            with self.subTest(name=name):
+                plan = json.loads(json.dumps(original)); change(plan); candidate.write_text(json.dumps(plan))
+                with self.assertRaisesRegex(DesktopError, 'runtime changes'):
+                    launch(candidate, ['--cage-update'])
+                self.assertEqual(json.loads((self.state / 'state.json').read_text()), self.initial)
+        candidate.write_text(json.dumps(original))
+        executable = candidate.parent / 'seed/drive_c/App.exe'; executable.write_text('changed app')
+        inventory = inventory_tree(candidate.parent / 'seed')
+        original['seedDigest'] = digest_json(inventory)
+        candidate.write_text(json.dumps(original))
+        (candidate.parent / 'seed-inventory.json').write_text(json.dumps(inventory))
+        with self.assertRaisesRegex(DesktopError, 'same pinned executable'):
+            launch(candidate, ['--cage-update'])
+        self.assertEqual(self.active(), self.previous)
+
+    def test_runtime_migration_failure_and_interrupted_commit_keep_old_active(self):
+        candidate = self.runtime_packages(PROOF_EXIT='7')
+        self.assertEqual(launch(candidate, ['--cage-update']), 7)
+        self.assertEqual(self.active(), self.previous)
+        self.assertEqual(launch(self.old, []), 0)
+        plan = json.loads(candidate.read_text()); plan['environment']['PROOF_EXIT'] = '0'
+        candidate.write_text(json.dumps(plan))
+        with patch('runtime.desktop_launch.commit_generation', side_effect=OSError('power loss')):
+            with self.assertRaisesRegex(OSError, 'power loss'):
+                launch(candidate, ['--cage-update'])
+        self.assertEqual(self.active(), self.previous)
+        self.assertEqual(launch(self.old, []), 0)
+        self.assertEqual(launch(candidate, ['--cage-update']), 0)
+
+    def test_runtime_migration_low_space_and_symlink_settings_refuse_without_commit(self):
+        candidate = self.runtime_packages()
+        with patch('runtime.desktop_launch.shutil.disk_usage', return_value=type('Usage', (), {'free': 0})()):
+            with self.assertRaisesRegex(DesktopError, 'insufficient space'):
+                launch(candidate, ['--cage-update'])
+        self.assertEqual(self.active(), self.previous)
+        self.write(self.previous, 'AppData/Roaming/Proof/escape-placeholder', 'safe').unlink()
+        (self.previous / 'drive_c/users/cage/AppData/Roaming/Proof/escape-placeholder').symlink_to(self.external)
+        with self.assertRaisesRegex(DesktopError, 'ordinary files'):
+            launch(candidate, ['--cage-update'])
+        self.assertEqual(self.active(), self.previous)
+        self.assertEqual(self.external.read_text(), 'external document')
+
+    def test_runtime_preflight_rejects_changed_architecture_or_data_policy(self):
+        candidate = self.runtime_packages()
+        old = json.loads(self.old.read_text()); plan = json.loads(candidate.read_text())
+        self.assertIsNotNone(validate_runtime_update(old, plan))
+        for key, value in [('architecture', 'different'), ('graphics', 'wayland')]:
+            with self.subTest(key=key):
+                changed = json.loads(json.dumps(plan)); changed['target'][key] = value
+                changed['desktop']['updates']['runtimeMigrations'][0]['toRuntimeDigest'] = digest_json(changed['target'])
+                with self.assertRaisesRegex(DesktopError, 'architecture, adapter or data policy'):
+                    validate_runtime_update(old, changed)
+        plan['desktop']['updates']['settings'] = []
+        with self.assertRaisesRegex(DesktopError, 'data policy'):
+            validate_runtime_update(old, plan)
+
+    def test_runtime_policy_rejects_unbound_legacy_duplicate_and_wildcard_transitions(self):
+        candidate = self.runtime_packages()
+        policy = json.loads(candidate.read_text())['desktop']['updates']
+        validate_update_policy(policy)
+        valid = policy['runtimeMigrations'][0]
+        invalid = [[], [valid]*2, [valid]*17, [{'from': valid['from']}],
+                   [{'from': {**valid['from'], 'schemaVersion': 'cage.desktop-state/v0'}, 'toRuntimeDigest': valid['toRuntimeDigest']}],
+                   [{'from': {**valid['from'], 'contractDigest': '*'}, 'toRuntimeDigest': valid['toRuntimeDigest']}],
+                   [{'from': valid['from'], 'toRuntimeDigest': valid['from']['runtimeDigest']}]]
+        for migrations in invalid:
+            with self.subTest(migrations=migrations):
+                with self.assertRaises(DesktopError):validate_update_policy({**policy, 'runtimeMigrations': migrations})
 
     def test_links_fifo_and_symlinked_generation_are_rejected_without_touching_external_data(self):
         path = self.previous / 'drive_c/users/cage/AppData/Roaming/Proof/escape'

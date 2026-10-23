@@ -120,6 +120,19 @@ class ContainerUpdateTests(unittest.TestCase):
             with self.assertRaisesRegex(DesktopError, 'cannot be overridden'):
                 managed_plan(bundle)
 
+    def test_portable_runtime_allowlist_cannot_upgrade_a_cfw_owned_recipe(self):
+        from runtime.desktop_launch import plan_identity
+        with tempfile.TemporaryDirectory() as td:
+            bundle = self.bundle(td)
+            baseline = managed_plan(bundle)
+            path = bundle / 'manifest.cage.json'; manifest = json.loads(path.read_text())
+            manifest['desktop']['updates']['runtimeMigrations'] = [
+                {'from': plan_identity(baseline), 'toRuntimeDigest': 'b'*64}]
+            manifest['modules'].append({'type': 'chocolatey'})
+            path.write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(DesktopError, 'CFW runtime migrations require separate producer'):
+                managed_plan(bundle)
+
 
 if __name__ == '__main__':
     unittest.main()
