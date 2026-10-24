@@ -32,6 +32,8 @@ class FlatpakUpdateTests(unittest.TestCase):
             if arguments[0] == 'install':
                 digest = Path(arguments[-1]).stem
                 entry = self.old[0] if digest == self.old[0]['sha256'] else self.new[0]
+                if entry['plan'] == self.current_plan and '--reinstall' not in arguments:
+                    raise DesktopError('flatpak install failed: application already installed')
                 self.current_plan = entry['plan']
                 self.installed.append(digest)
             if '--cage-update' in arguments or '--cage-rollback-repair' in arguments:
@@ -168,6 +170,33 @@ class FlatpakUpdateTests(unittest.TestCase):
         self.assertFalse(result['updated'])
         self.assertTrue(any('--cage-rollback-repair' in command for command in self.commands))
         self.assertEqual(json.loads((self.root/'cache/transaction.json').read_text())['action'],'rollback-repair')
+        self.assertEqual((self.root/'cache'/(self.old[0]['sha256']+'.flatpak')).read_bytes(),self.old[1].read_bytes())
+
+    def test_repeated_repair_reuses_installed_package_and_keeps_original_recoverable(self):
+        self.runtime_packages()
+        policy = self.new[0]['plan']['desktop']['updates']
+        policy['rollbackRepairs'] = policy.pop('runtimeMigrations')
+        self.new[0]['identity'] = updates.identity(self.new[0]['plan'])
+        Path(str(self.new[1])+'.json').write_text(json.dumps({'schemaVersion':'cage.flatpak-export-result/v0',
+            'sha256':self.new[0]['sha256'],'plan':self.new[0]['plan']}))
+        original = {'prefix':'prefix','identity':self.old[0]['identity'],
+                    'profile':'p/v1','application':{'name':'proof','version':'1'}}
+        def state(*args):
+            if self.current_identity == self.old[0]['identity']:
+                return {'state':{'active':'prefix','generations':[original]}}
+            return {'state':{'active':'generations/repaired','previous':'prefix','generations':[original,
+                {**original,'prefix':'generations/repaired','identity':self.current_identity}]}}
+        with patch('artifact.updates._state', side_effect=state):
+            updates.update_flatpak(self.new[1],self.old[1],repair=True,cache=self.root/'cache')
+            result=updates.update_flatpak(self.new[1],self.new[1],repair=True,cache=self.root/'cache')
+            self.assertTrue(result['repairedRollback'])
+            # An interrupted repeated repair can recover the same committed
+            # package without losing the separately retained original artifact.
+            self.fail_trial = True
+            with self.assertRaisesRegex(DesktopError,'trial failed'):
+                updates.update_flatpak(self.new[1],self.new[1],repair=True,cache=self.root/'cache')
+        self.assertEqual(self.current_identity,self.new[0]['identity'])
+        self.assertEqual(json.loads((self.root/'cache/transaction.json').read_text())['status'],'recovered')
         self.assertEqual((self.root/'cache'/(self.old[0]['sha256']+'.flatpak')).read_bytes(),self.old[1].read_bytes())
 
 

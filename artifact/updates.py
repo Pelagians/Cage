@@ -84,7 +84,9 @@ def _install(directory, entry, environment):
     with package.open('rb') as handle:
         if hashlib.file_digest(handle, 'sha256').hexdigest() != entry['sha256']:
             raise DesktopError('retained Flatpak bundle changed; deployment refused')
-    _command(['install', '--user', '--noninteractive', '--assumeyes', '--no-related', '--no-deps',
+    # A repeated repair or recovery can select the already deployed commit.
+    # Flatpak otherwise refuses it before Cage can run the state transaction.
+    _command(['install', '--user', '--noninteractive', '--assumeyes', '--reinstall', '--no-related', '--no-deps',
               '--bundle', str(package)], environment)
 
 
