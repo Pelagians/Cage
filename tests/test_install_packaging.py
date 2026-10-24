@@ -31,7 +31,7 @@ class InstallPackagingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary) / "source"
             shutil.copytree(ROOT, source, ignore=shutil.ignore_patterns(
-                ".git", ".venv", "__pycache__", "build", "dist", "*.egg-info",
+                ".git", ".venv", ".cage", "sources", "__pycache__", "build", "dist", "*.egg-info",
             ))
             result = subprocess.run(
                 [sys.executable, "-m", "pip", "wheel", ".", "--no-deps",

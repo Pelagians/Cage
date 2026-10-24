@@ -1,0 +1,37 @@
+From: Cage contributors
+Subject: [PATCH] ARM64EC: drain translator locks before Wine kills peer threads
+
+Wine invokes ProcessTerm around NtTerminateProcess(NULL), which kills peer
+threads but returns to the calling thread for DLL/FLS cleanup. A peer killed
+while writing a shared JIT lookup cache leaves its mutex permanently owned.
+Cleanup can execute previously untranslated callbacks and block in FindBlock.
+
+Take the existing locks in notification order, before peer termination, and
+release them after the syscall (including failure). The exclusive invalidation
+lock drains compilation and cache writers. No shutdown status is synthesized.
+
+SPDX-License-Identifier: MIT
+--- a/Source/Windows/ARM64EC/Module.cpp
++++ b/Source/Windows/ARM64EC/Module.cpp
+@@ -716,7 +716,20 @@ NTSTATUS ProcessInit()
+   return STATUS_SUCCESS;
+ }
+ 
+-void ProcessTerm(HANDLE Handle, BOOL After, NTSTATUS Status) {}
++void ProcessTerm(HANDLE Handle, BOOL After, NTSTATUS Status) {
++  if (!CTX) {
++    return;
++  }
++  // Wine calls this only for NtTerminateProcess(NULL): peers disappear, while
++  // this thread continues running DLL/FLS cleanup and may compile more code.
++  if (!After) {
++    ThreadCreationMutex.lock();
++    CTX->GetCodeInvalidationMutex().lock();
++  } else {
++    CTX->GetCodeInvalidationMutex().unlock();
++    ThreadCreationMutex.unlock();
++  }
++}
+ 
+ class ScopedCallbackDisable {
+ private:

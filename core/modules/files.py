@@ -6,7 +6,7 @@ import re
 import shlex
 from typing import Any
 
-from .base import ModuleBase, ModuleError
+from .base import ModuleBase, ModuleError, files_exclusions
 from ..build_step import BuildStep
 
 
@@ -55,5 +55,9 @@ class FilesModule(ModuleBase):
                     f"mkdir -p -- {dest}",
                     f"cp -a -- {src}/. {dest}/",
                 ])
+            exclusions = files_exclusions(mapping)
+            if exclusions:
+                commands.append(f"test -d {dest}")
+                commands.extend(f"rm -rf -- {dest}/" + shlex.quote(name) for name in exclusions)
         return [BuildStep(commands=commands, description=f"Copy {len(self.mappings)} file(s)",
                           kind="copy-tree", metadata={"mappings": self.mappings})]

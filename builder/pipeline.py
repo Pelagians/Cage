@@ -304,6 +304,7 @@ def generate_build_script(
     *,
     bundle_mount: str = "/opt/cage",
     workspace_mount: str = "/workspace",
+    settle_prefix: bool = False,
 ) -> str:
     """Render the same compiled operations recorded in the bundle plan."""
     if bundle_mount != "/opt/cage" or workspace_mount != "/workspace":
@@ -314,6 +315,8 @@ def generate_build_script(
              'trap \'rc=$?; rm -rf "${CAGE_PREFIX_PARTIAL:-/opt/cage/prefix.partial}" "${CAGE_PREFIX_METADATA_PARTIAL:-/opt/cage/metadata/prefix-materialization.partial.json}"; if [ "$rc" -ne 0 ]; then printf "%s %s\\n" "$CAGE_OPERATION_ID" "$rc" > /opt/cage/logs/failed-operation; fi\' EXIT',
              'echo "[cage] Starting build"']
     for operation in build_plan(manifest):
+        if settle_prefix and operation["phase"] == "export":
+            lines.extend(['wineserver -k', 'timeout 60s wineserver -w'])
         lines.extend([
             "",
             f'CAGE_OPERATION_ID={_shell_quote(str(operation["id"]))}',

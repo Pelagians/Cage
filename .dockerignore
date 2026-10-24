@@ -1,0 +1,8 @@
+.git
+.cage
+.venv
+dist
+build
+sources
+**/__pycache__
+*.egg-info

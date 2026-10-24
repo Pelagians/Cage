@@ -1,0 +1,7 @@
+# Cage keeps settings separate from the verified application executable.
+CheckForUpdates = false
+UiLanguage = en
+RememberOpenedFiles = true
+RememberStatePerDocument = true
+RestoreSession = false
+DefaultZoom = fit page

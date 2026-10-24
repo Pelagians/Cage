@@ -44,6 +44,26 @@ from runtime.providers import list_providers, resolve_manifest_runtime, resolve_
 from runtime.launcher import RunError, build_run_plan, execute_run_plan
 from runtime.runner_cache import RunnerCacheError, diagnose_runner, ensure_runner
 from runtime.runner_catalog import RunnerCatalogError, RunnerSpec, resolve_runner_spec, runner_catalog_payload
+from runtime.desktop_launch import DesktopError
+from artifact.storage import StorageError, storage_status, prune_storage, doctor
+
+
+def cmd_storage(args):
+    options = dict(output_dir=args.output_dir, index_path=args.artifact_index,
+                   build_dirs=args.build_dir, state_dirs=args.state_dir,
+                   package_dirs=args.package_dir, tool_cache=args.tool_cache)
+    try:
+        if args.command == 'doctor':
+            result = doctor(**options, required_free_mib=args.required_free_mib, bundle=args.bundle)
+        elif args.storage_command == 'prune':
+            result = prune_storage(**options, apply=args.apply, min_age_hours=args.min_age_hours)
+        else:
+            result = storage_status(**options)
+    except OSError as exc:
+        raise StorageError(str(exc)) from exc
+    print(json.dumps(result, indent=2, sort_keys=True))
+    failed = result.get('healthy') is False or any(item.get('error') for item in result.get('builds', []))
+    return 15 if failed else 0
 
 
 # ---- manifest commands ----
@@ -99,6 +119,14 @@ def cmd_sources_audit(args):
     result = audit_manifest_sources(manifest, workspace=workspace)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result.get("valid") else 8
+
+
+def cmd_sources_prepare(args):
+    from core.sources import prepare_portable_source
+    result = prepare_portable_source(load_manifest(Path(args.manifest)), workspace=args.workspace,
+                                     source_id=args.source_id, stage_name=args.stage_name)
+    print(json.dumps(result, indent=2))
+    return 0
 
 
 def cmd_media_stage(args):
@@ -170,6 +198,22 @@ def cmd_compat_corpus(args):
 
 def cmd_build(args):
     manifest = load_manifest(Path(args.manifest))
+    if getattr(args, "target", "container") in {"flatpak", "appimage"}:
+        from artifact.desktop import validate_desktop_recipe
+        from builder.flatpak import build_flatpak_bundle
+        if any(getattr(args, name, None) for name in (
+            "engine", "runtime_image", "image_tag", "runner_cache_dir", "module_cache_dir", "requalify_cfw_runtime"
+        )):
+            raise DesktopError("container runtime/cache options do not apply to desktop build targets")
+        if args.dry_run:
+            result = {"schemaVersion": "cage.desktop-build-plan/v0", "target": validate_desktop_recipe(manifest),
+                      "phases": build_plan(manifest), "dryRun": True}
+        else:
+            result = build_flatpak_bundle(manifest, Path(args.output),
+                        workspace=Path(args.workspace or Path.cwd()), store=args.flatpak_store,
+                        timeout=min(args.build_timeout, 900))
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
     bundle_path = create_bundle(
         manifest, Path(args.output), dry_run=args.dry_run,
     )
@@ -212,6 +256,15 @@ def cmd_build(args):
     binding = resolve_manifest_runtime(manifest)
     base_image = getattr(args, "runtime_image", None) or binding.oci_image or get_image_ref(
         manifest.runtime.provider, manifest.runtime.version)
+    if (manifest.desktop.get('updates') and manifest.runtime.provider in {'wine', 'staging'}
+            and not manifest.runtime.runner and not args.dry_run and not args.runtime_image):
+        from builder.executor import _find_engine, _resolve_image_ref
+        base_image = _resolve_image_ref(manifest, _find_engine(args.engine)) or base_image
+    if manifest.runtime.provider == "wine-arm64ec" and not args.dry_run and not args.runtime_image:
+        from container.manager import get_image_available
+        if get_image_available(manifest.runtime.provider, manifest.runtime.version,
+                               build_cmd=args.engine or "podman", published=False):
+            base_image = binding.local_oci_image
 
     if args.dry_run:
         artifact_entry = register_bundle(
@@ -258,6 +311,8 @@ def cmd_build(args):
     )
 
     # Write OCI mapping
+    if manifest.runtime.provider == "wine-arm64ec":
+        base_image = build_result.image_ref
     oci = build_oci_image(bundle_path, base_image,
                           output_tag=args.image_tag)
     artifact_entry = register_bundle(
@@ -316,6 +371,9 @@ def cmd_run(args):
         require_runner=not args.dry_run,
         network=args.network,
         allow_non_runnable=args.dry_run,
+        state_dir=args.state_dir,
+        writable_files=args.writable_files,
+        state_action=args.state_action,
     )
     if args.dry_run:
         print(json.dumps(plan, indent=2, sort_keys=True))
@@ -324,6 +382,61 @@ def cmd_run(args):
     result = execute_run_plan(plan, timeout=args.timeout)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result.get("success") else int(result.get("exitCode") or 1)
+
+
+def cmd_package_update(args):
+    from artifact.updates import update_flatpak
+    result = update_flatpak(args.package, args.previous_package, rollback=args.command == "rollback", repair=args.command == 'rollback-repair',
+                            files=args.files, cache=args.cache_dir)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_release(args):
+    from artifact import releases
+    from artifact.release_install import deploy, operate
+    import subprocess
+    try:
+        operation = args.release_command
+        if operation == 'keygen':
+            result = releases.generate_key(args.private_key, args.public_key)
+        elif operation == 'create':
+            result = releases.create_release(args.spec, args.private_key, args.output, engine=args.engine)
+        elif operation == 'fetch':
+            value = releases.fetch_release(args.release, args.key, args.format, cache=args.cache_dir)
+            result = {'verified': True, 'releaseSha256': value['digest'], 'directory': value['directory'],
+                      'publisherKeySha256': value['manifest']['publisherKeySha256']}
+        elif operation in ('install', 'update', 'rollback-repair'):
+            result = deploy(args.release, args.key, args.format, action=operation, cache=args.cache_dir,
+                            files=args.files, engine=args.engine, state_dir=args.state_dir, exports_dir=args.exports_dir)
+        else:
+            result = operate(args.application, args.key, args.format, action=operation,
+                             cache=args.cache_dir, files=getattr(args, 'files', ()))
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
+        raise releases.ReleaseError(str(exc)) from exc
+
+
+def cmd_recover_flatpak(args):
+    from artifact.updates import recover_flatpak
+    print(json.dumps(recover_flatpak(args.directory), indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_migrate(args):
+    if args.format == 'flatpak':
+        from artifact.updates import migrate_flatpak
+        result = migrate_flatpak(args.package, args.previous_package, files=args.files,
+                                 cache=args.cache_dir, state_dir=args.state_dir)
+        print(json.dumps(result, indent=2))
+        return 0
+    if args.cache_dir or args.state_dir:
+        raise DesktopError('AppImage migration uses its installed application state and package directory')
+    import subprocess
+    return subprocess.run([str(Path(args.package).absolute()), '--cage-migrate', '--previous-package',
+                           str(Path(args.previous_package).absolute()), '--', *args.files]).returncode
 
 
 # ---- image commands ----
@@ -443,6 +556,35 @@ def cmd_export_oci(args):
     return 0 if result.get("success") else 1
 
 
+def cmd_export_flatpak(args):
+    from artifact.flatpak import create_flatpak_export_plan, export_flatpak
+    bundle = resolve_bundle_reference(args.bundle, index_path=args.artifact_index)
+    if args.dry_run:
+        result = create_flatpak_export_plan(bundle)
+    else:
+        if not args.output:
+            raise DesktopError("--output is required unless --dry-run")
+        result = export_flatpak(bundle, output=args.output, store=args.flatpak_store,
+                                context_dir=args.context_dir, timeout=args.timeout)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_export_appimage(args):
+    from artifact.appimage import create_appimage_export_plan, export_appimage
+    bundle = resolve_bundle_reference(args.bundle, index_path=args.artifact_index)
+    if args.dry_run:
+        result = create_appimage_export_plan(bundle, allow_host_access=args.allow_host_access)
+    else:
+        if not args.output:
+            raise DesktopError("--output is required unless --dry-run")
+        result = export_appimage(bundle, output=args.output, store=args.flatpak_store,
+            allow_host_access=args.allow_host_access, context_dir=args.context_dir,
+            cache=args.tool_cache, timeout=args.timeout)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
 def cmd_export_kube(args):
     bundle = resolve_bundle_reference(args.bundle, index_path=args.artifact_index)
     image_verification = None
@@ -549,6 +691,24 @@ def build_parser():
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
+    storage = sub.add_parser('storage', help='Inspect protected state and preview cleanup of completed export staging')
+    storage_sub = storage.add_subparsers(dest='storage_command', required=True)
+    status = storage_sub.add_parser('status', help='Read-only bundle, generation, disk and staging report')
+    prune = storage_sub.add_parser('prune', help='Preview cleanup; deletion requires --apply')
+    prune.add_argument('--apply', action='store_true', help='Remove only verified disposable build files')
+    prune.add_argument('--min-age-hours', type=float, default=24, help='Minimum completed-build/cache age (default: 24)')
+    diagnostic = sub.add_parser('doctor', help='Read-only storage and selected bundle diagnostics')
+    diagnostic.add_argument('--bundle', help='Bundle path or indexed app reference to verify')
+    diagnostic.add_argument('--required-free-mib', type=float, default=1024, help='Requested free-space reserve (not a build-size estimate)')
+    for command in (status, prune, diagnostic):
+        command.add_argument('--output-dir', default='dist', help='Artifact directory; discover direct *.build staging children')
+        command.add_argument('--artifact-index', help='Existing Cage artifact index')
+        command.add_argument('--build-dir', action='append', default=[], help='Additional export staging directory; repeatable')
+        command.add_argument('--state-dir', action='append', default=[], help='Exact application state root containing state.json; repeatable')
+        command.add_argument('--package-dir', action='append', default=[], help='Additional AppImage installation or Flatpak recovery cache; repeatable')
+        command.add_argument('--tool-cache', help='Explicit AppImage build-tool download cache; runtime/runner caches are never pruned')
+        command.set_defaults(func=cmd_storage)
+
     # inspect
     p = sub.add_parser("inspect", help="Validate and print normalized manifest")
     p.add_argument("manifest")
@@ -564,6 +724,9 @@ def build_parser():
     p = sub.add_parser("build", help="Create an immutable execution bundle "
                                      "(dry-run or real via container)")
     p.add_argument("manifest")
+    p.add_argument("--target", choices=["container", "flatpak", "appimage"], default="container",
+                   help="Build execution target; container remains the default")
+    p.add_argument("--flatpak-store", default=".cage/flatpak", help="Isolated desktop build dependency store")
     p.add_argument("--output", default="dist",
                    help="Output directory")
     p.add_argument("--workspace",
@@ -592,7 +755,7 @@ def build_parser():
     p.add_argument("bundle", help="Path to Cage bundle directory or app name from artifact index")
     p.add_argument("--artifact-index", default=None,
                    help="Artifact index path for resolving app names (default: dist/.cage/artifacts.json)")
-    p.add_argument("--graphics", choices=["headless", "selkies"],
+    p.add_argument("--graphics", choices=["headless", "selkies", "desktop"],
                    help="Graphics mode; defaults to metadata/graph.json defaultMode")
     p.add_argument("--engine", default=None,
                    help="Container engine (podman, docker). Auto-detect if omitted.")
@@ -601,6 +764,9 @@ def build_parser():
     p.add_argument("--network", choices=["none", "bridge", "host"],
                    help="Runtime container network mode; defaults to bundle runtime.network")
     p.add_argument("--entrypoint", help="Named suite entrypoint id to run")
+    p.add_argument("--state-dir", help="Persistent managed Wine container state directory")
+    p.add_argument("--state-action", choices=["update", "rollback", "state-info", "migrate", "rollback-repair"], help="Explicit generation action; requires --state-dir")
+    p.add_argument("--writable-files", action="store_true", help="Allow writes within the parent directories of explicitly passed files")
     p.add_argument("files", nargs="*", help="Host files to pass to the selected application entrypoint")
     p.add_argument("--selkies-port", type=int, default=3001,
                    help="Host loopback HTTPS port for --graphics selkies")
@@ -610,6 +776,52 @@ def build_parser():
     p.add_argument("--runner-cache-dir",
                    help="Runner cache directory for runtime.runner archives")
     p.set_defaults(func=cmd_run)
+
+    for operation in ("update", "rollback", "rollback-repair"):
+        p = sub.add_parser(operation, help="Deploy a retained package and trial a qualified state generation")
+        p.add_argument("format", choices=["flatpak"])
+        p.add_argument("package", help="Target Cage .flatpak bundle with adjacent export receipt")
+        p.add_argument("--previous-package", required=True, help="Currently installed Cage bundle, retained for recovery")
+        p.add_argument("--cache-dir", help="Private disk-backed package recovery directory")
+        p.add_argument("files", nargs="*", help="Documents to open during the trial")
+        p.set_defaults(func=cmd_package_update)
+    p = sub.add_parser('migrate', help='Adopt recorded legacy state with a same-version managed baseline')
+    p.add_argument('format', choices=['flatpak', 'appimage'])
+    p.add_argument('package', help='Generation-aware baseline package')
+    p.add_argument('--previous-package', required=True, help='Exact legacy package with its export receipt')
+    p.add_argument('--cache-dir', help='Flatpak package recovery directory')
+    p.add_argument('--state-dir', help='Explicit Flatpak application state directory, if nonstandard')
+    p.add_argument('files', nargs='*', help='Documents to open during the migration trial')
+    p.set_defaults(func=cmd_migrate)
+    p = sub.add_parser("recover-flatpak", help="Restore retained deployment matching the committed prefix generation")
+    p.add_argument("directory", help="Recovery directory printed by cage update")
+    p.set_defaults(func=cmd_recover_flatpak)
+
+    p = sub.add_parser('release', help='Create, verify and deploy publisher-signed application releases')
+    rsub = p.add_subparsers(dest='release_command', required=True)
+    rp = rsub.add_parser('keygen', help='Generate an explicit publisher keypair; never replaces keys')
+    rp.add_argument('--private-key', required=True)
+    rp.add_argument('--public-key', required=True)
+    rp.set_defaults(func=cmd_release)
+    rp = rsub.add_parser('create', help='Sign a release from qualified exports and evidence')
+    rp.add_argument('spec')
+    rp.add_argument('--private-key', required=True)
+    rp.add_argument('--output', required=True)
+    rp.add_argument('--engine', default='podman')
+    rp.set_defaults(func=cmd_release)
+    for operation in ('fetch', 'install', 'update', 'run', 'rollback', 'rollback-repair', 'recover', 'info'):
+        rp = rsub.add_parser(operation)
+        rp.add_argument('release' if operation in ('fetch', 'install', 'update', 'rollback-repair') else 'application')
+        rp.add_argument('--key', required=True, help='Publisher public key obtained through a trusted channel')
+        rp.add_argument('--format', required=True, choices=['flatpak', 'appimage', 'oci'])
+        rp.add_argument('--cache-dir', help='Private retained release cache and installation ledger')
+        if operation in ('install', 'update', 'rollback-repair'):
+            rp.add_argument('--engine', default='podman')
+            rp.add_argument('--state-dir', help='OCI persistent state parent, fixed at installation')
+            rp.add_argument('--exports-dir', help='OCI document directory, fixed at installation')
+        if operation in ('install', 'update', 'run', 'rollback', 'rollback-repair'):
+            rp.add_argument('files', nargs='*', help='Documents to open during launch or trial')
+        rp.set_defaults(func=cmd_release)
 
     # image
     p = sub.add_parser("image", help="Inspect and verify Cage application OCI images")
@@ -632,7 +844,7 @@ def build_parser():
 
     cp = csub.add_parser("build", help="Build a runtime container image")
     cp.add_argument("provider",
-                    choices=["wine", "staging", "umu-proton-ge"],
+                    choices=list_providers(),
                     help="Runtime provider name")
     cp.add_argument("version",
                     help="Version tag (e.g. 9.0, GE-Proton9-27)")
@@ -703,6 +915,13 @@ def build_parser():
     # sources
     p = sub.add_parser("sources", help="Verify recipe source files and hashes")
     ssub = p.add_subparsers(dest="sources_command", required=True)
+
+    sp = ssub.add_parser('prepare', help='Acquire and safely stage a declared hash-pinned portable archive')
+    sp.add_argument('manifest')
+    sp.add_argument('--workspace')
+    sp.add_argument('--source-id', help='Choose a source when the recipe declares more than one')
+    sp.add_argument('--stage-name', help='Staging name; defaults to application name-version')
+    sp.set_defaults(func=cmd_sources_prepare)
 
     sp = ssub.add_parser("verify", help="Verify local recipe sources and sha256 values")
     sp.add_argument("manifest", help="Path to Cage manifest")
@@ -783,13 +1002,36 @@ def build_parser():
     p = sub.add_parser("export", help="Export Cage bundles to deployable artifacts")
     esub = p.add_subparsers(dest="export_command", required=True)
 
+    ep = esub.add_parser("flatpak", help="Export a qualified desktop-target bundle as a Flatpak")
+    ep.add_argument("bundle", help="Desktop-target bundle path")
+    ep.add_argument("--artifact-index", default=None)
+    ep.add_argument("--output", help="Output .flatpak file")
+    ep.add_argument("--context-dir", help="New staging directory retained for inspection")
+    ep.add_argument("--flatpak-store", default=".cage/flatpak", help="Isolated build-time Flatpak store")
+    ep.add_argument("--timeout", type=int, default=900)
+    ep.add_argument("--dry-run", action="store_true")
+    ep.set_defaults(func=cmd_export_flatpak)
+
+    ep = esub.add_parser("appimage", help="Export a qualified desktop seed as a native AppImage")
+    ep.add_argument("bundle", help="Desktop-target bundle path")
+    ep.add_argument("--artifact-index", default=None)
+    ep.add_argument("--output", help="Output .AppImage file")
+    ep.add_argument("--context-dir", help="New staging directory retained for inspection")
+    ep.add_argument("--flatpak-store", default=".cage/flatpak", help="Build-time pinned native payload store")
+    ep.add_argument("--tool-cache", default=".cage/appimage-tools", help="Checksum-verified tool cache")
+    ep.add_argument("--allow-host-access", action="store_true",
+                    help="Accept ordinary host-process filesystem/network access; AppImage cannot enforce recipe isolation")
+    ep.add_argument("--timeout", type=int, default=1800)
+    ep.add_argument("--dry-run", action="store_true")
+    ep.set_defaults(func=cmd_export_appimage)
+
     ep = esub.add_parser("oci", help="Export a verified bundle as a runnable OCI application image")
     ep.add_argument("bundle", help="Path to Cage bundle directory or app name from artifact index")
     ep.add_argument("--artifact-index", default=None,
                     help="Artifact index path for resolving app names (default: dist/.cage/artifacts.json)")
     ep.add_argument("--tag", required=True, help="Output OCI image tag")
     ep.add_argument("--dry-run", action="store_true", help="Print the OCI export plan without building")
-    ep.add_argument("--graphics", choices=["headless", "selkies"], default="headless",
+    ep.add_argument("--graphics", choices=["headless", "selkies", "desktop"], default="headless",
                     help="Application image session target")
     ep.add_argument("--engine", default=None, help="Container build engine (podman, docker). Auto-detect if omitted.")
     ep.add_argument("--context-dir", help="Optional build context directory to materialize")
@@ -832,15 +1074,22 @@ def main(argv=None):
         # positional after optional arguments in a subparser.  Cage supports
         # Python 3.11, so recover only non-option run-file arguments while
         # continuing to reject misspelled or unsupported flags.
-        if args.command == "run" and all(not item.startswith("-") for item in unknown):
+        if (args.command in {"run", "update", "rollback", "migrate", "rollback-repair"} or
+            args.command == 'release' and getattr(args, 'release_command', '') in {'install', 'update', 'run', 'rollback', 'rollback-repair'}) and all(not item.startswith("-") for item in unknown):
             args.files.extend(unknown)
         else:
             parser.error(f"unrecognized arguments: {' '.join(unknown)}")
     try:
         return args.func(args)
+    except StorageError as exc:
+        print(f"cage: storage error: {exc}", file=sys.stderr)
+        return 15
     except ManifestError as exc:
         print(f"cage: manifest error: {exc}", file=sys.stderr)
         return 2
+    except DesktopError as exc:
+        print(f"cage: desktop export error: {exc}", file=sys.stderr)
+        return 14
     except FileExistsError as exc:
         print(f"cage: artifact exists: {exc}", file=sys.stderr)
         return 3

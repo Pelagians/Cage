@@ -218,6 +218,28 @@ The graph should not become a general runtime scheduler. Runtime should be borin
 
 The v0 runner mounts the bundle read-only at `/opt/cage/bundle`, copies `prefix/` to `/tmp/cage-prefix`, sets `WINEPREFIX` to that copy, then launches the application entrypoint. When a cached runner is mounted, it lives at `/opt/cage-runner` and is selected through `PATH`/`CAGE_RUNNER_BIN`. This preserves the sealed artifact while allowing Wine to mutate runtime state.
 
+## Desktop export extension
+
+The optional `desktop` recipe object declares `id`, `name`, `summary`,
+`license`, `homepage`, `categories`, and `documentsDirectory`. The ID is reverse
+DNS; the documents directory is one named subdirectory of the user's Documents.
+These fields round-trip without changing recipes that omit the extension.
+
+`cage build <recipe> --target flatpak` executes the existing ordered pipeline
+under the pinned desktop target. Desktop-built bundles use
+`cage.execution-graph/v1`: native bindings identify the actual Wine payload and
+platform, `recipeRuntime` retains the original container intent, and graphics
+support is `desktop`. Existing container graphs remain v0. Target receipts and
+the complete prefix inventory are checked by bundle verification. Container
+run, OCI, and Kubernetes export reject desktop prefixes.
+
+`cage export flatpak <desktop-bundle> --dry-run` produces the shared
+`cage.desktop-export-plan/v0` plus Flatpak layout and permission information.
+Without `--dry-run`, `--output <file.flatpak>` creates the local application
+bundle and a JSON result receipt. Runtime dependencies are build-store scoped;
+no proprietary service is required. See [desktop exports](desktop-exports.md)
+for current eligibility, persistent state, and functional validation.
+
 ## OCI application image export
 
 `cage export oci <bundle-or-app-ref> --tag <image> --dry-run` consumes a verified bundle, either directly by path or resolved through the local artifact index, and emits a `cage.oci-export-plan/v0` document. The plan includes the graph-resolved runtime base image, application identity, requested and resolved runtime versions, OCI labels, `metadata/artifact.json` content, image layout, and generated `Containerfile` content.
@@ -249,3 +271,18 @@ Digest-pinned image refs are required by default because Kubernetes deployment i
 The v0 manifest emitter creates a Deployment plus state/export PVCs by default. Runtime state mounts at `/var/lib/cage/state`; exports mount at `/exports`. `--no-pvc` replaces the PVCs with `emptyDir` volumes for smoke/demo manifests. Kubernetes labels are normalized for selector/tooling safety; exact Cage metadata such as schema, raw app name, app version, and image ref is preserved in annotations.
 
 Kubernetes export reads `runnerRuntime.network` from the bundle graph. `network: none` emits `hostNetwork: false` plus a deny-all-egress `NetworkPolicy`; enforcement requires a NetworkPolicy-capable cluster CNI, and this policy only controls egress. `network: host` emits `hostNetwork: true` and no deny-egress policy. `network: bridge` maps to ordinary pod networking (`hostNetwork: false`) without the deny-egress policy. Kubernetes does not have a direct Docker/Podman `--net` flag, so these outputs are the closest v0 deployment intent mapping rather than a byte-for-byte runtime equivalent.
+
+### Optional desktop update policy
+
+`desktop.updates` accepts `profile`, `settings` and `documents`. The shared
+recipe declares which application-specific user paths have been qualified for
+copying into a fresh seed, and which document paths must carry forward on
+rollback. No registry hive or program directory migration is accepted. See
+[the transaction and path rules](export-updates.md). Omitting the policy retains
+the existing refusal of changed persistent generations.
+
+Files mappings optionally accept `exclude`, a list of literal top-level file or
+directory names removed from the copied destination. Paths, traversal and control
+characters are rejected; wildcard characters are literal names. For example,
+`exclude: [updater]` omits a bundled self-updater while the full original input
+archive remains checksum-pinned and unchanged.

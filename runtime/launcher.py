@@ -13,6 +13,7 @@ import os
 import re
 import shlex
 import shutil
+import socket
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -28,7 +29,7 @@ BUNDLE_MOUNT = "/opt/cage/bundle"
 PREFIX_COPY = "/tmp/cage-prefix"
 FILE_INPUT_MOUNT_ROOT = "/mnt/cage-inputs"
 RUNNER_CONTAINER_DIR = "/opt/cage-runner"
-SUPPORTED_GRAPHICS = {"headless", "selkies"}
+SUPPORTED_GRAPHICS = {"headless", "selkies", "desktop"}
 SUPPORTED_NETWORK_MODES = {"none", "bridge", "host"}
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
@@ -50,9 +51,15 @@ def build_run_plan(
     require_runner: bool = False,
     network: str | None = None,
     allow_non_runnable: bool = False,
+    state_dir: Path | str | None = None,
+    writable_files: bool = False,
+    state_action: str | None = None,
 ) -> dict[str, Any]:
     """Return a deterministic container run plan for a verified bundle."""
     bundle = Path(bundle_path)
+    if any((bundle / name).exists() or (bundle / name).is_symlink()
+           for name in ("metadata/execution-target.json", "metadata/desktop-build.json")):
+        raise RunError("desktop-target bundles require their exported desktop runtime; rebuild normally for container execution")
     verification = verify_bundle(bundle)
     if not verification.get("valid"):
         raise RunError("invalid Cage bundle: " + _verification_error_text(verification))
@@ -73,7 +80,7 @@ def build_run_plan(
     file_associations = list(graph.get("fileAssociations") or [])
     selected_entrypoint, launch = _select_launch(launch, suite_entrypoints, entrypoint)
     selected_engine = normalize_engine(engine) if engine else _find_engine()
-    file_arguments = _file_arguments(files or [], engine=selected_engine)
+    file_arguments = _file_arguments(files or [], engine=selected_engine, writable=writable_files)
     graphics_contract = dict(graph.get("graphics") or {})
     compatibility_policy = dict((graph.get("compatibility") or {}).get("requestedPolicy") or {})
     compatibility_env = compatibility_environment(compatibility_policy)
@@ -90,7 +97,7 @@ def build_run_plan(
         )
 
     session_contract = str(runtime.get("sessionContract") or "")
-    if session_contract != "cage.selkies-wayland/v1":
+    if session_contract not in {"cage.selkies-wayland/v1", "cage.native-wine/v1"}:
         raise RunError(
             "runtime image is not qualified as a universal Selkies Cage image "
             f"(sessionContract={session_contract or 'missing'}); publish and pin one producer-owned "
@@ -104,7 +111,21 @@ def build_run_plan(
     _validate_network_mode(selected_network)
     _validate_graphics_network(mode, selected_network)
 
+    if state_action and (state_action not in {"update", "rollback", "state-info", "migrate", "rollback-repair"} or not state_dir):
+        raise RunError("state actions require --state-dir and update, rollback, state-info or migrate")
     base_image = _runtime_image(runtime)
+    if session_contract == "cage.native-wine/v1":
+        if mode == "selkies":
+            raise RunError("ARM64EC Selkies is not qualified")
+        if runtime.get("runnerUrl"):
+            raise RunError("ARM64EC owns its pinned Wine/FEX runtime; external runners are unsupported")
+        default_alias = (len(suite_entrypoints) == 1 and all(
+            suite_entrypoints[0].get(key, fallback) == launch.get(target, fallback)
+            for key, target, fallback in (('executable', 'entrypoint', None), ('args', 'args', []),
+                                           ('env', 'env', {}), ('workingDirectory', 'workingDirectory', None))))
+        if entrypoint is not None or (suite_entrypoints or file_associations) and not default_alias:
+            raise RunError("ARM64EC initial runtime supports the default entrypoint only")
+
     from artifact.linux_state import linux_state_identity
     derived_identity = linux_state_identity(bundle, base_image)
     derived_image = (derived_identity + ("-selkies" if (graphics or str((graph.get("graphics") or {}).get("defaultMode") or "headless")) == "selkies" else "-headless")) if derived_identity else None
@@ -118,19 +139,62 @@ def build_run_plan(
         compatibility_env,
         runner_enabled=bool(runner_cache and runner_cache.get("status") == "present"),
     )
+    if session_contract == "cage.native-wine/v1" and verification.get("runnable"):
+        from runtime.arm64ec import native_launch_script
+        script = native_launch_script(bundle, [item["containerPath"] for item in file_arguments], state_action=state_action)
+    lifecycle_mounts = []
+    if state_dir and session_contract != "cage.native-wine/v1":
+        from runtime.container_state import managed_plan
+        from runtime.desktop_launch import DesktopError
+        try:
+            managed = managed_plan(bundle, image)
+        except DesktopError as exc:
+            raise RunError(str(exc)) from exc
+        # The normal launch script still owns graphics, compatibility and launch.
+        # Only its temporary-prefix preparation is replaced for this opt-in path.
+        if ('export WINEPREFIX=/tmp/cage-prefix' not in script or
+                'rm -rf "$WINEPREFIX"\ncp -a "$CAGE_PREFIX_SOURCE" "$WINEPREFIX"' not in script):
+            raise RunError("existing launch script no longer matches the managed-prefix adapter")
+        script = script.replace('export WINEPREFIX=/tmp/cage-prefix',
+                                'export WINEPREFIX="$CAGE_MANAGED_PREFIX"')
+        script = script.replace('rm -rf "$WINEPREFIX"\ncp -a "$CAGE_PREFIX_SOURCE" "$WINEPREFIX"', ': # generation manager prepared WINEPREFIX')
+        encoded_plan = base64.b64encode(json.dumps(managed).encode()).decode()
+        encoded_script = base64.b64encode(script.encode()).decode()
+        script = ('exec /usr/bin/python3 -I /opt/cage-lifecycle/container_state.py --plan-b64 '
+                  + shlex.quote(encoded_plan) + ' ' + shlex.quote(encoded_script) + '\n')
+        lifecycle_mounts.append(_volume_mount(Path(__file__).parent, "/opt/cage-lifecycle",
+                                            engine=selected_engine, read_only=True))
+    if mode == 'desktop' and session_contract != 'cage.native-wine/v1' and not lifecycle_mounts:
+        lifecycle_mounts.append(_volume_mount(Path(__file__).parent, '/opt/cage-lifecycle',
+                                            engine=selected_engine, read_only=True))
     wine_graphics = str(graphics_contract.get("wineGraphics") or "xwayland")
     if mode == "headless" and wine_graphics == "wayland":
         raise RunError("native Wine Wayland requires graphics selkies")
     environment = _container_environment(mode, wine_graphics, script)
+    if state_action:
+        environment["CAGE_STATE_ACTION"] = state_action
     environment["PUID"] = str(os.getuid())
     environment["PGID"] = str(os.getgid())
     environment.update(dict(runtime.get("environment") or {}))
     environment.update(compatibility_env)
+    if mode == "desktop":
+        if not os.environ.get("DISPLAY"):
+            raise RunError("desktop X11 mode requires DISPLAY on the host")
+        environment["DISPLAY"] = os.environ["DISPLAY"]
+        if os.environ.get("XAUTHORITY"):
+            environment["XAUTHORITY"] = "/tmp/cage-xauthority"
     if runner_cache and runner_cache.get("status") == "present":
         environment.update(runner_cache["environment"])
     if selected_engine == "podman":
         environment["PUID"] = str(os.getuid())
         environment["PGID"] = str(os.getgid())
+    mounts = lifecycle_mounts + [item["mount"] for item in file_arguments] + ([runner_cache["mount"]] if runner_cache and runner_cache.get("status") == "present" else [])
+    if state_dir:
+        state_path = Path(state_dir).absolute()
+        if state_path.is_symlink() or (state_path.exists() and not state_path.is_dir()):
+            raise RunError("state directory must be a real directory")
+        # Planning is read-only; actual execution creates the selected directory.
+        mounts.append(_volume_mount(state_path, "/var/lib/cage/state", engine=selected_engine))
     argv = _container_argv(
         selected_engine,
         bundle,
@@ -141,11 +205,13 @@ def build_run_plan(
         selkies_port=selkies_port,
         container_name=container_name,
         network=selected_network,
-        file_mounts=[item["mount"] for item in file_arguments] + ([runner_cache["mount"]] if runner_cache and runner_cache.get("status") == "present" else []),
+        file_mounts=mounts,
+        desktop_init=mode == 'desktop' and session_contract != 'cage.native-wine/v1',
     )
 
     return {
         "schemaVersion": RUN_PLAN_SCHEMA_VERSION,
+        **({"stateDirectory": str(Path(state_dir).absolute())} if state_dir else {}),
         "bundle": str(bundle),
         "verification": {
             "schemaVersion": verification.get("schemaVersion"),
@@ -171,6 +237,7 @@ def build_run_plan(
             "network": selected_network,
             "image": image,
             "baseImage": base_image,
+            **({"executionTarget": runtime['executionTarget']} if runtime.get('executionTarget') else {}),
             "derivedRuntimeImage": derived_image,
             "linuxStateIdentity": derived_identity,
             "requiresExactRuntime": bool(
@@ -213,6 +280,12 @@ def execute_run_plan(plan: dict[str, Any], *, timeout: int | None = None) -> dic
     argv = plan.get("container", {}).get("argv")
     if not isinstance(argv, list) or not all(isinstance(item, str) for item in argv):
         raise RunError("run plan container.argv must be a list of strings")
+    if plan.get("runtime", {}).get("provider") == "wine-arm64ec":
+        from runtime.arm64ec import verify_container_runtime
+        verify_container_runtime(plan["container"]["engine"], plan["runtime"]["baseImage"],
+                                 execution_target=plan['runtime'].get('executionTarget'))
+    if plan.get("stateDirectory"):
+        Path(plan["stateDirectory"]).mkdir(parents=True, exist_ok=True, mode=0o700)
 
     derived = plan.get("runtime", {}).get("derivedRuntimeImage")
     if derived:
@@ -371,6 +444,7 @@ def _container_argv(
     container_name: str | None,
     network: str,
     file_mounts: list[str] | None = None,
+    desktop_init: bool = False,
 ) -> list[str]:
     argv = [engine, "run", "--rm"]
     if engine == "podman":
@@ -385,9 +459,25 @@ def _container_argv(
         argv.extend(["-e", f"{key}={value}"])
     if graphics == "selkies":
         argv.extend(["-p", f"127.0.0.1:{selkies_port}:3001"])
-    # Every catalog image inherits Pelagian Shell /init. Launch scripts are
-    # transported through the supervised Wayland session in every mode.
+    elif graphics == "desktop":
+        # X11 is an explicit trust boundary. Never relabel the host X socket.
+        # FamilyLocal Xauthority cookies match the client's hostname.
+        argv.extend(["--hostname", socket.gethostname()])
+        argv.extend(["-v", "/tmp/.X11-unix:/tmp/.X11-unix:ro"])
+        authority = os.environ.get("XAUTHORITY")
+        if authority:
+            if not Path(authority).is_file():
+                raise RunError("host XAUTHORITY file is missing")
+            argv.extend(["-v", f"{Path(authority).resolve()}:/tmp/cage-xauthority:ro"])
+        if engine == "podman":
+            argv.extend(["--security-opt", "label=disable"])
+    if desktop_init:
+        argv.extend(['--entrypoint', '/usr/bin/python3'])
+    # Hosted and headless universal sessions keep their inherited /init.
+    # Explicit X11 tasks reuse the same native startup as the ARM carrier.
     argv.append(image)
+    if desktop_init:
+        argv.extend(['-I', '/opt/cage-lifecycle/container_init.py'])
     return argv
 
 
@@ -518,7 +608,7 @@ def _select_launch(
     raise RunError(f"unknown suite entrypoint: {requested}{suffix}")
 
 
-def _file_arguments(files: list[Path | str], *, engine: str) -> list[dict[str, str]]:
+def _file_arguments(files: list[Path | str], *, engine: str, writable: bool = False) -> list[dict[str, str]]:
     arguments: list[dict[str, str]] = []
     for index, raw in enumerate(files):
         host = Path(raw).expanduser().resolve()
@@ -533,7 +623,7 @@ def _file_arguments(files: list[Path | str], *, engine: str) -> list[dict[str, s
             "hostPath": str(host),
             "containerPath": container_path,
             "winePath": wine_path,
-            "mount": _volume_mount(host.parent, container_dir, engine=engine, read_only=True),
+            "mount": _volume_mount(host.parent, container_dir, engine=engine, read_only=not writable),
         })
     return arguments
 

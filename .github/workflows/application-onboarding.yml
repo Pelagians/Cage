@@ -1,0 +1,215 @@
+name: Application onboarding and legacy migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      shutdown_relaunches:
+        description: 'Repeat initial container sessions with shutdown signal tracing (no retries)'
+        type: choice
+        options: ['0', '25']
+        default: '0'
+  push:
+    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'pyproject.toml', 'recipes/sumatrapdf*', 'recipes/assets/**', 'scripts/*onboarding*', 'scripts/application_workflows.py', 'scripts/prepare-legacy-poc.py', 'scripts/prepare-sumatrapdf-poc.py', 'tests/**', '.github/workflows/application-onboarding.yml']
+  pull_request:
+    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'pyproject.toml', 'recipes/sumatrapdf*', 'recipes/assets/**', 'scripts/*onboarding*', 'scripts/application_workflows.py', 'scripts/prepare-legacy-poc.py', 'scripts/prepare-sumatrapdf-poc.py', 'tests/**', '.github/workflows/application-onboarding.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.shutdown_relaunches || '0' }}
+  cancel-in-progress: false
+
+jobs:
+  desktop:
+    if: ${{ inputs.shutdown_relaunches != '25' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+            store: .cage/flatpak
+            provider: wine
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+            store: .cage/flatpak-arm64
+            provider: wine-arm64ec
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 140
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      CAGE_TEST_DISCARD_PREFIXES: '1'
+      CAGE_TEST_SOURCE_REVISION: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Prepare tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak podman uidmap slirp4netns fuse-overlayfs rpm2cpio squashfs-tools binutils xvfb openbox xdotool scrot xdg-utils x11-xserver-utils xdg-desktop-portal xdg-desktop-portal-gtk desktop-file-utils gdb
+          python -m pip install PyYAML pytest setuptools wheel 'cryptography>=43'
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          mkdir -p "$HOME/.config/containers" "$HOME/Documents" dist/onboarding-evidence
+          printf '[engine]\ncgroup_manager="cgroupfs"\nevents_logger="file"\n' > "$HOME/.config/containers/containers.conf"
+          printf 'XDG_DOCUMENTS_DIR="$HOME/Documents"\n' > "$HOME/.config/user-dirs.dirs"
+      - name: Contracts and failure recovery
+        run: python -m pytest tests/ -q
+      - uses: actions/cache@v4
+        with:
+          path: ${{ matrix.store }}
+          key: onboarding-${{ matrix.arch }}-${{ hashFiles('runtime/desktop-wine-11.0.json', 'runtime/wine-arm64ec-11.20-fex-2610.json') }}
+          restore-keys: |
+            onboarding-${{ matrix.arch }}-
+            update-proof-${{ matrix.arch }}-
+            appimage-native-${{ matrix.arch }}-
+      - name: Prepare pinned application sources
+        run: python scripts/prepare-sumatrapdf-poc.py --runtime ${{ matrix.provider }}
+      - name: Build shared recipes and Flatpak packages
+        id: desktop-build
+        run: |
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24' bash -eu -o pipefail <<'SH'
+          openbox >dist/onboarding-evidence/window-manager-flatpak.log 2>&1 &
+          for version in 3.6 3.6.1; do
+            python -m cage build dist/onboarding-recipes/${{ matrix.provider }}/$version.json --target flatpak --flatpak-store ${{ matrix.store }} --output dist/onboarding-bundles >dist/onboarding-evidence/build-$version.json
+          done
+          python -m cage export flatpak dist/onboarding-bundles/sumatrapdf-portable-3.6 --flatpak-store ${{ matrix.store }} --output dist/onboarding-3.6.flatpak >dist/onboarding-evidence/flatpak-export-3.6.json
+          python scripts/test-storage-poc.py dist/onboarding-3.6.flatpak.build >dist/onboarding-evidence/storage-flatpak-3.6.json
+          # Independent contexts share only the already prepared SDK. Keep one
+          # CLI index writer; the historical fixture uses the producer directly.
+          (
+            python -m cage export flatpak dist/onboarding-bundles/sumatrapdf-portable-3.6.1 --flatpak-store ${{ matrix.store }} --output dist/onboarding-3.6.1.flatpak >dist/onboarding-evidence/flatpak-export-3.6.1.json
+            python scripts/test-storage-poc.py dist/onboarding-3.6.1.flatpak.build >dist/onboarding-evidence/storage-flatpak-3.6.1.json
+          ) &
+          candidate_pid=$!
+          python scripts/prepare-legacy-poc.py flatpak dist/onboarding-bundles/sumatrapdf-portable-3.6 --flatpak-store ${{ matrix.store }} --output dist/onboarding-legacy.flatpak >dist/onboarding-evidence/legacy-flatpak-export.json
+          python scripts/test-storage-poc.py dist/onboarding-legacy.flatpak.build >dist/onboarding-evidence/storage-legacy-flatpak.json
+          wait "$candidate_pid"
+          SH
+      - name: Qualify historical and trusted Flatpak delivery
+        run: |
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24' bash -eu -o pipefail <<'SH'
+          openbox >dist/onboarding-evidence/window-manager-flatpak-proof.log 2>&1 &
+          export FLATPAK_USER_DIR="$PWD/${{ matrix.store }}"
+          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/flatpak" python scripts/test-onboarding-poc.py flatpak dist/onboarding-3.6.flatpak dist/onboarding-3.6.1.flatpak --legacy dist/onboarding-legacy.flatpak
+          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/trusted-flatpak" python scripts/test-onboarding-poc.py flatpak dist/onboarding-3.6.flatpak dist/onboarding-3.6.1.flatpak --trusted --qualification dist/onboarding-evidence/flatpak/result.json
+          SH
+      - name: Qualify AppImage in a clean consumer without host Wine or Cage installation
+        if: ${{ !cancelled() && steps.desktop-build.outcome == 'success' }}
+        run: |
+          for version in 3.6 3.6.1; do
+            python -m cage export appimage dist/onboarding-bundles/sumatrapdf-portable-$version --allow-host-access --flatpak-store ${{ matrix.store }} --output dist/onboarding-$version.AppImage >dist/onboarding-evidence/appimage-export-$version.json
+            python scripts/test-storage-poc.py dist/onboarding-$version.AppImage.build >dist/onboarding-evidence/storage-appimage-$version.json
+          done
+          python scripts/prepare-legacy-poc.py appimage dist/onboarding-bundles/sumatrapdf-portable-3.6 --flatpak-store ${{ matrix.store }} --output dist/onboarding-legacy.AppImage >dist/onboarding-evidence/legacy-appimage-export.json
+          python scripts/test-storage-poc.py dist/onboarding-legacy.AppImage.build >dist/onboarding-evidence/storage-legacy-appimage.json
+          podman build -t localhost/cage-onboarding-tools -f - . <<'CONTAINER'
+          FROM registry.fedoraproject.org/fedora:44
+          RUN dnf -y --setopt=install_weak_deps=False install python3 python3-pyyaml python3-cryptography xdotool scrot xdg-utils desktop-file-utils xrdb glibc-langpack-en && dnf clean all
+          CONTAINER
+          mkdir -p .cage/onboarding-consumer-home .cage/onboarding-appimage-tmp
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24 -extension MIT-SHM' bash -eu -o pipefail <<'SH'
+          openbox >dist/onboarding-evidence/window-manager-appimage.log 2>&1 &
+          podman run --rm --net=none --userns=keep-id --user "$(id -u):$(id -g)" --hostname "$(hostname)" \
+            --security-opt label=disable -v "$PWD:$PWD" -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+            -v "$XAUTHORITY:$XAUTHORITY:ro" -w "$PWD" -e DISPLAY -e XAUTHORITY \
+            -e HOME="$PWD/.cage/onboarding-consumer-home" -e APPIMAGE_EXTRACT_AND_RUN=1 \
+            -e TMPDIR="$PWD/.cage/onboarding-appimage-tmp" -e CAGE_TEST_DISCARD_PREFIXES=1 \
+            -e CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/appimage" \
+            localhost/cage-onboarding-tools python3 scripts/test-onboarding-poc.py appimage dist/onboarding-3.6.AppImage dist/onboarding-3.6.1.AppImage --legacy dist/onboarding-legacy.AppImage
+          podman run --rm --net=none --userns=keep-id --user "$(id -u):$(id -g)" --hostname "$(hostname)" \
+            --security-opt label=disable -v "$PWD:$PWD" -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+            -v "$XAUTHORITY:$XAUTHORITY:ro" -w "$PWD" -e DISPLAY -e XAUTHORITY \
+            -e HOME="$PWD/.cage/onboarding-consumer-home" -e APPIMAGE_EXTRACT_AND_RUN=1 \
+            -e TMPDIR="$PWD/.cage/onboarding-appimage-tmp" -e CAGE_TEST_DISCARD_PREFIXES=1 \
+            -e CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/trusted-appimage" \
+            -e CAGE_TEST_SOURCE_REVISION \
+            localhost/cage-onboarding-tools python3 scripts/test-onboarding-poc.py appimage dist/onboarding-3.6.AppImage dist/onboarding-3.6.1.AppImage --trusted --qualification dist/onboarding-evidence/appimage/result.json
+          SH
+      - name: Collect records without following Wine drive links
+        if: always()
+        run: python scripts/collect-onboarding-evidence.py
+      - name: Retain qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: application-onboarding-desktop-${{ matrix.arch }}-${{ github.sha }}
+          retention-days: 14
+          path: dist/onboarding-ci-evidence
+
+  containers:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            provider: wine
+            version: '11.0'
+          - runner: ubuntu-24.04-arm
+            provider: wine-arm64ec
+            version: '11.20'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 140
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      CAGE_TEST_DISCARD_PREFIXES: '1'
+      CAGE_TEST_INITIAL_RELAUNCHES: ${{ inputs.shutdown_relaunches || '0' }}
+      CAGE_TEST_TRACE_SHUTDOWN: ${{ inputs.shutdown_relaunches == '25' && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Prepare tools and pinned sources
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman uidmap slirp4netns fuse-overlayfs rpm2cpio xvfb openbox xdotool scrot xdg-utils x11-xserver-utils strace gdb
+          python -m pip install PyYAML setuptools wheel 'cryptography>=43'
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          mkdir -p "$HOME/.config/containers" dist/onboarding-evidence
+          printf '[engine]\ncgroup_manager="cgroupfs"\nevents_logger="file"\n' > "$HOME/.config/containers/containers.conf"
+          python scripts/prepare-sumatrapdf-poc.py --runtime ${{ matrix.provider }}
+          python - <<'PY'
+          from container.manager import build_container
+          result = build_container('${{ matrix.provider }}', '${{ matrix.version }}', build_cmd='podman')
+          print(result.log)
+          assert result.success
+          PY
+      - name: Qualify persistent containers and standalone OCI
+        run: |
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24 -extension MIT-SHM' bash -eu -o pipefail <<'SH'
+          openbox >dist/onboarding-evidence/window-manager-container.log 2>&1 &
+          for version in 3.6 3.6.1; do
+            python -m cage build dist/onboarding-recipes/${{ matrix.provider }}/$version.json --engine podman --output dist/onboarding-containers >dist/onboarding-evidence/container-build-$version.json
+          done
+          legacy=()
+          if [ '${{ matrix.provider }}' = wine-arm64ec ]; then
+            python scripts/prepare-legacy-poc.py container dist/onboarding-containers/sumatrapdf-portable-3.6 --output dist/onboarding-containers/legacy >dist/onboarding-evidence/legacy-container.json
+            legacy=(--legacy dist/onboarding-containers/legacy)
+          fi
+          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/container" python scripts/test-onboarding-poc.py container dist/onboarding-containers/sumatrapdf-portable-3.6 dist/onboarding-containers/sumatrapdf-portable-3.6.1 "${legacy[@]}"
+          for version in 3.6 3.6.1; do
+            python -m cage export oci dist/onboarding-containers/sumatrapdf-portable-$version --engine podman --graphics desktop --tag localhost/cage-onboarding:$version --context-dir .cage/onboarding-oci-$version >dist/onboarding-evidence/oci-export-$version.json
+            python scripts/test-storage-poc.py .cage/onboarding-oci-$version >dist/onboarding-evidence/storage-oci-$version.json
+          done
+          legacy_oci=()
+          if [ '${{ matrix.provider }}' = wine-arm64ec ]; then
+            python -m cage export oci dist/onboarding-containers/legacy --engine podman --graphics desktop --tag localhost/cage-onboarding:legacy --context-dir .cage/onboarding-oci-legacy >dist/onboarding-evidence/oci-export-legacy.json
+            python scripts/test-storage-poc.py .cage/onboarding-oci-legacy >dist/onboarding-evidence/storage-oci-legacy.json
+            legacy_oci=(--legacy localhost/cage-onboarding:legacy)
+          fi
+          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/oci" python scripts/test-onboarding-poc.py oci localhost/cage-onboarding:3.6 localhost/cage-onboarding:3.6.1 "${legacy_oci[@]}"
+          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/trusted-oci" python scripts/test-onboarding-poc.py oci localhost/cage-onboarding:3.6 localhost/cage-onboarding:3.6.1 --trusted --qualification dist/onboarding-evidence/oci/result.json
+          SH
+      - name: Collect records without following Wine drive links
+        if: always()
+        run: python scripts/collect-onboarding-evidence.py
+      - name: Retain qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: application-onboarding-containers-${{ matrix.provider }}-${{ github.sha }}
+          retention-days: 14
+          path: dist/onboarding-ci-evidence

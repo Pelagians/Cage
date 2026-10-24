@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from artifact.bundle import create_bundle
@@ -56,6 +57,7 @@ def write_suite_manifest(path: Path) -> None:
 
 
 class SuiteRunPlanTests(unittest.TestCase):
+    @patch("runtime.launcher.normalize_engine", new=lambda engine: engine)
     def test_run_plan_selects_named_suite_entrypoint_and_routes_host_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)

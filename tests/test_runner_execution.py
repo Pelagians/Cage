@@ -264,6 +264,7 @@ class RunnerExecutionRunPlanTests(unittest.TestCase):
         self.assertIn(f"{bundle.resolve()}:/opt/cage/bundle:ro,z", plan["container"]["argv"])
         self.assertIn(f"{runner_dir.resolve()}:/opt/cage-runner:ro,z", plan["container"]["argv"])
 
+    @patch("runtime.launcher.normalize_engine", new=lambda engine: engine)
     def test_docker_run_plan_mounts_do_not_include_podman_selinux_option(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)

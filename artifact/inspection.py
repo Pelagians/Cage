@@ -13,6 +13,7 @@ import re
 from typing import Any, cast
 
 import xml.etree.ElementTree as ET
+from artifact.graph import DESKTOP_SCHEMA_VERSION
 
 from core.chocolatey.assets.runtime_artifact import profile_identity
 
@@ -86,6 +87,8 @@ def inspect_bundle(bundle_path: Path | str) -> dict[str, Any]:
             "manifest": runtime,
             "builder": graph.get("builderRuntime", {}),
             "runner": graph.get("runnerRuntime", {}),
+            **({"executionTarget": graph["executionTarget"], "recipeRuntime": graph.get("recipeRuntime", {})}
+               if graph.get("executionTarget") else {}),
         },
         "graphics": graph.get("graphics", {}),
         "launch": launch,
@@ -370,9 +373,10 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
     )
     add_check(
         "graph-schema",
-        graph.get("schemaVersion") == GRAPH_SCHEMA_VERSION,
-        f"graph schema is {GRAPH_SCHEMA_VERSION}",
-        error=f"metadata/graph.json schemaVersion must be {GRAPH_SCHEMA_VERSION}",
+        (graph.get("schemaVersion") == GRAPH_SCHEMA_VERSION and not graph.get("executionTarget"))
+        or graph.get("schemaVersion") == DESKTOP_SCHEMA_VERSION,
+        "graph uses a supported container or desktop contract",
+        error="metadata/graph.json schemaVersion is unsupported",
     )
     add_check(
         "build-plan-phases",
@@ -676,14 +680,63 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
 
     graphics = graph.get("graphics", {})
     modes = graphics.get("supportedModes", [])
-    graphics_ok = graphics.get("defaultMode") in modes and {"headless", "selkies"}.issubset(set(modes))
+    desktop_graph = graph.get("schemaVersion") == DESKTOP_SCHEMA_VERSION
+    native_graph = graph.get("runnerRuntime", {}).get("sessionContract") == "cage.native-wine/v1"
+    graphics_ok = (graphics.get("defaultMode") == "desktop" and modes == ["desktop"]
+                   if desktop_graph else graphics.get("defaultMode") in modes and
+                   ({"headless", "desktop"} == set(modes) if native_graph else {"headless", "selkies"}.issubset(set(modes))))
+    if native_graph:
+        from runtime.arm64ec import existing_runtime_target
+        try:
+            existing_runtime_target(runtime.get('executionTarget'))
+            recognized_target = True
+        except ValueError:
+            recognized_target = False
+        graphics_ok = (graphics_ok and recognized_target
+                       and graph.get("builderRuntime", {}).get("executionTarget") == runtime.get("executionTarget")
+                       and graph.get("runnerRuntime", {}).get("executionTarget") == runtime.get("executionTarget")
+                       and runtime.get("architecture") == "aarch64" and graphics.get("sessionBackend") == "x11")
     add_check(
         "graphics-contract",
         graphics_ok,
-        "graph supports headless and Selkies graphics modes",
+        "graph supports its declared execution target graphics modes",
         details={"defaultMode": graphics.get("defaultMode"), "supportedModes": modes},
-        error="graph graphics must include defaultMode and support headless and selkies",
+        error=("graph graphics must match its desktop contract" if desktop_graph
+               else "graph graphics must include defaultMode and support headless and selkies"),
     )
+    if native_graph and status.get("runnable") is True:
+        try:
+            from runtime.arm64ec import native_launch_script
+            native_launch_script(bundle, [])
+            native_seal_ok = True
+            native_seal_error = None
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            native_seal_ok = False
+            native_seal_error = str(exc)
+        add_check("native-prefix-seal", native_seal_ok, "native ARM prefix and runtime identity are sealed",
+                  error="native ARM prefix seal failed: " + str(native_seal_error) if not native_seal_ok else None)
+    if desktop_graph:
+        from runtime.desktop_launch import digest_json, verify_inventory
+        try:
+            target = _load_json(bundle, "metadata/execution-target.json")
+            receipt = _load_json(bundle, "metadata/desktop-build.json")
+            if any((bundle / rel).is_symlink() for rel in ("metadata/execution-target.json", "metadata/desktop-build.json")):
+                raise ValueError("linked desktop target receipts")
+            desktop_ok = (
+                target.get("schemaVersion") == "cage.desktop-runtime/v0"
+                and target == graph.get("executionTarget") == runtime.get("executionTarget")
+                and target == graph_builder.get("executionTarget") == graph_runner.get("executionTarget") == receipt.get("target")
+                and digest_json(target) == runtime.get("targetDigest") == graph_runner.get("targetDigest")
+                and receipt.get("manifestDigest") == digest_json(manifest)
+                and receipt.get("seedDigest") == digest_json(receipt.get("inventory"))
+                and not runtime_pair["image"] and not builder_pair["image"] and not runner_pair["image"]
+            )
+            verify_inventory(bundle / "prefix", receipt.get("inventory", []))
+        except (OSError, ValueError, KeyError, TypeError):
+            desktop_ok = False
+        add_check("desktop-target-integrity", desktop_ok,
+                  "desktop runtime and seed match their sealed identities",
+                  error="desktop target or payload is missing, inconsistent or modified")
 
     node_ids = {node.get("id") for node in graph.get("nodes", [])}
     graph_nodes_ok = {"artifact:bundle", "launch:entrypoint", "prefix:wineprefix"}.issubset(node_ids)

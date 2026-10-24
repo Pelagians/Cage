@@ -1,0 +1,112 @@
+name: Desktop Flatpak proof
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'artifact/**'
+      - 'builder/**'
+      - 'core/**'
+      - 'runtime/**'
+      - 'cage/**'
+      - 'pyproject.toml'
+      - 'recipes/notepadplusplus-portable.cage.yaml'
+      - 'scripts/*flatpak*'
+      - 'tests/**'
+      - '.github/workflows/desktop-exports.yml'
+  pull_request:
+    paths:
+      - 'artifact/**'
+      - 'builder/**'
+      - 'core/**'
+      - 'runtime/**'
+      - 'cage/**'
+      - 'pyproject.toml'
+      - 'recipes/notepadplusplus-portable.cage.yaml'
+      - 'scripts/*flatpak*'
+      - 'tests/**'
+      - '.github/workflows/desktop-exports.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-flatpak-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  flatpak-poc:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak xvfb openbox xdotool scrot xdg-utils
+          python -m pip install PyYAML pytest setuptools wheel
+          # Ubuntu restricts unprivileged user namespaces by default; Flatpak
+          # needs them in this disposable CI machine.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Preserve existing contracts and test desktop failure cases
+        run: python -m pytest tests/ -q
+      - name: Cache authenticated build runtimes
+        id: runtime-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .cage/flatpak
+          key: desktop-flatpak-${{ runner.arch }}-${{ hashFiles('runtime/desktop-wine-11.0.json') }}
+      - name: Acquire pinned portable application
+        run: python scripts/prepare-flatpak-poc.py
+      - name: Prepare pinned Wine platform and SDK in isolated store
+        run: |
+          python - <<'PY'
+          from artifact.desktop import desktop_target
+          from builder.flatpak import ensure_target
+          ensure_target(desktop_target(), '.cage/flatpak')
+          PY
+      - name: Build, export, install and exercise actual GUI
+        run: |
+          mkdir -p dist/desktop-evidence
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24' bash -eu -o pipefail <<'SH'
+          openbox >dist/desktop-evidence/window-manager.log 2>&1 &
+          mkdir -p "$HOME/Documents"
+          mkdir -p "$HOME/.config"
+          printf 'XDG_DOCUMENTS_DIR="$HOME/Documents"\n' > "$HOME/.config/user-dirs.dirs"
+          python -m cage build recipes/notepadplusplus-portable.cage.yaml --target flatpak \
+            --output dist/desktop >dist/desktop-evidence/build.json
+          python -m cage export flatpak dist/desktop/notepadplusplus-portable-8.8.8 \
+            --output dist/notepadplusplus-8.8.8.flatpak >dist/desktop-evidence/export.json
+          # A separate consumer store contains only the platform and exported app.
+          export FLATPAK_USER_DIR="$PWD/.cage/consumer"
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user --noninteractive -y dist/notepadplusplus-8.8.8.flatpak
+          ! command -v wine
+          ! command -v cage
+          flatpak list --user >dist/desktop-evidence/consumer-installed.txt
+          python scripts/test-flatpak-poc.py 2>&1 | tee dist/desktop-evidence/gui-test.log
+          SH
+      - name: Save authenticated runtimes even after a later GUI failure
+        if: always() && steps.runtime-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cage/flatpak
+          key: desktop-flatpak-${{ runner.arch }}-${{ hashFiles('runtime/desktop-wine-11.0.json') }}
+      - name: Retain package and behavioral evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-flatpak-poc-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            dist/*.flatpak
+            dist/*.flatpak.json
+            dist/desktop-evidence/**
+            dist/desktop/notepadplusplus-portable-8.8.8/logs/*
+            dist/desktop/notepadplusplus-portable-8.8.8/metadata/*.json

@@ -16,6 +16,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from artifact.storage import build_lock, record_export
 from artifact.inspection import verify_bundle
 from artifact.linux_state import declared_outputs, linux_state_identity
 
@@ -37,6 +38,9 @@ class OCIExportError(RuntimeError):
 
 def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str = 'headless') -> dict[str, Any]:
     '''Return a dry-run plan for exporting *bundle_path* as a runnable OCI image.'''
+    if any((Path(bundle_path) / name).exists() or (Path(bundle_path) / name).is_symlink()
+           for name in ('metadata/execution-target.json', 'metadata/desktop-build.json')):
+        raise OCIExportError('desktop-target bundles are not qualified for OCI; rebuild with the existing container target')
     bundle = Path(bundle_path)
     verification = verify_bundle(bundle)
     if not verification.get('valid'):
@@ -51,8 +55,15 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str =
     manifest = _load_json(bundle, 'manifest.cage.json')
     graph = _load_json(bundle, 'metadata/graph.json')
     runtime = dict(graph.get('runnerRuntime') or {})
-    if graphics not in {'headless', 'selkies'}:
-        raise OCIExportError("graphics must be headless or selkies")
+    native = runtime.get('sessionContract') == 'cage.native-wine/v1'
+    if native:
+        from runtime.arm64ec import native_launch_script
+        native_launch_script(bundle, [])  # Verify the same seed/runtime seal.
+    managed_desktop = (manifest.get('desktop', {}).get('updates') and runtime.get('launcher') == 'wine'
+                       and not runtime.get('runnerUrl') and 'desktop' in graph.get('graphics', {}).get('supportedModes', []))
+    allowed = {'headless', 'desktop'} if native else {'headless', 'selkies'} | ({'desktop'} if managed_desktop else set())
+    if graphics not in allowed:
+        raise OCIExportError('graphics mode is not qualified by this container recipe')
     if graphics == 'selkies' and runtime.get('sessionContract') != 'cage.selkies-wayland/v1':
         raise OCIExportError(
             'runner runtime is not qualified for Cage Selkies/Wayland application export'
@@ -78,6 +89,10 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str =
         base_image=base_image,
         image_graphics=graphics,
     )
+    managed_state = None
+    if not native and manifest.get('desktop', {}).get('updates'):
+        from runtime.container_state import managed_plan
+        managed_state = managed_plan(bundle, derived_image or base_image)
     labels = _oci_labels(application, runtime, base_image)
     labels['io.cage.graphics'] = graphics
     if derived_image:
@@ -89,7 +104,13 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str =
     containerfile = _containerfile(base_image, labels, image_environment, graphics=graphics,
                                    linux_outputs=linux_outputs)
 
+    if managed_state:
+        containerfile += 'COPY lifecycle /opt/cage-lifecycle\n'
+        if graphics == 'desktop':
+            containerfile += 'ENTRYPOINT ["/usr/bin/python3", "-I", "/opt/cage-lifecycle/container_init.py"]\n'
+
     return {
+        **({'managedState': managed_state} if managed_state else {}),
         'schemaVersion': OCI_EXPORT_PLAN_SCHEMA_VERSION,
         'imageType': 'runnable-application-image',
         'graphics': graphics,
@@ -151,8 +172,30 @@ def prepare_oci_build_context(
     containerfile = context / plan['containerfile']['path']
     containerfile.write_text(plan['containerfile']['content'], encoding='utf-8')
 
+    if plan.get('managedState'):
+        from runtime import desktop_launch, container_state
+        lifecycle = context / 'lifecycle'
+        lifecycle.mkdir()
+        shutil.copyfile(desktop_launch.__file__, lifecycle / 'desktop_launch.py')
+        shutil.copyfile(container_state.__file__, lifecycle / 'container_state.py')
+        shutil.copyfile(Path(container_state.__file__).with_name('container_init.py'), lifecycle / 'container_init.py')
+        _write_json(lifecycle / 'plan.json', plan['managedState'])
+        legacy = _launcher_script()
+        # Preserve all existing image launch setup, skip its first-use copy only.
+        legacy = legacy.replace('if [ ! -d "$WINEPREFIX/drive_c" ]; then',
+                                'if [ -z "${CAGE_MANAGED_PREFIX:-}" ] && [ ! -d "$WINEPREFIX/drive_c" ]; then')
+        (lifecycle / 'legacy.sh').write_text(legacy)
     launcher = context / plan['launcher']['path']
-    launcher.write_text(_launcher_script(), encoding='utf-8')
+    if plan['runtime'].get('provider') == 'wine-arm64ec':
+        native_helper = '/opt/cage/bundle/metadata/cage-desktop-launch.py' if json.loads((bundle / 'metadata/native-launch.json').read_text()).get('launcherSha256') else '/usr/lib/cage-runtime/runtime/desktop_launch.py'
+        launcher.write_text('#!/bin/sh\nexport XDG_DATA_HOME="${CAGE_STATE:-/var/lib/cage/state}"\n'
+                            'exec /usr/bin/python3 -I ' + native_helper + ' '
+                            '/opt/cage/bundle/metadata/native-launch.json "$@"\n', encoding='utf-8')
+    elif plan.get('managedState'):
+        launcher.write_text('#!/bin/sh\nexec /usr/bin/python3 -I /opt/cage-lifecycle/container_state.py '
+                            '/opt/cage-lifecycle/plan.json /opt/cage-lifecycle/legacy.sh "$@"\n')
+    else:
+        launcher.write_text(_launcher_script(), encoding='utf-8')
     launcher.chmod(0o755)
     return context
 
@@ -185,89 +228,94 @@ def export_oci_image(
             error=f'container build engine not found: {requested}',
         )
 
-    context = prepare_oci_build_context(
-        bundle,
-        plan,
-        Path(context_dir) if context_dir is not None else Path(tempfile.mkdtemp(prefix='cage-oci-')),
-    )
-    containerfile_path = context / plan['containerfile']['path']
-    local_base_tag = _stage_local_base_image(selected_engine, plan['baseImage'], containerfile_path)
-    command = [selected_engine, 'build', '-f', str(containerfile_path), '-t', tag, str(context)]
-    try:
-        proc = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-    except FileNotFoundError as exc:
-        return _result(
-            success=False,
-            plan=plan,
-            engine=selected_engine,
-            context=context,
-            command=command,
-            exit_code=None,
-            stdout='',
-            stderr='',
-            error=f'container build engine not found: {selected_engine}: {exc}',
-        )
-    except subprocess.TimeoutExpired as exc:
-        return _result(
-            success=False,
-            plan=plan,
-            engine=selected_engine,
-            context=context,
-            command=command,
-            exit_code=None,
-            stdout=exc.stdout or '',
-            stderr=exc.stderr or '',
-            error=f'OCI image build timed out after {timeout}s',
-        )
+    context = Path(context_dir).resolve() if context_dir is not None else Path(tempfile.mkdtemp(prefix='cage-oci-'))
+    with build_lock(context):
+        context = prepare_oci_build_context(bundle, plan, context)
+        containerfile_path = context / plan['containerfile']['path']
+        local_base_tag = _stage_local_base_image(selected_engine, plan['baseImage'], containerfile_path)
+        image_id_file = context / '.cage-oci-image-id'
+        command = [selected_engine, 'build', '--iidfile', str(image_id_file), '-f', str(containerfile_path), '-t', tag, str(context)]
+        try:
+            proc = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            return _result(
+                success=False,
+                plan=plan,
+                engine=selected_engine,
+                context=context,
+                command=command,
+                exit_code=None,
+                stdout='',
+                stderr='',
+                error=f'container build engine not found: {selected_engine}: {exc}',
+            )
+        except subprocess.TimeoutExpired as exc:
+            return _result(
+                success=False,
+                plan=plan,
+                engine=selected_engine,
+                context=context,
+                command=command,
+                exit_code=None,
+                stdout=exc.stdout or '',
+                stderr=exc.stderr or '',
+                error=f'OCI image build timed out after {timeout}s',
+            )
 
-    result = _result(
-        success=proc.returncode == 0,
-        plan=plan,
-        engine=selected_engine,
-        context=context,
-        command=command,
-        exit_code=proc.returncode,
-        stdout=proc.stdout,
-        stderr=proc.stderr,
-        error=None if proc.returncode == 0 else 'OCI image build failed',
-    )
-    if local_base_tag:
-        result['localBaseTag'] = local_base_tag
-    if push and proc.returncode == 0:
-        push_command = [selected_engine, 'push', tag]
-        push_proc = subprocess.run(
-            push_command,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
+        result = _result(
+            success=proc.returncode == 0,
+            plan=plan,
+            engine=selected_engine,
+            context=context,
+            command=command,
+            exit_code=proc.returncode,
+            stdout=proc.stdout,
+            stderr=proc.stderr,
+            error=None if proc.returncode == 0 else 'OCI image build failed',
         )
-        result['push'] = {
-            'command': push_command,
-            'exitCode': push_proc.returncode,
-            'stdout': push_proc.stdout,
-            'stderr': push_proc.stderr,
-            'success': push_proc.returncode == 0,
-        }
-        result['success'] = result['success'] and push_proc.returncode == 0
-        if push_proc.returncode != 0:
-            result['error'] = 'OCI image push failed'
-        else:
-            image_identity = inspect_oci_image(tag, engine=selected_engine, timeout=timeout)
-            result['image'] = image_identity
-            if image_identity.get('success') and image_identity.get('digest'):
-                result['push']['digest'] = image_identity['digest']
-                result['push']['repoDigests'] = image_identity.get('repoDigests', [])
+        if local_base_tag:
+            result['localBaseTag'] = local_base_tag
+        if push and proc.returncode == 0:
+            push_command = [selected_engine, 'push', tag]
+            push_proc = subprocess.run(
+                push_command,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+            result['push'] = {
+                'command': push_command,
+                'exitCode': push_proc.returncode,
+                'stdout': push_proc.stdout,
+                'stderr': push_proc.stderr,
+                'success': push_proc.returncode == 0,
+            }
+            result['success'] = result['success'] and push_proc.returncode == 0
+            if push_proc.returncode != 0:
+                result['error'] = 'OCI image push failed'
             else:
-                result['success'] = False
-                result['error'] = 'OCI image push succeeded but no repo digest was recorded'
-    return result
+                image_identity = inspect_oci_image(tag, engine=selected_engine, timeout=timeout)
+                result['image'] = image_identity
+                if image_identity.get('success') and image_identity.get('digest'):
+                    result['push']['digest'] = image_identity['digest']
+                    result['push']['repoDigests'] = image_identity.get('repoDigests', [])
+                else:
+                    result['success'] = False
+                    result['error'] = 'OCI image push succeeded but no repo digest was recorded'
+        if result['success']:
+            try:
+                result['storage'] = record_export(context, bundle, 'oci', {
+                    'kind': 'oci', 'engine': selected_engine, 'id': image_id_file.read_text().strip()})
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                result['storage'] = {'managed': False, 'reason': str(exc), 'stagingRetained': True}
+        return result
 
 
 def _stage_local_base_image(engine: str, base_image: str, containerfile: Path) -> str | None:
@@ -657,7 +705,7 @@ if [ ! -d "$WINEPREFIX/drive_c" ]; then
   cp -a "$CAGE_BUNDLE/prefix" "$WINEPREFIX"
 fi
 
-if [ "${{CAGE_GRAPHICS:-headless}}" = selkies ]; then
+if [ "${{CAGE_GRAPHICS:-headless}}" = selkies ] || [ "${{CAGE_GRAPHICS:-headless}}" = desktop ]; then
   /usr/local/libexec/cage-select-wine-graphics
 fi
 

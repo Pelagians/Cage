@@ -36,6 +36,9 @@ def create_kube_export_plan(
 ) -> dict[str, Any]:
     """Return a Kubernetes export plan for a verified Cage bundle."""
     bundle = Path(bundle_path)
+    if any((bundle / name).exists() or (bundle / name).is_symlink()
+           for name in ('metadata/execution-target.json', 'metadata/desktop-build.json')):
+        raise KubeExportError('desktop-target bundles require a separate container build for Kubernetes')
     verification = verify_bundle(bundle)
     if not verification.get('valid'):
         raise KubeExportError('invalid Cage bundle: ' + _verification_error_text(verification))

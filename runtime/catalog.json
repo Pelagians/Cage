@@ -139,6 +139,31 @@
           "runtimeUsable": true
         }
       }
+    },
+    "wine-arm64ec": {
+      "displayName": "Wine ARM64EC + FEX (experimental)",
+      "family": "wine",
+      "runner": "wine-arm64ec-fex",
+      "launcher": "wine",
+      "localImage": "cage/wine-arm64ec",
+      "publishedImageName": "cage-wine-arm64ec",
+      "dockerfile": "container/runtimes/wine-arm64ec/Dockerfile",
+      "buildArg": "WINE_VERSION",
+      "defaultVersion": "11.20",
+      "notes": "Experimental native Linux ARM64 Wine with pinned FEX Windows translation modules. X11/headless only; no CFW qualification.",
+      "architecture": "aarch64",
+      "sessionContract": "cage.native-wine/v1",
+      "versions": {
+        "11.20": {
+          "buildValue": "11.20",
+          "tag": "11.20-fex-2610-arm64",
+          "runnerVersion": "11.20",
+          "packageVersion": "11.20-ec1.fc44",
+          "channel": "experimental",
+          "ciBuild": false,
+          "runtimeUsable": true
+        }
+      }
     }
   }
 }

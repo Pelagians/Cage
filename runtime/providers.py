@@ -38,6 +38,9 @@ class RuntimeBinding:
     local_oci_image: str | None = None
     runtime_usable: bool | None = None
     environment: dict[str, str] | None = None
+    architecture: str | None = None
+    session_contract: str | None = None
+    execution_target: dict[str, Any] | None = None
 
     def to_dict(self):
         d = {k: v for k, v in {
@@ -63,6 +66,9 @@ class RuntimeBinding:
             "localOciImage": self.local_oci_image,
             "runtimeUsable": self.runtime_usable,
             "environment": self.environment,
+            "architecture": self.architecture,
+            "sessionContract": self.session_contract,
+            "executionTarget": self.execution_target,
         }.items() if v is not None}
         return d
 
@@ -132,6 +138,9 @@ def resolve_runtime(spec: RuntimeSpec) -> RuntimeBinding:
         runner_sha256 = runner_spec.sha256
         runner_arch = runner_spec.arch
 
+    if spec.provider == "wine-arm64ec" and spec.runner:
+        raise ManifestError("Wine ARM64EC owns its pinned FEX modules; runtime.runner overrides are unsupported")
+    from runtime.arm64ec import runtime_target
     return RuntimeBinding(
         provider=spec.provider,
         version=entry.version,
@@ -154,6 +163,9 @@ def resolve_runtime(spec: RuntimeSpec) -> RuntimeBinding:
         oci_image=spec.image or entry.published_ref,
         local_oci_image=entry.local_ref,
         runtime_usable=entry.runtime_usable,
+        architecture=entry.architecture,
+        session_contract=entry.session_contract,
+        execution_target=runtime_target() if spec.provider == "wine-arm64ec" else None,
     )
 
 
@@ -187,6 +199,8 @@ def resolve_manifest_runtime(manifest) -> RuntimeBinding:
     artifact = required_cfw_runtime_artifact(manifest)
     if artifact is None:
         return binding
+    if binding.architecture == "aarch64":
+        raise ManifestError("CFW prepared prefixes are not qualified for ARM64EC; retain the producer's x86_64 runtime")
     image = artifact["wineImage"]
     return replace(
         binding,

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "cage.appimage-tools/v0",
+  "runtimeSource": "https://github.com/AppImage/type2-runtime/tree/dd6cebedcbddde9c82f89b011e8e1d40b6e43868",
+  "runtimeVersion": "20251108",
+  "runtime": {
+    "aarch64": {
+      "url": "https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-aarch64",
+      "sha256": "00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444"
+    },
+    "x86_64": {
+      "url": "https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64",
+      "sha256": "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d"
+    }
+  },
+  "minimumGlibc": "2.43",
+  "pythonVersion": "3.13.16",
+  "pythonSource": "https://github.com/astral-sh/python-build-standalone/releases/tag/20261013",
+  "python": {
+    "aarch64": {
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.13.16%2B20261013-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+      "sha256": "69a30ed26198178732c37b8de0b6b5191479fbacfe526954da776befe38f18e7"
+    },
+    "x86_64": {
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.13.16%2B20261013-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+      "sha256": "d0080766b6b74aeb81e1949ef0d9a20e6c17f7b160fb295a69b936ccb17660be"
+    }
+  },
+  "excludedUnixModules": [
+    "winedmo.so"
+  ]
+}

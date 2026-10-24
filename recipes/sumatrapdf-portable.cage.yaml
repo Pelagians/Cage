@@ -1,0 +1,62 @@
+schemaVersion: cage.app/v0
+name: sumatrapdf-portable
+version: "3.6"
+runtime:
+  provider: wine
+  version: "11.0"
+  network: none
+  wineGraphics: xwayland
+sources:
+  - id: portable
+    type: archive
+    policy: redistributable
+    path: sources/SumatraPDF-3.6-64.zip
+    url: https://www.sumatrapdfreader.org/dl/rel/3.6/SumatraPDF-3.6-64.zip
+    sha256: 2b52f4f66ea2229a431a434fcd608210c019d85fe67d06302f6544f63d66b319
+modules:
+  - type: files
+    mappings:
+      - source: sources/sumatrapdf-portable-3.6/media/SumatraPDF-3.6-64.exe
+        target: C:/Program Files/SumatraPDF/SumatraPDF.exe
+        sha256: c5d24aa361bdd9945d529e461bc4ad0bb4a28f3fff493be6f915c6d93f9b16b0
+      - source: recipes/assets/sumatrapdf/SumatraPDF-settings.txt
+        target: C:/users/Public/AppData/Local/SumatraPDF/SumatraPDF-settings.txt
+        sha256: a214e6de10b689598b0940a67e340dabfb57969dc050b5d1fa337c9c236a5138
+      - source: recipes/assets/sumatrapdf-notices/AUTHORS
+        target: C:/Program Files/SumatraPDF/notices/AUTHORS
+        sha256: e16c411b4a9e65058e198dbb3a5e5941a65d9c44bd1a321b977644ec0b18aa53
+      - source: recipes/assets/sumatrapdf-notices/COPYING
+        target: C:/Program Files/SumatraPDF/notices/COPYING
+        sha256: 3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986
+      - source: recipes/assets/sumatrapdf-notices/COPYING.BSD
+        target: C:/Program Files/SumatraPDF/notices/COPYING.BSD
+        sha256: ff33648659aa06892ed13a731588a57006fafee2f848d35f70bf273a13cf9d27
+      - source: recipes/assets/sumatrapdf-notices/SOURCE.txt
+        target: C:/Program Files/SumatraPDF/notices/SOURCE.txt
+        sha256: d64b5514db8a7eb838c985c3c2a2d6a745de4383c5590c35e6108eb806710447
+launch:
+  entrypoint: C:/Program Files/SumatraPDF/SumatraPDF.exe
+  workingDirectory: C:/Program Files/SumatraPDF
+  args: [-appdata, 'C:/users/Public/AppData/Local/SumatraPDF', -new-window]
+entrypoints:
+  - id: reader
+    name: SumatraPDF
+    executable: C:/Program Files/SumatraPDF/SumatraPDF.exe
+    workingDirectory: C:/Program Files/SumatraPDF
+    args: [-appdata, 'C:/users/Public/AppData/Local/SumatraPDF', -new-window]
+fileAssociations:
+  - entrypoint: reader
+    extensions: [.pdf]
+    mime: [application/pdf]
+desktop:
+  id: io.github.Pelagians.Cage.SumatraPDF
+  name: SumatraPDF Cage
+  summary: Pinned portable PDF reader with an isolated Wine environment
+  license: GPL-3.0-only AND AGPL-3.0-only
+  homepage: https://www.sumatrapdfreader.org/
+  categories: [Office, Viewer]
+  documentsDirectory: Cage
+  updates:
+    profile: sumatrapdf-portable/v1
+    settings: [drive_c/users/*/AppData/Local/SumatraPDF]
+    documents: [drive_c/users/*/Documents]

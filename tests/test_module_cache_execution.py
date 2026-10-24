@@ -107,6 +107,7 @@ class ModuleCacheExecutionTests(unittest.TestCase):
         self.assertIn(f"{cache.resolve()}:/opt/cage-module-cache:z", argv)
 
 
+    @patch("builder.executor.normalize_engine", new=lambda engine: engine)
     def test_execute_inside_container_uses_build_network_without_changing_runtime_network(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)

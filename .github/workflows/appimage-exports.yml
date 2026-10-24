@@ -1,0 +1,108 @@
+name: Desktop AppImage proof
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ['artifact/**', 'builder/**', 'runtime/**', 'cage/**', 'core/**', 'tests/**', 'scripts/*poc.py', 'pyproject.toml', '.github/workflows/appimage-exports.yml']
+  pull_request:
+    paths: ['artifact/**', 'builder/**', 'runtime/**', 'cage/**', 'core/**', 'tests/**', 'scripts/*poc.py', 'pyproject.toml', '.github/workflows/appimage-exports.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: appimage-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  native-proof:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+            recipe: notepadplusplus-portable
+            store: .cage/flatpak
+            ubuntu: docker.io/library/ubuntu@sha256:42527649dbc4f9197a6073f426f488cbff0e9cc9f2afce32d91c383e4875634a
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+            recipe: notepadplusplus-portable-arm64
+            store: .cage/flatpak-arm64
+            ubuntu: docker.io/library/ubuntu@sha256:7f787d965bc0e4cd42b5f74c013515d6e24ce691c881c81c42e4db59a791e5ce
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install producer and GUI test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak podman uidmap slirp4netns fuse-overlayfs rpm2cpio squashfs-tools binutils xvfb openbox xdotool scrot xdg-utils
+          python -m pip install PyYAML pytest setuptools wheel
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          mkdir -p "$HOME/.config/containers"
+          printf '[engine]\ncgroup_manager="cgroupfs"\nevents_logger="file"\n' > "$HOME/.config/containers/containers.conf"
+      - name: Preserve existing contracts
+        run: python -m pytest tests/ -q
+      - uses: actions/cache@v4
+        with:
+          path: ${{ matrix.store }}
+          key: appimage-native-${{ matrix.arch }}-${{ hashFiles('runtime/desktop-wine-11.0.json', 'runtime/wine-arm64ec-11.20-fex-2610.json') }}
+          restore-keys: |
+            arm64-wine-fex-
+            desktop-flatpak-${{ runner.arch }}-
+      - name: Pull clean consumer distributions
+        run: |
+          podman pull ${{ matrix.ubuntu }}
+          podman pull registry.fedoraproject.org/fedora:44
+      - name: Build shared recipe, export and exercise clean consumers
+        run: |
+          python scripts/prepare-flatpak-poc.py
+          mkdir -p dist/appimage-evidence
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24' bash -eu -o pipefail <<'SH'
+          openbox >dist/appimage-evidence/window-manager.log 2>&1 &
+          python -m cage build recipes/${{ matrix.recipe }}.cage.yaml --target appimage \
+            --flatpak-store ${{ matrix.store }} --output dist/appimage-bundles >dist/appimage-evidence/build.json
+          python -m cage export appimage dist/appimage-bundles/${{ matrix.recipe }}-8.8.8 \
+            --allow-host-access --flatpak-store ${{ matrix.store }} \
+            --output dist/notepadplusplus-8.8.8-${{ matrix.arch }}.AppImage >dist/appimage-evidence/export.json
+          # Retain receipts, not multiple unpacked copies of the same multi-GB
+          # Wine payload. All following consumer checks use the actual image.
+          mkdir -p dist/appimage-evidence/payload
+          cp dist/*.AppImage.build/AppDir/usr/share/cage/*/native-dependencies.json dist/appimage-evidence/payload/
+          cp dist/*.AppImage.build/AppDir/usr/share/cage/*/component-sources.json dist/appimage-evidence/payload/
+          cp dist/*.AppImage.build/appdir-inventory.json dist/appimage-evidence/payload/
+          rm -rf -- dist/notepadplusplus-8.8.8-${{ matrix.arch }}.AppImage.build
+          rm -rf -- dist/appimage-bundles/${{ matrix.recipe }}-8.8.8/build/flatpak
+          # Ubuntu 24.04 is a producer, below the declared consumer glibc ABI.
+          # Run the package in clean contemporary distro userlands, sharing only
+          # the test X server, package and dedicated writable test directories.
+          CAGE_TEST_EVIDENCE="$PWD/dist/appimage-evidence/ubuntu-consumer" \
+            python scripts/test-appimage-consumer-poc.py dist/notepadplusplus-8.8.8-${{ matrix.arch }}.AppImage \
+            ${{ matrix.ubuntu }}
+          CAGE_TEST_EVIDENCE="$PWD/dist/appimage-evidence/fedora-consumer" \
+            python scripts/test-appimage-consumer-poc.py dist/notepadplusplus-8.8.8-${{ matrix.arch }}.AppImage \
+            registry.fedoraproject.org/fedora:44
+          SH
+      - name: Retain package and bounded qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage-${{ matrix.arch }}-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            dist/*.AppImage
+            dist/*.AppImage.json
+            dist/appimage-evidence/*.json
+            dist/appimage-evidence/*.log
+            dist/appimage-evidence/*-consumer/*.json
+            dist/appimage-evidence/*-consumer/*.log
+            dist/appimage-evidence/*-consumer/*.png
+            dist/appimage-bundles/*/logs/*
+            dist/appimage-evidence/payload/*.json

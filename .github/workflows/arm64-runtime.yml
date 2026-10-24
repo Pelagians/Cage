@@ -1,0 +1,117 @@
+name: ARM64 Wine FEX proof
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'runtime/**'
+      - 'artifact/**'
+      - 'builder/**'
+      - 'container/**'
+      - 'core/**'
+      - 'cage/**'
+      - 'tests/**'
+      - 'scripts/*poc.py'
+      - 'recipes/notepadplusplus-portable-arm64.cage.yaml'
+      - 'pyproject.toml'
+      - '.dockerignore'
+      - '.github/workflows/arm64-runtime.yml'
+  pull_request:
+    paths:
+      - 'runtime/**'
+      - 'artifact/**'
+      - 'builder/**'
+      - 'container/**'
+      - 'core/**'
+      - 'cage/**'
+      - 'tests/**'
+      - 'scripts/*poc.py'
+      - 'recipes/notepadplusplus-portable-arm64.cage.yaml'
+      - 'pyproject.toml'
+      - '.dockerignore'
+      - '.github/workflows/arm64-runtime.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arm64-poc-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  native-proof:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install build and GUI test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak podman uidmap slirp4netns fuse-overlayfs rpm2cpio xvfb openbox xdotool scrot xdg-utils cmake ninja-build
+          python -m pip install PyYAML pytest setuptools wheel
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          # The GUI proof creates a private D-Bus session, not a systemd user bus.
+          # Keep rootless Podman independent of systemd activation on this runner.
+          mkdir -p "$HOME/.config/containers"
+          printf '[engine]\ncgroup_manager="cgroupfs"\nevents_logger="file"\n' > "$HOME/.config/containers/containers.conf"
+          df -h .
+          getconf PAGE_SIZE
+      - name: Preserve existing contracts
+        run: python -m pytest tests/ -q
+      - name: Reproduce the pinned ARM64EC termination guard from source
+        run: python scripts/rebuild-fex-shutdown.py --work "$RUNNER_TEMP/cage-fex-rebuild" --jobs 2
+      - name: Cache native platform and pinned payload
+        uses: actions/cache@v4
+        with:
+          path: .cage/flatpak-arm64
+          key: arm64-wine-fex-${{ hashFiles('runtime/wine-arm64ec-11.20-fex-2610.json') }}
+      - name: Prepare pinned Windows application and ARM runtime
+        run: |
+          python scripts/prepare-flatpak-poc.py
+          python - <<'PY'
+          from container.manager import build_container
+          result = build_container('wine-arm64ec', '11.20', build_cmd='podman')
+          print(result.log)
+          assert result.success
+          PY
+      - name: Build and prove container and installed Flatpak
+        run: |
+          mkdir -p dist/arm64-evidence/flatpak
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24' bash -eu -o pipefail <<'SH'
+          openbox >dist/arm64-evidence/window-manager.log 2>&1 &
+          mkdir -p "$HOME/Documents" "$HOME/.config"
+          printf 'XDG_DOCUMENTS_DIR="$HOME/Documents"\n' > "$HOME/.config/user-dirs.dirs"
+          python -m cage build recipes/notepadplusplus-portable-arm64.cage.yaml --engine podman \
+            --output dist/arm-container >dist/arm64-evidence/container-build.json
+          python scripts/test-arm-container-poc.py dist/arm-container/notepadplusplus-portable-arm64-8.8.8
+          python -m cage build recipes/notepadplusplus-portable-arm64.cage.yaml --target flatpak \
+            --flatpak-store .cage/flatpak-arm64 --output dist/arm-desktop >dist/arm64-evidence/flatpak-build.json
+          python -m cage export flatpak dist/arm-desktop/notepadplusplus-portable-arm64-8.8.8 \
+            --flatpak-store .cage/flatpak-arm64 --timeout 1800 \
+            --output dist/notepadplusplus-8.8.8-aarch64.flatpak >dist/arm64-evidence/flatpak-export.json
+          export FLATPAK_USER_DIR="$PWD/.cage/consumer-arm64"
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user --noninteractive -y dist/notepadplusplus-8.8.8-aarch64.flatpak
+          ! command -v wine
+          ! command -v cage
+          CAGE_TEST_EVIDENCE="$PWD/dist/arm64-evidence/flatpak" CAGE_TEST_WINE_VERSION='wine-11.20 (Staging)' \
+            python scripts/test-flatpak-poc.py 2>&1 | tee dist/arm64-evidence/flatpak/gui-test.log
+          SH
+      - name: Retain native package and workflow evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm64-wine-fex-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            dist/*.flatpak
+            dist/*.flatpak.json
+            dist/arm64-evidence/**
+            dist/arm-container/notepadplusplus-portable-arm64-8.8.8/metadata/*.json
+            dist/arm-container/notepadplusplus-portable-arm64-8.8.8/logs/*

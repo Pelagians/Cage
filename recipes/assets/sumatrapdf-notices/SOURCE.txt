@@ -1,0 +1,4 @@
+Unmodified upstream notices from sumatrapdfreader/sumatrapdf tag 3.6.1rel.
+https://github.com/sumatrapdfreader/sumatrapdf/tree/3.6.1rel
+AUTHORS lists the bundled components and the additional AGPL section 13 terms.
+Local qualification packages only; no public release or complete source distribution is implied.

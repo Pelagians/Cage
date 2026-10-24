@@ -140,6 +140,38 @@ cage runners diagnose pol-8.2 --cache-dir "$HOME/cage-runners"
 
 ## Application Recipes
 
+### Desktop exports
+
+The experimental [AppImage exporter](docs/appimage-exports.md) reuses the same
+portable application recipes and persistent-prefix launcher as Flatpak. Native
+x86_64 and ARM64 outputs include Wine and Python; this initial AppImage target
+requires glibc 2.43 or newer and explicit acceptance of ordinary host access.
+
+Explicit [safe updates and rollback](docs/export-updates.md) share qualified
+recipe migrations across Flatpak, AppImage and persistent Wine containers.
+Previous generations are retained; rollback carries current documents forward.
+
+[Storage controls and diagnostics](docs/storage-controls.md) report protected
+application state and disk usage. `cage storage prune` previews cleanup of
+verified completed export staging; deletion requires `--apply`. Prefixes,
+settings, documents, retained generations and rollback packages remain protected.
+`cage doctor` checks state, recovery packages, free space and selected bundles.
+
+### Desktop Flatpak proof of concept
+
+The optional `--target flatpak` build target reuses ordered Cage recipes and
+exports a configured Windows application with a packaged Wine runtime. The
+first supported proof is checksum-pinned portable Notepad++ 8.8.8 on Linux
+x86_64. See [desktop export instructions and validation](docs/desktop-exports.md)
+for building, installing, permissions, persistence, and current limits.
+
+The default container, CFW, Selkies, OCI and Kubernetes workflows retain their
+existing targets. Desktop builds require separate runtime qualification.
+
+An explicit experimental `wine-arm64ec` provider adds native ARM64 Wine/FEX
+containers and aarch64 Flatpak exports, including the Asahi 16 KB kernel case.
+See [ARM64 build, run and qualification instructions](docs/arm64-wine-fex.md).
+
 Cage accepts strict YAML application recipes as the primary shareable
 authoring format for users and businesses. JSON remains valid for generated,
 normalized, or CLI-driven workflows. YAML is intentionally strict: unknown
@@ -620,3 +652,21 @@ bash container/build.sh wine default
 ## License
 
 Open source — available under the MIT License.
+
+Desktop MIME handlers, file forwarding and UI scaling are described in
+[desktop integration and scaling](docs/desktop-integration.md). New exports can
+follow the desktop's logical DPI; `--cage-dpi 192` selects an explicit 2x scale
+without manually configuring Wine.
+
+[Application onboarding and supported legacy migration](docs/application-onboarding.md)
+adds a second pinned portable application, SumatraPDF, using the same recipe for
+Flatpak, AppImage and containers, with explicit recovery snapshots before adoption.
+
+[Trusted releases](docs/trusted-releases.md) add publisher signatures, exact-package
+qualification and explicit install/update/rollback commands over the same state
+manager, with retained offline recovery and no required hosted service.
+
+[Safe runtime migrations](docs/runtime-migrations.md) extend those transactions
+with exact, qualified runtime transitions while retaining prior prefixes and
+packages. XWayland remains the default; native Wine Wayland is a separate future
+qualification path.

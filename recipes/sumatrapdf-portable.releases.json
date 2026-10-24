@@ -1,0 +1,10 @@
+{
+  "3.6": {
+    "archiveSha256": "2b52f4f66ea2229a431a434fcd608210c019d85fe67d06302f6544f63d66b319",
+    "executableSha256": "c5d24aa361bdd9945d529e461bc4ad0bb4a28f3fff493be6f915c6d93f9b16b0"
+  },
+  "3.6.1": {
+    "archiveSha256": "98b33a518d42986856d225064b0cd2d3643ecf78cbf84ab873d26cc51877a544",
+    "executableSha256": "719f689b34f47be8ca105ce8484948474dafde0e106bab599e4a89326070c3d0"
+  }
+}
