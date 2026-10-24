@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -13,7 +14,7 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from core.media import extract_archive
+from core.media import extract_archive, stage_media
 from runtime.arm64ec import extract_cpio
 
 MSI_SHA256 = "245c352b579a8f79329ca34a1003a496e7834b62011fdd1912775cb81ec19784"
@@ -147,6 +148,14 @@ def main():
                 parser.error("existing staged fonts differ; preserved without modification")
         else:
             fonts.rename(staged_fonts)
+    staged_app = args.workspace.resolve() / "sources/myharmony-payload/media"
+    if staged_app.exists():
+        receipt = staged_app.parent / "metadata/media-stage.json"
+        if (staged_app.is_symlink() or files(staged_app) != files(app)
+                or not receipt.is_file() or json.loads(receipt.read_text()).get("sourceSha256") != PAYLOAD_SHA256):
+            parser.error("existing Cage media staging differs; preserved without modification")
+    else:
+        stage_media(destination / "MyHarmony-payload.zip", name="myharmony-payload", workspace=args.workspace)
     print("Verified MyHarmony 1.0.308 application payload:", app)
 
 
