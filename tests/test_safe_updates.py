@@ -29,7 +29,9 @@ class SafeUpdateTests(unittest.TestCase):
         wine.write_text('#!/usr/bin/python3\nimport os,json,pathlib,sys\n'
             'p=pathlib.Path(os.environ["WINEPREFIX"])\n'
             'out=pathlib.Path(os.environ["PROOF_LOG"])\n'
-            'out.write_text(json.dumps({"prefix":str(p),"pid":os.getpid(),"version":(p/"drive_c/App.exe").read_text()}))\n'
+            'pending=out.with_suffix(".tmp")\n'
+            'pending.write_text(json.dumps({"prefix":str(p),"pid":os.getpid(),"version":(p/"drive_c/App.exe").read_text()}))\n'
+            'pending.replace(out)\n'
             'if os.environ.get("PROOF_WAIT"): __import__("time").sleep(60)\n'
             'sys.exit(int(os.environ.get("PROOF_EXIT","0")))\n')
         wine.chmod(0o755)
