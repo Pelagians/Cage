@@ -8,7 +8,7 @@ archive="$runtime_cache/cfw-runtime-prefix.tar.gz"
 evidence="$runtime_cache/runtime.json"
 manifest="$runtime_cache/cfw-runtime-manifest.json"
 profile="$runtime_cache/runtime-profile.json"
-helper="$runtime_cache/runtime-artifact.py"
+helper="$runtime_cache/runtime_artifact.py"
 profile_fields_file="$runtime_cache/profile-fields.txt"
 manifest_fields_file="$runtime_cache/manifest-fields.txt"
 metadata="$bundle_root/metadata/cfw-runtime.json"
@@ -24,7 +24,7 @@ mv -f "$helper.part" "$helper"
 
 python3 "$helper" profile-fields "$profile" > "$profile_fields_file"
 mapfile -t profile_fields < "$profile_fields_file"
-if [ "${#profile_fields[@]}" -ne 7 ]; then
+if [ "${#profile_fields[@]}" -ne 5 ]; then
   echo "[cage] ERROR: invalid CFW runtime profile field count" >&2
   exit 64
 fi
@@ -33,8 +33,6 @@ runtime_url="${profile_fields[1]}"
 evidence_url="${profile_fields[2]}"
 manifest_url="${profile_fields[3]}"
 manifest_sha256="${profile_fields[4]}"
-runtime_image="${profile_fields[5]}"
-runtime_wine_versions="${profile_fields[6]}"
 
 fetch_or_copy_verified() {
   source="$1"
@@ -43,6 +41,7 @@ fetch_or_copy_verified() {
   case "$source" in
     https://*)
       cage_fetch_verified "$source" "$expected" "$destination" "$runtime_id"
+      return "$?"
       ;;
     file://*)
       local_path="${source#file://}"
@@ -69,17 +68,16 @@ fetch_or_copy_verified() {
 fetch_or_copy_verified "$manifest_url" "$manifest_sha256" "$manifest"
 python3 "$helper" manifest-fields "$profile" "$manifest" > "$manifest_fields_file"
 mapfile -t manifest_fields < "$manifest_fields_file"
-if [ "${#manifest_fields[@]}" -ne 7 ]; then
+if [ "${#manifest_fields[@]}" -ne 6 ]; then
   echo "[cage] ERROR: invalid CFW manifest field count" >&2
   exit 64
 fi
 archive_sha256="${manifest_fields[0]}"
 evidence_sha256="${manifest_fields[1]}"
-archive_bytes="${manifest_fields[2]}"
-export CFW_CHOCOLATEY_WINDOWS_PATH="${manifest_fields[3]}"
-cfw_chocolatey_prefix_relative="${manifest_fields[4]}"
-export CFW_CHOCOLATEY_QUERY_LAUNCHER="${manifest_fields[5]}"
-export CFW_CHOCOLATEY_PACKAGE_LAUNCHER="${manifest_fields[6]}"
+export CFW_CHOCOLATEY_WINDOWS_PATH="${manifest_fields[2]}"
+cfw_chocolatey_prefix_relative="${manifest_fields[3]}"
+export CFW_CHOCOLATEY_QUERY_LAUNCHER="${manifest_fields[4]}"
+export CFW_CHOCOLATEY_PACKAGE_LAUNCHER="${manifest_fields[5]}"
 export CFW_CHOCOLATEY_PREFIX_PATH="$WINEPREFIX/$cfw_chocolatey_prefix_relative"
 
 fetch_or_copy_verified "$runtime_url" "$archive_sha256" "$archive"

@@ -6,6 +6,8 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any
 
+from core.chocolatey.assets.runtime_artifact import profile_identity
+
 from .errors import ManifestError
 from .desktop import normalize_desktop
 from .helpers import _reject_unknown, _required_str, _optional_str, _drop_none, _load_strict_yaml
@@ -274,12 +276,12 @@ def _validate_cfw_boundary(
         return
     if runtime.provider != "wine" or runtime.version != "11.0":
         raise ManifestError("Chocolatey Phase 1 CFW prepared runtimes require Wine 11.0")
-    identities: set[tuple[str, str, str]] = set()
+    identities: set[tuple[object, ...]] = set()
     for module in chocolatey_modules:
         resolver = getattr(module, "_runtime_artifact", None)
         artifact = resolver() if callable(resolver) else None
         if isinstance(artifact, dict):
-            identities.add((artifact["id"], artifact["manifestSha256"], artifact["wineImage"]))
+            identities.add(profile_identity(artifact))
     if len(identities) > 1:
         raise ManifestError("Chocolatey modules declare conflicting CFW prepared runtimes")
     package_sources = {getattr(module, "package_source", None) or "https://community.chocolatey.org/api/v2/"

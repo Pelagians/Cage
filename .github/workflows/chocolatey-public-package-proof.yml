@@ -40,10 +40,7 @@ jobs:
     name: Resolve released qualified CFW Wine runtime
     runs-on: ubuntu-latest
     outputs:
-      available: ${{ steps.runtime.outputs.available }}
-      qualified: ${{ steps.runtime.outputs.qualified }}
       image: ${{ steps.runtime.outputs.image }}
-      session_contract: ${{ steps.runtime.outputs.session_contract }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,32 +55,17 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY' >> "$GITHUB_OUTPUT"
-          import re
+          from core.chocolatey.assets.runtime_artifact import validate_profile
           from core.modules.chocolatey import DEFAULT_CFW_RUNTIME_ARTIFACT
-          artifact = DEFAULT_CFW_RUNTIME_ARTIFACT
-          image = artifact.get('wineImage', '')
-          contract = artifact.get('sessionContract', '')
-          qualified = bool(re.fullmatch(r'ghcr\.io/pelagians/cage-wine@sha256:[0-9a-f]{64}', image)) and contract == 'cage.selkies-wayland/v1'
-          print(f"available={'true' if artifact else 'false'}")
-          print(f"qualified={'true' if qualified else 'false'}")
-          print(f"image={image}")
-          print(f"session_contract={contract}")
+          validate_profile(DEFAULT_CFW_RUNTIME_ARTIFACT)
+          if DEFAULT_CFW_RUNTIME_ARTIFACT.get('sessionContract') != 'cage.selkies-wayland/v1':
+              raise ValueError('CFW runtime must declare cage.selkies-wayland/v1')
+          print(f"image={DEFAULT_CFW_RUNTIME_ARTIFACT['wineImage']}")
           PY
-
-  blocked:
-    name: Report blocked package proof
-    needs: runtime-profile
-    if: needs.runtime-profile.outputs.qualified != 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - run: |
-          echo '::notice title=Public-package proof blocked::No released CFW runtime profile with a digest-pinned image and sessionContract=cage.selkies-wayland/v1 is available.'
-          echo 'Package installation and launch-plan evidence are intentionally not run until CFW qualification is published.'
 
   public-packages:
     name: ${{ matrix.package }} public package proof
     needs: runtime-profile
-    if: needs.runtime-profile.outputs.qualified == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     strategy:

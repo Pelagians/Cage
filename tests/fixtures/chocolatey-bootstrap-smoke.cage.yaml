@@ -14,3 +14,7 @@ modules:
   - type: chocolatey
     install:
       packages: []
+  # Two ordered modules must share one seeded foundation and verify together.
+  - type: chocolatey
+    install:
+      packages: []
