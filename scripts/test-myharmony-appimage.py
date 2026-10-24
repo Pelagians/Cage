@@ -36,13 +36,20 @@ def main():
         '-v', str(evidence) + ':' + str(evidence) + ':rw',
         '-v', '/tmp/.X11-unix:/tmp/.X11-unix:ro', '-e', 'DISPLAY=' + os.environ['DISPLAY'],
         '-e', 'HOME=' + str(home), '-e', 'XDG_DATA_HOME=' + str(data),
-        '-e', 'TMPDIR=' + str(temporary), '-e', 'APPIMAGE_EXTRACT_AND_RUN=1']
+        '-e', 'TMPDIR=' + str(temporary), '-e', 'APPIMAGE_EXTRACT_AND_RUN=1',
+        '-e', 'WINEDEBUG=+wininet,+winhttp,+schannel']
     if os.environ.get('XAUTHORITY'):
         argv += ['-v', os.environ['XAUTHORITY'] + ':/tmp/cage-xauthority:ro',
                  '-e', 'XAUTHORITY=/tmp/cage-xauthority']
     argv += [image, 'sh', '-ec', 'if command -v wine || command -v python3; then exit 1; fi; exec "$@"', 'consumer', str(package)]
     logs = []
+    process = None
     def window():
+        if process is not None and process.poll() is not None:
+            raise AssertionError('AppImage exited before opening its window: ' + str(process.returncode))
+        errors = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', '^Server error$'], capture_output=True, text=True)
+        if errors.returncode == 0:
+            raise AssertionError('MyHarmony reported a service connection error')
         return gui.command('xdotool', 'search', '--onlyvisible', '--name', '^MyHarmony$').splitlines()[-1]
     try:
         before = None
@@ -95,6 +102,14 @@ def main():
         subprocess.run(['podman', 'rm', '-f', name], capture_output=True, timeout=30)
         for log in logs:
             log.close()
+        for basename in ('debug.log', 'console.log'):
+            source = state / 'prefix/drive_c/MyHarmony' / basename
+            if source.is_file():
+                (evidence / ('myharmony-' + basename)).write_bytes(source.read_bytes()[-160000:])
+        for log in evidence.glob('launch-*.log'):
+            if log.stat().st_size > 400000:
+                content = log.read_bytes()
+                log.write_bytes(content[:100000] + b'\n[bounded diagnostic excerpt]\n' + content[-300000:])
 
 
 if __name__ == '__main__':

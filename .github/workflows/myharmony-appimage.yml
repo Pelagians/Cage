@@ -38,6 +38,9 @@ jobs:
           python scripts/prepare-myharmony.py /tmp/MyHarmony-App.msi --runtime wine
           python -m cage inspect recipes/myharmony.cage.yaml
           podman pull registry.fedoraproject.org/fedora:44
+          mkdir -p dist/myharmony-evidence
+          curl --verbose --max-time 30 https://svcs.myharmony.com/Discovery/Discovery.svc >dist/myharmony-evidence/service.html 2>dist/myharmony-evidence/service-host.log
+          podman run --rm registry.fedoraproject.org/fedora:44 sh -c 'ls -l /etc/pki/tls/certs/ca-bundle.crt; getent hosts svcs.myharmony.com; curl -v --max-time 30 https://svcs.myharmony.com/Discovery/Discovery.svc' >dist/myharmony-evidence/service-consumer.log 2>&1 || true
       - name: Build and qualify actual AppImage
         run: |
           mkdir -p dist/myharmony-evidence dist/myharmony-x86_64
@@ -54,6 +57,8 @@ jobs:
           test -n "$(find dist/*.AppImage.build/AppDir -name 'libusb-1.0.so*' -print -quit)"
           test -n "$(find dist/*.AppImage.build/AppDir -name 'libudev.so*' -print -quit)"
           rm -rf dist/MyHarmony-1.0.308-x86_64.AppImage.build dist/myharmony-bundles/myharmony-1.0.308/build/flatpak
+          cp dist/MyHarmony-1.0.308-x86_64.AppImage dist/myharmony-x86_64/
+          cp packaging/myharmony/* dist/myharmony-x86_64/
           CAGE_TEST_EVIDENCE="$PWD/dist/myharmony-evidence/consumer" python scripts/test-myharmony-appimage.py dist/MyHarmony-1.0.308-x86_64.AppImage
           SH
           mv dist/MyHarmony-1.0.308-x86_64.AppImage dist/myharmony-x86_64/
