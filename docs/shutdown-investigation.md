@@ -385,3 +385,38 @@ the native invariants and all 59,051 installed-state entries unchanged, with no
 added paths and the normal Notepad++ Flatpak commit unchanged. The new private
 build and repaired prefix share only kernel-verified identical Windows extents;
 no original artifact, generation, document or differing byte was removed.
+
+### Repaired rollback CI completion
+
+[Run 40047460708](https://github.com/Pelagians/Cage/actions/runs/40047460708)
+passed all four jobs at source revision
+`1c9d4627d0d360a18f723a600ade788eba50807c`. Independent review of the
+retained records verified eight cases across Flatpak, AppImage, direct
+containers and OCI on x86_64 and ARM64: 40 GUI sessions with integer exit code
+zero, Wine stopped, matching saved-document hashes, restored original settings
+and retained original prefixes/generations. The ARM64 desktop job contributes
+ten sessions, including both repaired rollbacks and normal menu relaunches.
+All six signed repair manifests and their bound evidence/fetch copies verified.
+These signatures cover repair creation and fetch, not installed trusted GUI
+delivery or qualification of the original runtime. The suite passed 631 tests
+and 227 subtests, including a temporary-installation test using the real
+Flatpak CLI.
+
+The earlier x86_64 desktop attempts in runs 40044000819 and 40046003199 failed
+before the second repair launched: Flatpak rejected an already installed bundle.
+The `--reinstall` attempt alone did not resolve that on the CI host. Cage now
+retains export commits and reuses an exactly matching installed commit after
+checking the retained bundle hash; the full repair trial still runs. A plan
+identity match alone cannot skip deployment. Both failed trials and their logs
+remain retained; superseded ARM builds were cancelled rather than counted as
+qualified.
+
+The completed matrix uses 4 KiB runners and private X11 displays. It is separate
+from the previously recorded Asahi/16 KiB and installed desktop proofs. No
+timeout, normal-exit requirement or original-runtime qualification gate changed.
+The original and guarded ARM DLL hashes match their separate pins, and the local
+original recovery DLL was rechecked unchanged. This CI review did not launch,
+upgrade or modify installed applications, settings, documents or rollback data.
+Small records, signatures and logs, without package binaries, are retained under
+`.cage/repaired-rollback/ci-40047460708/`; `independent-verification.json` records
+the eight verified cases.

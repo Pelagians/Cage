@@ -158,6 +158,13 @@ An optional 25-session stress sequence stops at its first failure with the same
 runtime identities, committed audit, executable hashes and package/image bytes.
 It cannot sign the original or substitute for ordinary runtime-migration proof.
 
+Flatpak's package cache retains the export's OSTree commit alongside its bundle
+hash. Repeated repair or recovery verifies the retained bytes and reuses a
+deployment only when its installed commit matches that receipt. Reusing it does
+not skip a requested repair trial or its Wine shutdown and generation commit
+checks. Older receipts remain readable; Cage never infers an exact deployment
+match from a plan identity alone.
+
 Dispatch `runtime-migrations.yml` with `rollback_repair=true` for this distinct
 qualification on both architectures and all adapters. Default runs retain the
 original exact-runtime migration/rollback gate. Repair mode signs and verifies
