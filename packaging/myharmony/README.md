@@ -1,6 +1,7 @@
 # MyHarmony for Linux x86_64
 
-Start `MyHarmony-1.0.308-x86_64.AppImage` as your regular desktop user.
+Make the download executable (`chmod +x MyHarmony-1.0.308-x86_64.AppImage`)
+and start it as your regular desktop user.
 It opens MyHarmony in its own normal window. Internet access is required for
 Logitech's hosted interface and account service.
 
@@ -35,6 +36,12 @@ No additional recovery-mode IDs outside those ranges were established.
 USB permission coverage does not establish MyHarmony support for every older
 model or continued availability of its Logitech service. Devices configured via
 a hub use the hub's USB connection where the remote has no USB data connection.
+
+[Logitech's current model list](https://app.myharmony.com/) identifies MyHarmony
+support for 200/300/350, 600/650/665/700, 950, One, Touch, Ultimate, Elite,
+Companion, Smart Control/Keyboard, Pro and their hubs. Logitech retired the
+older v7 software's service in May 2025; granting USB access to those older
+remotes cannot restore that service. Harmony Express uses its separate mobile app.
 
 The packaged HID backend and USB libraries are checked during the build.
 Physical detection, hotplug, recovery and synchronization require testing with

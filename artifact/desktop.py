@@ -190,8 +190,14 @@ def create_desktop_export_plan(bundle):
         if header[:2] != b"MZ" or len(header) < 64:
             raise DesktopError("desktop entrypoint is not a Windows PE executable")
         handle.seek(int.from_bytes(header[60:64], "little"))
-        if handle.read(6) != b"PE\0\0\x64\x86":
-            raise DesktopError("desktop POC entrypoint must be an x86_64 Windows executable")
+        pe = handle.read(6)
+        machines = {b"\x64\x86"}
+        # The pinned native Wine 11 runtime includes its i386 WoW64 modules.
+        # Other runtime targets retain their existing x86_64 entrypoint gate.
+        if target["provider"] == "wine" and target["architecture"] == "x86_64":
+            machines.add(b"\x4c\x01")
+        if pe[:4] != b"PE\0\0" or pe[4:] not in machines:
+            raise DesktopError("desktop entrypoint architecture is unsupported by the pinned Wine target")
     from runtime import desktop_launch
     launcher_hash = hashlib.sha256(Path(desktop_launch.__file__).read_bytes()).hexdigest()
     return {"schemaVersion": "cage.desktop-export-plan/v0", "application": {"name": manifest.name, "version": manifest.version},
