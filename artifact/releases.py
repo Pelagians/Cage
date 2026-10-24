@@ -269,6 +269,47 @@ def verify_evidence(entry, proof):
     if (entry['imageId'] if kind=='oci' else entry['package']['sha256']) not in qualified_hashes(proof,kind):
         raise ReleaseError('qualification does not bind the exact package/image bytes')
     if proof.get('pageSize') not in entry['testedPageSizes']:raise ReleaseError('qualification page size differs from signed evidence')
+    repairs = entry['plan']['desktop']['updates'].get('rollbackRepairs', [])
+    if proof.get('qualificationKind')=='rollback-repair' and not any(
+            rule['toRuntimeDigest']==entry['identity']['runtimeDigest'] for rule in repairs):
+        raise ReleaseError('repaired rollback evidence cannot qualify the original or a non-repair package')
+    for rule in repairs:
+        if rule['toRuntimeDigest']!=entry['identity']['runtimeDigest']:
+            continue
+        expected = {'from':rule['from'], 'to':entry['identity']}
+        source_plan = proof.get('repairSourcePlan', {})
+        from runtime.desktop_launch import validate_runtime_update, DesktopError
+        try:
+            if plan_identity(source_plan)!=rule['from']:
+                raise DesktopError('wrong repair source plan')
+            validate_runtime_update(source_plan,entry['plan'],repair=True)
+        except (DesktopError, KeyError, TypeError) as exc:
+            raise ReleaseError('repair evidence source application, ABI or data policy differs') from exc
+        sessions=proof.get('sessions', [])
+        repaired=[s for s in sessions if s.get('operation')=='rollback-repair' and s.get('identity')==entry['identity']]
+        relaunches=[s for s in sessions if s.get('operation')=='run' and s.get('identity')==entry['identity']]
+        hashes=proof.get('sourceExecutableHashes', {})
+        if (proof.get('qualificationKind')!='rollback-repair'
+                or expected not in proof.get('rollbackRepairs', [])
+                or not repaired or not relaunches
+                or not any(s.get('repairSourceRole')=='previous' for s in repaired)
+                or any(type(s.get('exitCode')) is not int or s['exitCode']!=0 or s.get('wineStopped') is not True for s in repaired+relaunches)
+                or not isinstance(proof.get('originalDocumentSha256'),str)
+                or not re.fullmatch('[a-f0-9]{64}',proof['originalDocumentSha256'])
+                or any(s.get('savedSha256')!=proof['originalDocumentSha256'] for s in repaired+relaunches)
+                or not isinstance(hashes.get('baseline'),str) or not re.fullmatch('[a-f0-9]{64}',hashes['baseline'])
+                or hashes['baseline']!=hashes.get('candidate')
+                or not all(proof.get(k) is True for k in ('originalGenerationsRetained','originalPrefixUnchanged',
+                                                          'settingsRestoredFromOriginal','freshRuntimeSeed'))):
+            raise ReleaseError('release lacks matching repaired rollback and normal relaunch qualification')
+        generations=proof.get('generations', {}).get('generations', [])
+        for session in repaired:
+            audit=session.get('rollbackRepair', {})
+            if (any(audit.get(k)!=v for k,v in expected.items())
+                    or not any(g.get('prefix')==audit.get('source') and g.get('identity')==rule['from'] for g in generations)
+                    or not any(g.get('prefix')==session.get('prefix') and g.get('identity')==entry['identity']
+                               and g.get('rollbackRepair')==audit for g in generations)):
+                raise ReleaseError('repair evidence lacks retained source and committed repair identities')
     for migration in entry['plan']['desktop']['updates'].get('runtimeMigrations', []):
         if migration['toRuntimeDigest'] != entry['identity']['runtimeDigest']:
             continue  # Shared recipes may describe other format/architecture pins.

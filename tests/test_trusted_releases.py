@@ -33,7 +33,7 @@ class TrustedReleaseTests(unittest.TestCase):
         self.arch={'arm64':'aarch64','amd64':'x86_64'}.get(platform.machine(),platform.machine())
         self.old=self.release('1',1);self.new=self.release('2',2)
 
-    def release(self, version, sequence, kind='appimage', runtime='same', migrate_from=None, **extra):
+    def release(self, version, sequence, kind='appimage', runtime='same', migrate_from=None, repair_from=None, **extra):
         folder=self.root/(kind+'-'+version);folder.mkdir()
         package=folder/('app-'+version+'.'+('AppImage' if kind=='appimage' else 'flatpak'))
         package.write_bytes(b'\x7fELF pinned application '+version.encode())
@@ -41,10 +41,10 @@ class TrustedReleaseTests(unittest.TestCase):
               'sourceManifestDigest':'e'*64,'application':{'name':'proof','version':version},
               'target':{'architecture':self.arch,'runtimeRevision':runtime,'translation':{'hostPageSizes':[4096,16384]}},'state':{'managerVersion':1,'namespace':'cage/appimage'},
               'desktop':{'id':'org.example.Proof','updates':{'profile':'proof/v1','settings':[],'documents':[]}}}
-        if migrate_from:
-            previous = r.parse(migrate_from.read_bytes())['artifacts'][0]
+        if migrate_from or repair_from:
+            previous = r.parse((migrate_from or repair_from).read_bytes())['artifacts'][0]
             plan['application'] = previous['plan']['application']
-            plan['desktop']['updates']['runtimeMigrations'] = [
+            plan['desktop']['updates']['rollbackRepairs' if repair_from else 'runtimeMigrations'] = [
                 {'from': previous['identity'], 'toRuntimeDigest': plan_identity(plan)['runtimeDigest']}]
         receipt={'schemaVersion':'cage.'+kind+'-export-result/v0','sha256':r.hash_file(package),'plan':plan,'commit':version*64}
         Path(str(package)+'.json').write_text(json.dumps(receipt))
@@ -56,6 +56,24 @@ class TrustedReleaseTests(unittest.TestCase):
             proof['runtimeMigrations'] = [{'from': previous['identity'], 'to': plan_identity(plan)}]
             proof['sourceExecutableHashes'] = {'baseline': 'f'*64, 'candidate': 'f'*64}
             proof['sourceArtifactHashes'] = {'baseline': previous['package']['sha256'], 'candidate': r.hash_file(package)}
+        if repair_from:
+            identity=plan_identity(plan);source='prefix'
+            audit={'source':source,'from':previous['identity'],'to':identity}
+            a,b='generations/'+'1'*32,'generations/'+'2'*32
+            proof.update(qualificationKind='rollback-repair',repairSourcePlan=previous['plan'],
+                rollbackRepairs=[{'from':previous['identity'],'to':identity}],
+                originalGenerationsRetained=True,originalPrefixUnchanged=True,settingsRestoredFromOriginal=True,freshRuntimeSeed=True,
+                sourceExecutableHashes={'baseline':'f'*64,'candidate':'f'*64},
+                sourceArtifactHashes={'baseline':previous['package']['sha256'],'candidate':r.hash_file(package)},
+                generations={'active':b,'previous':a,'generations':[
+                    {'prefix':source,'identity':previous['identity']},
+                    {'prefix':a,'identity':identity,'rollbackRepair':audit},
+                    {'prefix':b,'identity':identity,'rollbackRepair':audit}]},
+                originalDocumentSha256='d'*64,
+                sessions=[{'identity':identity,'prefix':prefix,'operation':operation,'exitCode':0,'wineStopped':True,'savedSha256':'d'*64,
+                           **({'rollbackRepair':audit,'repairSourceRole':role} if operation=='rollback-repair' else {})}
+                          for prefix,operation,role in [(a,'rollback-repair','active'),(a,'run',None),
+                                                         (b,'rollback-repair','previous'),(b,'run',None)]])
         evidence=folder/'result.json';evidence.write_text(json.dumps(proof))
         spec={'sequence':sequence,'sourceRevision':'a'*40,'artifacts':[{'format':kind,'path':package.name,'evidence':evidence.name}],**extra}
         spec_path=folder/'spec.json';spec_path.write_text(json.dumps(spec))
@@ -222,7 +240,8 @@ class TrustedReleaseTests(unittest.TestCase):
         def launch(record,release,files,action=None,**kwargs):
             if self.fail=='before':raise r.ReleaseError('trial failed before commit')
             identity=release['entry']['identity']
-            if self.state is None:self.state={'active':'prefix','generations':[{'prefix':'prefix','identity':identity}]}
+            if self.state is None:self.state={'active':'prefix','generations':[{'prefix':'prefix','identity':identity,
+                'profile':release['entry']['plan']['desktop']['updates']['profile'],'application':release['entry']['plan']['application']}]}
             elif action:
                 active='generation-'+str(len(self.state['generations']))
                 self.state['previous']=self.state['active'];self.state['active']=active
@@ -283,6 +302,51 @@ class TrustedReleaseTests(unittest.TestCase):
         delivery.operate('org.example.Proof', self.key, 'appimage', action='recover', cache=self.cache)
         info = delivery.operate('org.example.Proof', self.key, 'appimage', action='info', cache=self.cache)
         self.assertEqual((info['activeVersion'], info['highWater']), ('1', 2))
+
+    def test_signed_repair_is_explicit_and_retained_reuse_never_rewinds_sequence(self):
+        self.fake_runtime();self.install_run()
+        repair=self.release('runtime-repair',2,runtime='guarded',repair_from=self.old)
+        with self.assertRaisesRegex(r.ReleaseError,'runtime or migration'):
+            delivery.deploy(repair,self.key,'appimage',action='update',cache=self.cache)
+        result=delivery.deploy(repair,self.key,'appimage',action='rollback-repair',cache=self.cache)
+        self.assertTrue(result['repairedRollback'])
+        delivery.deploy(repair,self.key,'appimage',action='rollback-repair',cache=self.cache)
+        info=delivery.operate('org.example.Proof',self.key,'appimage',action='info',cache=self.cache)
+        self.assertEqual((info['activeVersion'],info['highWater'],len(info['retainedReleases'])),('1',2,2))
+        # Exact original rollback remains explicit and available for recovery.
+        # Restore a retained-original previous pointer in this ledger fixture.
+        self.state['previous']='prefix'
+        delivery.operate('org.example.Proof',self.key,'appimage',action='rollback',cache=self.cache)
+        self.assertEqual(delivery.operate('org.example.Proof',self.key,'appimage',action='info',cache=self.cache)['highWater'],2)
+
+    def test_failed_signed_repair_retains_source_and_recovers_without_sequence_reset(self):
+        self.fake_runtime();self.install_run()
+        repair=self.release('runtime-repair',2,runtime='guarded',repair_from=self.old)
+        self.fail='before'
+        with self.assertRaisesRegex(r.ReleaseError,'before commit'):
+            delivery.deploy(repair,self.key,'appimage',action='rollback-repair',cache=self.cache)
+        self.fail=None
+        delivery.operate('org.example.Proof',self.key,'appimage',action='recover',cache=self.cache)
+        info=delivery.operate('org.example.Proof',self.key,'appimage',action='info',cache=self.cache)
+        self.assertEqual((info['activeVersion'],info['highWater'],len(info['retainedReleases'])),('1',2,2))
+
+    def test_repair_evidence_cannot_mask_original_failure_or_skip_normal_exit(self):
+        repair=self.release('runtime-repair',2,runtime='guarded',repair_from=self.old)
+        entry=r.parse(repair.read_bytes())['artifacts'][0]
+        original=json.loads((repair.parent/'result.json').read_text())
+        edits=[lambda p:p.update(qualificationKind='runtime-migration'),
+               lambda p:p.pop('rollbackRepairs'),lambda p:p.update(originalPrefixUnchanged=False),
+               lambda p:p['sourceExecutableHashes'].update(candidate='b'*64),
+               lambda p:p['repairSourcePlan']['target'].update(architecture='foreign'),
+               lambda p:p['sessions'][2].update(exitCode=7),lambda p:p['sessions'][2].update(exitCode=False),
+               lambda p:p['sessions'][3].update(wineStopped=False),lambda p:p['sessions'][3].update(savedSha256='b'*64),
+               lambda p:p['sessions'][2].update(repairSourceRole='active'),
+               lambda p:p['sessions'][2]['rollbackRepair'].update(source='missing')]
+        for edit in edits:
+            proof=json.loads(json.dumps(original));edit(proof)
+            with self.subTest(edit=edit),self.assertRaises(r.ReleaseError):r.verify_evidence(entry,proof)
+        old_entry=r.parse(self.old.read_bytes())['artifacts'][0]
+        with self.assertRaises(r.ReleaseError):r.verify_evidence(old_entry,original)
 
     def test_storage_reports_pending_release_recovery_without_pruning_history(self):
         self.fake_runtime();self.install_run();self.fail='before'

@@ -25,11 +25,12 @@ def read_plan(path):
     return value.get('managedState', value)
 
 
-def prepare(recipe, pairs, output):
+def prepare(recipe, pairs, output, *, repair=False):
     manifest = load_manifest(Path(recipe))
     payload = manifest.to_dict()
     policy = payload['desktop']['updates']
-    migrations = list(policy.get('runtimeMigrations', []))
+    field = 'rollbackRepairs' if repair else 'runtimeMigrations'
+    migrations = list(policy.get(field, []))
     for previous_path, candidate_path in pairs:
         previous, candidate = read_plan(previous_path), read_plan(candidate_path)
         if (candidate.get('application') != {'name': manifest.name, 'version': manifest.version}
@@ -37,10 +38,10 @@ def prepare(recipe, pairs, output):
                 or candidate['desktop']['id'] != manifest.desktop['id']
                 or any(candidate['desktop']['updates'][k] != policy[k] for k in ('profile', 'settings', 'documents'))):
             raise DesktopError('candidate plan and shared recipe application/data policy differ')
-        rule = runtime_migration_rule(previous, candidate)
+        rule = runtime_migration_rule(previous, candidate, repair=repair)
         if rule not in migrations:
             migrations.append(rule)
-    policy['runtimeMigrations'] = migrations
+    policy[field] = migrations
     validate_update_policy(policy)
     payload.get('compatibility', {}).pop('schemaVersion', None)
     Manifest.from_dict(payload)
@@ -48,8 +49,8 @@ def prepare(recipe, pairs, output):
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open('x') as handle:
         handle.write(json.dumps(payload, indent=2) + '\n')
-    return {'recipe': str(output), 'runtimeMigrations': migrations,
-            'qualification': 'proposal only; rebuild and complete runtime migration proof before signing'}
+    return {'recipe': str(output), field: migrations,
+            'qualification': 'proposal only; rebuild and complete the matching runtime migration or rollback repair proof before signing'}
 
 
 def main():
@@ -57,8 +58,9 @@ def main():
     parser.add_argument('recipe')
     parser.add_argument('--pair', nargs=2, action='append', required=True, metavar=('BASELINE_PLAN', 'CANDIDATE_PLAN'))
     parser.add_argument('--output', required=True)
+    parser.add_argument('--rollback-repair', action='store_true', help='Propose explicit repaired rollback instead of an ordinary runtime upgrade')
     args = parser.parse_args()
-    print(json.dumps(prepare(args.recipe, args.pair, args.output), indent=2))
+    print(json.dumps(prepare(args.recipe, args.pair, args.output, repair=args.rollback_repair), indent=2))
 
 
 if __name__ == '__main__':

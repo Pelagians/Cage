@@ -95,6 +95,78 @@ repository digest without retention, while the retained reference kept it
 resolvable. Original image IDs, digests and tags were unchanged after cleanup.
 This metadata-only check is separate from a native Wine application migration.
 
+## Explicit repaired rollback
+
+An immutable runtime can contain a diagnosed bug, as the original ARM FEX
+shutdown defect demonstrates. Ordinary rollback still selects the exact retained
+package/runtime. To restore old application settings without executing that
+defect, explicitly use a separately built repair package with its own runtime
+identity. The original artifact, generations and failed qualification remain
+retained; this does not retroactively qualify the original runtime.
+
+The shared optional `desktop.updates.rollbackRepairs` list uses the same exact
+`from` identity and different `toRuntimeDigest` shape as `runtimeMigrations`.
+It authorizes only repaired rollback, not ordinary updates. Generate it from
+the old package's plan and a guarded candidate with the same application version,
+executable, adapter, architecture/backend and declared data policy:
+
+```sh
+python scripts/prepare-runtime-migration-poc.py shared-recipe.json \
+  --rollback-repair \
+  --pair original.flatpak.json guarded-flatpak-plan.json \
+  --pair original.AppImage.json guarded-appimage-plan.json \
+  --output repair-recipe.json
+```
+
+Build/export that recipe normally and qualify each exact pair. No new Wine or
+CFW payload is downloaded at application launch, and no existing package or
+prefix is patched in place. The guarded ARM payload is the existing pinned
+`wine-arm64ec-11.20-fex-2610-cage1-aarch64` runtime.
+
+The operation first checks the previous generation for an exact repair rule.
+If none matches, it can repair the active original generation after an already
+completed rollback. It never searches arbitrary older prefixes. It creates a
+fresh candidate from the repair seed, copies declared settings from the selected
+original generation and current documents from the active generation, and
+records `rollbackRepair` with source prefix, original identity and actual repair
+identity. Newer settings remain in their retained generation. Windows system
+files and registry hives are not imported; qualified DPI is reapplied separately.
+Normal exit, Wine shutdown, storage checks and durable commit remain mandatory.
+
+```sh
+cage rollback-repair flatpak repair.flatpak --previous-package installed.flatpak
+./repair.AppImage --cage-rollback-repair
+cage run repaired-bundle --state-dir state --state-action rollback-repair
+podman run <existing qualified mounts and options> repair-image --cage-rollback-repair
+cage release rollback-repair repair-release.json --key publisher.pem --format oci
+```
+
+The OCI example uses the existing explicit state, document and display mounts;
+it does not add unrestricted host access. Signed repair delivery additionally
+requires a unique retained signed source package and operation-specific proof.
+It retains the original release and advances the sequence high-water mark before
+the trial. Explicit reuse of the exact retained repair release does not lower
+that mark or duplicate history. Failed trials require explicit recovery using
+the existing recovery command.
+
+`scripts/test-onboarding-poc.py --rollback-repair` exercises repair of active
+original state, normal relaunch, a changed preference, restoration from the
+retained previous generation, current document carry-forward and another normal
+relaunch. Source prefix bytes and generations must remain unchanged/retained.
+An optional 25-session stress sequence stops at its first failure with the same
+120-second shutdown deadline. Repair evidence binds the source plan, actual
+runtime identities, committed audit, executable hashes and package/image bytes.
+It cannot sign the original or substitute for ordinary runtime-migration proof.
+
+Dispatch `runtime-migrations.yml` with `rollback_repair=true` for this distinct
+qualification on both architectures and all adapters. Default runs retain the
+original exact-runtime migration/rollback gate. Repair mode signs and verifies
+fetch of the repaired target only; it cannot use that proof to sign an original
+baseline. End-to-end trusted repair GUI tests require independent matching
+original-package evidence via `--baseline-qualification`, alongside the repair's
+`--qualification`. Ledger/signature/recovery behavior is also covered by tests.
+Existing CFW, hosted, external-runner and Proton paths are unchanged.
+
 ## Qualification
 
 `scripts/test-onboarding-poc.py --runtime-migration` requires identical application

@@ -34,7 +34,7 @@ class FlatpakUpdateTests(unittest.TestCase):
                 entry = self.old[0] if digest == self.old[0]['sha256'] else self.new[0]
                 self.current_plan = entry['plan']
                 self.installed.append(digest)
-            if '--cage-update' in arguments:
+            if '--cage-update' in arguments or '--cage-rollback-repair' in arguments:
                 if self.fail_trial:
                     raise DesktopError('trial failed')
                 self.current_identity = self.new[0]['identity']
@@ -145,6 +145,30 @@ class FlatpakUpdateTests(unittest.TestCase):
             self.run_update()
         self.assertEqual(self.commands, [])
         self.assertFalse((self.root / 'cache/transaction.json').exists())
+
+    def test_explicit_repair_deployment_and_failure_recovery_retain_original_package(self):
+        self.runtime_packages()
+        policy = self.new[0]['plan']['desktop']['updates']
+        policy['rollbackRepairs'] = policy.pop('runtimeMigrations')
+        self.new[0]['identity'] = updates.identity(self.new[0]['plan'])
+        Path(str(self.new[1])+'.json').write_text(json.dumps({'schemaVersion':'cage.flatpak-export-result/v0',
+            'sha256':self.new[0]['sha256'],'plan':self.new[0]['plan']}))
+        def state(*args):
+            return {'state':{'active':'prefix','generations':[{'prefix':'prefix','identity':self.current_identity,
+                'profile':'p/v1','application':{'name':'proof','version':'1'}}]}}
+        with patch('artifact.updates._state', side_effect=state):
+            self.fail_trial = True
+            with self.assertRaisesRegex(DesktopError, 'trial failed'):
+                updates.update_flatpak(self.new[1],self.old[1],repair=True,cache=self.root/'cache')
+            self.assertEqual(self.current_identity,self.old[0]['identity'])
+            self.assertEqual(self.installed,[self.new[0]['sha256'],self.old[0]['sha256']])
+            self.fail_trial = False
+            result=updates.update_flatpak(self.new[1],self.old[1],repair=True,cache=self.root/'cache')
+        self.assertTrue(result['repairedRollback'])
+        self.assertFalse(result['updated'])
+        self.assertTrue(any('--cage-rollback-repair' in command for command in self.commands))
+        self.assertEqual(json.loads((self.root/'cache/transaction.json').read_text())['action'],'rollback-repair')
+        self.assertEqual((self.root/'cache'/(self.old[0]['sha256']+'.flatpak')).read_bytes(),self.old[1].read_bytes())
 
 
 if __name__ == '__main__':

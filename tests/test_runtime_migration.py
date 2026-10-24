@@ -43,6 +43,10 @@ class RuntimeRecipeTests(unittest.TestCase):
             self.assertEqual(updated.runtime, manifest.runtime)
             self.assertEqual(updated.desktop['updates']['settings'], manifest.desktop['updates']['settings'])
             self.assertFalse('runtimeMigrations' in manifest.desktop['updates'])
+            repair_output=root/'repair.json'
+            repair=json.loads(subprocess.check_output([*command,'--rollback-repair','--output',str(repair_output)],text=True))
+            self.assertEqual(len(repair['rollbackRepairs']),2)
+            self.assertNotIn('runtimeMigrations',load_manifest(repair_output).desktop['updates'])
             with self.assertRaises(FileExistsError):prepare(recipe, pairs, output)
             changed = json.loads(paths[1].read_text()); changed['application']['version'] = 'other'
             paths[1].write_text(json.dumps(changed))
@@ -57,6 +61,21 @@ class ContainerRuntimeMigrationTests(unittest.TestCase):
     read = fixtures.SafeUpdateTests.read
     active = fixtures.SafeUpdateTests.active
     runtime_packages = fixtures.SafeUpdateTests.runtime_packages
+
+    def test_real_container_wrapper_accepts_explicit_repair_without_replacing_original(self):
+        candidate=self.runtime_packages();plan=json.loads(candidate.read_text())
+        policy=plan['desktop']['updates'];policy['rollbackRepairs']=policy.pop('runtimeMigrations')
+        (candidate.parent/'seed').rename(candidate.parent/'prefix')
+        script='exec '+str(self.runtime/'wine')+' C:/App.exe'
+        with patch.dict(os.environ,{'CAGE_BUNDLE':str(candidate.parent),'CAGE_STATE':str(self.data),
+                                   'PROOF_LOG':str(self.root/'container-proof.json'),
+                                   'PATH':str(self.runtime)+os.pathsep+os.environ['PATH']}):
+            self.assertEqual(run(plan,script,['--cage-rollback-repair']),0)
+        record=_read_generations(self.state)
+        active=next(g for g in record['generations'] if g['prefix']==record['active'])
+        self.assertEqual(active['rollbackRepair']['from'],plan_identity(json.loads(self.old.read_text())))
+        self.assertEqual((self.active()/'drive_c/runtime.dll').read_text(),'new runtime system bytes')
+        self.assertEqual(self.read(self.previous,'AppData/Roaming/Proof/settings'),'my settings')
 
     def test_real_process_wrapper_migrates_and_rolls_back_without_replacing_existing_state(self):
         candidate = self.runtime_packages()

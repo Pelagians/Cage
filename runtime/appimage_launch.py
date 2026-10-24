@@ -387,7 +387,7 @@ def main(root, arguments):
         with lifecycle_lock(data / 'cage/appimage' / plan['desktop']['id']):
             print(json.dumps(integrate(root, plan, remove=arguments == ['--cage-uninstall']), indent=2))
         return 0
-    if arguments[:1] in (['--cage-update'], ['--cage-rollback']):
+    if arguments[:1] in (['--cage-update'], ['--cage-rollback'], ['--cage-rollback-repair']):
         data = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share')))
         with lifecycle_lock(data / 'cage/appimage' / plan['desktop']['id']):
             stage_update(plan)

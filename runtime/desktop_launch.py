@@ -400,7 +400,7 @@ def initialize_state(seed, inventory, state_root, identity):
 # own package bytes; this transaction owns only mutable Windows state.
 def validate_update_policy(policy):
     required = {"profile", "settings", "documents"}
-    if not isinstance(policy, dict) or not required <= set(policy) or set(policy) - required - {"runtimeMigrations"}:
+    if not isinstance(policy, dict) or not required <= set(policy) or set(policy) - required - {"runtimeMigrations", "rollbackRepairs"}:
         raise DesktopError("desktop.updates requires profile, settings and documents")
     import re
     if not isinstance(policy["profile"], str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/v[0-9]+", policy["profile"]):
@@ -423,10 +423,12 @@ def validate_update_policy(policy):
             if any(folded == old or folded.startswith(old + "/") or old.startswith(folded + "/") for old in paths):
                 raise DesktopError("overlapping update paths")
             paths.append(folded)
-    if "runtimeMigrations" in policy:
-        migrations = policy["runtimeMigrations"]
+    for key in ("runtimeMigrations", "rollbackRepairs"):
+        if key not in policy:
+            continue
+        migrations = policy[key]
         if not isinstance(migrations, list) or not 1 <= len(migrations) <= 16:
-            raise DesktopError("runtimeMigrations requires 1 to 16 explicit runtime transitions")
+            raise DesktopError(key + " requires 1 to 16 explicit runtime transitions")
         seen = set()
         for migration in migrations:
             if not isinstance(migration, dict) or set(migration) != {"from", "toRuntimeDigest"}:
@@ -447,7 +449,7 @@ def validate_update_policy(policy):
     return policy
 
 
-def runtime_migration(previous, identity, plan):
+def runtime_migration(previous, identity, plan, *, repair=False):
     """Authorize one directed transition, never a blanket runtime mismatch bypass.
 
     The old contract includes its runtime, seed, adapter and recipe policy. Only
@@ -459,7 +461,7 @@ def runtime_migration(previous, identity, plan):
     policy = validate_update_policy(plan.get('desktop', {}).get('updates'))
     application = plan.get('application', {})
     match = {'from': previous['identity'], 'toRuntimeDigest': identity.get('runtimeDigest')}
-    if (match not in policy.get('runtimeMigrations', [])
+    if (match not in policy.get('rollbackRepairs' if repair else 'runtimeMigrations', [])
             or identity.get('schemaVersion') != 'cage.desktop-state/v1'
             or previous.get('profile') != policy['profile']
             or not application.get('name') or not application.get('version')
@@ -468,13 +470,15 @@ def runtime_migration(previous, identity, plan):
     return match
 
 
-def validate_runtime_update(previous_plan, plan):
+def validate_runtime_update(previous_plan, plan, *, repair=False):
     """Package-side preflight before deployment or ledger changes."""
     old_policy = previous_plan['desktop']['updates']
     if old_policy['profile'] != plan['desktop']['updates']['profile']:
         raise DesktopError('runtime or migration profile changed; no deployment changed')
     transition = runtime_migration({'identity': plan_identity(previous_plan), 'profile': old_policy['profile'],
-                                   'application': previous_plan.get('application')}, plan_identity(plan), plan)
+                                   'application': previous_plan.get('application')}, plan_identity(plan), plan, repair=repair)
+    if repair and transition is None:
+        raise DesktopError('repaired rollback requires a different, explicitly qualified runtime')
     if transition:
         # A runtime-only transition cannot also change its adapter, application
         # identity, user-data selection or a declared architecture/graphics ABI.
@@ -489,14 +493,32 @@ def validate_runtime_update(previous_plan, plan):
     return transition
 
 
-def runtime_migration_rule(previous_plan, plan):
+def runtime_migration_rule(previous_plan, plan, *, repair=False):
     """Producer proposal only; signing additionally requires a completed proof."""
     rule = {'from': plan_identity(previous_plan), 'toRuntimeDigest': digest_json(plan['target'])}
     candidate = json.loads(json.dumps(plan))
-    candidate['desktop']['updates']['runtimeMigrations'] = [rule]
+    candidate['desktop']['updates']['rollbackRepairs' if repair else 'runtimeMigrations'] = [rule]
     validate_update_policy(candidate['desktop']['updates'])
-    validate_runtime_update(previous_plan, candidate)
+    validate_runtime_update(previous_plan, candidate, repair=repair)
     return rule
+
+
+def rollback_repair_source(record, identity, plan):
+    """Prefer the retained rollback target; also repair an already rolled-back app.
+
+    Only a full identity explicitly named by this package may be selected. Never
+    search arbitrary older generations or relabel the original runtime.
+    """
+    policy = validate_update_policy(plan.get('desktop', {}).get('updates'))
+    if record:
+        for name in dict.fromkeys((record.get('previous'), record['active'])):
+            if name is None:
+                continue
+            source = _generation(record, name)
+            rule = {'from': source['identity'], 'toRuntimeDigest': identity.get('runtimeDigest')}
+            if rule in policy.get('rollbackRepairs', []):
+                return source, runtime_migration(source, identity, plan, repair=True)
+    raise DesktopError('no exact qualified rollback repair for the previous or active generation; all state retained')
 
 
 def copy_file(source, destination):
@@ -662,12 +684,15 @@ def prepare_generation(seed, inventory, root, identity, plan, action):
     if record is None:
         if action == 'migrate':
             raise DesktopError('migration requires existing recorded legacy state; nothing imported')
-        if action == "rollback":
+        if action in {"rollback", "rollback-repair"}:
             raise DesktopError("no previous generation to roll back")
         initialize_state(seed, inventory, root, identity)
         record = _read_generations(root)
     current = _generation(record, record["active"])
     transition = runtime_migration(current, identity, plan) if action in {'update', 'migrate'} else None
+    repair_source = None
+    if action == 'rollback-repair':
+        repair_source, transition = rollback_repair_source(record, identity, plan)
     if action == 'migrate':
         # v0 markers do not record application versions. Bind explicit adoption
         # to the same pinned executable instead of guessing from a directory.
@@ -685,12 +710,12 @@ def prepare_generation(seed, inventory, root, identity, plan, action):
         migration_space(root, seed)
         snapshot_legacy(root, identity)
         action = 'update'
-    if current["identity"] == identity and action != "rollback":
+    if current["identity"] == identity and action not in {"rollback", "rollback-repair"}:
         if policy and identity.get("schemaVersion") == "cage.desktop-state/v1" and not current.get("profile"):
             current.update(profile=policy["profile"], application=plan.get("application", {}))
             _write_state_record(root / "state.json", record)
         return _real_path(root, current["prefix"]), None
-    if action not in {"update", "rollback"}:
+    if action not in {"update", "rollback", "rollback-repair"}:
         raise DesktopError("different seed/runtime; close the app and use --cage-update, or restore the previous package and use --cage-rollback")
     if not policy:
         raise DesktopError("this recipe has no qualified update policy; all state retained")
@@ -711,9 +736,10 @@ def prepare_generation(seed, inventory, root, identity, plan, action):
         if transition:
             # Runtime upgrades deliberately keep application bytes fixed. Update
             # the application separately after this transition has committed.
-            old_executable = windows_path(_real_path(root, current['prefix']), plan['launch']['entrypoint'])
+            settings_source = repair_source or current
+            old_executable = windows_path(_real_path(root, settings_source['prefix']), plan['launch']['entrypoint'])
             new_executable = windows_path(source, plan['launch']['entrypoint'])
-            for executable, base in ((old_executable, _real_path(root, current['prefix'])), (new_executable, source)):
+            for executable, base in ((old_executable, _real_path(root, settings_source['prefix'])), (new_executable, source)):
                 _real_path(base, executable.relative_to(base))
                 if not executable.is_file():
                     raise DesktopError('runtime migration requires the same pinned executable; old state retained')
@@ -729,13 +755,17 @@ def prepare_generation(seed, inventory, root, identity, plan, action):
     # Record preparation before any copy. A crash cannot make it active.
     transaction = {"status": "preparing", "action": action,
                    "candidate": relative, "previous": record["active"]}
-    if transition:
+    repair_audit = ({'source': repair_source['prefix'], 'from': repair_source['identity'], 'to': identity}
+                    if repair_source else None)
+    if repair_audit:
+        transaction['rollbackRepair'] = repair_audit
+    elif transition:
         transaction['runtimeMigration'] = transition
     _write_state_record(root / "transaction.json", transaction)
     shutil.copytree(source, prefix, symlinks=True, copy_function=copy_file)
-    if action == "update":
+    if action in {"update", "rollback-repair"}:
         verify_inventory(prefix, inventory)
-        _migrate_paths(_real_path(root, current["prefix"]), prefix, policy["settings"])
+        _migrate_paths(_real_path(root, (repair_source or current)["prefix"]), prefix, policy["settings"])
     _migrate_paths(_real_path(root, current["prefix"]), prefix, policy["documents"],
                    replace_missing=True, external_documents=True)
     _write_state_record(prefix / ".cage-state.json", identity)
@@ -748,7 +778,9 @@ def prepare_generation(seed, inventory, root, identity, plan, action):
     entry = {"prefix": relative, "identity": identity,
         "profile": policy["profile"], "application": plan.get("application", {}),
         "action": action}
-    if transition:
+    if repair_audit:
+        entry['rollbackRepair'] = repair_audit
+    elif transition:
         entry['runtimeMigration'] = transition
     record["generations"].append(entry)
     return prefix, record
@@ -831,7 +863,7 @@ def launch(metadata_path, files):
                     _write_state_record(prefix / '.cage-display.json', {'dpi': prefix_dpi(prefix)})
         return 0
     action = "launch"
-    if files[:1] in (["--cage-update"], ["--cage-rollback"], ["--cage-migrate"]):
+    if files[:1] in (["--cage-update"], ["--cage-rollback"], ["--cage-migrate"], ["--cage-rollback-repair"]):
         action = files[0][7:]
         files = files[1:]
     elif files == ["--cage-state-info"]:
@@ -880,6 +912,8 @@ def _launch_locked(metadata_path, files, plan, inventory, state_root, identity, 
     configure_fonts(plan, prefix, wine, server, environment, state_root, lock_fd)
     previous_prefix = (_real_path(state_root, pending['previous']) if pending is not None
                        and _generation(pending, pending['active']).get('runtimeMigration') else None)
+    if pending is not None and (repair := _generation(pending, pending['active']).get('rollbackRepair')):
+        previous_prefix = _real_path(state_root, repair['source'])
     configure_display(plan, state_root, prefix, wine, server, environment, lock_fd, previous_prefix=previous_prefix)
     # This maps the Flatpak namespace, not an unrestricted host filesystem.
     zdrive = prefix / "dosdevices/z:"

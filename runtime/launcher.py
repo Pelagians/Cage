@@ -111,7 +111,7 @@ def build_run_plan(
     _validate_network_mode(selected_network)
     _validate_graphics_network(mode, selected_network)
 
-    if state_action and (state_action not in {"update", "rollback", "state-info", "migrate"} or not state_dir):
+    if state_action and (state_action not in {"update", "rollback", "state-info", "migrate", "rollback-repair"} or not state_dir):
         raise RunError("state actions require --state-dir and update, rollback, state-info or migrate")
     base_image = _runtime_image(runtime)
     if session_contract == "cage.native-wine/v1":

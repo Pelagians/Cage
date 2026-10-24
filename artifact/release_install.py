@@ -14,7 +14,8 @@ import subprocess
 
 from artifact import releases as r
 from runtime.desktop_launch import (lifecycle_lock, _write_state_record,
-                                    _read_generations, _generation, validate_runtime_update, DesktopError)
+                                    _read_generations, _generation, validate_runtime_update,
+                                    rollback_repair_source, DesktopError)
 
 
 def installation(root, app, kind):
@@ -152,7 +153,7 @@ def _launch(record, release, files, action=None, previous=None, folder=None):
     kind=release['entry']['format']
     if kind=='flatpak':
         from artifact.updates import update_flatpak, _ref
-        if action:return update_flatpak(package(release),package(previous),rollback=action=='rollback',files=files,cache=folder/'flatpak-transaction')
+        if action:return update_flatpak(package(release),package(previous),rollback=action=='rollback',repair=action=='rollback-repair',files=files,cache=folder/'flatpak-transaction')
         return r.command(['flatpak','run','--user',_ref({'plan':release['entry']['plan']}),'--',*map(str,files)])
     if kind=='appimage':
         return r.command([package(release),*(['--cage-'+action] if action else []),'--',*map(str,files)])
@@ -167,7 +168,9 @@ def deploy(source, key, kind, *, action='install', cache=None, files=(), engine=
             _check_publisher(found,manifest)
             if found.get('pending'):raise r.ReleaseError('unfinished trusted deployment; recover before proceeding')
             if action=='install':raise r.ReleaseError('trusted installation already recorded; use update or run')
-            if manifest['sequence']<=found['highWater']:raise r.ReleaseError('release sequence is stale or already accepted; use explicit rollback')
+            if manifest['sequence']<=found['highWater']:
+                known_repair = action=='rollback-repair' and any(retained(root,d,key,kind)['manifest']==manifest for d in found['releases'])
+                if not known_repair:raise r.ReleaseError('release sequence is stale or already accepted; use explicit rollback')
         elif action!='install':raise r.ReleaseError('no trusted baseline installed; install the matching baseline first')
     release=r.fetch_release(source,key,kind,cache=root,preflight=preflight)
     manifest=release['manifest'];app=manifest['application']['id'];folder=installation(root,app,kind)
@@ -194,32 +197,41 @@ def deploy(source, key, kind, *, action='install', cache=None, files=(), engine=
                 raise r.ReleaseError('existing application state differs from signed baseline; no prefix imported or reset')
             record.pop('pending');_save(folder,record)
             if files:_launch(record,release,files)
-        elif action=='update':
+        elif action in {'update','rollback-repair'}:
             if not record:raise r.ReleaseError('no trusted baseline installed; install the matching baseline first')
             _check_publisher(record,manifest)
-            if manifest['sequence']<=record['highWater']:raise r.ReleaseError('release sequence is stale or already accepted; use explicit rollback for retained history')
+            known_repair = action=='rollback-repair' and release['digest'] in record['releases']
+            if manifest['sequence']<=record['highWater'] and not known_repair:raise r.ReleaseError('release sequence is stale or already accepted; use explicit rollback for retained history')
             previous=_selected(root,record,key,kind)
             _check_deployment(record,previous)
             if _state(record,previous) is None:raise r.ReleaseError('launch the installed baseline once before updating')
             try:
-                validate_runtime_update(previous['entry']['plan'], release['entry']['plan'])
+                source_release = previous
+                if action=='rollback-repair':
+                    source, _ = rollback_repair_source(_state(record,previous),release['entry']['identity'],release['entry']['plan'])
+                    history = [retained(root,d,key,kind) for d in record['releases']]
+                    matches = [rel for rel in history if rel['entry']['identity']==source['identity']]
+                    if len(matches)!=1:raise DesktopError('repair source has no unique retained signed release')
+                    source_release = matches[0]
+                validate_runtime_update(source_release['entry']['plan'], release['entry']['plan'], repair=action=='rollback-repair')
             except DesktopError as exc:
                 raise r.ReleaseError('runtime or migration qualification refused: ' + str(exc)) from exc
             if manifest['application']['name']!=previous['manifest']['application']['name']:raise r.ReleaseError('application name changed')
-            if any(retained(root,d,key,kind)['entry']['identity']==release['entry']['identity'] for d in record['releases']):
+            if not known_repair and any(retained(root,d,key,kind)['entry']['identity']==release['entry']['identity'] for d in record['releases']):
                 raise r.ReleaseError('release has no new application generation')
             if state_dir or exports_dir:raise r.ReleaseError('update cannot change installed state/document mount paths')
             # Pin the high-water sequence and retain authorization before user
             # code may commit. A failed trial never re-enables stale releases.
-            record['highWater']=manifest['sequence'];record['releases'].append(release['digest'])
-            record['pending']={'action':'update','target':release['digest']};_save(folder,record)
+            record['highWater']=max(record['highWater'],manifest['sequence'])
+            if not known_repair:record['releases'].append(release['digest'])
+            record['pending']={'action':action,'target':release['digest']};_save(folder,record)
             if kind=='oci':_container_load(release,record['engine'])
-            _launch(record,release,files,action='update',previous=previous,folder=folder)
+            _launch(record,release,files,action=action,previous=previous,folder=folder)
             selected=_selected(root,record,key,kind)
             if selected['digest']!=release['digest']:raise r.ReleaseError('trial did not activate requested signed release; recover the transaction')
             record.pop('pending');_save(folder,record)
         else:raise r.ReleaseError('unknown trusted deployment action')
-    return {'installed':action=='install','updated':action=='update','applicationId':app,'format':kind,
+    return {'installed':action=='install','updated':action=='update','repairedRollback':action=='rollback-repair','applicationId':app,'format':kind,
             'releaseSha256':release['digest'],'publisherKeySha256':record['publisherKeySha256'],'stateRetained':True}
 
 

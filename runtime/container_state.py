@@ -28,7 +28,7 @@ def managed_plan(bundle, image=None):
     if not desktop.get('updates'):
         raise state.DesktopError('persistent generation management requires desktop.updates')
     state.validate_update_policy(desktop['updates'])
-    if desktop['updates'].get('runtimeMigrations') and any(module.get('type') == 'chocolatey' for module in manifest.get('modules', [])):
+    if any(desktop['updates'].get(k) for k in ('runtimeMigrations', 'rollbackRepairs')) and any(module.get('type') == 'chocolatey' for module in manifest.get('modules', [])):
         raise state.DesktopError('prepared CFW runtime migrations require separate producer qualification; existing workflows remain unchanged')
     runtime = graph['runnerRuntime']
     if runtime.get('launcher') != 'wine' or runtime.get('runnerUrl'):
@@ -54,7 +54,7 @@ def managed_plan(bundle, image=None):
 
 def run(plan, script, arguments):
     action = os.environ.get('CAGE_STATE_ACTION', 'launch')
-    if arguments[:1] and arguments[0] in {'--cage-update', '--cage-rollback', '--cage-state-info', '--cage-migrate'}:
+    if arguments[:1] and arguments[0] in {'--cage-update', '--cage-rollback', '--cage-state-info', '--cage-migrate', '--cage-rollback-repair'}:
         action, arguments = arguments[0][7:], arguments[1:]
     if arguments[:1] == ['--']:
         # Explicit document mode matches desktop exports. Keep legacy raw
@@ -62,7 +62,7 @@ def run(plan, script, arguments):
         import re
         arguments = [name if re.match(r'^[A-Za-z]:[\\/]', name) else state.document_arguments([name])[0]
                      for name in arguments[1:]]
-    if action not in {'launch', 'update', 'rollback', 'state-info', 'migrate'}:
+    if action not in {'launch', 'update', 'rollback', 'state-info', 'migrate', 'rollback-repair'}:
         raise state.DesktopError('unknown container state action')
     seed = Path(os.environ.get('CAGE_BUNDLE', '/opt/cage/bundle')) / 'prefix'
     root = Path(os.environ.get('CAGE_STATE', '/var/lib/cage/state')) / plan['desktop']['id']

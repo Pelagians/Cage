@@ -386,7 +386,7 @@ def cmd_run(args):
 
 def cmd_package_update(args):
     from artifact.updates import update_flatpak
-    result = update_flatpak(args.package, args.previous_package, rollback=args.command == "rollback",
+    result = update_flatpak(args.package, args.previous_package, rollback=args.command == "rollback", repair=args.command == 'rollback-repair',
                             files=args.files, cache=args.cache_dir)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
@@ -406,7 +406,7 @@ def cmd_release(args):
             value = releases.fetch_release(args.release, args.key, args.format, cache=args.cache_dir)
             result = {'verified': True, 'releaseSha256': value['digest'], 'directory': value['directory'],
                       'publisherKeySha256': value['manifest']['publisherKeySha256']}
-        elif operation in ('install', 'update'):
+        elif operation in ('install', 'update', 'rollback-repair'):
             result = deploy(args.release, args.key, args.format, action=operation, cache=args.cache_dir,
                             files=args.files, engine=args.engine, state_dir=args.state_dir, exports_dir=args.exports_dir)
         else:
@@ -765,7 +765,7 @@ def build_parser():
                    help="Runtime container network mode; defaults to bundle runtime.network")
     p.add_argument("--entrypoint", help="Named suite entrypoint id to run")
     p.add_argument("--state-dir", help="Persistent managed Wine container state directory")
-    p.add_argument("--state-action", choices=["update", "rollback", "state-info", "migrate"], help="Explicit generation action; requires --state-dir")
+    p.add_argument("--state-action", choices=["update", "rollback", "state-info", "migrate", "rollback-repair"], help="Explicit generation action; requires --state-dir")
     p.add_argument("--writable-files", action="store_true", help="Allow writes within the parent directories of explicitly passed files")
     p.add_argument("files", nargs="*", help="Host files to pass to the selected application entrypoint")
     p.add_argument("--selkies-port", type=int, default=3001,
@@ -777,7 +777,7 @@ def build_parser():
                    help="Runner cache directory for runtime.runner archives")
     p.set_defaults(func=cmd_run)
 
-    for operation in ("update", "rollback"):
+    for operation in ("update", "rollback", "rollback-repair"):
         p = sub.add_parser(operation, help="Deploy a retained package and trial a qualified state generation")
         p.add_argument("format", choices=["flatpak"])
         p.add_argument("package", help="Target Cage .flatpak bundle with adjacent export receipt")
@@ -809,17 +809,17 @@ def build_parser():
     rp.add_argument('--output', required=True)
     rp.add_argument('--engine', default='podman')
     rp.set_defaults(func=cmd_release)
-    for operation in ('fetch', 'install', 'update', 'run', 'rollback', 'recover', 'info'):
+    for operation in ('fetch', 'install', 'update', 'run', 'rollback', 'rollback-repair', 'recover', 'info'):
         rp = rsub.add_parser(operation)
-        rp.add_argument('release' if operation in ('fetch', 'install', 'update') else 'application')
+        rp.add_argument('release' if operation in ('fetch', 'install', 'update', 'rollback-repair') else 'application')
         rp.add_argument('--key', required=True, help='Publisher public key obtained through a trusted channel')
         rp.add_argument('--format', required=True, choices=['flatpak', 'appimage', 'oci'])
         rp.add_argument('--cache-dir', help='Private retained release cache and installation ledger')
-        if operation in ('install', 'update'):
+        if operation in ('install', 'update', 'rollback-repair'):
             rp.add_argument('--engine', default='podman')
             rp.add_argument('--state-dir', help='OCI persistent state parent, fixed at installation')
             rp.add_argument('--exports-dir', help='OCI document directory, fixed at installation')
-        if operation in ('install', 'update', 'run', 'rollback'):
+        if operation in ('install', 'update', 'run', 'rollback', 'rollback-repair'):
             rp.add_argument('files', nargs='*', help='Documents to open during launch or trial')
         rp.set_defaults(func=cmd_release)
 
@@ -1074,8 +1074,8 @@ def main(argv=None):
         # positional after optional arguments in a subparser.  Cage supports
         # Python 3.11, so recover only non-option run-file arguments while
         # continuing to reject misspelled or unsupported flags.
-        if (args.command in {"run", "update", "rollback", "migrate"} or
-            args.command == 'release' and getattr(args, 'release_command', '') in {'install', 'update', 'run', 'rollback'}) and all(not item.startswith("-") for item in unknown):
+        if (args.command in {"run", "update", "rollback", "migrate", "rollback-repair"} or
+            args.command == 'release' and getattr(args, 'release_command', '') in {'install', 'update', 'run', 'rollback', 'rollback-repair'}) and all(not item.startswith("-") for item in unknown):
             args.files.extend(unknown)
         else:
             parser.error(f"unrecognized arguments: {' '.join(unknown)}")

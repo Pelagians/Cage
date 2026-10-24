@@ -219,7 +219,13 @@ def main():
     parser.add_argument('--trusted', action='store_true', help='Drive the same proof through signed release delivery')
     parser.add_argument('--qualification', help='Completed matching application proof to bind in test releases')
     parser.add_argument('--runtime-migration', action='store_true', help='Qualify a same-application-version, explicitly allowed runtime transition')
+    parser.add_argument('--rollback-repair', action='store_true', help='Qualify explicit repaired rollback with a new runtime identity')
+    parser.add_argument('--baseline-qualification', help='Independent original-package evidence for trusted repair setup')
     args = parser.parse_args(); kind = args.format; workflow = WORKFLOWS[args.application]()
+    if args.rollback_repair and (args.legacy or args.runtime_migration):
+        parser.error('repaired rollback is a distinct qualification, without legacy adoption or ordinary runtime migration')
+    if args.rollback_repair and args.trusted and not args.baseline_qualification:
+        parser.error('trusted repair requires independent original-package baseline qualification')
     stress_relaunches = int(os.environ.get('CAGE_TEST_RELAUNCHES', '0'))
     if not 0 <= stress_relaunches <= 25:
         parser.error('CAGE_TEST_RELAUNCHES must be between 0 and 25')
@@ -287,7 +293,7 @@ def main():
             spec_path=producer/(token+'-'+kind+'-'+str(sequence)+'.spec.json')
             output=producer/(token+'-'+kind+'-'+str(sequence)+'.json')
             item={'format':kind,'path':str(artifact) if kind!='oci' else str(producer/('application-'+str(sequence)+'.oci.tar')),
-                  'evidence':str(Path(args.qualification).resolve())}
+                  'evidence':str(Path(args.baseline_qualification if args.rollback_repair and sequence==1 else args.qualification).resolve())}
             if kind=='oci':item['image']=artifact
             revision=os.environ.get('CAGE_TEST_SOURCE_REVISION') or subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
             spec_path.write_text(json.dumps({'sequence':sequence,'sourceRevision':revision,'artifacts':[item]}))
@@ -327,7 +333,7 @@ def main():
         if args.trusted:
             operation=action or 'run'
             return [sys.executable,'-m','cage','release',operation,
-                    release_urls[str(package)] if operation=='update' else app,
+                    release_urls[str(package)] if operation in ('update','rollback-repair') else app,
                     '--key',str(key),'--format',kind,'--cache-dir',str(release_cache),str(document)]
         if kind == 'flatpak':
             if action:
@@ -355,6 +361,7 @@ def main():
     processes = []; handles = []; logs = []; sessions = []
     def run(package, label, action=None, previous=None, preference=False, menu=False):
         nonlocal document
+        before = _read_generations(state) if args.rollback_repair else None
         arguments = command(package, action, previous)
         if menu and kind in ('appimage', 'flatpak'):
             if kind == 'appimage':
@@ -438,7 +445,13 @@ def main():
                          env=env, text=True).splitlines(), 'Flatpak sandbox stopped', seconds=45)
         document = saved
         record = _read_generations(state); active = _generation(record, record['active'])
-        sessions.append({'phase': label, 'identity': active['identity'], 'prefix': record['active'], 'savedSha256': sha(saved)})
+        session = {'phase': label, 'identity': active['identity'], 'prefix': record['active'], 'savedSha256': sha(saved)}
+        if args.rollback_repair:
+            session.update(operation=action or 'run', exitCode=code, wineStopped=True)
+            if action=='rollback-repair':
+                session['rollbackRepair']=active['rollbackRepair']
+                session['repairSourceRole']='previous' if active['rollbackRepair']['source']==before.get('previous') else 'active'
+        sessions.append(session)
         print(kind, label, 'passed', flush=True)
         share_test_windows(state, shared_windows)
 
@@ -454,47 +467,89 @@ def main():
             assert _read_generations(state) == initial_identity and sha(original) == original_hash
         internal = Path('drive_c/users/Public/Documents/onboarding.txt')
         (first / internal).parent.mkdir(parents=True, exist_ok=True); (first / internal).write_text('before update')
-        if legacy:
-            run(baseline, '2-migrate', 'migrate', legacy)
-            assert workflow.preference(prefix()) == preference
-            journal = json.loads((state / 'legacy-migration.json').read_text()); snapshot = state / journal['snapshot']
-            assert (snapshot / 'prefix' / internal).read_text() == 'before update'
-            assert inventory_tree(first, state_snapshot=True) == inventory_tree(snapshot / 'prefix', state_snapshot=True)
-        migrated = prefix()
-        assert workflow.preference(migrated) == preference
-        old_executable = sha(migrated / workflow.executable)
-        old_identity = _generation(_read_generations(state), _read_generations(state)['active'])['identity']
-        run(candidate, '3-update', 'update', baseline)
-        updated = prefix(); new_executable = sha(updated / workflow.executable)
-        assert updated != migrated
-        if args.runtime_migration:
-            assert new_executable == old_executable, 'update the application separately from its runtime'
-            record = _read_generations(state); active = _generation(record, record['active'])
-            new_identity = active['identity']
-            assert old_identity['runtimeDigest'] != new_identity['runtimeDigest']
-            assert active['runtimeMigration'] == {'from': old_identity, 'toRuntimeDigest': new_identity['runtimeDigest']}
+        if args.rollback_repair:
+            from runtime.desktop_launch import plan_identity
+            if kind in ('flatpak','appimage'):
+                source_plan=json.loads(Path(str(baseline)+'.json').read_text())['plan']
+            elif kind=='oci':
+                from artifact.releases import oci_metadata
+                source_plan=oci_metadata(baseline,'podman')[0]
+            else:
+                from runtime.container_state import managed_plan
+                path=baseline/'metadata/native-launch.json'
+                source_plan=json.loads(path.read_text()) if path.exists() else managed_plan(baseline)
+            old_identity=_generation(_read_generations(state),_read_generations(state)['active'])['identity']
+            assert plan_identity(source_plan)==old_identity
+            old_executable=sha(first/workflow.executable)
+            original_inventory=inventory_tree(first,state_snapshot=True)
+            original_record=_read_generations(state)
+            run(candidate,'2-repair','rollback-repair',baseline)
+            repaired=prefix(); new_executable=sha(repaired/workflow.executable)
+            new_identity=_generation(_read_generations(state),_read_generations(state)['active'])['identity']
+            assert old_executable==new_executable and old_identity['runtimeDigest']!=new_identity['runtimeDigest']
+            if args.application=='sumatrapdf':
+                pins=json.loads((ROOT/'recipes/sumatrapdf-portable.releases.json').read_text())
+                assert old_executable==pins['3.6']['executableSha256']
+            assert workflow.preference(repaired)==preference and (repaired/internal).read_text()=='before update'
+            run(candidate,'3-relaunch',preference=True,menu=True)
+            assert workflow.preference(repaired)!=preference, 'qualify restoration, not merely identical preferences'
+            (repaired/internal).write_text('latest document after update')
+            run(candidate,'4-rollback-repair','rollback-repair',candidate)
+            rolled=prefix()
+            assert rolled!=repaired and workflow.preference(rolled)==preference
+            assert (rolled/internal).read_text()=='latest document after update'
+            assert workflow.preference(repaired)!=preference
+            run(candidate,'5-relaunch',menu=True)
+            for index in range(stress_relaunches):
+                run(candidate,'6-repaired-stress-'+str(index+1))
+                assert prefix()==rolled and workflow.preference(rolled)==preference
+            assert inventory_tree(first,state_snapshot=True)==original_inventory
+            record=_read_generations(state)
+            assert all(entry in record['generations'] for entry in original_record['generations'])
+            assert all(s['savedSha256']==original_hash for s in sessions)
+            assert sha(original)==original_hash
         else:
-            assert new_executable != old_executable
-        if args.application == 'sumatrapdf':
-            pins = json.loads((ROOT / 'recipes/sumatrapdf-portable.releases.json').read_text())
-            assert old_executable == pins['3.6']['executableSha256']
-            assert new_executable == pins['3.6' if args.runtime_migration else '3.6.1']['executableSha256']
-        assert workflow.preference(updated) == preference and (updated / internal).read_text() == 'before update'
-        (updated / internal).write_text('latest document after update')
-        run(candidate, '4-relaunch', menu=True)
-        assert prefix() == updated and workflow.preference(prefix()) == preference
-        run(baseline, '5-rollback', 'rollback', candidate)
-        assert sha(prefix() / workflow.executable) == old_executable and workflow.preference(prefix()) == preference
-        assert (prefix() / internal).read_text() == 'latest document after update'
-        assert (first / internal).read_text() == 'before update'
-        rolled = prefix(); run(baseline, '6-relaunch', menu=True)
-        assert prefix() == rolled and sha(original) == original_hash
-        # Optional failure reproduction uses the same real workflow and exact
-        # retained rollback target. A timeout fails immediately; nothing retries.
-        for index in range(stress_relaunches):
-            run(baseline, '7-stress-' + str(index + 1))
-            assert prefix() == rolled and workflow.preference(prefix()) == preference
-            assert sha(original) == original_hash
+            if legacy:
+                run(baseline, '2-migrate', 'migrate', legacy)
+                assert workflow.preference(prefix()) == preference
+                journal = json.loads((state / 'legacy-migration.json').read_text()); snapshot = state / journal['snapshot']
+                assert (snapshot / 'prefix' / internal).read_text() == 'before update'
+                assert inventory_tree(first, state_snapshot=True) == inventory_tree(snapshot / 'prefix', state_snapshot=True)
+            migrated = prefix()
+            assert workflow.preference(migrated) == preference
+            old_executable = sha(migrated / workflow.executable)
+            old_identity = _generation(_read_generations(state), _read_generations(state)['active'])['identity']
+            run(candidate, '3-update', 'update', baseline)
+            updated = prefix(); new_executable = sha(updated / workflow.executable)
+            assert updated != migrated
+            if args.runtime_migration:
+                assert new_executable == old_executable, 'update the application separately from its runtime'
+                record = _read_generations(state); active = _generation(record, record['active'])
+                new_identity = active['identity']
+                assert old_identity['runtimeDigest'] != new_identity['runtimeDigest']
+                assert active['runtimeMigration'] == {'from': old_identity, 'toRuntimeDigest': new_identity['runtimeDigest']}
+            else:
+                assert new_executable != old_executable
+            if args.application == 'sumatrapdf':
+                pins = json.loads((ROOT / 'recipes/sumatrapdf-portable.releases.json').read_text())
+                assert old_executable == pins['3.6']['executableSha256']
+                assert new_executable == pins['3.6' if args.runtime_migration else '3.6.1']['executableSha256']
+            assert workflow.preference(updated) == preference and (updated / internal).read_text() == 'before update'
+            (updated / internal).write_text('latest document after update')
+            run(candidate, '4-relaunch', menu=True)
+            assert prefix() == updated and workflow.preference(prefix()) == preference
+            run(baseline, '5-rollback', 'rollback', candidate)
+            assert sha(prefix() / workflow.executable) == old_executable and workflow.preference(prefix()) == preference
+            assert (prefix() / internal).read_text() == 'latest document after update'
+            assert (first / internal).read_text() == 'before update'
+            rolled = prefix(); run(baseline, '6-relaunch', menu=True)
+            assert prefix() == rolled and sha(original) == original_hash
+            # Optional failure reproduction uses the same real workflow and exact
+            # retained rollback target. A timeout fails immediately; nothing retries.
+            for index in range(stress_relaunches):
+                run(baseline, '7-stress-' + str(index + 1))
+                assert prefix() == rolled and workflow.preference(prefix()) == preference
+                assert sha(original) == original_hash
         result = {'status': 'passed', 'application': args.application, 'format': kind, 'architecture': os.uname().machine,
                   'pageSize': os.sysconf('SC_PAGE_SIZE'), 'sessions': sessions, 'legacyMigration': bool(legacy),
                   'settingsPreserved': True, 'documentsPreserved': True, 'rollback': True, 'menuRelaunch': kind in ('appimage', 'flatpak'),
@@ -502,6 +557,11 @@ def main():
                   'generations': _read_generations(state), 'originalDocumentSha256': original_hash}
         assert source_identities()==original_sources,'source package/image changed during qualification'
         result.update(original_sources)
+        if args.rollback_repair:
+            result.update(qualificationKind='rollback-repair',repairSourcePlan=source_plan,
+                rollbackRepairs=[{'from':old_identity,'to':new_identity}],
+                originalGenerationsRetained=True,originalPrefixUnchanged=True,
+                settingsRestoredFromOriginal=True,freshRuntimeSeed=True)
         if args.runtime_migration:
             result['runtimeMigrations'] = [{'from': old_identity, 'to': new_identity}]
         if stress_relaunches:result['stressRelaunches'] = stress_relaunches
@@ -516,6 +576,23 @@ def main():
                             '--format',kind,'--cache-dir',str(release_cache)],env=env,check=True)
             result.update(trustedRelease=True,highWater=info['highWater'],retainedSignedReleases=info['retainedReleases'])
         (evidence / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
+        if args.rollback_repair and not args.trusted and kind!='container':
+            from artifact import releases
+            producer=evidence/'producer';producer.mkdir()
+            public=evidence/'publisher-public.pem'
+            with tempfile.TemporaryDirectory(prefix='cage-repair-key-') as secret:
+                private=Path(secret)/'private.pem';releases.generate_key(private,public)
+                item={'format':kind,'path':str(candidate) if kind!='oci' else str(producer/'repair.oci.tar'),
+                      'evidence':str(evidence/'result.json')}
+                if kind=='oci':item['image']=candidate
+                revision=os.environ.get('CAGE_TEST_SOURCE_REVISION') or subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+                spec=producer/'repair.spec.json';spec.write_text(json.dumps({'sequence':2,'sourceRevision':revision,'artifacts':[item]}))
+                release=producer/'repair.json';releases.create_release(spec,private,release)
+                fetched=releases.fetch_release(release,public,kind,cache=release_cache)
+                assert fetched['entry']['identity']==new_identity
+                result['signedRepairFetch']={'releaseSha256':fetched['digest'],'sourceRevision':revision,
+                    'scope':'signed repair package creation and fetch verification; not original-runtime qualification or installed trusted deployment'}
+            (evidence/'result.json').write_text(json.dumps(result,indent=2)+'\n')
         if kind == 'appimage':
             subprocess.run([installed['installed'], '--cage-uninstall'], env=env, check=True)
         if os.environ.get('CAGE_TEST_DISCARD_PREFIXES') == '1':shutil.rmtree(state)

@@ -19,7 +19,7 @@ from core.manifest.errors import ManifestError
 from runtime.desktop_launch import (DesktopError, copy_file, lifecycle_lock,
                                    _write_state_record, _real_path, plan_identity,
                                    _read_generations, _generation, snapshot_legacy, migration_space,
-                                   validate_runtime_update)
+                                   validate_runtime_update, rollback_repair_source)
 
 
 def identity(plan):
@@ -199,16 +199,18 @@ def migrate_flatpak(package, previous_package, *, files=(), cache=None, state_di
                 'nextStep': 'update from this managed baseline with the normal update command'}
 
 
-def update_flatpak(package, previous_package, *, rollback=False, files=(), cache=None, environment=None):
+def update_flatpak(package, previous_package, *, rollback=False, repair=False, files=(), cache=None, environment=None):
+    if rollback and repair:
+        raise DesktopError('choose exact rollback or repaired rollback explicitly')
     candidate, source = checked_export(package)
     previous, old_source = checked_export(previous_package)
     if _ref(candidate) != _ref(previous):
         raise DesktopError('update and previous bundle must have the same application ID, architecture and branch')
     if candidate['plan']['desktop']['updates'].get('profile') != previous['plan']['desktop']['updates'].get('profile'):
         raise DesktopError('incompatible migration profiles; no deployment changed')
-    if not rollback:
+    if not rollback and not repair:
         validate_runtime_update(previous['plan'], candidate['plan'])
-    if candidate['identity'] == previous['identity']:
+    if candidate['identity'] == previous['identity'] and not repair:
         raise DesktopError('package update has no new application/runtime generation')
     environment = dict(os.environ if environment is None else environment)
     directory = Path(cache) if cache else Path(environment.get('XDG_DATA_HOME', str(Path.home() / '.local/share'))) / 'cage/package-updates/flatpak' / candidate['plan']['desktop']['id']
@@ -221,20 +223,26 @@ def update_flatpak(package, previous_package, *, rollback=False, files=(), cache
         installed_plan = json.loads(_command(['run', '--user', '--command=cat', ref, metadata_path], environment))
         if identity(installed_plan) != previous['identity']:
             raise DesktopError('installed package does not match --previous-package; no deployment changed')
-        active = _active(_state(previous, environment))
+        state = _state(previous, environment)
+        active = _active(state)
         if active is None:
             raise DesktopError('launch the installed baseline once before updating; no deployment changed')
         if active != previous['identity']:
             raise DesktopError('installed package and active state differ; run cage recover-flatpak first')
+        if repair:
+            source_generation, _ = rollback_repair_source(state['state'], candidate['identity'], candidate['plan'])
+            if source_generation['identity'] == previous['identity']:
+                validate_runtime_update(previous['plan'], candidate['plan'], repair=True)
         # Retain both exact artifacts before deployment changes or user-code runs.
         _retain(directory, previous, old_source)
         _retain(directory, candidate, source)
         journal = {'schemaVersion': 'cage.flatpak-update/v1', 'status': 'prepared',
-                   'candidate': candidate, 'previous': previous, 'action': 'rollback' if rollback else 'update'}
+                   'candidate': candidate, 'previous': previous,
+                   'action': 'rollback-repair' if repair else 'rollback' if rollback else 'update'}
         _write_state_record(directory / 'transaction.json', journal)
         try:
             _install(directory, candidate, environment)
-            _command(['run', '--user', ref, '--cage-rollback' if rollback else '--cage-update', '--', *map(str, files)],
+            _command(['run', '--user', ref, '--cage-' + journal['action'], '--', *map(str, files)],
                      environment, capture=False)
             if _active(_state(candidate, environment)) != candidate['identity']:
                 raise DesktopError('trial did not activate the requested generation')
@@ -245,5 +253,5 @@ def update_flatpak(package, previous_package, *, rollback=False, files=(), cache
             raise
         journal.update(status='committed', deployed=candidate['sha256'])
         _write_state_record(directory / 'transaction.json', journal)
-        return {'updated': not rollback, 'rolledBack': rollback, 'ref': ref,
+        return {'updated': not rollback and not repair, 'rolledBack': rollback, 'repairedRollback': repair, 'ref': ref,
                 'recoveryDirectory': str(directory), 'stateRetained': True}

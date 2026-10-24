@@ -350,3 +350,38 @@ and the original runtime's strict qualification remains red. No application
 trial was retried, timeout relaxed, payload substituted or failure masked.
 These CI proofs use 4 KiB runners and private X11 displays; they do not replace
 the separately recorded Asahi/16 KiB recovery or installed desktop proofs.
+
+## Approved repaired rollback
+
+The user subsequently approved explicit repaired rollback with a new runtime
+identity, retaining the exact original for recovery. The new `rollback-repair`
+operation implements that choice through the shared generation transaction.
+Exact `rollbackRepairs` rules, executable/profile checks and operation-specific
+signed evidence authorize the guarded package; ordinary rollback and the
+original failed qualification remain unchanged. See
+[the operation and qualification requirements](runtime-migrations.md#explicit-repaired-rollback).
+
+A new private Asahi/16 KiB proof used a reflinked copy of the retained four-
+generation investigation state. One normal guarded session changed the current
+toolbar preference, then repaired rollback restored the original preference in
+a fresh guarded generation. All 25 subsequent real PDF save/close/relaunch
+sessions exited normally before the unchanged 120-second deadline. The source
+original runtime identity remains recorded in `rollbackRepair`; the active
+identity names the guarded runtime and new package contract. Newer preferences
+remain recoverable, and the existing internal PDF and external document bytes
+are preserved. These 27 sessions mount sealed bundles read-only in the verified
+guarded OCI carrier; they are separate from new standalone image distribution
+or installed Flatpak/AppImage qualification.
+
+The full suite passed 627 tests and 227 subtests, including actual subprocess
+state transactions, unsafe-source/storage refusal, deployment recovery, real
+Ed25519 signatures and retained repair history without sequence rewind.
+The workflow has a separate explicit repair mode for the pending 4 KiB and
+desktop proofs. Its default strict original-runtime gate is not replaced.
+Private build, native GUI and preservation records are under
+`.cage/repaired-rollback/`. No installed application was upgraded or launched.
+Independent receipts `verified-native.json` and `protected-after.json` confirm
+the native invariants and all 59,051 installed-state entries unchanged, with no
+added paths and the normal Notepad++ Flatpak commit unchanged. The new private
+build and repaired prefix share only kernel-verified identical Windows extents;
+no original artifact, generation, document or differing byte was removed.
