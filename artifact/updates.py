@@ -48,7 +48,12 @@ def checked_export(package, *, allow_legacy=False):
         raise DesktopError('invalid Flatpak export identity/policy; no deployment changed') from exc
     if not allow_legacy and not plan.get('desktop', {}).get('updates'):
         raise DesktopError('Flatpak update requires a qualified recipe migration policy')
-    return {'sha256': digest, 'identity': identity(plan), 'plan': plan}, package
+    entry = {'sha256': digest, 'identity': identity(plan), 'plan': plan}
+    if 'commit' in result:
+        if not isinstance(result['commit'], str) or not re.fullmatch('[a-f0-9]{64}', result['commit']):
+            raise DesktopError('invalid Flatpak export commit; no deployment changed')
+        entry['commit'] = result['commit']
+    return entry, package
 
 
 def _command(arguments, environment, *, capture=True):
@@ -84,8 +89,16 @@ def _install(directory, entry, environment):
     with package.open('rb') as handle:
         if hashlib.file_digest(handle, 'sha256').hexdigest() != entry['sha256']:
             raise DesktopError('retained Flatpak bundle changed; deployment refused')
-    # A repeated repair or recovery can select the already deployed commit.
-    # Flatpak otherwise refuses it before Cage can run the state transaction.
+    # Repeated repair/recovery still runs the generation trial, but must not
+    # redeploy the exact commit already installed. Some Flatpak bundle paths
+    # reject that even with --reinstall. Compare commits, never only plans.
+    if entry.get('commit'):
+        try:
+            deployed = _command(['info', '--user', '--show-commit', _ref(entry)], environment)
+        except DesktopError:
+            deployed = None  # The ref may be absent during explicit recovery.
+        if deployed == entry['commit']:
+            return
     _command(['install', '--user', '--noninteractive', '--assumeyes', '--reinstall', '--no-related', '--no-deps',
               '--bundle', str(package)], environment)
 
@@ -103,8 +116,10 @@ def _retain(directory, entry, source):
     with destination.open('rb') as handle:
         if hashlib.file_digest(handle, 'sha256').hexdigest() != entry['sha256']:
             raise DesktopError('retained package changed; no deployment changed')
-    _write_state_record(Path(str(destination) + '.json'), {'schemaVersion': 'cage.flatpak-export-result/v0',
-                        'sha256': entry['sha256'], 'plan': entry['plan']})
+    receipt = {'schemaVersion': 'cage.flatpak-export-result/v0', 'sha256': entry['sha256'], 'plan': entry['plan']}
+    if entry.get('commit'):
+        receipt['commit'] = entry['commit']
+    _write_state_record(Path(str(destination) + '.json'), receipt)
 
 
 def recover_flatpak(directory, *, environment=None):

@@ -1,7 +1,10 @@
 """Deployment recovery follows the committed prefix, including ambiguous exits."""
 import json
 import hashlib
+import os
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -29,10 +32,12 @@ class FlatpakUpdateTests(unittest.TestCase):
             if '--cage-state-info' in arguments:
                 return json.dumps({'state': {'active': 'prefix', 'generations': [
                     {'prefix': 'prefix', 'identity': self.current_identity}]}})
+            if arguments[0] == 'info':
+                return (self.old if self.current_plan == self.old[0]['plan'] else self.new)[0]['commit']
             if arguments[0] == 'install':
                 digest = Path(arguments[-1]).stem
                 entry = self.old[0] if digest == self.old[0]['sha256'] else self.new[0]
-                if entry['plan'] == self.current_plan and '--reinstall' not in arguments:
+                if entry['plan'] == self.current_plan:
                     raise DesktopError('flatpak install failed: application already installed')
                 self.current_plan = entry['plan']
                 self.installed.append(digest)
@@ -51,6 +56,7 @@ class FlatpakUpdateTests(unittest.TestCase):
         package = self.root / (version + '.flatpak')
         package.write_bytes(('package ' + version).encode())
         digest = hashlib.sha256(package.read_bytes()).hexdigest()
+        commit = hashlib.sha256(('commit ' + version).encode()).hexdigest()
         plan = {'format': 'flatpak', 'branch': 'stable', 'seedDigest': version,
                 'target': {'architecture': 'aarch64'},
                 'desktop': {'id': 'org.example.App', 'name': 'Proof', 'summary': 'Proof',
@@ -58,8 +64,8 @@ class FlatpakUpdateTests(unittest.TestCase):
                             'updates': {'profile': 'p/v1', 'settings': [], 'documents': []}},
                 'state': {'managerVersion': 1}}
         Path(str(package) + '.json').write_text(json.dumps({
-            'schemaVersion': 'cage.flatpak-export-result/v0', 'sha256': digest, 'plan': plan}))
-        return {'sha256': digest, 'identity': updates.identity(plan), 'plan': plan}, package
+            'schemaVersion': 'cage.flatpak-export-result/v0', 'sha256': digest, 'plan': plan, 'commit': commit}))
+        return {'sha256': digest, 'identity': updates.identity(plan), 'plan': plan, 'commit': commit}, package
 
     def run_update(self):
         return updates.update_flatpak(self.new[1], self.old[1], cache=self.root / 'cache')
@@ -84,7 +90,7 @@ class FlatpakUpdateTests(unittest.TestCase):
         self.fail_after_commit = True
         with self.assertRaisesRegex(DesktopError, 'interrupted after'):
             self.run_update()
-        self.assertEqual(self.installed, [self.new[0]['sha256'], self.new[0]['sha256']])
+        self.assertEqual(self.installed, [self.new[0]['sha256']])
 
     def test_power_interruption_recovery_reads_committed_state(self):
         self.run_update()
@@ -125,7 +131,7 @@ class FlatpakUpdateTests(unittest.TestCase):
         self.current_identity = self.old[0]['identity']
         for entry, path in (self.old, self.new):
             Path(str(path) + '.json').write_text(json.dumps({'schemaVersion': 'cage.flatpak-export-result/v0',
-                                                           'sha256': entry['sha256'], 'plan': entry['plan']}))
+                                                           'sha256': entry['sha256'], 'plan': entry['plan'], 'commit': entry['commit']}))
 
     def test_qualified_runtime_deployment_and_failed_trial_recovery_retain_both_packages(self):
         self.runtime_packages()
@@ -154,7 +160,7 @@ class FlatpakUpdateTests(unittest.TestCase):
         policy['rollbackRepairs'] = policy.pop('runtimeMigrations')
         self.new[0]['identity'] = updates.identity(self.new[0]['plan'])
         Path(str(self.new[1])+'.json').write_text(json.dumps({'schemaVersion':'cage.flatpak-export-result/v0',
-            'sha256':self.new[0]['sha256'],'plan':self.new[0]['plan']}))
+            'sha256':self.new[0]['sha256'],'plan':self.new[0]['plan'],'commit':self.new[0]['commit']}))
         def state(*args):
             return {'state':{'active':'prefix','generations':[{'prefix':'prefix','identity':self.current_identity,
                 'profile':'p/v1','application':{'name':'proof','version':'1'}}]}}
@@ -178,7 +184,7 @@ class FlatpakUpdateTests(unittest.TestCase):
         policy['rollbackRepairs'] = policy.pop('runtimeMigrations')
         self.new[0]['identity'] = updates.identity(self.new[0]['plan'])
         Path(str(self.new[1])+'.json').write_text(json.dumps({'schemaVersion':'cage.flatpak-export-result/v0',
-            'sha256':self.new[0]['sha256'],'plan':self.new[0]['plan']}))
+            'sha256':self.new[0]['sha256'],'plan':self.new[0]['plan'],'commit':self.new[0]['commit']}))
         original = {'prefix':'prefix','identity':self.old[0]['identity'],
                     'profile':'p/v1','application':{'name':'proof','version':'1'}}
         def state(*args):
@@ -196,8 +202,57 @@ class FlatpakUpdateTests(unittest.TestCase):
             with self.assertRaisesRegex(DesktopError,'trial failed'):
                 updates.update_flatpak(self.new[1],self.new[1],repair=True,cache=self.root/'cache')
         self.assertEqual(self.current_identity,self.new[0]['identity'])
+        self.assertEqual(self.installed,[self.new[0]['sha256']])
         self.assertEqual(json.loads((self.root/'cache/transaction.json').read_text())['status'],'recovered')
         self.assertEqual((self.root/'cache'/(self.old[0]['sha256']+'.flatpak')).read_bytes(),self.old[1].read_bytes())
+        retained,_=updates.checked_export(self.root/'cache'/(self.old[0]['sha256']+'.flatpak'))
+        self.assertEqual(retained['commit'],self.old[0]['commit'])
+
+    def test_same_plan_with_different_commit_does_not_bypass_deployment(self):
+        entry,path=self.new
+        self.current_plan=entry['plan']
+        changed={**entry,'commit':'f'*64}
+        updates._retain(self.root,changed,path)
+        with self.assertRaisesRegex(DesktopError,'already installed'):
+            updates._install(self.root,changed,{})
+        self.assertTrue(any(command[0]=='install' for command in self.commands))
+
+    def test_older_receipts_without_commit_remain_readable(self):
+        receipt=Path(str(self.old[1])+'.json');data=json.loads(receipt.read_text())
+        data.pop('commit');receipt.write_text(json.dumps(data))
+        entry,_=updates.checked_export(self.old[1])
+        self.assertNotIn('commit',entry)
+        data['commit']='invalid';receipt.write_text(json.dumps(data))
+        with self.assertRaisesRegex(DesktopError,'invalid Flatpak export commit'):
+            updates.checked_export(self.old[1])
+
+
+@unittest.skipUnless(shutil.which('flatpak'), 'requires the Flatpak CLI')
+class FlatpakCLITransactionTests(unittest.TestCase):
+    def test_repeated_exact_commit_install_preserves_private_data(self):
+        with tempfile.TemporaryDirectory(prefix='cage-flatpak-transaction-') as temporary:
+            root=Path(temporary);app='org.example.CageTransactionProof';arch=os.uname().machine
+            env=dict(os.environ,FLATPAK_USER_DIR=str(root/'installation'),XDG_DATA_HOME=str(root/'data'),
+                     XDG_CACHE_HOME=str(root/'cache'),XDG_CONFIG_HOME=str(root/'config'))
+            build=root/'build';(build/'files/bin').mkdir(parents=True)
+            executable=build/'files/bin/proof';executable.write_text('#!/bin/sh\nexit 0\n');executable.chmod(0o755)
+            (build/'metadata').write_text(f'[Application]\nname={app}\nruntime=org.freedesktop.Platform/{arch}/25.08\ncommand=proof\n')
+            def command(*args):
+                return subprocess.check_output(['flatpak',*map(str,args)],env=env,text=True,stderr=subprocess.STDOUT)
+            command('build-finish',build)
+            command('build-export','--arch='+arch,root/'repo',build,'stable')
+            package=root/'proof.flatpak'
+            command('build-bundle','--arch='+arch,root/'repo',package,app,'stable')
+            commit=(root/'repo/refs/heads/app'/app/arch/'stable').read_text().strip()
+            entry={'sha256':hashlib.sha256(package.read_bytes()).hexdigest(),'commit':commit,
+                   'plan':{'desktop':{'id':app},'target':{'architecture':arch},'branch':'stable'}}
+            updates._retain(root,entry,package)
+            updates._install(root,entry,env)
+            sentinels=[root/'data'/name for name in ('settings','document','original-runtime')]
+            for path in sentinels:path.parent.mkdir(exist_ok=True);path.write_bytes(path.name.encode())
+            updates._install(root,entry,env)
+            self.assertEqual(command('info','--user','--show-commit',app+'/'+arch+'/stable').strip(),commit)
+            for path in sentinels:self.assertEqual(path.read_bytes(),path.name.encode())
 
 
 if __name__ == '__main__':
