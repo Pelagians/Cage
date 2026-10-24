@@ -1,0 +1,60 @@
+schemaVersion: cage.app/v0
+name: myharmony-arm64
+version: 1.0.308
+runtime:
+  provider: wine-arm64ec
+  version: '11.20'
+  network: bridge
+  wineGraphics: xwayland
+sources:
+  - id: myharmony-installer
+    type: installer
+    policy: bring-your-own-installer
+    path: sources/myharmony/MyHarmony-App.msi
+    sha256: 245c352b579a8f79329ca34a1003a496e7834b62011fdd1912775cb81ec19784
+  - id: myharmony-payload
+    type: archive
+    policy: bring-your-own-installer
+    path: sources/myharmony/MyHarmony-payload.zip
+    sha256: c6ed41de7cd0f2d5f7a7043604ea44621f8f44c6985de674a883535160ccee16
+  - id: wine-ldap
+    type: other
+    policy: redistributable
+    path: sources/myharmony/wine-ldap-11.20-ec1.fc44.aarch64.rpm
+    url: https://download.copr.fedorainfracloud.org/results/lacamar/wine-arm64ec/fedora-44-aarch64/Packages/w/wine-ldap-11.20-ec1.fc44.aarch64.rpm
+    sha256: 8b58c84b19ac344d47990fe812f440314d5f9485486a3efc3db4e5588df45246
+  - id: arial
+    type: installer
+    policy: bring-your-own-installer
+    path: sources/myharmony/arial32.exe
+    url: https://github.com/pushcx/corefonts/raw/master/arial32.exe
+    sha256: 85297a4d146e9c87ac6f74822734bdee5f4b2a722d7eaa584b7f2cbf76f478f6
+  - id: trebuchet
+    type: installer
+    policy: bring-your-own-installer
+    path: sources/myharmony/trebuc32.exe
+    url: https://github.com/pushcx/corefonts/raw/master/trebuc32.exe
+    sha256: 5a690d9bb8510be1b8b4fe49f1f2319651fe51bbe54775ddddd8ef0bd07fdac9
+modules:
+  - type: files
+    mappings:
+      - source: sources/myharmony/app
+        target: C:/MyHarmony
+        mode: merge
+      - source: sources/myharmony/wldap32.dll
+        target: C:/MyHarmony/wldap32.dll
+        mode: copy
+        sha256: 47719c3ae006297fc64b846f3e51da9a78c30b5305fe2eaf5b5c34cf316a056c
+      - source: sources/myharmony/fonts
+        target: C:/windows/Fonts
+        mode: merge
+  - type: registry
+    file: recipes/myharmony-fonts.reg
+  - type: check
+    file:
+      path: C:/MyHarmony/MyHarmony.exe
+      exists: true
+      sha256: 0a4602a22e0d9e5bdc3ae0a7720652271dfe4e51c8cc8039135f68f89f523a3e
+launch:
+  entrypoint: C:/MyHarmony/MyHarmony.exe
+  workingDirectory: C:/MyHarmony

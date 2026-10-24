@@ -1,0 +1,22 @@
+REGEDIT4
+
+[HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Fonts]
+"Arial (TrueType)"="arial.ttf"
+"Arial Bold (TrueType)"="arialbd.ttf"
+"Arial Bold Italic (TrueType)"="arialbi.ttf"
+"Arial Italic (TrueType)"="ariali.ttf"
+"Trebuchet MS (TrueType)"="trebuc.ttf"
+"Trebuchet MS Bold (TrueType)"="trebucbd.ttf"
+"Trebuchet MS Bold Italic (TrueType)"="trebucbi.ttf"
+"Trebuchet MS Italic (TrueType)"="trebucit.ttf"
+
+[HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Fonts]
+"Arial (TrueType)"="arial.ttf"
+"Arial Bold (TrueType)"="arialbd.ttf"
+"Arial Bold Italic (TrueType)"="arialbi.ttf"
+"Arial Italic (TrueType)"="ariali.ttf"
+"Trebuchet MS (TrueType)"="trebuc.ttf"
+"Trebuchet MS Bold (TrueType)"="trebucbd.ttf"
+"Trebuchet MS Bold Italic (TrueType)"="trebucbi.ttf"
+"Trebuchet MS Italic (TrueType)"="trebucit.ttf"
+
