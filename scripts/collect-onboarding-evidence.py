@@ -2,6 +2,7 @@
 """Collect proof records without traversing Wine drives or uploading user state."""
 from pathlib import Path
 import argparse
+import json
 import os
 import shutil
 
@@ -12,12 +13,22 @@ def collect(source, destination):
         raise ValueError('evidence destination must be outside the source tree')
     for directory, folders, files in os.walk(source, followlinks=False):
         root = Path(directory)
-        folders[:] = [name for name in folders if name not in {'state', 'data', 'package-cache', 'documents'}
+        folders[:] = [name for name in folders if name not in {'state', 'data', 'package-cache', 'documents', 'native-symbols'}
                       and not (root / name).is_symlink()]
         for name in files:
             path = root / name
             if path.is_symlink() or not path.is_file():continue
-            if path.suffix not in {'.json', '.log', '.png', '.sig'} and path.name != 'publisher-public.pem':continue
+            profile = False
+            if name.endswith('-profile.perf') and path.stat().st_size <= 16 * 1024**2:
+                marker = path.with_suffix('.json')
+                if marker.is_file() and not marker.is_symlink():
+                    try:
+                        metadata = json.loads(marker.read_text())
+                        with path.open('rb') as stream:magic = stream.read(8)
+                        profile = (metadata.get('schemaVersion') == 'cage.shutdown-profile/v1'
+                                   and metadata.get('diagnosticOnly') is True and magic == b'PERFILE2')
+                    except (OSError, ValueError, AttributeError):pass
+            if not profile and path.suffix not in {'.json', '.log', '.png', '.sig'} and path.name != 'publisher-public.pem':continue
             target = destination / path.relative_to(source)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(path, target)

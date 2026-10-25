@@ -23,7 +23,7 @@ on:
         type: boolean
         default: false
       capture_shutdown:
-        description: 'NOT qualification: capture native stack before an owned ARM OCI SIGKILL'
+        description: 'NOT qualification: sample native stacks during owned ARM OCI shutdown'
         type: boolean
         default: false
   push:
@@ -256,7 +256,11 @@ jobs:
       - name: Prepare tools and historical runtime
         run: |
           sudo apt-get update
-          sudo apt-get install -y podman uidmap slirp4netns fuse-overlayfs rpm2cpio strace gdb xvfb openbox xdotool scrot xdg-utils x11-xserver-utils
+          diagnostic_tools=()
+          if [ '${{ inputs.capture_shutdown }}' = true ] && [ '${{ matrix.arch }}' = aarch64 ]; then
+            diagnostic_tools=(linux-tools-generic)
+          fi
+          sudo apt-get install -y podman uidmap slirp4netns fuse-overlayfs rpm2cpio strace gdb xvfb openbox xdotool scrot xdg-utils x11-xserver-utils "${diagnostic_tools[@]}"
           python -m pip install PyYAML pytest setuptools wheel 'cryptography>=43'
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           mkdir -p "$HOME/.config/containers" dist/onboarding-evidence dist/runtime-migration
@@ -336,7 +340,7 @@ jobs:
           if [ "$CAGE_RUNTIME_PROOF_MODE" = rollback-repair ]; then
             repair_options=(--repair-source-bundle dist/runtime-migration/baseline/sumatrapdf-portable-3.6)
           fi
-          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/container" python scripts/test-onboarding-poc.py container dist/runtime-migration/baseline/sumatrapdf-portable-3.6 dist/runtime-migration/candidate/sumatrapdf-portable-3.6 --"$CAGE_RUNTIME_PROOF_MODE" "${repair_options[@]}"
+          CAGE_TEST_RELAUNCHES="${{ inputs.capture_shutdown && '0' || env.CAGE_TEST_RELAUNCHES }}" CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/container" python scripts/test-onboarding-poc.py container dist/runtime-migration/baseline/sumatrapdf-portable-3.6 dist/runtime-migration/candidate/sumatrapdf-portable-3.6 --"$CAGE_RUNTIME_PROOF_MODE" "${repair_options[@]}"
           CAGE_TEST_INITIAL_RELAUNCHES="${{ matrix.arch == 'aarch64' && inputs.original_oci_relaunches || '0' }}" CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/oci" python scripts/test-onboarding-poc.py oci localhost/cage-runtime-migration:baseline localhost/cage-runtime-migration:candidate --"$CAGE_RUNTIME_PROOF_MODE" "${repair_options[@]}"
           if [ "$CAGE_RUNTIME_PROOF_MODE" = runtime-migration ]; then
             CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/trusted-oci" python scripts/test-onboarding-poc.py oci localhost/cage-runtime-migration:baseline localhost/cage-runtime-migration:candidate --"$CAGE_RUNTIME_PROOF_MODE" --trusted --qualification dist/onboarding-evidence/oci/result.json

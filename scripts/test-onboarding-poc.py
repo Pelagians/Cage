@@ -15,7 +15,6 @@ import importlib.util
 import json
 import os
 import shutil
-import shlex
 import stat
 import struct
 import subprocess
@@ -60,7 +59,7 @@ def proof_container_processes(container_state):
 
 
 @contextmanager
-def shutdown_trace(destination, executable, container_state, *, capture_kill=False):
+def shutdown_trace(destination, executable, container_state, *, capture_kill=False, launcher=None):
     """Opt-in CI observer: attach after save, detach before failure diagnostics.
 
     Trace the owned Wine processes, not the Podman client (which proxies signals).
@@ -97,31 +96,15 @@ def shutdown_trace(destination, executable, container_state, *, capture_kill=Fal
     command = ['sudo', '-n', 'strace', '-f', '-ttt', '-T', '-i', '-e', 'trace=%process,%signal,%desc,%memory,futex',
                '-o', str(destination.with_suffix('.log')), *[arg for pid in targets for arg in ('-p', str(pid))]]
     if capture_kill:
-        if os.uname().machine != 'aarch64' or not shutil.which('gdb'):
-            raise RuntimeError('native kill capture requires ARM CI and gdb')
+        if os.uname().machine != 'aarch64':raise RuntimeError('native sampling requires ARM CI')
         applications = [p for p in owned if p['comm'] == Path(executable).name[:15].casefold()]
         servers = [p for p in owned if p['comm'] in ('wineserver', 'wineserver64')]
         if len(applications) != 1 or len(servers) != 1:raise RuntimeError('native capture requires one application and Wine server')
-        application, server = applications[0], servers[0]
-        if not application['namespacePids']:raise RuntimeError('application PID namespace is unavailable')
         record.update(diagnosticOnly=True, observerChangesTiming=True)
         attached_file = destination.with_name(destination.name + '-attached')
-        capture = [sys.executable, str(ROOT / 'scripts/capture-owned-shutdown.py'),
-                   str(destination.with_suffix('.json')), executable,
-                   str(destination.with_name(destination.name + '-native'))]
-        # Stop this server at entry to kill(app, SIGKILL), before the kernel
-        # destroys the app. The separate helper can then attach to the app.
-        commands = ['handle SIGINT nostop noprint pass', 'catch syscall kill',
-                    f"condition 1 $x0 == {application['namespacePids'][-1]} && $x1 == 9",
-                    'shell touch ' + shlex.quote(str(attached_file)), 'continue',
-                    f"if $x8 == 129 && $x0 == {application['namespacePids'][-1]} && $x1 == 9\n"
-                    + 'shell ' + shlex.join(capture) + '\nend', 'detach']
-        command_file = destination.with_suffix('.gdb')
-        command_file.write_text('\n'.join(commands) + '\n')
-        command = ['sudo', '-n', 'env', 'GITHUB_ACTIONS=true', 'gdb', '--batch', '--nx', '--nh', '-iex', 'set auto-load off',
-                   '-iex', 'set debuginfod enabled off', '-p', str(server['hostPid']),
-                   '-x', str(command_file)]
-        targets = [server['hostPid']]
+        command = ['sudo', '-n', 'env', 'GITHUB_ACTIONS=true', sys.executable,
+                   str(ROOT / 'scripts/capture-owned-shutdown.py'),
+                   str(destination.with_suffix('.json')), executable, str(destination)]
     destination.with_suffix('.json').write_text(json.dumps(record, indent=2) + '\n')
     with destination.with_name(destination.name + '-attach.log').open('w') as output:
         trace = subprocess.Popen(command,
@@ -133,17 +116,20 @@ def shutdown_trace(destination, executable, container_state, *, capture_kill=Fal
                     status = (Path('/proc') / str(pid) / 'status').read_text()
                     if '\nTracerPid:\t0\n' in '\n' + status:return False
                 return not capture_kill or attached_file.exists()
-            gui.wait_for(attached, 'shutdown tracer attached to private Wine processes', seconds=10)
+            gui.wait_for(attached, 'shutdown tracer attached to private Wine processes', seconds=25 if capture_kill else 10)
             yield
         finally:
-            # The new process group contains only sudo/strace. Attached Wine
+            if capture_kill:
+                destination.with_name(destination.name + '-outcome.json').write_text(json.dumps(
+                    {'exitCode': launcher.poll() if launcher is not None else None}) + '\n')
+            # The new process group contains only diagnostic tools. Attached Wine
             # processes retain their own groups; SIGINT detaches the observer.
             if trace.poll() is None:
                 result = subprocess.run(['sudo', '-n', 'kill', '-INT', '--', '-' + str(trace.pid)],
                                         capture_output=True, timeout=10)
                 if result.returncode and trace.poll() is None:
                     raise RuntimeError('could not detach the private shutdown tracer')
-                trace.wait(timeout=10)
+                trace.wait(timeout=45 if capture_kill else 10)
 
 
 def proof_lock_processes(state):
@@ -553,11 +539,9 @@ def main():
         try:
             with shutdown_trace(evidence / (label + '-trace'), workflow.executable,
                                 state.parent if kind in ('container', 'oci') else None,
-                                capture_kill=kind == 'oci' and os.environ.get('CAGE_TEST_CAPTURE_SIGKILL') == '1'):
+                                capture_kill=kind == 'oci' and os.environ.get('CAGE_TEST_CAPTURE_SIGKILL') == '1', launcher=process):
                 gui.command('xdotool', 'key', '--clearmodifiers', 'alt+F4')
                 code = process.wait(timeout=120)
-            if (evidence / (label + '-trace-native.json')).exists():
-                raise RuntimeError('native shutdown captured with altered debugger timing; this is not qualification')
             if code != 0:
                 shutdown_diagnostics(process, evidence / (label + '-nonzero'), workflow.executable,
                                      container_state=state.parent if kind in ('container', 'oci') else None, kernel=True)

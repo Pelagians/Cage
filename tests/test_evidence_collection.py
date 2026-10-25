@@ -21,7 +21,7 @@ def test_collector_cli_retains_records_without_user_state_or_drive_links(tmp_pat
     expected = {'result.json', 'run.log', 'failure.png', 'publisher-public.pem', 'trusted-cache/releases/one/release.json.sig'}
     for name in expected:
         path = source / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text(name)
-    for name in ('state', 'data', 'documents', 'package-cache'):
+    for name in ('state', 'data', 'documents', 'package-cache', 'native-symbols'):
         path = source / name; path.mkdir(); (path / 'private.json').write_text('private')
     (source / 'z:').symlink_to(outside, target_is_directory=True)
     (source / 'linked.json').symlink_to(outside / 'private.json')
@@ -197,9 +197,8 @@ def test_shutdown_trace_attaches_only_owned_wine_and_detaches_on_failure(tmp_pat
                 with module.shutdown_trace(tmp_path / 'capture', 'SumatraPDF.exe', tmp_path, capture_kill=True):
                     raise subprocess.TimeoutExpired('application', 120)
         capture_args = launch.call_args.args[0]
-        assert capture_args[:5] == ['sudo', '-n', 'env', 'GITHUB_ACTIONS=true', 'gdb']
-        assert capture_args[capture_args.index('-p') + 1] == '102'
-        assert 'condition 1 $x0 == 11 && $x1 == 9' in (tmp_path / 'capture.gdb').read_text()
+        assert capture_args[:4] == ['sudo', '-n', 'env', 'GITHUB_ACTIONS=true']
+        assert 'capture-owned-shutdown.py' in capture_args[5]
         capture_record = json.loads((tmp_path / 'capture.json').read_text())
         assert capture_record['diagnosticOnly'] is True and capture_record['observerChangesTiming'] is True
         record = json.loads((tmp_path / 'trace.json').read_text())
@@ -301,3 +300,15 @@ def test_owned_native_capture_rejects_recycled_pid_and_qualifying_record(tmp_pat
     with pytest.raises(RuntimeError, match='requires CI'):
         module.capture(path, name, tmp_path / 'capture')
     assert not (tmp_path / 'capture.json').exists()
+
+
+def test_collector_only_retains_bounded_declared_native_profiles(tmp_path):
+    source = tmp_path / 'source'; source.mkdir()
+    for name in ('owned-profile', 'ordinary-profile', 'undeclared-profile', 'wrong-magic-profile'):
+        (source / (name + '.perf')).write_bytes(b'PERFILE2' if name != 'wrong-magic-profile' else b'private')
+    metadata = {'schemaVersion': 'cage.shutdown-profile/v1', 'diagnosticOnly': True}
+    for name in ('owned-profile', 'ordinary-profile', 'wrong-magic-profile'):
+        (source / (name + '.json')).write_text(json.dumps(metadata | {'diagnosticOnly': name != 'ordinary-profile'}))
+    destination = tmp_path / 'collected'
+    subprocess.run([sys.executable, str(COLLECTOR), '--source', str(source), '--destination', str(destination)], check=True)
+    assert [p.name for p in destination.glob('*.perf')] == ['owned-profile.perf']
