@@ -56,7 +56,7 @@ static int tcp(int port) {
 #include "runtime_parity.h"
 
 int wmain(int argc,wchar_t **argv) {
-    if(argc==3 && !wcscmp(argv[1],L"--runtime-config"))return runtime_parity(argv[2]);
+    if((argc==3 || argc==4) && !wcscmp(argv[1],L"--runtime-config"))return runtime_parity(argv[2],argc==4?argv[3]:NULL);
     if(argc<5 || argc>6)return 2;
     printf("{\"schemaVersion\":\"cage.windows-capability-probe/v1\",\"status\":\"observed\",\"filesystem\":{\"read\":%s,\"write\":%s,\"siblingRead\":%s,\"protectedRead\":%s},\"network\":{\"tcp\":%s},\"hidInterfaces\":%u}\n",
       read_canary(argv[1])?"true":"false",writable(argv[2])?"true":"false",read_canary(argv[3])?"true":"false",read_canary(argv[4])?"true":"false",

@@ -235,3 +235,16 @@ This earlier local receipt did not run three-format enforcement. The later CI
 result above covers generic runtime probes; MyHarmony service/login and physical
 device synchronization remain unqualified. No qualified v1 MyHarmony release or
 production parity claim has been issued.
+
+## Installed release follow-up
+
+The [installed-release qualification specification](installed-release-qualification.md)
+adds independent OCI, Flatpak and AppImage CI cells for fresh signed installation,
+explicit policy-contract updates, exact release rollback with current revocations,
+native folder rebinding, recovery/relaunch, installed desktop Exec/document
+forwarding and verified adoption with state preservation. It retains the existing
+All Devices producer runtime job. The signed installed fixture requests no devices;
+controlled Windows device/hotplug cases remain blocked and the signing gate is
+unchanged. Harness presence is not a pass: consult the exact commit's retained
+`installed/installed-release.json` for results. Physical USB synchronization and
+the actual MyHarmony workflow remain unqualified.
