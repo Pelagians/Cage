@@ -18,7 +18,7 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./MyHarmony-1.0.308-x86_64.AppImage
 
 ## USB access (one time per computer)
 
-Keep the rules file beside the installer script and run:
+Keep the rules file, `manage-usb-rules.py` and the installer script together and run:
 
 ```
 sudo sh install-usb-rules.sh
@@ -58,8 +58,11 @@ Settings and login state persist under
 Keep that directory when replacing the AppImage. Deleting the AppImage does not
 remove it. Do not copy credentials into bug reports.
 
-To remove the USB rules, remove only `/etc/udev/rules.d/70-cage-myharmony.rules`,
-reload udev rules and reconnect the device. This does not remove application state.
+The helper preserves modified or untracked rules, tracks owners shared by
+multiple exports, and saves removed/upgraded rules under `/etc/cage/udev-rules`.
+To release this application's ownership, run `sudo sh install-usb-rules.sh remove`.
+The last owner removes only an unchanged Cage-created file; existing identical
+administrator-owned rules remain installed. Application state is retained.
 
 ## Rebuild from the Cage checkout
 
@@ -73,3 +76,14 @@ The MSI must match the pinned official MyHarmony 1.0.308 download. The preparati
 script verifies the embedded application and Arial/Trebuchet font packages.
 The recipe's offline build policy does not restrict the exported AppImage's host
 network access. The application and font sources remain proprietary BYO inputs.
+
+## Managed v1 candidate
+
+The v0 AppImage instructions above describe the existing direct-host build.
+The opt-in [v1 candidate](../../recipes/myharmony-compat.cage.yaml) requests
+networking, X11, an optional writable folder and All Devices on all three
+formats. V1 requires host Cage, an explicitly accepted capability contract and
+its qualified native Ubuntu 24.04 x86_64 launch path. It does not use
+`--allow-host-access`, AppRun or a Wine virtual desktop. Host uaccess rules
+remain a separate explicit administrative prerequisite. See the
+[implementation/qualification status](../../docs/proposals/capability-parity/implementation-status.md).
