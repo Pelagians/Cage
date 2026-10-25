@@ -73,6 +73,8 @@ def build_run_plan(
             f"runnable={status.get('runnable')})"
         )
 
+    if _load_json(bundle/'manifest.cage.json').get('schemaVersion') == 'cage.app/v1':
+        raise RunError('v1 requires a verified managed release; export and use cage release install/run')
     graph = _load_json(bundle / "metadata" / "graph.json")
     runtime = dict(graph.get("runnerRuntime") or {})
     launch = dict(graph.get("launch") or {})

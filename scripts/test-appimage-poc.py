@@ -127,7 +127,8 @@ def main():
             'install': True, 'desktopLaunch': True, 'save': True, 'relaunch': True, 'relocation': True,
             'sameStateGeneration': True, 'settingsZoom': zoom, 'uninstallRetainsState': True,
             'savedContents': document.read_text(), 'mode': 'extract-and-run' if environment.get('APPIMAGE_EXTRACT_AND_RUN') else 'FUSE',
-            'minimumGlibc': plan['target']['minimumGlibc'], 'runtimeTarget': plan['target']}
+            'privateRuntime': plan['target'].get('privateRuntime'),
+            'legacyMinimumHostGlibc': plan['target'].get('minimumGlibc'), 'runtimeTarget': plan['target']}
         (EVIDENCE / 'functional-test.json').write_text(json.dumps(result, indent=2) + '\n')
         print(json.dumps(result, indent=2))
     except BaseException:

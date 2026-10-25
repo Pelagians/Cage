@@ -10,9 +10,15 @@ import subprocess
 import sys
 import shutil
 
-from desktop_launch import (DesktopError, launch, digest_json, _write_state_record,
-                            lifecycle_lock, _read_generations, _generation, _real_path, plan_identity, copy_file,
-                            desktop_entry, snapshot_legacy, assert_quiescent, _flush_tree, validate_update_policy)
+try:
+    from .desktop_launch import (DesktopError, launch, digest_json, _write_state_record,
+                                lifecycle_lock, _read_generations, _generation, _real_path, plan_identity, copy_file,
+                                desktop_entry, snapshot_legacy, assert_quiescent, _flush_tree, validate_update_policy)
+except ImportError:  # Standalone packaged helper directory.
+    from desktop_launch import (DesktopError, launch, digest_json, _write_state_record,
+                                lifecycle_lock, _read_generations, _generation, _real_path, plan_identity, copy_file,
+                                desktop_entry, snapshot_legacy, assert_quiescent, _flush_tree, validate_update_policy)
+
 
 
 def refresh_desktop_cache(directory):
@@ -302,7 +308,9 @@ def migrate(root, metadata, plan, previous, files):
         if not record or _generation(record, record['active'])['identity'] != plan_identity(old):
             raise DesktopError('legacy package and recorded state differ; all files retained')
         usr = Path(metadata).parents[3]
-        environment = {**os.environ, 'LD_LIBRARY_PATH': str(usr / 'lib/cage-native')}
+        environment = dict(os.environ)
+        if not plan['target'].get('privateRuntime'):
+            environment['LD_LIBRARY_PATH'] = str(usr / 'lib/cage-native')
         assert_quiescent(state, str(usr / 'wine' / plan['target']['wineserver']), environment)
         backup = snapshot_legacy(state, plan_identity(plan), reuse=False)
         directory = installed_directory(plan)

@@ -1,0 +1,19 @@
+# DESIGN ONLY: new-field projection, not a complete runnable application.
+# Broad device access is Q. Change hotplug to required only with qualified support.
+schemaVersion: cage.app/v1
+id: org.example.Cage.AllDevicesDesign
+execution:
+  environment: local-desktop
+  targets:
+    - oci
+    - flatpak
+    - appimage
+  fallbacks: []
+permissions:
+  requests:
+    - id: all-devices
+      kind: device-class
+      reason: Use all host-user-accessible devices for this application.
+      required: true
+      class: all
+      hotplug: startup-only

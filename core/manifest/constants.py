@@ -3,7 +3,7 @@ from __future__ import annotations
 
 SCHEMA_VERSION = "cage.app/v0"
 LEGACY_SCHEMA_VERSION = "cage.dev/v0"
-SUPPORTED_SCHEMA_VERSIONS = {SCHEMA_VERSION, LEGACY_SCHEMA_VERSION}
+SUPPORTED_SCHEMA_VERSIONS = {SCHEMA_VERSION, LEGACY_SCHEMA_VERSION, "cage.app/v1"}
 
 ALLOWED_RUNTIME_PROVIDERS = {"wine", "staging", "umu-proton-ge"}
 ALLOWED_RUNTIME_NETWORK_MODES = {"none", "bridge", "host"}

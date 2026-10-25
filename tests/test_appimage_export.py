@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import importlib.util
+import contextlib
+import hashlib
+import io
 import json
 import os
+import runpy
 import shutil
 from pathlib import Path
 import subprocess
@@ -16,6 +20,8 @@ from unittest.mock import patch
 from artifact.appimage import (create_appimage_export_plan, apprun_script, checked_download,
                               unpack_python, stage_native_libraries)
 from artifact.appimage import stage_notices, omit_unqualified_modules, relocate_wine_links, platform_directory
+from artifact.appimage import stage_private_runtime, stage_native_locale
+from runtime.appimage_runtime import materialize, interpreter_slot
 from runtime import desktop_launch
 from runtime.desktop_launch import DesktopError, digest_json
 from tests.test_desktop_export import bundle_at
@@ -28,6 +34,49 @@ with patch.dict(sys.modules, {'desktop_launch': desktop_launch}):
 
 
 class AppImageTests(unittest.TestCase):
+    def test_managed_utf8_locale_is_copied_from_the_pinned_platform_and_rejects_escape(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);platform_root=root/'platform';locale=platform_root/'lib/locale/C.utf8';locale.mkdir(parents=True)
+            (locale/'LC_CTYPE').write_bytes(b'pinned locale fixture')
+            stage_native_locale(root/'app',platform_root)
+            self.assertEqual((root/'app/usr/lib/cage-native/locale/C.utf8/LC_CTYPE').read_bytes(),b'pinned locale fixture')
+            outside=root/'outside';outside.write_text('host data')
+            (locale/'LC_TIME').symlink_to(outside)
+            with self.assertRaisesRegex(DesktopError,'escaping'):stage_native_locale(root/'rejected',platform_root)
+            self.assertFalse((root/'rejected').exists())
+
+    def test_legacy_fixture_retains_old_lifecycle_with_current_private_transport(self):
+        prepare = runpy.run_path(str(ROOT / 'scripts/prepare-legacy-poc.py'))['main']
+        fixture = ROOT / 'tests/fixtures/legacy-desktop/runtime'
+        historical = {name: (fixture / name).read_bytes()
+                      for name in ('desktop_launch.py', 'appimage_launch.py')}
+        transport = (ROOT / 'runtime/appimage_runtime.py').read_bytes()
+        with tempfile.TemporaryDirectory() as td:
+            bundle = bundle_at(td)
+            def export(source, **options):
+                from artifact import appimage
+                runtime = appimage.ROOT / 'runtime'
+                for name, content in historical.items():
+                    self.assertEqual((runtime / name).read_bytes(), content)
+                self.assertEqual((runtime / 'appimage_runtime.py').read_bytes(), transport)
+                plan = appimage.create_appimage_export_plan(source, allow_host_access=True)
+                self.assertEqual(plan['state']['schemaVersion'], 'cage.desktop-state/v0')
+                self.assertNotIn('managerVersion', plan['state'])
+                self.assertEqual(plan['state']['privateRuntimeSha256'], hashlib.sha256(transport).hexdigest())
+                self.assertEqual(plan['state']['integrationSha256'], hashlib.sha256(historical['appimage_launch.py']).hexdigest())
+                self.assertIn('usr/lib/cage-native', appimage.apprun_script(plan))
+                return {'plan': plan}
+            output = io.StringIO()
+            with patch.object(sys, 'argv', ['prepare-legacy-poc.py', 'appimage', str(bundle),
+                                          '--output', str(Path(td) / 'legacy.AppImage')]), \
+                    patch('artifact.appimage.export_appimage', side_effect=export) as producer, \
+                    contextlib.redirect_stdout(output):
+                prepare()
+            producer.assert_called_once()
+            result = json.loads(output.getvalue())
+            self.assertEqual(result['legacyTestFixture']['launcherSha256'],
+                             hashlib.sha256(historical['desktop_launch.py']).hexdigest())
+
     def test_absolute_platform_data_link_uses_pinned_tree(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / 'platform'
@@ -180,22 +229,81 @@ class AppImageTests(unittest.TestCase):
                 self.assertFalse(installed.exists())
                 self.assertEqual(state.read_text(), 'preserve')
 
-    def test_glibc_abi_diagnostic_precedes_python(self):
+    def test_bootstrap_uses_private_loader_without_host_glibc_probe(self):
         with tempfile.TemporaryDirectory() as td:
             bundle = bundle_at(td)
             plan = create_appimage_export_plan(bundle, allow_host_access=True)
             script = Path(td) / 'AppRun'
             script.write_text(apprun_script(plan))
-            fake = Path(td) / 'bin'
-            fake.mkdir()
-            for name, output in [('uname', 'x86_64'), ('getconf', 'glibc 2.39')]:
-                path = fake / name
-                path.write_text('#!/bin/sh\necho "' + output + '"\n')
-                path.chmod(0o755)
-            result = subprocess.run(['/bin/sh', str(script)], env={'PATH': str(fake)}, capture_output=True, text=True)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn('requires glibc 2.43', result.stderr)
-            self.assertNotIn('python', result.stderr)
+            loader = Path(td) / 'usr/lib/cage-native/ld-linux-x86-64.so.2'
+            loader.parent.mkdir(parents=True)
+            loader.write_text('#!/bin/sh\n[ -z "${LD_LIBRARY_PATH-}" ] || exit 9\nprintf "%s\\n" "$@"\n')
+            loader.chmod(0o755)
+            with patch.dict(os.environ, {'LD_LIBRARY_PATH': '/host/injected'}):
+                result = subprocess.run(['/bin/sh', str(script)], capture_output=True, text=True)
+            # The fixture plan is x86_64 even when unit tests run on ARM.
+            if os.uname().machine == 'x86_64':
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('--library-path', result.stdout)
+                self.assertIn('usr/python/bin/python3', result.stdout)
+            self.assertNotIn('getconf', script.read_text())
+            self.assertNotIn('minimumGlibc', plan['target'])
+            self.assertIn('privateRuntime', plan['target'])
+
+    @unittest.skipUnless(shutil.which('cc') and shutil.which('patchelf'), 'requires ELF producer tools')
+    def test_private_runtime_relocates_and_child_exec_uses_packaged_libc(self):
+        with tempfile.TemporaryDirectory(prefix='Cage runtime café ') as td:
+            root = Path(td)
+            source = root / 'old AppDir'
+            binary = source / 'usr/wine/bin/probe'
+            binary.parent.mkdir(parents=True)
+            (source / 'usr/python').mkdir()
+            native = source / 'usr/lib/cage-native'
+            native.mkdir(parents=True)
+            (source / 'usr/libexec').mkdir()
+            code = root / 'probe.c'
+            code.write_text('#define _GNU_SOURCE\n#include <stdio.h>\n#include <unistd.h>\n#include <dlfcn.h>\n'
+                            'int main(int argc,char **argv){ if(argc==1){void *h=dlopen("libpath.so",RTLD_NOW);'
+                            'if(!h)return 6;const char *(*next)(void)=dlsym(h,"next_binary");'
+                            'char *a[]={(char *)next(),"child",NULL};'
+                            'execv(a[0],a);return 3;} Dl_info i; if(!dladdr(dlsym(RTLD_NEXT,"printf"),&i))return 4;'
+                            'char p[4096]; int n=readlink("/proc/self/exe",p,4095);if(n<0)return 5;'
+                            'p[n]=0;printf("%s\\n%s\\n",i.dli_fname,p);return 0;}')
+            library = root / 'path.c'
+            library.write_text('#define _GNU_SOURCE\n#include <dlfcn.h>\n#include <stdlib.h>\n#include <string.h>\n'
+                               'const char *next_binary(void){static char p[4096];Dl_info i;'
+                               'if(!dladdr(next_binary,&i)||!realpath(i.dli_fname,p))return "/missing";'
+                               'strcpy(strrchr(p,\'/\')+1,"probe");return p;}')
+            subprocess.run(['cc', '-shared', '-fPIC', str(library), '-ldl', '-o', str(binary.with_name('libpath.so'))], check=True)
+            subprocess.run(['cc', str(code), '-ldl', '-Wl,-rpath,$ORIGIN', '-o', str(binary)], check=True)
+            start, size = interpreter_slot(binary)
+            with binary.open('rb') as handle:
+                handle.seek(start)
+                loader = Path(os.fsdecode(handle.read(size).rstrip(b'\0')))
+            libc = subprocess.check_output(['cc', '-print-file-name=libc.so.6'], text=True).strip()
+            shutil.copyfile(libc, native / 'libc.so.6')
+            platform_root = root / 'platform'
+            triplet = {'x86_64': 'x86_64-linux-gnu', 'aarch64': 'aarch64-linux-gnu'}[os.uname().machine]
+            (platform_root / 'lib' / triplet).mkdir(parents=True)
+            shutil.copy2(loader, platform_root / 'lib' / triplet / loader.name)
+            (source / 'usr/wine/bin/alias').symlink_to('probe')
+            manifest = stage_private_runtime(source, platform_root, os.uname().machine)
+            moved = root / 'relocated AppDir'
+            source.rename(moved)
+            scratch = root / 'launch tree'
+            scratch.mkdir()
+            materialize(moved, scratch, manifest)
+            result = subprocess.run([str(scratch / 'usr/wine/bin/alias')], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('cage-native/libc.so.6', result.stdout)
+            self.assertIn(str(scratch / 'usr/wine/bin/probe'), result.stdout)
+            # A changed immutable executable must not be copied into the launch tree.
+            with (moved / 'usr/wine/bin/probe').open('ab') as handle:
+                handle.write(b'tamper')
+            bad = root / 'bad launch'
+            bad.mkdir()
+            with self.assertRaisesRegex(ValueError, 'digest mismatch'):
+                materialize(moved, bad, manifest)
 
 
 if __name__ == '__main__':

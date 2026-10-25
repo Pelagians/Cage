@@ -25,10 +25,11 @@ def managed_plan(bundle, image=None):
     manifest = json.loads((bundle / 'manifest.cage.json').read_text())
     graph = json.loads((bundle / 'metadata/graph.json').read_text())
     desktop = manifest.get('desktop', {})
-    if not desktop.get('updates'):
+    managed_v1 = manifest.get('schemaVersion') == 'cage.app/v1'
+    if not desktop.get('updates') and not managed_v1:
         raise state.DesktopError('persistent generation management requires desktop.updates')
-    state.validate_update_policy(desktop['updates'])
-    if any(desktop['updates'].get(k) for k in ('runtimeMigrations', 'rollbackRepairs')) and any(module.get('type') == 'chocolatey' for module in manifest.get('modules', [])):
+    if desktop.get('updates'):state.validate_update_policy(desktop['updates'])
+    if any(desktop.get('updates', {}).get(k) for k in ('runtimeMigrations', 'rollbackRepairs')) and any(module.get('type') == 'chocolatey' for module in manifest.get('modules', [])):
         raise state.DesktopError('prepared CFW runtime migrations require separate producer qualification; existing workflows remain unchanged')
     runtime = graph['runnerRuntime']
     if runtime.get('launcher') != 'wine' or runtime.get('runnerUrl'):
@@ -42,7 +43,7 @@ def managed_plan(bundle, image=None):
     if not re.search(r'(?:@|^)sha256:[a-f0-9]{64}$', selected_image):
         raise state.DesktopError('managed updates require a digest-pinned container image')
     inventory = state.inventory_tree(bundle / 'prefix')
-    return {'schemaVersion': 'cage.desktop-export-plan/v0', 'desktop': desktop,
+    plan = {'schemaVersion': 'cage.desktop-export-plan/v0', 'desktop': desktop,
             'state': {'managerVersion': 1,
                       'launcherSha256': hashlib.sha256(Path(state.__file__).read_bytes()).hexdigest(),
                       'initSha256': hashlib.sha256(Path(__file__).with_name('container_init.py').read_bytes()).hexdigest(),
@@ -50,9 +51,22 @@ def managed_plan(bundle, image=None):
             'application': graph.get('application', {}), 'launch': graph['launch'],
             'seedDigest': state.digest_json(inventory),
             'target': {'runtime': runtime, 'image': image or runtime['image']}}
+    if managed_v1:
+        from core.capabilities import compile_capabilities, require_supported
+        if manifest['runtime']['provider'] != 'wine' or manifest['runtime']['version'] != '11.0' or runtime.get('architecture','x86_64') not in ('amd64','x86_64'):
+            raise state.DesktopError('managed v1 OCI initially requires native x86_64 Wine 11.0')
+        if any(k.startswith('CAGE_') for k in environment):raise state.DesktopError('reserved managed environment variable')
+        capabilities = compile_capabilities(manifest,'oci');require_supported(capabilities)
+        plan.update(format='oci', recipe=manifest, capabilities=capabilities, managedNamespace=True,
+                    sourceManifestDigest=state.digest_json(manifest), environment=environment)
+        plan['state'].update(managerVersion=2, schemaVersion='cage.desktop-state/v2')
+    return plan
 
 
 def run(plan, script, arguments):
+    if plan.get('state', {}).get('managerVersion') == 2:
+        from capability_guard import check
+        check(plan)
     action = os.environ.get('CAGE_STATE_ACTION', 'launch')
     if arguments[:1] and arguments[0] in {'--cage-update', '--cage-rollback', '--cage-state-info', '--cage-migrate', '--cage-rollback-repair'}:
         action, arguments = arguments[0][7:], arguments[1:]
@@ -85,6 +99,7 @@ def run(plan, script, arguments):
         if not zdrive.exists() and not zdrive.is_symlink():
             zdrive.symlink_to('/')  # Only the container namespace and its explicit mounts.
         environment = {**os.environ, 'WINEPREFIX': str(prefix), 'CAGE_MANAGED_PREFIX': str(prefix)}
+        if plan.get('state', {}).get('managerVersion') == 2:state.configure_managed_drives(prefix,environment)
         result = state._run_application(['/bin/bash', '-c', script, 'cage-managed', *arguments],
                      'wineserver', environment, seed.parent, root, locked=True, lock_fd=lock_fd)
         if result == 0 and pending:

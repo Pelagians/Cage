@@ -1,0 +1,856 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cage:design:recipe-permission-extension:v1",
+  "title": "Proposed Cage v1 permission field projection",
+  "description": "Design only. Validate the projection of new fields, not a full runnable application recipe. Semantic checks and existing field validators are specified in recipe-schema.md.",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "cage.app/v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*){2,}$",
+      "not": {
+        "pattern": "[\\u0000-\\u001f\\u007f]"
+      }
+    },
+    "execution": {
+      "type": "object",
+      "properties": {
+        "environment": {
+          "enum": [
+            "local-desktop",
+            "headless",
+            "remote-session"
+          ]
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "oci",
+              "flatpak",
+              "appimage"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "fallbacks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "target": {
+                "enum": [
+                  "oci",
+                  "flatpak",
+                  "appimage"
+                ]
+              },
+              "request": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,62}$",
+                "not": {
+                  "pattern": "[\\u0000-\\u001f\\u007f]"
+                }
+              },
+              "grant": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "device-class"
+                  },
+                  "class": {
+                    "enum": [
+                      "all",
+                      "usb"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "class"
+                ],
+                "additionalProperties": false,
+                "description": "Replaces only enforcement scope. Preserve all original functional, presence, hotplug, interface and authorization requirements; see recipe-schema.md."
+              }
+            },
+            "required": [
+              "target",
+              "request",
+              "grant"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "environment",
+        "targets"
+      ],
+      "additionalProperties": false,
+      "description": "Managed v1 always enforces the fixed baseline; ordinary host access is a separate v0 operation."
+    },
+    "permissions": {
+      "type": "object",
+      "properties": {
+        "requests": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,62}$",
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                    "maxLength": 240,
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  },
+                  "required": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Launch prerequisite. False permits omission of a known denied, unsupported or unavailable request; application degradation is qualified separately."
+                  },
+                  "kind": {
+                    "const": "filesystem"
+                  },
+                  "location": {
+                    "type": "object",
+                    "properties": {
+                      "base": {
+                        "enum": [
+                          "home",
+                          "xdg-desktop",
+                          "xdg-documents",
+                          "xdg-download",
+                          "xdg-music",
+                          "xdg-pictures",
+                          "xdg-videos",
+                          "xdg-config",
+                          "xdg-cache",
+                          "xdg-data",
+                          "absolute"
+                        ]
+                      },
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                        "not": {
+                          "pattern": "[\\u0000-\\u001f\\u007f]"
+                        }
+                      }
+                    },
+                    "required": [
+                      "base"
+                    ],
+                    "additionalProperties": false,
+                    "allOf": [
+                      {
+                        "if": {
+                          "properties": {
+                            "base": {
+                              "const": "absolute"
+                            }
+                          }
+                        },
+                        "then": {
+                          "required": [
+                            "path"
+                          ],
+                          "properties": {
+                            "path": {
+                              "pattern": "^/"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "access": {
+                    "enum": [
+                      "read-only",
+                      "read-write"
+                    ]
+                  },
+                  "create": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "wineDrive": {
+                    "type": "string",
+                    "pattern": "^[A-Z]$",
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "reason",
+                  "kind",
+                  "location",
+                  "access"
+                ],
+                "additionalProperties": false,
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "create": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "create"
+                      ]
+                    },
+                    "then": {
+                      "properties": {
+                        "access": {
+                          "const": "read-write"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,62}$",
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                    "maxLength": 240,
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  },
+                  "required": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Launch prerequisite. False permits omission of a known denied, unsupported or unavailable request; application degradation is qualified separately."
+                  },
+                  "kind": {
+                    "const": "network"
+                  }
+                },
+                "required": [
+                  "id",
+                  "reason",
+                  "kind"
+                ],
+                "additionalProperties": false,
+                "description": "Native host-network sharing, including host loopback, reachable IP services, inbound binding and abstract Unix sockets. No internet-only or strict service-denial guarantee."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,62}$",
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                    "maxLength": 240,
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  },
+                  "required": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Launch prerequisite. False permits omission of a known denied, unsupported or unavailable request; application degradation is qualified separately."
+                  },
+                  "kind": {
+                    "const": "display"
+                  },
+                  "backend": {
+                    "enum": [
+                      "x11",
+                      "wayland"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "reason",
+                  "kind",
+                  "backend"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,62}$",
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                    "maxLength": 240,
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  },
+                  "required": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Launch prerequisite. False permits omission of a known denied, unsupported or unavailable request; application degradation is qualified separately."
+                  },
+                  "kind": {
+                    "const": "device-class"
+                  },
+                  "class": {
+                    "enum": [
+                      "gpu",
+                      "usb",
+                      "input",
+                      "all",
+                      "kvm",
+                      "shm"
+                    ]
+                  },
+                  "hotplug": {
+                    "enum": [
+                      "required",
+                      "startup-only"
+                    ],
+                    "default": "startup-only",
+                    "description": "Availability guarantee only; startup-only does not promise denial of later devices within the granted class."
+                  }
+                },
+                "required": [
+                  "id",
+                  "reason",
+                  "kind",
+                  "class"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,62}$",
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                    "maxLength": 240,
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  },
+                  "required": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Launch requires qualified integration/backend; known blanket denial blocks. For portal access, unknown authorization remains pending and later resource consent/cancellation is an operation result."
+                  },
+                  "kind": {
+                    "const": "usb"
+                  },
+                  "access": {
+                    "enum": [
+                      "direct",
+                      "portal"
+                    ]
+                  },
+                  "interfaces": {
+                    "type": "array",
+                    "items": {
+                      "enum": [
+                        "usb",
+                        "hidraw"
+                      ]
+                    },
+                    "minItems": 1,
+                    "uniqueItems": true
+                  },
+                  "allow": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/usbMatch"
+                    },
+                    "minItems": 1,
+                    "uniqueItems": true
+                  },
+                  "exclude": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/usbMatch"
+                    },
+                    "minItems": 0,
+                    "uniqueItems": true
+                  },
+                  "presence": {
+                    "enum": [
+                      "optional",
+                      "required"
+                    ],
+                    "default": "optional"
+                  },
+                  "hotplug": {
+                    "enum": [
+                      "required",
+                      "startup-only"
+                    ],
+                    "default": "required"
+                  }
+                },
+                "required": [
+                  "id",
+                  "reason",
+                  "kind",
+                  "access",
+                  "interfaces",
+                  "allow"
+                ],
+                "additionalProperties": false,
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "access": {
+                          "const": "portal"
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "interfaces": {
+                          "const": [
+                            "usb"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "presence": {
+                          "const": "required"
+                        }
+                      },
+                      "required": [
+                        "presence"
+                      ]
+                    },
+                    "then": {
+                      "properties": {
+                        "required": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "required"
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,62}$",
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                    "maxLength": 240,
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  },
+                  "required": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Launch prerequisite. False permits omission of a known denied, unsupported or unavailable request; application degradation is qualified separately."
+                  },
+                  "kind": {
+                    "const": "audio"
+                  },
+                  "access": {
+                    "enum": [
+                      "playback-and-capture",
+                      "playback",
+                      "capture"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "reason",
+                  "kind",
+                  "access"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,62}$",
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                    "maxLength": 240,
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  },
+                  "required": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Launch prerequisite. False permits omission of a known denied, unsupported or unavailable request; application degradation is qualified separately."
+                  },
+                  "kind": {
+                    "const": "dbus"
+                  },
+                  "bus": {
+                    "enum": [
+                      "session",
+                      "system"
+                    ]
+                  },
+                  "talk": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                      "not": {
+                        "pattern": "[\\u0000-\\u001f\\u007f]"
+                      }
+                    },
+                    "minItems": 0,
+                    "uniqueItems": true
+                  },
+                  "own": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                      "not": {
+                        "pattern": "[\\u0000-\\u001f\\u007f]"
+                      }
+                    },
+                    "minItems": 0,
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "id",
+                  "reason",
+                  "kind",
+                  "bus"
+                ],
+                "additionalProperties": false,
+                "anyOf": [
+                  {
+                    "required": [
+                      "talk"
+                    ],
+                    "properties": {
+                      "talk": {
+                        "minItems": 1
+                      }
+                    }
+                  },
+                  {
+                    "required": [
+                      "own"
+                    ],
+                    "properties": {
+                      "own": {
+                        "minItems": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,62}$",
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                    "maxLength": 240,
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  },
+                  "required": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Launch prerequisite. False permits omission of a known denied, unsupported or unavailable request; application degradation is qualified separately."
+                  },
+                  "kind": {
+                    "const": "host-service"
+                  },
+                  "service": {
+                    "enum": [
+                      "printing",
+                      "smart-card",
+                      "ssh-agent",
+                      "gpg-agent"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "reason",
+                  "kind",
+                  "service"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,62}$",
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                    "maxLength": 240,
+                    "not": {
+                      "pattern": "[\\u0000-\\u001f\\u007f]"
+                    }
+                  },
+                  "required": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Launch requires qualified integration/backend; known blanket denial blocks. For portal access, unknown authorization remains pending and later resource consent/cancellation is an operation result."
+                  },
+                  "kind": {
+                    "const": "portal"
+                  },
+                  "interface": {
+                    "enum": [
+                      "file-chooser",
+                      "open-uri",
+                      "print",
+                      "camera",
+                      "notifications"
+                    ],
+                    "description": "Integration requirement using native interface-specific consent, persistence and revocation. Readiness is not resource consent; no generic lifetime or API-disable guarantee."
+                  }
+                },
+                "required": [
+                  "id",
+                  "reason",
+                  "kind",
+                  "interface"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "requests"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "id",
+    "execution",
+    "permissions"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "usbMatch": {
+      "type": "object",
+      "properties": {
+        "vendor": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{4}$",
+          "not": {
+            "pattern": "[\\u0000-\\u001f\\u007f]"
+          }
+        },
+        "product": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{4}$",
+          "not": {
+            "pattern": "[\\u0000-\\u001f\\u007f]"
+          }
+        },
+        "productRange": {
+          "type": "object",
+          "properties": {
+            "first": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{4}$",
+              "not": {
+                "pattern": "[\\u0000-\\u001f\\u007f]"
+              }
+            },
+            "last": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{4}$",
+              "not": {
+                "pattern": "[\\u0000-\\u001f\\u007f]"
+              }
+            }
+          },
+          "required": [
+            "first",
+            "last"
+          ],
+          "additionalProperties": false
+        },
+        "class": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{2}$",
+          "not": {
+            "pattern": "[\\u0000-\\u001f\\u007f]"
+          }
+        },
+        "subclass": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{2}$",
+          "not": {
+            "pattern": "[\\u0000-\\u001f\\u007f]"
+          }
+        },
+        "serial": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+          "not": {
+            "pattern": "[\\u0000-\\u001f\\u007f]"
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "vendor"
+          ]
+        },
+        {
+          "required": [
+            "class"
+          ]
+        }
+      ],
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "product",
+              "productRange"
+            ]
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "product"
+                ]
+              },
+              {
+                "required": [
+                  "productRange"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "vendor"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "subclass"
+            ]
+          },
+          "then": {
+            "required": [
+              "class"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

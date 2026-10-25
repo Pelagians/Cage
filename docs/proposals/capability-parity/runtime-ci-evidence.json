@@ -1,0 +1,555 @@
+{
+  "artifactMetadata": [
+    {
+      "created_at": "2026-10-25T09:55:34Z",
+      "digest": "sha256:d3e9b36d8b27524186f1f071a9f93b44a53b1ff2543f43342776022825712f4a",
+      "expired": false,
+      "id": 12594961554,
+      "name": "v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6",
+      "size_in_bytes": 356768
+    },
+    {
+      "created_at": "2026-10-25T09:43:23Z",
+      "digest": "sha256:1312a72faea95fc3941333ef197878064985e48ae44579c440a5f731b076ef2e",
+      "expired": false,
+      "id": 12593423940,
+      "name": "v1-source-and-component-evidence",
+      "size_in_bytes": 194601
+    }
+  ],
+  "branch": "codex/myharmony-appimage",
+  "clientDate": "2026-10-25",
+  "clientTimezone": "America/Vancouver",
+  "existingLocalAppStateModified": false,
+  "host": {
+    "apparmorEnabled": true,
+    "architecture": "x86_64",
+    "desktop": "X11/Xvfb",
+    "namespaceAuthorization": "scoped profile for disposable bwrap copy; distribution tool profiles retained",
+    "records": {
+      "bwrap-version.txt": "bubblewrap 0.9.0",
+      "crun-version.txt": "crun version 1.14.1\ncommit: de537a7965bfbe9992e2cfae0baeb56a08128171\nrundir: /run/user/1001/crun\nspec: 1.0.0\n+SYSTEMD +SELINUX +APPARMOR +CAP +SECCOMP +EBPF +WASM:wasmedge +YAJL",
+      "flatpak-version.txt": "Flatpak 1.14.6",
+      "kernel.txt": "Linux runnervmtai0g 6.17.0-1022-azure #22-Ubuntu SMP Mon Jul 27 17:24:03 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux",
+      "libseccomp-version.txt": "libseccomp2:amd64\t2.5.5-1ubuntu3.1",
+      "native-python-version.txt": "Python 3.12.3",
+      "os-release.txt": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo",
+      "podman-version.txt": "podman version 4.9.3"
+    },
+    "unprivilegedNamespaceRestriction": "kernel.apparmor_restrict_unprivileged_userns = 1"
+  },
+  "localRecoveryDataRemoved": false,
+  "localUsbRulesApplied": false,
+  "nativeNamespaceComponent": {
+    "passed": 1,
+    "scope": "native namespace component, separate from Wine adapter suite",
+    "status": "passed"
+  },
+  "priorRuntimeRuns": [
+    {
+      "finding": "fixture used an unnormalized Podman image ID",
+      "runId": 40174829215
+    },
+    {
+      "finding": "fixture must distinguish index and platform manifest digests",
+      "runId": 40175424607
+    },
+    {
+      "finding": "legacy runtime.network verification rejected normalized v1 intent",
+      "runId": 40176091671
+    },
+    {
+      "finding": "private shm copy-up, pinned Flatpak resource defaults and unsquashfs version exit convention",
+      "runId": 40177075069
+    },
+    {
+      "finding": "harness compact-state reader and managed AppImage UTF-8 locale",
+      "runId": 40178668707
+    },
+    {
+      "finding": "OCI Xauthority hostname lookup with network denied; Flatpak/AppImage passed all scenarios",
+      "runId": 40180321171
+    }
+  ],
+  "priorSourceAndComponentReceipt": "ci-evidence.json",
+  "qualificationLimits": {
+    "broaderAcceptanceSpecifications": "partial automation; the entire acceptance matrix is not qualified",
+    "enumerationMetadata": "All adapters exposed USB sysfs. Native Flatpak All Devices did not expose /run/udev/data; OCI/AppImage did. Adequacy for real Wine USB enumeration remains unqualified.",
+    "myHarmonyWorkflow": "not-qualified-by-probe-suite",
+    "physicalDeviceDetectionAndReconnect": "blocked; synthetic null-node visibility and HID counts cannot qualify these",
+    "physicalUsbSynchronization": "unqualified; no real Harmony hardware was tested",
+    "signedReleaseInstallationAuthority": "not exercised by local producer-candidate launches"
+  },
+  "qualifiedV1MyHarmonyReleaseIssued": false,
+  "repository": "Pelagians/Cage",
+  "retainedLocalEvidenceSha256": {
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/apparmor.txt": "63f04638ae93aa167a60a1f459a45cb659698c1365923b562647f7796232fce4",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage-export.json": "547d3017299a74a1c4a3da41f6a1f0370abe249ac297cf92d06411cd77eef0e3",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage.linux.json": "33226086be05b7cc005c80528dc92c00943b591c650c5ee7693f26f1e5b7dd94",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage.windows.json": "4cacfaf8e3a49e7c710a45bbc9f75208429cdf2ba28359dc245ecf4e45767879",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/isolated/commands.json": "b5557ef51b7610748e36f7858e94007d78004668ee641245c639d827393ddb0b",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/isolated/configuration.json": "a2063137474396eca5d31909d961cb3daa1fb0a3e2804f304d8d0231c8a22a3a",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/isolated/launch.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/isolated/linux.json": "aec7dd0fbfba3408d29cf514b161cf2c90f200eb0e3e66e2ddbb999e13038932",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/isolated/result.json": "ca4b5deafc9063c4eb0631b405f854841187badf650a8361ce5927d60aa1b0d6",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/isolated/windows.json": "12f7164dcedca9dc476e035b999945885cb9acb741213876452c76018d95a7d8",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/rebound/commands.json": "1d07e15215b64251d7ef2caee531595bfbb476d99a42ae7baa77d7393bab91ca",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/rebound/configuration.json": "89b0f81b9c5e83b6dcb70cf23838775667c1950ddd5fd06365e1ff7ae0c801d2",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/rebound/launch.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/rebound/linux.json": "ed4a8f0ddf29cd1a31615602c567f8d68830ab09b23a9de4a6db579815a16fc7",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/rebound/result.json": "269b2b5fbbc07113118618e026bb0f24cc8533e031c1f8bb49c8fa56510bbcd3",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/rebound/windows.json": "21990a6609fc71fa2100a2c0becfaf8d424067a8bd4cc8d469c666ae7fbebd5c",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/recovery-inventory.json": "d75e34c74f1b771e25cccc0aa2c75da9160e6cfc2c3c42a71407bc11a0a21dee",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/shared-all/commands.json": "e5a3feb29317c5f4c83b4b80fe74c6af12a010b248332d5133d2f2c9c4ccb87d",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/shared-all/configuration.json": "821c5b04888769d97946fa7feaa2668783907387f44a023c0071f33a1261c153",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/shared-all/launch.log": "a8f96b978a954db83a77b86535c6011f682535bf175e2256f3a8188a317904df",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/shared-all/linux.json": "33226086be05b7cc005c80528dc92c00943b591c650c5ee7693f26f1e5b7dd94",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/shared-all/result.json": "2f6a081586dbaa34e04fee00aec1e2e385583aea14c1a27dd9284f9b0f444d50",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/shared-all/windows.json": "4cacfaf8e3a49e7c710a45bbc9f75208429cdf2ba28359dc245ecf4e45767879",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/appimage/state.json": "3f73654ec9b866380635e0ed0c8b0b49701f016513cd3b27b0bff1fe9cdec0ef",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/build-desktop.log": "0e8eeaf953128c07afb8e20feb6bd2e45f00bf56c0ddc0fe0caf493a15541dd4",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/build-oci.log": "036540464ca45aff5d1bd988e2a8e69a123624699801b1568f190a8c822a2e19",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/bwrap-version.txt": "3a0618bed56bc5ced74eea5965def37047e2b879a25ceb85bbc964efbe00489e",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/crun-version.txt": "246c1a05f9a51cfb4bd7061c8106b883ed20ed5139db0a4ff1f0972705a1dae5",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak-export.json": "50af4889387acf0c8e2096009eec0f1b2c1994c9f2afd34b33e8a641aa1e404d",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak-install.log": "5d68e092b213da095409cde7676838729c8f4100b312e505569d25e5c4c0ce9e",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak-version.txt": "e24fc0b77fb43a72d15b5220337723ba0a670044409a88e03438f2f13b8a4bf8",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak.linux.json": "decea7c3b068645023f42f72a0fbb9af7526fbc2d4965bcce4a149b1c422f5aa",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak.windows.json": "4cacfaf8e3a49e7c710a45bbc9f75208429cdf2ba28359dc245ecf4e45767879",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/isolated/commands.json": "f5dc667a86e17f819db343cbcc09ea484eef8b2a8a37b0ae8b05d411239352f8",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/isolated/configuration.json": "0c3c0b335f39eeb3388ea8f5ec49ec4c8ef252b5fddeae2df6195567624fbbb1",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/isolated/launch.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/isolated/linux.json": "61a1c48f3ed47e70615ee489e033e39c02855d886c4aea9868ca23ab15ae4217",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/isolated/native-edit.log": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/isolated/native-policy.json": "f9332d8d4333dc9708c3bd6fa72d54c03b64a49b7cf881784946404648e9f4fb",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/isolated/result.json": "92613c7e1091c10cd4809d576c98d8406b76aa3baf234c3cfe0d7d6fc61633bc",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/isolated/windows.json": "12f7164dcedca9dc476e035b999945885cb9acb741213876452c76018d95a7d8",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/rebound/commands.json": "9191e20233e785db583c68ffe22fb178eafbd835eda31c3c7a217e847038056a",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/rebound/configuration.json": "9cab5f3aa32ef326f03abc13ee03922a79699945ee6839b45d99dc23071f553f",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/rebound/launch.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/rebound/linux.json": "8e336f15a9bea7ebcaac7f118794a201780ea0ebc376a925cd7d3a547adb2e53",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/rebound/native-edit.log": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/rebound/native-policy.json": "c3b123cb9bb0bd312bfec4404c383c1d62984d1c07893a4193f2dedc4a0438a2",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/rebound/result.json": "cbeface7556c3361cb4232082bc9dec3891502eef234ed41db5d8252473add96",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/rebound/windows.json": "21990a6609fc71fa2100a2c0becfaf8d424067a8bd4cc8d469c666ae7fbebd5c",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/recovery-inventory.json": "8ae44f674e475a2cf6ade79240a5ea8d2ec932ea7e72881c9b1b881f55d4ee34",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/shared-all/commands.json": "d2c62a405ae15870eec4836dffa64dc8bd7d3274f514768ff320d0838176d0d0",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/shared-all/configuration.json": "ac7009d46cde2251918ea419316803b2d7fc4f8bf155d84a96d5721d17559be8",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/shared-all/launch.log": "43841ce9c4f8e5aae48ff0c573cdfb90adc53ddeefceb91ba40816575aabe981",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/shared-all/linux.json": "decea7c3b068645023f42f72a0fbb9af7526fbc2d4965bcce4a149b1c422f5aa",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/shared-all/native-edit.log": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/shared-all/native-policy.json": "260ddc9faa879ff2314e5c757e3e81ab4e84934f0ed63911bcaa0eb7d74f72a4",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/shared-all/result.json": "a8ce58da811996402f3adc1f8a4bb5acfeec7ddd39516e0c435b3d333494f51d",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/shared-all/windows.json": "4cacfaf8e3a49e7c710a45bbc9f75208429cdf2ba28359dc245ecf4e45767879",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/flatpak/state.json": "22850ef4890df9873f5565bc60f223ba6557420ffc979cd226b4acdc56b6ae4c",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/host.json": "d2a1097cab2c77c506d94015876c412e76c3526c668a4d0ba6079dddb7a419c4",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/kernel.txt": "40e1b96798b16f24a59a712a1088b111fc257a3b3f4b48594a8c7995e6a0c523",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/libseccomp-version.txt": "7541d6657420f57ed009359dbdde11b519e124f870f92a41372e91623a673725",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/namespace-policy.txt": "9aea25871d648a9b1e7a422ff78bfc50e418059d2cdaecf2d810dcf9c3c44e02",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/namespace-profile.txt": "53859844b72751cf00f283acddb675eb040cbe995a3b0cec02b126e27ce12d7f",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/native-python-version.txt": "5b3e43dc38ca01e3f5a7854ba50d4330864b0c1e0f646650b2c78cf072acc366",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci-base.log": "233f1e2438e9f6a8a9693b8ba4a06fa452179d266e552750db5ebac8ba56f862",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci-bundle-verification.json": "9fd966ff60b0b1aff678d4dff8319ba9f0fe9322f246cdc35a90694ce948cee4",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci-export.log": "00d9aa097f1b3ef3a0eea85df94d030c775ace545efe1770490b47538942442d",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci-plan.json": "bc5ffa26c2db52589c6b76e6a652482eaae8cd9e4913a3b70659c4b4f45ff958",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci-pull.log": "f3bec16d572a4fee8ff4ba23a25908f4266e66516603584b008a404fe72dbdb7",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci.linux.json": "5616c7c3c12d07f7dcac4cb6f8af927e618836f3e3f1ae180c1dca5c7ccba96a",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci.windows.json": "4cacfaf8e3a49e7c710a45bbc9f75208429cdf2ba28359dc245ecf4e45767879",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/isolated/commands.json": "fbb8e7feec286f9f97de9219858dad242722265ea720d948a9a9b82b37137cac",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/isolated/configuration.json": "a301886f54157b36dc08d46dc42334162a9a5bd5b90f8722f508cb69db22f37e",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/isolated/launch.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/isolated/linux.json": "edc5fc1c9d04c1fb1a896e42837a778cab0b690e762d431d66ed749c8847f145",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/isolated/result.json": "e7044e28f3e391d57e69f828853f7409ea3f9b17759b32fa963164de389f10b5",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/isolated/seccomp.json": "cebbcf75fe91feb2c37088fb73014a811b456efaf0f1ea5984dcc5cbe28f9622",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/isolated/windows.json": "12f7164dcedca9dc476e035b999945885cb9acb741213876452c76018d95a7d8",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/rebound/commands.json": "514ff076d8daa72723e7bf56d8677a885edae4211323daa7431d5136be9f6ae7",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/rebound/configuration.json": "ee049932a07c421e16be20480b669a51cabadeee0fde181bcfaa8ed9f49831b3",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/rebound/launch.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/rebound/linux.json": "38960f32978e8b0158184409ffe9e2733fcf43e52226f48f04ea36bd182f43c8",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/rebound/result.json": "84d576222ac0e66cd85b8b39e21e9cd387618301b862af84dcbcca63f6c19e31",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/rebound/seccomp.json": "cebbcf75fe91feb2c37088fb73014a811b456efaf0f1ea5984dcc5cbe28f9622",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/rebound/windows.json": "21990a6609fc71fa2100a2c0becfaf8d424067a8bd4cc8d469c666ae7fbebd5c",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/recovery-inventory.json": "6818c7957a52d25bc117572699d5204e59cf24dfce0c60048f5237cf2b48a2c5",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/shared-all/commands.json": "855a06877f101866919058d999a78d3b82ee07eefe37c1bdc5b678da1e83ae74",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/shared-all/configuration.json": "46ecbc83ca2e0604b7f1c0edc87f1f1ace2ca6bf02f3e536fd28318864215bf7",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/shared-all/launch.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/shared-all/linux.json": "5616c7c3c12d07f7dcac4cb6f8af927e618836f3e3f1ae180c1dca5c7ccba96a",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/shared-all/result.json": "bfa7b048b37542b765a5eee35c01cd34835148c1575a0d9eeaf6839eafd4bcde",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/shared-all/seccomp.json": "cebbcf75fe91feb2c37088fb73014a811b456efaf0f1ea5984dcc5cbe28f9622",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/shared-all/windows.json": "4cacfaf8e3a49e7c710a45bbc9f75208429cdf2ba28359dc245ecf4e45767879",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/oci/state.json": "d18dcdd1fd257526515b8336bc0a98a4d528a4a0f2de48214f930b2dde8057d5",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/os-release.txt": "87458b3b1f1ca0e5c693ade771de7007c3783bdc692fa6b39eb6414bf2af2763",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/parity.json": "2ff456154a67ad56333703a7e981a180f47f499a5d11870a3b737d2f8a1c84da",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/podman-version.txt": "e34137aa324895fc77ca1c6228953db20ddb402433e71426f7e3351a64424257",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/recipe.json": "a8232f044b080f6d3ab11f24d87b5c98afd5d3bf92c3ce8515a86047ffb894a4",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/runtime-parity.json": "22a7e97a22cda5173f5efa2fac9ff6646fd25cadd8bee81778d4219449bc1294",
+    ".cage/parity-ci-evidence/40181626183/artifact/v1-actual-runtime-parity-a8104abb1268fcbf37d44e1ea7f9777abe0062f6/window-manager.log": "95c0b23fa7dc08a3a7816a44ed0ed418004ac3c72977f69174eb7220d35f35ae",
+    ".cage/parity-ci-evidence/40181626183/artifacts.json": "3d2dc667c55bca19c6c6023508cc13ebaeba12956b0c909023d907354feae0ae",
+    ".cage/parity-ci-evidence/40181626183/run.json": "2ecefb6525396caad73c0b368cb16b63e3bfda3c389e295a0c1ed719fcc0a3eb",
+    ".cage/parity-ci-evidence/40181626183/run.log": "ca3767ec63dadf22fd2adb99b5ac57d9570d7bcc9b5ccdcfef01a4b9a642b513",
+    ".cage/parity-ci-evidence/40181626183/source-artifact/apparmor.txt": "2f574efe36e73fed0220f4c4054edf92c6e8c48d07b7d22793a6b05b1d2c9471",
+    ".cage/parity-ci-evidence/40181626183/source-artifact/kernel.txt": "40e1b96798b16f24a59a712a1088b111fc257a3b3f4b48594a8c7995e6a0c523",
+    ".cage/parity-ci-evidence/40181626183/source-artifact/namespace-policy.txt": "9aea25871d648a9b1e7a422ff78bfc50e418059d2cdaecf2d810dcf9c3c44e02",
+    ".cage/parity-ci-evidence/40181626183/source-artifact/os-release.txt": "87458b3b1f1ca0e5c693ade771de7007c3783bdc692fa6b39eb6414bf2af2763",
+    ".cage/parity-ci-evidence/40181626183/source-artifact/parity.json": "2fd58b7ff7435dad75b45e3304191c051ce42284ca58595332e27d3619709bec",
+    ".cage/parity-ci-evidence/40181626183/source-artifact/windows-probe.exe": "e255514364ee41820614dae85dcc6fba625be7326bcce7766d41272752f4cd37"
+  },
+  "runtimeSuite": {
+    "applicationId": "io.github.Pelagians.Cage.ParityRun40181626183a1",
+    "formats": {
+      "appimage": {
+        "artifactIdentity": "d9a9e4967aaa1d53dac30eda88d55ad9c0c93f386c5f74c98ca4d6421fa18e92",
+        "cases": [
+          {
+            "activePrefix": "prefix",
+            "case": "shared-all",
+            "compatibility": {
+              "contractDigest": "3b26da8c305feda9cb63f00bd3183364eaaa06f5a4cb1b448f903f96345aa936",
+              "runtimeDigest": "f4c32c558d1ec64363e229d30214ff3bc134f4663d6e928b3aa71126507f5e38",
+              "schemaVersion": "cage.desktop-state/v2",
+              "seedDigest": "055fb2e7647122005d8de6d722ddf7b677253ee7db708c14e5d527c7ae8906d7"
+            },
+            "physicalUsbSynchronization": "unqualified",
+            "stateCounter": 1,
+            "stateRoot": "/home/runner/work/_temp/cage-runtime-parity/xdg-data/cage/appimage/io.github.Pelagians.Cage.ParityRun40181626183a1",
+            "status": "passed",
+            "syntheticDeviceTransition": true,
+            "windowObserved": true
+          },
+          {
+            "activePrefix": "prefix",
+            "case": "isolated",
+            "compatibility": {
+              "contractDigest": "3b26da8c305feda9cb63f00bd3183364eaaa06f5a4cb1b448f903f96345aa936",
+              "runtimeDigest": "f4c32c558d1ec64363e229d30214ff3bc134f4663d6e928b3aa71126507f5e38",
+              "schemaVersion": "cage.desktop-state/v2",
+              "seedDigest": "055fb2e7647122005d8de6d722ddf7b677253ee7db708c14e5d527c7ae8906d7"
+            },
+            "physicalUsbSynchronization": "unqualified",
+            "stateCounter": 2,
+            "stateRoot": "/home/runner/work/_temp/cage-runtime-parity/xdg-data/cage/appimage/io.github.Pelagians.Cage.ParityRun40181626183a1",
+            "status": "passed",
+            "syntheticDeviceTransition": false,
+            "windowObserved": true
+          },
+          {
+            "activePrefix": "prefix",
+            "case": "rebound",
+            "compatibility": {
+              "contractDigest": "3b26da8c305feda9cb63f00bd3183364eaaa06f5a4cb1b448f903f96345aa936",
+              "runtimeDigest": "f4c32c558d1ec64363e229d30214ff3bc134f4663d6e928b3aa71126507f5e38",
+              "schemaVersion": "cage.desktop-state/v2",
+              "seedDigest": "055fb2e7647122005d8de6d722ddf7b677253ee7db708c14e5d527c7ae8906d7"
+            },
+            "physicalUsbSynchronization": "unqualified",
+            "stateCounter": 3,
+            "stateRoot": "/home/runner/work/_temp/cage-runtime-parity/xdg-data/cage/appimage/io.github.Pelagians.Cage.ParityRun40181626183a1",
+            "status": "passed",
+            "syntheticDeviceTransition": true,
+            "windowObserved": true
+          }
+        ],
+        "contractDigest": "380490c5c5a02b8981dcd768062f5781f61561b018c54a8feb3ba74635cbc146",
+        "enumerationMetadata": {
+          "sysfsUsbPresent": true,
+          "udevDataPresent": true
+        },
+        "materializerABI": "cage.elf-materializer/v1",
+        "recoveryInventorySha256": "d75e34c74f1b771e25cccc0aa2c75da9160e6cfc2c3c42a71407bc11a0a21dee",
+        "recoveryPreserved": true,
+        "runtime": {
+          "executable": "/run/cage/native/usr/python/bin/python3.13",
+          "python": "3.13.16",
+          "wine": "wine-11.0"
+        },
+        "runtimeClosureDigest": "3291900bd155b67b9be9606f6bdeac78f3901cf840bccd4e3a7407c4bd14a4ee",
+        "status": "passed"
+      },
+      "flatpak": {
+        "artifactIdentity": "46264ea6a019dcdf9061f56c6f6779dcada3064d3b1a63045ff2526dc1f44798",
+        "cases": [
+          {
+            "activePrefix": "prefix",
+            "case": "shared-all",
+            "compatibility": {
+              "contractDigest": "4928f11628134a941c3eb115a4ea518d9966938e8ef62ef45f546f24ac575645",
+              "runtimeDigest": "441035bd534dbcb28567e34732a229b9f118a1440d73d1983e7db73b11dcafca",
+              "schemaVersion": "cage.desktop-state/v2",
+              "seedDigest": "055fb2e7647122005d8de6d722ddf7b677253ee7db708c14e5d527c7ae8906d7"
+            },
+            "physicalUsbSynchronization": "unqualified",
+            "stateCounter": 1,
+            "stateRoot": "/home/runner/.var/app/io.github.Pelagians.Cage.ParityRun40181626183a1/data/io.github.Pelagians.Cage.ParityRun40181626183a1",
+            "status": "passed",
+            "syntheticDeviceTransition": true,
+            "windowObserved": true
+          },
+          {
+            "activePrefix": "prefix",
+            "case": "isolated",
+            "compatibility": {
+              "contractDigest": "4928f11628134a941c3eb115a4ea518d9966938e8ef62ef45f546f24ac575645",
+              "runtimeDigest": "441035bd534dbcb28567e34732a229b9f118a1440d73d1983e7db73b11dcafca",
+              "schemaVersion": "cage.desktop-state/v2",
+              "seedDigest": "055fb2e7647122005d8de6d722ddf7b677253ee7db708c14e5d527c7ae8906d7"
+            },
+            "physicalUsbSynchronization": "unqualified",
+            "stateCounter": 2,
+            "stateRoot": "/home/runner/.var/app/io.github.Pelagians.Cage.ParityRun40181626183a1/data/io.github.Pelagians.Cage.ParityRun40181626183a1",
+            "status": "passed",
+            "syntheticDeviceTransition": false,
+            "windowObserved": true
+          },
+          {
+            "activePrefix": "prefix",
+            "case": "rebound",
+            "compatibility": {
+              "contractDigest": "4928f11628134a941c3eb115a4ea518d9966938e8ef62ef45f546f24ac575645",
+              "runtimeDigest": "441035bd534dbcb28567e34732a229b9f118a1440d73d1983e7db73b11dcafca",
+              "schemaVersion": "cage.desktop-state/v2",
+              "seedDigest": "055fb2e7647122005d8de6d722ddf7b677253ee7db708c14e5d527c7ae8906d7"
+            },
+            "physicalUsbSynchronization": "unqualified",
+            "stateCounter": 3,
+            "stateRoot": "/home/runner/.var/app/io.github.Pelagians.Cage.ParityRun40181626183a1/data/io.github.Pelagians.Cage.ParityRun40181626183a1",
+            "status": "passed",
+            "syntheticDeviceTransition": true,
+            "windowObserved": true
+          }
+        ],
+        "contractDigest": "380490c5c5a02b8981dcd768062f5781f61561b018c54a8feb3ba74635cbc146",
+        "enumerationMetadata": {
+          "sysfsUsbPresent": true,
+          "udevDataPresent": false
+        },
+        "flatpakCommit": "a19739e8755bbae7971662fadd3a45c3fdae3c9570728c2bde0f83752e51c48a",
+        "nativeRef": "app/io.github.Pelagians.Cage.ParityRun40181626183a1/x86_64/stable",
+        "recoveryInventorySha256": "8ae44f674e475a2cf6ade79240a5ea8d2ec932ea7e72881c9b1b881f55d4ee34",
+        "recoveryPreserved": true,
+        "runtime": {
+          "executable": "/usr/bin/python3.14",
+          "python": "3.14.7",
+          "wine": "wine-11.0"
+        },
+        "status": "passed"
+      },
+      "oci": {
+        "artifactIdentity": "sha256:08a828b84bcc6a7725dbd5b36cf8324987bf817dc49780e292ef1fca978fe7c6",
+        "cases": [
+          {
+            "activePrefix": "prefix",
+            "case": "shared-all",
+            "compatibility": {
+              "contractDigest": "d134e86306c2a7d4cd45a66efcd7e3a41ce08ba22b754fa42eae9c7d248e2131",
+              "runtimeDigest": "3bb453a3cdcbd1643ea08b8b4cde5372ea57478a0d34545e172bdd72c02433e9",
+              "schemaVersion": "cage.desktop-state/v2",
+              "seedDigest": "b0cc5da260f00506c684977bafbfc000e2a7bada8373addcd4074b478b1f4851"
+            },
+            "physicalUsbSynchronization": "unqualified",
+            "stateCounter": 1,
+            "stateRoot": "/home/runner/work/_temp/cage-runtime-parity/oci-state/io.github.Pelagians.Cage.ParityRun40181626183a1",
+            "status": "passed",
+            "syntheticDeviceTransition": true,
+            "windowObserved": true
+          },
+          {
+            "activePrefix": "prefix",
+            "case": "isolated",
+            "compatibility": {
+              "contractDigest": "d134e86306c2a7d4cd45a66efcd7e3a41ce08ba22b754fa42eae9c7d248e2131",
+              "runtimeDigest": "3bb453a3cdcbd1643ea08b8b4cde5372ea57478a0d34545e172bdd72c02433e9",
+              "schemaVersion": "cage.desktop-state/v2",
+              "seedDigest": "b0cc5da260f00506c684977bafbfc000e2a7bada8373addcd4074b478b1f4851"
+            },
+            "physicalUsbSynchronization": "unqualified",
+            "stateCounter": 2,
+            "stateRoot": "/home/runner/work/_temp/cage-runtime-parity/oci-state/io.github.Pelagians.Cage.ParityRun40181626183a1",
+            "status": "passed",
+            "syntheticDeviceTransition": false,
+            "windowObserved": true
+          },
+          {
+            "activePrefix": "prefix",
+            "case": "rebound",
+            "compatibility": {
+              "contractDigest": "d134e86306c2a7d4cd45a66efcd7e3a41ce08ba22b754fa42eae9c7d248e2131",
+              "runtimeDigest": "3bb453a3cdcbd1643ea08b8b4cde5372ea57478a0d34545e172bdd72c02433e9",
+              "schemaVersion": "cage.desktop-state/v2",
+              "seedDigest": "b0cc5da260f00506c684977bafbfc000e2a7bada8373addcd4074b478b1f4851"
+            },
+            "physicalUsbSynchronization": "unqualified",
+            "stateCounter": 3,
+            "stateRoot": "/home/runner/work/_temp/cage-runtime-parity/oci-state/io.github.Pelagians.Cage.ParityRun40181626183a1",
+            "status": "passed",
+            "syntheticDeviceTransition": true,
+            "windowObserved": true
+          }
+        ],
+        "contractDigest": "380490c5c5a02b8981dcd768062f5781f61561b018c54a8feb3ba74635cbc146",
+        "enumerationMetadata": {
+          "sysfsUsbPresent": true,
+          "udevDataPresent": true
+        },
+        "recoveryInventorySha256": "6818c7957a52d25bc117572699d5204e59cf24dfce0c60048f5237cf2b48a2c5",
+        "recoveryPreserved": true,
+        "runtime": {
+          "executable": "/usr/bin/python3.13",
+          "python": "3.13.5",
+          "wine": "wine-11.0"
+        },
+        "status": "passed"
+      }
+    },
+    "scenarioCount": 9,
+    "schemaVersion": "cage.runtime-parity-suite/v1",
+    "sourceArchiveSha256": "2e249cd3c1de1e97d8175de8000dc41a92036fb94f8d22dd00f83aa98e767528",
+    "status": "passed"
+  },
+  "schemaVersion": "cage.capability-parity-ci-evidence/v1",
+  "scope": "real Wine 11 producer exports and managed launch adapters; shared, denied and rebound permissions; synthetic device fixture; state and recovery preservation",
+  "sharedObservationReport": {
+    "applicationWorkflow": "not-qualified-by-this-report",
+    "formats": {
+      "appimage": {
+        "cases": {
+          "baseline": {
+            "evidence": [
+              "shared Linux and Windows probe assertions"
+            ],
+            "status": "passed"
+          },
+          "devices": {
+            "evidence": [
+              "missing observation or independent host control"
+            ],
+            "status": "blocked"
+          },
+          "filesystem": {
+            "evidence": [
+              "shared Linux and Windows probe assertions"
+            ],
+            "status": "passed"
+          },
+          "hotplug": {
+            "evidence": [
+              "missing observation or independent host control"
+            ],
+            "status": "blocked"
+          },
+          "network": {
+            "evidence": [
+              "shared Linux and Windows probe assertions"
+            ],
+            "status": "passed"
+          }
+        },
+        "contractDigest": "380490c5c5a02b8981dcd768062f5781f61561b018c54a8feb3ba74635cbc146"
+      },
+      "flatpak": {
+        "cases": {
+          "baseline": {
+            "evidence": [
+              "shared Linux and Windows probe assertions"
+            ],
+            "status": "passed"
+          },
+          "devices": {
+            "evidence": [
+              "missing observation or independent host control"
+            ],
+            "status": "blocked"
+          },
+          "filesystem": {
+            "evidence": [
+              "shared Linux and Windows probe assertions"
+            ],
+            "status": "passed"
+          },
+          "hotplug": {
+            "evidence": [
+              "missing observation or independent host control"
+            ],
+            "status": "blocked"
+          },
+          "network": {
+            "evidence": [
+              "shared Linux and Windows probe assertions"
+            ],
+            "status": "passed"
+          }
+        },
+        "contractDigest": "380490c5c5a02b8981dcd768062f5781f61561b018c54a8feb3ba74635cbc146"
+      },
+      "oci": {
+        "cases": {
+          "baseline": {
+            "evidence": [
+              "shared Linux and Windows probe assertions"
+            ],
+            "status": "passed"
+          },
+          "devices": {
+            "evidence": [
+              "missing observation or independent host control"
+            ],
+            "status": "blocked"
+          },
+          "filesystem": {
+            "evidence": [
+              "shared Linux and Windows probe assertions"
+            ],
+            "status": "passed"
+          },
+          "hotplug": {
+            "evidence": [
+              "missing observation or independent host control"
+            ],
+            "status": "blocked"
+          },
+          "network": {
+            "evidence": [
+              "shared Linux and Windows probe assertions"
+            ],
+            "status": "passed"
+          }
+        },
+        "contractDigest": "380490c5c5a02b8981dcd768062f5781f61561b018c54a8feb3ba74635cbc146"
+      }
+    },
+    "host": {
+      "architecture": "x86_64",
+      "kernel": "6.17.0-1022-azure"
+    },
+    "schemaVersion": "cage.capability-parity-observations/v1",
+    "status": "blocked"
+  },
+  "sourceTests": {
+    "passed": 689,
+    "skipped": 1,
+    "status": "passed",
+    "subtestsPassed": 265
+  },
+  "testedCommit": "a8104abb1268fcbf37d44e1ea7f9777abe0062f6",
+  "workflow": {
+    "completedAt": "2026-10-25T09:55:41Z",
+    "conclusion": "success",
+    "event": "pull_request",
+    "jobs": [
+      {
+        "conclusion": "success",
+        "databaseId": 121133718125,
+        "name": "source-and-native-components",
+        "url": "https://github.com/Pelagians/Cage/actions/runs/40181626183/job/121133718125"
+      },
+      {
+        "conclusion": "success",
+        "databaseId": 121134289088,
+        "name": "runtime-parity",
+        "url": "https://github.com/Pelagians/Cage/actions/runs/40181626183/job/121134289088"
+      }
+    ],
+    "path": ".github/workflows/capability-parity.yml",
+    "runId": 40181626183,
+    "url": "https://github.com/Pelagians/Cage/actions/runs/40181626183"
+  }
+}

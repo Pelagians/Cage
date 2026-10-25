@@ -1,0 +1,143 @@
+name: v1 capability and actual runtime parity
+on:
+  workflow_dispatch:
+  push:
+    paths: ['artifact/**', 'core/**', 'runtime/**', 'cage/**', 'builder/**', 'tests/**', 'packaging/**', 'scripts/check-capability*', 'scripts/test-capability*', '.github/workflows/capability-parity.yml']
+  pull_request:
+    paths: ['artifact/**', 'core/**', 'runtime/**', 'cage/**', 'builder/**', 'tests/**', 'packaging/**', 'scripts/check-capability*', 'scripts/test-capability*', '.github/workflows/capability-parity.yml']
+permissions:
+  contents: read
+concurrency:
+  group: capability-parity-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  source-and-native-components:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap libseccomp2 squashfs-tools patchelf flatpak gcc gcc-mingw-w64-x86-64 apparmor-utils
+          # The wheel-content regression deliberately disables build isolation;
+          # its backend must exist in this test interpreter as well.
+          python -m pip install setuptools wheel -e '.[dev,releases]' jsonschema
+      - name: Keep AppArmor enabled and grant a scoped test executable user namespaces
+        run: |
+          test "$(cat /sys/module/apparmor/parameters/enabled)" = Y
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
+          mkdir -p "$RUNNER_TEMP/cage-tools"
+          cp /usr/bin/bwrap "$RUNNER_TEMP/cage-tools/bwrap"
+          sed "s|@EXECUTABLE@|$RUNNER_TEMP/cage-tools/bwrap|g" packaging/apparmor/cage-v1-userns.profile.in > "$RUNNER_TEMP/cage-v1-userns.profile"
+          sudo apparmor_parser -r "$RUNNER_TEMP/cage-v1-userns.profile"
+          echo "$RUNNER_TEMP/cage-tools" >> "$GITHUB_PATH"
+          mkdir -p dist/capability-evidence
+          uname -a > dist/capability-evidence/kernel.txt
+          cat /etc/os-release > dist/capability-evidence/os-release.txt
+          sudo aa-status > dist/capability-evidence/apparmor.txt
+          sysctl kernel.apparmor_restrict_unprivileged_userns > dist/capability-evidence/namespace-policy.txt
+      - name: Source suite and reference contract
+        run: |
+          python -m pytest -q
+          python scripts/check-capability-contract.py
+          x86_64-w64-mingw32-gcc -Wall -Wextra -Werror -municode tests/probes/capability_probe.c -o dist/capability-evidence/windows-probe.exe -lws2_32 -lsetupapi -lhid
+      - name: Observe actual native namespace component boundary
+        env:
+          CAGE_NATIVE_COMPONENT_TESTS: '1'
+        run: python -m pytest -q tests/test_capability_native.py
+      - name: Report unrun three-format and hardware gates as blocked
+        if: always()
+        run: |
+          python scripts/check-capability-parity-evidence.py recipes/myharmony-compat.cage.yaml dist/capability-evidence --output dist/capability-evidence/parity.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v1-source-and-component-evidence
+          path: dist/capability-evidence
+
+  runtime-parity:
+    needs: source-and-native-components
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install actual runtime and GUI tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap libseccomp2 squashfs-tools patchelf flatpak podman crun uidmap slirp4netns fuse-overlayfs xvfb openbox xdotool xauth apparmor-utils
+          python -m pip install -e '.[releases]'
+      - name: Keep the host namespace restriction and authorize only the test tool
+        run: |
+          test "$(cat /sys/module/apparmor/parameters/enabled)" = Y
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
+          mkdir -p "$RUNNER_TEMP/cage-tools" dist/runtime-parity
+          cp /usr/bin/bwrap "$RUNNER_TEMP/cage-tools/bwrap"
+          sed "s|@EXECUTABLE@|$RUNNER_TEMP/cage-tools/bwrap|g" packaging/apparmor/cage-v1-userns.profile.in > "$RUNNER_TEMP/cage-runtime-userns.profile"
+          sudo apparmor_parser -r "$RUNNER_TEMP/cage-runtime-userns.profile"
+          echo "$RUNNER_TEMP/cage-tools" >> "$GITHUB_PATH"
+          cp "$RUNNER_TEMP/cage-runtime-userns.profile" dist/runtime-parity/namespace-profile.txt
+          uname -a > dist/runtime-parity/kernel.txt
+          cat /etc/os-release > dist/runtime-parity/os-release.txt
+          podman --version > dist/runtime-parity/podman-version.txt
+          crun --version > dist/runtime-parity/crun-version.txt
+          flatpak --version > dist/runtime-parity/flatpak-version.txt
+          /usr/bin/python3 --version > dist/runtime-parity/native-python-version.txt
+          bwrap --version > dist/runtime-parity/bwrap-version.txt
+          dpkg-query -W libseccomp2 > dist/runtime-parity/libseccomp-version.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: v1-source-and-component-evidence
+          path: ${{ runner.temp }}/cage-parity-probe
+      - uses: actions/cache@v4
+        id: runtime-cache
+        with:
+          path: .cage/flatpak
+          key: capability-runtime-x86_64-${{ hashFiles('runtime/desktop-wine-11.0.json') }}
+          restore-keys: |
+            desktop-flatpak-X64-
+            appimage-native-x86_64-
+      - name: Build actual exports and run Linux and Windows probes through all adapters
+        run: |
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24' bash -eu -o pipefail <<'SH'
+          openbox >dist/runtime-parity/window-manager.log 2>&1 &
+          python scripts/test-capability-runtimes.py \
+            --workspace "$RUNNER_TEMP/cage-runtime-parity" \
+            --store .cage/flatpak \
+            --probe "$RUNNER_TEMP/cage-parity-probe/windows-probe.exe" \
+            --evidence dist/runtime-parity
+          SH
+      - name: Retain the distinction between runtime observations and hardware qualification
+        if: always()
+        run: |
+          if test -f dist/runtime-parity/recipe.json; then
+            python scripts/check-capability-parity-evidence.py dist/runtime-parity/recipe.json dist/runtime-parity --output dist/runtime-parity/parity.json
+          fi
+          test "$(cat /sys/module/apparmor/parameters/enabled)" = Y
+          sysctl kernel.apparmor_restrict_unprivileged_userns > dist/runtime-parity/namespace-policy.txt
+          sudo aa-status > dist/runtime-parity/apparmor.txt
+      - uses: actions/cache/save@v4
+        if: always() && steps.runtime-cache.outputs.cache-hit != 'true'
+        with:
+          path: .cage/flatpak
+          key: capability-runtime-x86_64-${{ hashFiles('runtime/desktop-wine-11.0.json') }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v1-actual-runtime-parity-${{ github.event.pull_request.head.sha || github.sha }}
+          path: dist/runtime-parity
+          retention-days: 14

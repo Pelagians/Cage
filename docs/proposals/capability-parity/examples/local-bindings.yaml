@@ -1,0 +1,11 @@
+# Projection of a Cage-generated receipt, not a user-imported authorization.
+# Publisher, installation and exact release provenance are resolved from the
+# canonical authority and signed release ledger. Native grants remain native.
+# Cage's full JSON receipt also records verified release/native snapshot digests.
+schemaVersion: cage.local-capability-bindings/v1
+applicationId: io.github.Pelagians.Cage.MyHarmony
+bindings:
+  harmony-files:
+    base: xdg-documents
+    path: Remote Backups
+decisions: {}

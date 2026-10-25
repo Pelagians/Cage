@@ -141,11 +141,17 @@ def verify_manifest(data, signature, key_path):
     if len(data) > LIMIT or len(signature) != 64:raise ReleaseError('release metadata/signature exceeds its bounds')
     key, fingerprint = public_key(key_path)
     from cryptography.exceptions import InvalidSignature
-    try:key.verify(signature, b'Cage trusted release v1\0' + data)
+    # Select only the signature domain from untrusted metadata, then authenticate
+    # the complete bytes before interpreting any release/plan fields.
+    version = parse(data).get('schemaVersion')
+    domain = {'cage.release/v1': b'Cage trusted release v1\0',
+              'cage.release/v2': b'Cage trusted release v2\0'}.get(version)
+    if domain is None: raise ReleaseError('unsupported signed release version')
+    try:key.verify(signature, domain + data)
     except InvalidSignature as exc:raise ReleaseError('invalid publisher signature; no deployment changed') from exc
     manifest = parse(data)
     try:
-        if manifest['schemaVersion'] != SCHEMA or manifest['publisherKeySha256'] != fingerprint:raise ValueError()
+        if manifest['schemaVersion'] != version or manifest['publisherKeySha256'] != fingerprint:raise ValueError()
         if set(manifest)!={'schemaVersion','publisherKeySha256','sequence','sourceRevision','application','artifacts'}:raise ValueError()
         if type(manifest['sequence']) is not int or not 0 < manifest['sequence'] < 2**53:raise ValueError()
         if not re.fullmatch(r'[a-f0-9]{40}|[a-f0-9]{64}', manifest['sourceRevision']):raise ValueError()
@@ -164,8 +170,31 @@ def verify_manifest(data, signature, key_path):
             if set(entry)!=expected:raise ValueError()
             plan = entry['plan']
             if plan['desktop']['id'] != app['id'] or plan['application'] != {'name':app['name'],'version':app['version']}:raise ValueError()
-            if plan.get('state',{}).get('managerVersion') != 1 or entry['identity'] != plan_identity(plan):raise ValueError()
-            validate_update_policy(plan['desktop']['updates'])
+            manager = 2 if version == 'cage.release/v2' else 1
+            if plan.get('state',{}).get('managerVersion') != manager or entry['identity'] != plan_identity(plan):raise ValueError()
+            if manager == 2:
+                from core.capabilities import compile_capabilities, require_supported
+                from core.manifest import Manifest
+                payload = dict(plan['recipe'])
+                if 'compatibility' in payload:payload['compatibility']={k:v for k,v in payload['compatibility'].items() if k!='schemaVersion'}
+                recipe = Manifest.from_dict(payload)
+                if recipe.schema_version != 'cage.app/v1' or recipe.application_id != app['id']:raise ValueError()
+                if digest_json(recipe.to_dict()) != entry['recipeDigest']:raise ValueError()
+                capabilities = compile_capabilities(recipe, kind)
+                require_supported(capabilities)
+                if plan.get('capabilities') != capabilities:raise ValueError()
+                if arch != 'x86_64' or recipe.runtime.provider != 'wine' or recipe.runtime.version != '11.0':raise ValueError()
+                if kind=='appimage':
+                    from runtime.appimage_runtime import MATERIALIZER_ABI
+                    if (plan.get('managedNamespace') is not True or plan.get('materializerABI')!=MATERIALIZER_ABI
+                            or plan.get('layout',{}).get('runtime')!='/run/cage/native/usr/wine'
+                            or not re.fullmatch('[a-f0-9]{64}',plan.get('runtimeClosureDigest',''))):raise ValueError()
+                if kind=='oci' and (plan.get('managedNamespace') is not True or not re.search(r'(?:@|^)sha256:[a-f0-9]{64}$',plan['target']['image'])):raise ValueError()
+                if kind=='flatpak':
+                    from core.capabilities import flatpak_permissions
+                    if plan.get('permissions')!=flatpak_permissions(capabilities):raise ValueError()
+            if plan['desktop'].get('updates'):validate_update_policy(plan['desktop']['updates'])
+            elif manager == 1:raise ValueError()
             if not re.fullmatch('[a-f0-9]{64}',entry['recipeDigest']):raise ValueError()
             if not isinstance(entry['hostPageSizes'], list) or not entry['hostPageSizes'] or any(type(n) is not int or n not in (4096,16384,65536) for n in entry['hostPageSizes']):raise ValueError()
             supported=plan['target'].get('translation',{}).get('hostPageSizes',[]) if arch=='aarch64' else [4096]
@@ -269,7 +298,9 @@ def verify_evidence(entry, proof):
     if (entry['imageId'] if kind=='oci' else entry['package']['sha256']) not in qualified_hashes(proof,kind):
         raise ReleaseError('qualification does not bind the exact package/image bytes')
     if proof.get('pageSize') not in entry['testedPageSizes']:raise ReleaseError('qualification page size differs from signed evidence')
-    repairs = entry['plan']['desktop']['updates'].get('rollbackRepairs', [])
+    if entry['plan'].get('state',{}).get('managerVersion') == 2:
+        verify_capability_evidence(entry,proof)
+    repairs = entry['plan']['desktop'].get('updates', {}).get('rollbackRepairs', [])
     if proof.get('qualificationKind')=='rollback-repair' and not any(
             rule['toRuntimeDigest']==entry['identity']['runtimeDigest'] for rule in repairs):
         raise ReleaseError('repaired rollback evidence cannot qualify the original or a non-repair package')
@@ -310,7 +341,7 @@ def verify_evidence(entry, proof):
                     or not any(g.get('prefix')==session.get('prefix') and g.get('identity')==entry['identity']
                                and g.get('rollbackRepair')==audit for g in generations)):
                 raise ReleaseError('repair evidence lacks retained source and committed repair identities')
-    for migration in entry['plan']['desktop']['updates'].get('runtimeMigrations', []):
+    for migration in entry['plan']['desktop'].get('updates', {}).get('runtimeMigrations', []):
         if migration['toRuntimeDigest'] != entry['identity']['runtimeDigest']:
             continue  # Shared recipes may describe other format/architecture pins.
         expected = {'from': migration['from'], 'to': entry['identity']}
@@ -322,6 +353,28 @@ def verify_evidence(entry, proof):
                 or not re.fullmatch('[a-f0-9]{64}', hashes['baseline'])
                 or hashes['baseline'] != hashes.get('candidate')):
             raise ReleaseError('release lacks matching runtime migration, relaunch and rollback qualification')
+
+
+def verify_capability_evidence(entry, proof):
+    """Source/schema success cannot be signed as native runtime qualification."""
+    from core.capabilities import compile_capabilities
+    capabilities=compile_capabilities(entry['plan']['recipe'],entry['format'])
+    evidence=proof.get('capabilityQualification',{})
+    host=evidence.get('host',{})
+    required={'baseline','filesystem','network'}
+    if any(x['grant'] and (x['grant']['kind']=='device-class' or x['fallback']) for x in capabilities['requests']):
+        required.add('devices')
+        if any(x['grant'] and x['resolved'].get('hotplug')=='required' for x in capabilities['requests']):required.add('hotplug')
+    cases=evidence.get('cases',{})
+    if (evidence.get('contractDigest')!=capabilities['contractDigest'] or evidence.get('baseline')!='cage.local-desktop/v1'
+            or host.get('bootedNative') is not True or host.get('architecture')!='x86_64'
+            or host.get('os')!='ubuntu' or host.get('version')!='24.04' or host.get('desktop')!='x11'
+            or host.get('wine')!='wine-11.0' or host.get('apparmorEnabled') is not True
+            or not isinstance(host.get('kernel'),str) or not host['kernel']
+            or not isinstance(host.get('tools'),dict) or not host['tools']
+            or not isinstance(host.get('securityPolicy'),dict) or not host['securityPolicy']
+            or any(cases.get(name,{}).get('status')!='passed' or not cases[name].get('evidence') for name in required)):
+        raise ReleaseError('v2 release lacks booted native x86_64 capability/runtime qualification; blocked/not-run cases are not passes')
 
 
 def verify_receipt(entry, receipt):
@@ -462,10 +515,16 @@ def create_release(spec_path, private, output, *, engine='podman'):
         else:
             entry['receipt']=stage(Path(str(source)+'.json'),entry['package']['name']+'.json')
             if kind=='flatpak':entry['flatpakCommit']=receipt.get('commit')
+        if plan.get('state',{}).get('managerVersion')==2:
+            verify_capability_evidence(entry,proof)
         artifacts.append(entry)
-    manifest={'schemaVersion':SCHEMA,'publisherKeySha256':fingerprint,'sequence':spec['sequence'],
+    managers = {entry['plan']['state']['managerVersion'] for entry in artifacts}
+    if len(managers) != 1 or not managers <= {1,2}:raise ReleaseError('release cannot mix state contract versions')
+    version = 'cage.release/v2' if managers == {2} else SCHEMA
+    manifest={'schemaVersion':version,'publisherKeySha256':fingerprint,'sequence':spec['sequence'],
               'sourceRevision':spec['sourceRevision'],'application':app,'artifacts':artifacts}
-    data=canonical(manifest);signature=key.sign(b'Cage trusted release v1\0'+data)
+    domain = b'Cage trusted release v2\0' if version == 'cage.release/v2' else b'Cage trusted release v1\0'
+    data=canonical(manifest);signature=key.sign(domain+data)
     # Validate our output through the same schema/signature path without ever
     # writing the publisher's private material to a release or cache.
     with tempfile.TemporaryDirectory() as temp:

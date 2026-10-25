@@ -1,0 +1,9 @@
+# Render @EXECUTABLE@ as an absolute qualified host-tool path before loading.
+# If the distribution already profiles that path, amend its local policy instead
+# of loading an overlapping attachment. Never disable AppArmor or the global
+# unprivileged-user-namespace restriction. Administration is explicit.
+abi <abi/4.0>,
+include <tunables/global>
+profile cage-v1-userns @EXECUTABLE@ flags=(unconfined) {
+  userns,
+}

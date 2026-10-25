@@ -39,7 +39,7 @@ def app():
     return value
 
 
-def bundle_at(directory):
+def bundle_at(directory, machine=b"\x64\x86"):
     manifest = Manifest.from_dict(app())
     bundle = create_bundle(manifest, Path(directory), dry_run=True)
     materialize_runnable_prefix(bundle, entrypoint=manifest.launch.entrypoint)
@@ -48,7 +48,7 @@ def bundle_at(directory):
     (prefix / "dosdevices/c:").symlink_to("../drive_c")
     executable = windows_path(prefix, manifest.launch.entrypoint)
     pe = bytearray(128)
-    pe[:2], pe[60:64], pe[64:70] = b"MZ", (64).to_bytes(4, "little"), b"PE\0\0\x64\x86"
+    pe[:2], pe[60:64], pe[64:70] = b"MZ", (64).to_bytes(4, "little"), b"PE\0\0" + machine
     executable.write_bytes(pe)
     seal_desktop_bundle(bundle, desktop_target(), {"wineVersion": "wine-11.0"})
     (bundle / "metadata/execution-target.json").write_text(json.dumps(desktop_target()))
@@ -102,6 +102,15 @@ class DesktopContractTests(unittest.TestCase):
             self.assertFalse(verify_bundle(bundle)["valid"])
             with self.assertRaises(DesktopError):
                 create_desktop_export_plan(bundle)
+
+    def test_native_wine_accepts_wow64_and_rejects_other_pe_architectures(self):
+        for machine in (b"\x64\x86", b"\x4c\x01"):
+            with self.subTest(machine=machine), tempfile.TemporaryDirectory() as td:
+                self.assertEqual(create_desktop_export_plan(bundle_at(td, machine))["target"]["architecture"], "x86_64")
+        for machine in (b"\x64\xaa", b"\xc4\x01", b"\0\0"):
+            with self.subTest(machine=machine), tempfile.TemporaryDirectory() as td:
+                with self.assertRaisesRegex(DesktopError, "architecture is unsupported"):
+                    create_desktop_export_plan(bundle_at(td, machine))
 
     def test_old_bundle_cannot_be_silently_rebound(self):
         with tempfile.TemporaryDirectory() as td:

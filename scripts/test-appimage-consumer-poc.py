@@ -9,6 +9,7 @@ import socket
 import shutil
 import subprocess
 import sys
+from appimage_consumer import consumer_glibc, private_runtime_maps
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('gui', ROOT / 'scripts/test-flatpak-poc.py')
@@ -18,6 +19,9 @@ spec.loader.exec_module(gui)
 
 def main():
     package, image = Path(sys.argv[1]).resolve(), sys.argv[2]
+    libc = consumer_glibc(image)
+    original_package = package
+    relocated_package = package.with_name('Relocated café ' + package.name)
     evidence = Path(os.environ['CAGE_TEST_EVIDENCE']).resolve()
     evidence.mkdir(parents=True, exist_ok=False)
     data, home, temporary = [evidence / name for name in ['data', 'home', 'temporary']]
@@ -53,6 +57,7 @@ def main():
         return process
     try:
         process = launch()
+        maps = private_runtime_maps(container_name)
         gui.command('xdotool', 'key', '--clearmodifiers', 'ctrl+a')
         gui.command('xdotool', 'type', '--clearmodifiers', '--delay', '15', 'Clean consumer AppImage saved')
         gui.command('xdotool', 'key', '--clearmodifiers', 'Return', 'ctrl+s')
@@ -61,6 +66,8 @@ def main():
         gui.command('xdotool', 'key', '--clearmodifiers', 'alt+F4')
         assert process.wait(timeout=180) == 0
         before = (prefix / 'state.json').read_bytes()
+        package.rename(relocated_package)
+        package = relocated_package
         process = launch()
         gui.command('xdotool', 'key', '--clearmodifiers', 'ctrl+End')
         gui.command('xdotool', 'type', '--clearmodifiers', '--delay', '15', 'Consumer relaunch verified')
@@ -72,6 +79,7 @@ def main():
         assert (prefix / 'state.json').read_bytes() == before
         result = {'schemaVersion': 'cage.appimage-consumer-test/v0', 'status': 'passed',
             'consumerImage': image, 'consumerImageId': gui.command('podman', 'image', 'inspect', '--format', '{{.Id}}', image),
+            'consumerGlibc': libc, 'privateRuntimeMaps': maps, 'packageRelocated': True,
             'kernelPageSize': os.sysconf('SC_PAGE_SIZE'), 'bootedDistroQualification': False,
             'consumerWineInstalled': False, 'consumerPythonInstalled': False,
             'save': True, 'relaunch': True, 'sameStateGeneration': True, 'savedContents': document.read_text(),
@@ -83,6 +91,8 @@ def main():
         raise
     finally:
         subprocess.run(['podman', 'rm', '-f', container_name], capture_output=True, timeout=30)
+        if package == relocated_package:
+            package.rename(original_package)
         for log in logs:
             log.close()
 

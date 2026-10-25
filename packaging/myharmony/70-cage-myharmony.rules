@@ -1,0 +1,8 @@
+# Harmony family USB IDs: https://github.com/jaymzh/concordance/blob/main/libconcord/libhidapi.cpp
+# Logitech c110-c14f covers the Harmony family, including Hub c129 and Touch/Ultimate c12b.
+# Older 7-series and all 6-series use National Semiconductor 0400:c359.
+# Run before 73-seat-late.rules to grant the active local user's session an ACL.
+ACTION=="add|change", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="046d", ATTR{idProduct}=="c1[1-4][0-9a-f]", TAG+="uaccess"
+ACTION=="add|change", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c1[1-4][0-9a-f]", TAG+="uaccess"
+ACTION=="add|change", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="0400", ATTR{idProduct}=="c359", TAG+="uaccess"
+ACTION=="add|change", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0400", ATTRS{idProduct}=="c359", TAG+="uaccess"

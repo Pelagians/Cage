@@ -1,0 +1,91 @@
+name: MyHarmony x86_64 AppImage
+on:
+  workflow_dispatch:
+  push:
+    paths: ['recipes/myharmony*', 'scripts/prepare-myharmony.py', 'scripts/test-myharmony-appimage.py', 'scripts/appimage_consumer.py', 'artifact/appimage.py', 'runtime/appimage*', 'runtime/desktop_launch.py', 'packaging/myharmony/**', '.github/workflows/myharmony-appimage.yml']
+permissions:
+  contents: read
+concurrency:
+  group: myharmony-${{ github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install build and GUI test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak podman uidmap slirp4netns fuse-overlayfs squashfs-tools binutils patchelf xvfb openbox xdotool scrot xdg-utils p7zip-full
+          python -m pip install PyYAML Pillow setuptools wheel
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          mkdir -p "$HOME/.config/containers"
+          printf '[engine]\ncgroup_manager="cgroupfs"\nevents_logger="file"\n' > "$HOME/.config/containers/containers.conf"
+      - uses: actions/cache@v4
+        with:
+          path: .cage/flatpak
+          key: appimage-native-x86_64-${{ hashFiles('runtime/desktop-wine-11.0.json', 'runtime/wine-arm64ec-11.20-fex-2610.json') }}
+          restore-keys: |
+            appimage-native-x86_64-
+            desktop-flatpak-X64-
+      - name: Verify and stage official application
+        run: |
+          curl --fail --location --retry 3 --output /tmp/MyHarmony-App.msi https://app.myharmony.com/prod/win/1.0/MyHarmony-App.msi
+          python scripts/prepare-myharmony.py /tmp/MyHarmony-App.msi --runtime wine
+          python -m cage inspect recipes/myharmony.cage.yaml
+          podman pull registry.fedoraproject.org/fedora:44
+          # A clean 2.35 consumer with system trust roots, without Wine/Python.
+          podman build -t localhost/cage-myharmony-ubuntu22 -f - . <<'CONSUMER'
+          FROM docker.io/library/ubuntu@sha256:98510ac07bb4545e389be502a8918b385c018bfe4ceeb5ac7e0375c782268b04
+          RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+          CONSUMER
+          mkdir -p dist/myharmony-evidence
+          curl --verbose --max-time 30 --output dist/myharmony-evidence/service.html --write-out '%{http_code}' https://svcs.myharmony.com/Discovery/Discovery.svc >dist/myharmony-evidence/service-status.txt 2>dist/myharmony-evidence/service-host.log
+          podman run --rm registry.fedoraproject.org/fedora:44 sh -c 'ls -l /etc/pki/tls/certs/ca-bundle.crt; getent hosts svcs.myharmony.com; curl -v --max-time 30 https://svcs.myharmony.com/Discovery/Discovery.svc' >dist/myharmony-evidence/service-consumer.log 2>&1 || true
+      - name: Build and qualify actual AppImage
+        run: |
+          mkdir -p dist/myharmony-evidence dist/myharmony-x86_64
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1000x24' bash -eu -o pipefail <<'SH'
+          openbox >dist/myharmony-evidence/window-manager.log 2>&1 &
+          python -m cage build recipes/myharmony.cage.yaml --target appimage --flatpak-store .cage/flatpak --output dist/myharmony-bundles >dist/myharmony-evidence/build.json
+          python -m cage export appimage dist/myharmony-bundles/myharmony-1.0.308 --allow-host-access --flatpak-store .cage/flatpak --output dist/MyHarmony-1.0.308-x86_64.AppImage >dist/myharmony-evidence/export.json
+          cp dist/*.AppImage.build/AppDir/usr/share/cage/*/native-dependencies.json dist/myharmony-evidence/
+          cp dist/*.AppImage.build/AppDir/usr/share/cage/*/component-sources.json dist/myharmony-evidence/
+          # Verify the actual packaged backend and native dependency closure.
+          find dist/*.AppImage.build/AppDir/usr/wine -iname '*hid*' -o -iname '*winebus*' -o -iname '*wineusb*' >dist/myharmony-evidence/usb-modules.txt
+          test -n "$(find dist/*.AppImage.build/AppDir/usr/wine -name hid.dll -print -quit)"
+          test -n "$(find dist/*.AppImage.build/AppDir/usr/wine -name winebus.sys -print -quit)"
+          test -n "$(find dist/*.AppImage.build/AppDir -name 'libusb-1.0.so*' -print -quit)"
+          test -n "$(find dist/*.AppImage.build/AppDir -name 'libudev.so*' -print -quit)"
+          rm -rf dist/MyHarmony-1.0.308-x86_64.AppImage.build dist/myharmony-bundles/myharmony-1.0.308/build/flatpak
+          cp dist/MyHarmony-1.0.308-x86_64.AppImage dist/myharmony-x86_64/
+          cp packaging/myharmony/* dist/myharmony-x86_64/
+          # HTTP 403 is an independently recorded CI service restriction. In
+          # that case retain explicit runtime-only evidence, never an online pass.
+          CAGE_TEST_EXPECT_GLIBC=2.35 CAGE_TEST_EVIDENCE="$PWD/dist/myharmony-evidence/ubuntu22-consumer" python scripts/test-myharmony-appimage.py dist/MyHarmony-1.0.308-x86_64.AppImage localhost/cage-myharmony-ubuntu22 --service-http-status "$(cat dist/myharmony-evidence/service-status.txt)"
+          CAGE_TEST_EVIDENCE="$PWD/dist/myharmony-evidence/fedora-consumer" python scripts/test-myharmony-appimage.py dist/MyHarmony-1.0.308-x86_64.AppImage --service-http-status "$(cat dist/myharmony-evidence/service-status.txt)"
+          SH
+          mv dist/MyHarmony-1.0.308-x86_64.AppImage dist/myharmony-x86_64/
+          cp packaging/myharmony/* dist/myharmony-x86_64/
+          cd dist/myharmony-x86_64
+          sha256sum MyHarmony-1.0.308-x86_64.AppImage >SHA256SUMS
+      - name: Retain package and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: myharmony-x86_64-${{ github.sha }}
+          retention-days: 3
+          if-no-files-found: warn
+          path: |
+            dist/myharmony-x86_64/*
+            dist/myharmony-evidence/*.json
+            dist/myharmony-evidence/*.txt
+            dist/myharmony-evidence/*.log
+            dist/myharmony-evidence/*-consumer/*.json
+            dist/myharmony-evidence/*-consumer/*.log
+            dist/myharmony-evidence/*-consumer/*.png
+            dist/myharmony-bundles/*/logs/*

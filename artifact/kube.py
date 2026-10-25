@@ -46,6 +46,8 @@ def create_kube_export_plan(
     _validate_image_ref(image, allow_mutable_tag=allow_mutable_tag)
 
     manifest = _load_json(bundle / 'manifest.cage.json')
+    if manifest.get('schemaVersion')=='cage.app/v1':
+        raise KubeExportError('managed v1 currently qualifies local desktop resources; Kubernetes remains unsupported')
     graph = _load_json(bundle / 'metadata/graph.json')
     application = dict(graph.get('application') or {
         'name': manifest.get('name'),

@@ -27,7 +27,7 @@ def _read(folder):
     path=folder/'installation.json'
     if not path.exists() and not path.is_symlink():return None
     value=r.parse(r.small(path))
-    if value.get('schemaVersion')!='cage.release-installation/v1':raise r.ReleaseError('unknown installation ledger; all state retained')
+    if value.get('schemaVersion') not in ('cage.release-installation/v1','cage.release-installation/v2'):raise r.ReleaseError('unknown installation ledger; all state retained')
     return value
 
 
@@ -47,6 +47,9 @@ def package(release):
 def _state(record, release):
     entry=release['entry'];kind=entry['format'];app=release['manifest']['application']['id']
     if kind=='flatpak':
+        if record.get('schemaVersion')=='cage.release-installation/v2':
+            from artifact.managed_launch import state_root
+            return _read_generations(state_root(record,release))
         from artifact.updates import _state as flatpak_state
         info=flatpak_state({'plan':entry['plan']},dict(os.environ));return info.get('state')
     if kind=='appimage':
@@ -56,6 +59,9 @@ def _state(record, release):
 
 
 def _selected(root, record, key, kind, *, previous=False):
+    if record.get('schemaVersion')=='cage.release-installation/v2':
+        from artifact.release_v2 import selected
+        return selected(root,record,key,kind,previous=previous)
     baseline=retained(root,record['baseline'],key,kind)
     history=[retained(root,digest,key,kind) for digest in record['releases']]
     if kind=='flatpak':
@@ -160,9 +166,16 @@ def _launch(record, release, files, action=None, previous=None, folder=None):
     return r.command(_container_args(record,release,files,action))
 
 
-def deploy(source, key, kind, *, action='install', cache=None, files=(), engine='podman', state_dir=None, exports_dir=None):
+def deploy(source, key, kind, *, action='install', cache=None, files=(), engine='podman', state_dir=None, exports_dir=None,
+           accepted=None, adopt=False):
     root=r.cache_root(cache)
     def preflight(manifest):
+        from artifact import authority
+        pin=authority.read_authority(manifest['application']['id'])
+        if pin:
+            if pin['publisherKeySha256']!=manifest['publisherKeySha256']:raise r.ReleaseError('app ID belongs to another publisher; use a fresh app ID')
+            registered=pin['formats'].get(kind)
+            if registered and Path(registered['ledgerRoot']).resolve()!=root.resolve():raise r.ReleaseError('app/format is registered in another cache')
         found=_read(installation(root,manifest['application']['id'],kind))
         if found:
             _check_publisher(found,manifest)
@@ -173,6 +186,10 @@ def deploy(source, key, kind, *, action='install', cache=None, files=(), engine=
                 if not known_repair:raise r.ReleaseError('release sequence is stale or already accepted; use explicit rollback')
         elif action!='install':raise r.ReleaseError('no trusted baseline installed; install the matching baseline first')
     release=r.fetch_release(source,key,kind,cache=root,preflight=preflight)
+    if release['manifest']['schemaVersion']=='cage.release/v2':
+        from artifact import release_v2
+        return release_v2.deploy(release,key,root,action=action,files=files,engine=engine,state_dir=state_dir,
+                                 exports_dir=exports_dir,accepted=accepted,adopt=adopt)
     manifest=release['manifest'];app=manifest['application']['id'];folder=installation(root,app,kind)
     with lifecycle_lock(folder):
         record=_read(folder)
@@ -237,6 +254,16 @@ def deploy(source, key, kind, *, action='install', cache=None, files=(), engine=
 
 def operate(app, key, kind, *, action='run', cache=None, files=()):
     root=r.cache_root(cache);folder=installation(root,app,kind)
+    from artifact import authority
+    pin=authority.read_authority(app)
+    if pin:
+        if r.public_key(key)[1]!=pin['publisherKeySha256']:raise r.ReleaseError('canonical app ID belongs to another publisher; use a fresh ID')
+        registered=pin['formats'].get(kind)
+        if registered and Path(registered['ledgerRoot']).resolve()!=root.resolve():raise r.ReleaseError('app/format is registered in another cache')
+    existing=_read(folder)
+    if existing and existing.get('schemaVersion')=='cage.release-installation/v2':
+        from artifact import release_v2
+        return release_v2.operate(app,key,kind,root,action=action,files=files)
     with lifecycle_lock(folder):
         record=_read(folder)
         if not record:raise r.ReleaseError('no trusted installation recorded')

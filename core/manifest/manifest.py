@@ -49,6 +49,15 @@ def load_manifest(path: Path) -> Manifest:
     else:
         try:
             data = json.loads(text)
+            if isinstance(data, dict) and data.get('schemaVersion') == 'cage.app/v1':
+                def unique(pairs):
+                    value = {}
+                    for key, item in pairs:
+                        if key in value:
+                            raise ManifestError('duplicate JSON key: ' + key)
+                        value[key] = item
+                    return value
+                data = json.loads(text, object_pairs_hook=unique)
         except json.JSONDecodeError as exc:
             raise ManifestError(f"invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}") from exc
     if not isinstance(data, dict):
@@ -342,6 +351,9 @@ class Manifest:
     entrypoints: list[dict[str, Any]] = field(default_factory=list)
     file_associations: list[dict[str, Any]] = field(default_factory=list)
     desktop: dict[str, Any] = field(default_factory=dict)
+    application_id: str | None = None
+    execution: dict[str, Any] = field(default_factory=dict)
+    permissions: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Manifest:
@@ -351,7 +363,18 @@ class Manifest:
         """
         if not isinstance(data, dict):
             raise ManifestError("manifest must be an object")
-        _reject_unknown(data, ROOT_FIELDS, "manifest")
+        v1 = data.get("schemaVersion") == "cage.app/v1"
+        _reject_unknown(data, ROOT_FIELDS | ({"id", "execution", "permissions"} if v1 else set()), "manifest")
+        capabilities = None
+        if v1:
+            from core.capabilities import normalize, CapabilityError
+            if isinstance(data.get('runtime'), dict) and 'network' in data['runtime']:
+                raise ManifestError('runtime.network is forbidden in v1; use permissions')
+            try:
+                capabilities = normalize(data.get('id'), data.get('execution'), data.get('permissions'),
+                                         data.get('desktop', {}).get('id') if isinstance(data.get('desktop'), dict) else None)
+            except CapabilityError as exc:
+                raise ManifestError(str(exc)) from exc
         
         schema_version = _required_str(data, "schemaVersion")
         if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
@@ -365,6 +388,8 @@ class Manifest:
         runtime_data = data.get("runtime", {})
         if not isinstance(runtime_data, dict):
             raise ManifestError("runtime must be a dict")
+        if v1:
+            runtime_data = {**runtime_data, 'network': 'host' if any(r['kind'] == 'network' for r in capabilities['permissions']['requests']) else 'none'}
         runtime = RuntimeSpec.from_dict(runtime_data)
         build = BuildSpec.from_dict(data.get("build"))
         
@@ -476,6 +501,9 @@ class Manifest:
             entrypoints=entrypoints,
             file_associations=file_associations,
             desktop=normalize_desktop(data.get("desktop")),
+            application_id=capabilities['id'] if capabilities else None,
+            execution=capabilities['execution'] if capabilities else {},
+            permissions=capabilities['permissions'] if capabilities else {},
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -486,6 +514,9 @@ class Manifest:
             "version": self.version,
             "runtime": self.runtime.to_dict(),
         }
+        if self.schema_version == 'cage.app/v1':
+            result['runtime'].pop('network', None)
+            result.update(id=self.application_id, execution=self.execution, permissions=self.permissions)
         if self.build.network != "none":
             result["build"] = self.build.to_dict()
         

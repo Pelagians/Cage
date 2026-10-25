@@ -1,10 +1,10 @@
 # AppImage desktop proof of concept
 
-Cage exports the same pinned portable Notepad++ recipes as Flatpak and AppImage,
-using the existing ordered build pipeline and shared Wine-prefix launcher. There
-is no second application installer or recipe language. Container builds remain
-the default. AppImage export is experimental and qualifies one application, not
-arbitrary Windows software.
+Cage exports sealed desktop application bundles as Flatpak and AppImage, using
+the existing ordered build pipeline and shared Wine-prefix launcher. There is no
+second application installer or recipe language. Container builds remain the
+default. AppImage compatibility is qualified per application; the shared private
+runtime applies to every AppImage export.
 
 ## Target and dependencies
 
@@ -12,19 +12,31 @@ There are separate Linux x86_64 and aarch64 packages. ARM uses the same Wine
 11.20 ARM64EC and FEX 2610 payload as Cage's ARM Flatpak/container profile; x86
 uses the existing Wine 11.0 desktop profile. ARM accepts 4 KB and 16 KB kernels.
 No host Wine, FEX, Cage, Python, Flatpak or container engine is needed to run the
-resulting AppImage. A normal Linux desktop with `/bin/sh`, `/usr/bin/env`, `getconf`, glibc
-**2.43 or newer**, and X11/XWayland is required. Older glibc and musl systems
-receive a diagnostic; they are outside this first target's support range.
+resulting AppImage. A normal Linux desktop with `/bin/sh`, `/usr/bin/env`,
+X11/XWayland, and executable temporary storage is required. The AppImage carries
+its own glibc and matching dynamic loader from the exact pinned Freedesktop
+platform. Host glibc 2.35 is an explicit consumer test target; no host libc
+replacement is needed. This does not replace the host kernel or device drivers.
 
-The build uses Flatpak only to acquire the existing pinned Wine payload and
-Freedesktop library sources. It does not put a Flatpak filesystem, container
-engine, dynamic loader, or second glibc inside the AppImage. `readelf` resolves
-native imports without executing `ldd`; a bounded list covers Wine's qualified
-X11/font/TLS libraries loaded dynamically. The build fails for unresolved
-required dependencies and for imports newer than the declared glibc baseline.
+The build uses Flatpak to acquire the existing pinned Wine payload and
+Freedesktop library sources. `readelf` resolves native imports without executing
+`ldd`; a bounded list covers Wine's qualified X11/font/TLS libraries loaded
+dynamically. The build fails for unresolved required dependencies and for
+imports newer than the private runtime's declared glibc ceiling. `patchelf` adds
+private library paths and reserves ELF interpreter slots at export time. At
+launch, bundled Python creates an exclusive temporary tree, copies and verifies
+the native ELF files, and fills executable interpreter slots with the mounted
+package's loader path. Native libraries are copied too because Wine canonicalizes
+their paths to locate child loaders. Windows payloads and other data remain
+linked to the immutable package.
+This covers Wine's native child processes and wineserver while retaining correct
+executable identity and supporting relocated packages. Consumers need no patching
+tools. The temporary tree is removed after normal application shutdown. Host
+commands do not inherit the packaged libc through `LD_LIBRARY_PATH`.
+
 The AppImage-only profile omits the Unix `winedmo.so` module: FFmpeg-backed
 DirectShow decoding is outside this text-editor proof and would add an
-unnecessary codec stack, including x86 imports requiring glibc 2.44. The
+additional codec stack that remains unqualified. The
 exclusion and original module hashes are recorded in the target/receipt;
 Flatpak and container payloads are unchanged. Wine's optional camera, Kerberos
 and packet-capture modules can have unavailable
@@ -43,7 +55,7 @@ publication remain a later release task. No commercial service is required.
 ## Build and export
 
 Producer tools: Cage's normal Python dependencies, Flatpak, `readelf` from
-binutils, and `mksquashfs` with zstd support. ARM also uses the existing build-only
+binutils, `patchelf`, and `mksquashfs` with zstd support. ARM also uses the existing build-only
 `rpm2cpio`. Produce each architecture on a native Linux builder; cross-building
 or relabeling an x86 package as ARM is unsupported.
 
@@ -148,7 +160,9 @@ test tools; these are not consumer application dependencies.
 `scripts/test-appimage-consumer-poc.py` executes the actual package in a clean
 Fedora/Ubuntu userland without installed Wine or Python, sharing only the test
 X server and dedicated writable test paths. CI builds both architectures and
-checks save/relaunch on both distro families. Such container userland checks
+checks save/relaunch and relocation on both distro families, including pinned
+Ubuntu 22.04 consumers that assert host glibc 2.35. Live process maps verify that
+Wine and wineserver use the private libc. Such container userland checks
 are not booted-device or GPU qualification. Physical Asahi FUSE/fallback checks
 are recorded separately. See [qualification evidence](appimage-qualification.md)
 for exact tested identities and outstanding limits.

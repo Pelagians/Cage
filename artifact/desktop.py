@@ -71,7 +71,7 @@ def validate_desktop_recipe(manifest):
         raise DesktopError("the desktop target requires its pinned Wine provider/version")
     if manifest.runtime.runner or manifest.runtime.image or manifest.runtime.digest or manifest.runtime.source or manifest.runtime.channel:
         raise DesktopError("custom OCI images/runners cannot be substituted for a qualified desktop runtime")
-    if manifest.runtime.wine_graphics != "xwayland" or manifest.runtime.network != "none" or manifest.build.network != "none":
+    if manifest.runtime.wine_graphics != "xwayland" or (manifest.schema_version != "cage.app/v1" and manifest.runtime.network != "none") or manifest.build.network != "none":
         raise DesktopError("the desktop POC supports X11/XWayland and offline build/run only")
     if manifest.exports:
         raise DesktopError("additional outputs need later desktop qualification")
@@ -98,6 +98,8 @@ def validate_desktop_recipe(manifest):
             raise DesktopError("invalid desktop environment key")
         if key in {"PATH", "WINEPREFIX", "WINE", "WINESERVER", "WINELOADER", "HOME", "FLATPAK_ID"} or key.startswith(("LD_", "DYLD_", "XDG_")):
             raise DesktopError(f"desktop environment key is runtime-owned: {key}")
+        if manifest.schema_version == 'cage.app/v1' and key.startswith('CAGE_'):
+            raise DesktopError('v1 managed environment keys are runtime-owned')
     if "WINEARCH" in manifest.launch.env:
         raise DesktopError("launch.env cannot override desktop WINEARCH")
     if env.get("WINEARCH", "win64") != "win64":
@@ -190,11 +192,17 @@ def create_desktop_export_plan(bundle):
         if header[:2] != b"MZ" or len(header) < 64:
             raise DesktopError("desktop entrypoint is not a Windows PE executable")
         handle.seek(int.from_bytes(header[60:64], "little"))
-        if handle.read(6) != b"PE\0\0\x64\x86":
-            raise DesktopError("desktop POC entrypoint must be an x86_64 Windows executable")
+        pe = handle.read(6)
+        machines = {b"\x64\x86"}
+        # The pinned native Wine 11 runtime includes its i386 WoW64 modules.
+        # Other runtime targets retain their existing x86_64 entrypoint gate.
+        if target["provider"] == "wine" and target["architecture"] == "x86_64":
+            machines.add(b"\x4c\x01")
+        if pe[:4] != b"PE\0\0" or pe[4:] not in machines:
+            raise DesktopError("desktop entrypoint architecture is unsupported by the pinned Wine target")
     from runtime import desktop_launch
     launcher_hash = hashlib.sha256(Path(desktop_launch.__file__).read_bytes()).hexdigest()
-    return {"schemaVersion": "cage.desktop-export-plan/v0", "application": {"name": manifest.name, "version": manifest.version},
+    plan = {"schemaVersion": "cage.desktop-export-plan/v0", "application": {"name": manifest.name, "version": manifest.version},
             "desktop": manifest.desktop, "launch": manifest.launch.to_dict(),
             "mimeTypes": sorted({mime for item in manifest.file_associations for mime in item.get('mime', [])}),
             "display": {"policy": "xft-dpi", "fallbackDpi": 96, "fonts": "freedesktop-desktop/v1"},
@@ -203,3 +211,9 @@ def create_desktop_export_plan(bundle):
             "sourceManifestDigest": receipt["manifestDigest"],
             "state": {"schemaVersion": "cage.desktop-state/v0", "managerVersion": 1, "launcherSha256": launcher_hash, "upgradePolicy": "explicit-qualified-generations" if manifest.desktop.get("updates") else "refuse-mismatch-retain-data"},
             "qualification": receipt["qualification"]}
+    if manifest.schema_version == 'cage.app/v1':
+        if target.get('architecture') != 'x86_64' or manifest.runtime.provider != 'wine' or manifest.runtime.version != '11.0':
+            raise DesktopError('managed v1 desktop exports initially require native x86_64 Wine 11.0')
+        plan.update(recipe=manifest.to_dict())
+        plan['state'].update(managerVersion=2, schemaVersion='cage.desktop-state/v2')
+    return plan

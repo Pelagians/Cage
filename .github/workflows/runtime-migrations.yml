@@ -62,7 +62,7 @@ jobs:
       - name: Prepare isolated build tools and historical target
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak podman uidmap slirp4netns fuse-overlayfs rpm2cpio squashfs-tools binutils xvfb openbox xdotool scrot xdg-utils x11-xserver-utils desktop-file-utils
+          sudo apt-get install -y flatpak podman uidmap slirp4netns fuse-overlayfs rpm2cpio squashfs-tools binutils patchelf xvfb openbox xdotool scrot xdg-utils x11-xserver-utils desktop-file-utils
           python -m pip install PyYAML pytest setuptools wheel 'cryptography>=43'
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           mkdir -p "$HOME/.config/containers" "$HOME/.config" "$HOME/Documents" dist/onboarding-evidence

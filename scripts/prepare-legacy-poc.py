@@ -56,7 +56,10 @@ def main():
         if args.format == 'appimage':
             runtime = Path(td) / 'runtime'
             shutil.copytree(fixture / 'runtime', runtime)
-            shutil.copyfile(ROOT / 'runtime/appimage-tools.json', runtime / 'appimage-tools.json')
+            # Keep the historical lifecycle helpers intact while using the same
+            # native transport and pinned runtime as the managed baseline.
+            for name in ('appimage-tools.json', 'appimage_runtime.py'):
+                shutil.copyfile(ROOT / 'runtime' / name, runtime / name)
             stack.enter_context(patch.object(appimage, 'ROOT', Path(td)))
         options = dict(output=args.output, store=args.flatpak_store, context_dir=args.context_dir)
         if args.format == 'appimage':options.update(allow_host_access=True, cache=args.tool_cache)
