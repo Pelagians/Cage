@@ -232,11 +232,11 @@ def test_idle_failure_finds_detached_proof_lock_holder_and_preserves_failure(tmp
             # The menu launcher is already gone; its private lease is the
             # ownership boundary for discovering the surviving Wine process.
             with pytest.raises(AssertionError, match='Wine stopped and state committed'):
-                module.wait_for_idle(SimpleNamespace(pid=99999999), state, destination, 'app.exe')
+                module.wait_for_idle(SimpleNamespace(pid=99999999, poll=lambda: 0), state, destination, 'app.exe')
         record = json.loads((tmp_path / '6-relaunch-idle-lock.json').read_text())
         assert record['processes'] == [children[0].pid]
         records = json.loads(destination.with_suffix('.json').read_text())
-        assert {r['pid'] for r in records} == {99999999, children[0].pid}
+        assert {r['pid'] for r in records} == {children[0].pid}
         error = json.loads((tmp_path / '6-relaunch-idle-error.json').read_text())
         assert 'already running' in error['lastLockError']
     finally:

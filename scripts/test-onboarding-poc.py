@@ -150,7 +150,10 @@ def shutdown_diagnostics(process, destination, executable, *, container_state=No
             try:memory[name] = (Path('/sys/fs/cgroup') / name).read_text()[:4096]
             except OSError as exc:memory[name] = str(exc)
         destination.with_name(destination.name + '-memory.json').write_text(json.dumps(memory, indent=2) + '\n')
-    pending = [process.pid]; seen = set(); records = []; matched_containers = []
+    # Menu launchers can already be gone at the idle gate. Do not inspect a
+    # recycled launcher PID; detached Wine is resolved by the private lock.
+    pending = [process.pid] if not hasattr(process, 'poll') or process.poll() is None else []
+    seen = set(); records = []; matched_containers = []
     if lock_state is not None:
         holders = proof_lock_processes(lock_state)
         destination.with_name(destination.name + '-lock.json').write_text(json.dumps(
