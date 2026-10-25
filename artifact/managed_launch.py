@@ -212,6 +212,9 @@ def container_args(record, release, effective, files=(), action=None, *, seccomp
     if effective['display']:
         display=effective['display'];args+=['--mount=type=bind,source='+display['socket']+',destination='+display['socket']+',ro=true',
             '--mount=type=bind,source='+display['authority']+',destination=/tmp/cage-xauthority,ro=true']
+        # XCB's FamilyLocal cookie lookup uses gethostname(). Keep that name
+        # in a private UTS namespace; no host networking or UTS sharing is needed.
+        args+=['--hostname='+os.uname().nodename]
         env.update(DISPLAY=display['display'],XAUTHORITY='/tmp/cage-xauthority')
     for name,value in env.items():args+=['-e',name+'='+value]
     args+=[release['entry']['imageId']]

@@ -246,6 +246,14 @@ class CapabilityDeliveryTests(unittest.TestCase):
         self.assertIn('--mount=type=bind,source=/dev,destination=/dev',args)
         self.assertIn('--tmpfs=/dev/shm:rw,nosuid,nodev,notmpcopyup',args)
         self.assertFalse(any('label=disable' in a or a=='--privileged' or a==':z' for a in args))
+        # Cookie lookup follows the authorized host display while UTS and
+        # networking remain private in a denied-network launch.
+        raw=copy.deepcopy(p['recipe']);raw['permissions']['requests']=[r for r in raw['permissions']['requests'] if r['kind'] not in ('network','device-class')]
+        isolated={**effective,'capabilities':compile_capabilities(raw,'oci')}
+        with patch.object(managed_launch,'_tool',return_value='/usr/bin/podman'),patch.object(r,'command',return_value=Result()),patch.dict(os.environ,{'CONTAINER_HOST':'','CONTAINER_CONNECTION':'','XAUTHLOCALHOSTNAME':'qualified-display-host'}):
+            args=managed_launch.container_args(record,rel,isolated,seccomp_profile='/trusted/profile.json')
+        self.assertIn('--network=none',args);self.assertIn('--uts=private',args)
+        self.assertIn('--hostname='+os.uname().nodename,args)
         info['host']['security']['rootless']=False
         Result.stdout=json.dumps(info)
         with patch.object(managed_launch,'_tool',return_value='/usr/bin/podman'),patch.object(r,'command',return_value=Result()):
