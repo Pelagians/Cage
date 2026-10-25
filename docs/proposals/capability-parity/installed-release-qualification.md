@@ -31,8 +31,10 @@ Flatpak installation and release cache. The publisher key stays outside uploaded
 evidence; the public key, manifests, detached signatures and proof records are
 retained. The consumer uses the public CLI to:
 
-1. Fresh-install a signed release with explicit contract acceptance, then execute
-   its actual installed desktop `Exec` command with a Unicode-path document.
+1. Fresh-install a signed release with explicit contract acceptance. Interrupt
+   the disposable installer after its real native deployment, require pending
+   state to block launch, then recover acceptance and owned desktop registration.
+   Execute the actual installed desktop `Exec` command with a Unicode-path document.
 2. Refuse the changed contract without acceptance; accept, update and relaunch it
    without selecting a new prefix or replacing recovery data.
 3. Revoke optional networking, roll back to the exact original release, require

@@ -99,7 +99,7 @@ def proof(h, release, host, observations, evidence):
              'capabilityQualification': {'contractDigest': plan['capabilities']['contractDigest'],
                  'baseline': 'cage.local-desktop/v1', 'host': host,
                  'cases': {name: {'status': 'passed', 'evidence': 'producer',
-                                 'scope': 'owned probe; devices/hotplug use a synthetic null alias only'}
+                                 'scope': 'hardware-free owned Windows/native-child probe'}
                            for name in ('baseline', 'filesystem', 'network')}}}
     value['capabilityQualification']['cases'].update({name: {'status': 'blocked', 'evidence': 'No controlled physical device or Windows reconnect proof'} for name in ('devices', 'hotplug')})
     identity = release['entry'].get('imageId', release['entry'].get('package', {}).get('sha256'))
@@ -127,7 +127,6 @@ def fresh_consumer(work):
 def qualify(h, candidates, work, store, paths, port, abstract, device, host_process, shm, evidence):
     if len(candidates) != 1:
         raise RuntimeError('--installed-releases requires --format so each adapter has its own desktop default')
-    from importlib.util import module_from_spec, spec_from_file_location
     kind, baseline = next(iter(candidates.items())); app = baseline['manifest']['application']['id']
     evidence.mkdir(parents=True); host = host_identity(); h.write(evidence/'host.json', host)
     private = work/'publisher-private.pem'; key = work/'publisher-public.pem'; releases.generate_key(private, key)
@@ -190,10 +189,27 @@ def qualify(h, candidates, work, store, paths, port, abstract, device, host_proc
                 proc = subprocess.run(list(map(str, args)), text=True, capture_output=True, timeout=240)
                 h.write(evidence/(label+'.json'), {'exitCode': proc.returncode, 'stdout': proc.stdout, 'stderr': proc.stderr})
                 assert proc.returncode != 0 and contains in proc.stdout+proc.stderr, (label, proc.stdout, proc.stderr)
-            cli('install', signed[0], *(['--state-dir', state_dir] if kind == 'oci' else []),
-                accept=baseline['entry']['plan']['capabilities']['contractDigest'])
+            # Kill only this disposable installer immediately after its real
+            # native deployment. The durable pending record must block launch
+            # and recover must finish acceptance plus desktop registration.
+            crash_code = ('import os,sys\nfrom artifact import release_v2\nfrom cage.cli import main\n'
+                          'original=release_v2._install\n'
+                          'def interrupted(*args,**kwargs):\n original(*args,**kwargs)\n os._exit(73)\n'
+                          'release_v2._install=interrupted\nsys.exit(main(sys.argv[1:]))\n')
+            crash_args = [sys.executable, '-c', crash_code, 'release', 'install', signed[0], '--key', key,
+                          '--format', kind, '--cache-dir', cache, '--accept-permissions', baseline['entry']['plan']['capabilities']['contractDigest'],
+                          *(['--state-dir', state_dir] if kind == 'oci' else [])]
+            crashed = subprocess.run(list(map(str, crash_args)), capture_output=True, text=True, timeout=240)
+            h.write(evidence/'interrupted-install.json', {'exitCode': crashed.returncode, 'stdout': crashed.stdout, 'stderr': crashed.stderr})
+            assert crashed.returncode == 73, crashed.stderr
             ledger = release_install.installation(cache, app, kind)
+            assert release_install._read(ledger)['pending']['action'] == 'install'
+            reject([sys.executable, '-m', 'cage', 'release', 'run', app, '--format', kind, '--key', key, '--cache-dir', cache],
+                   'pending-install-blocks-launch', 'pending')
+            cli('recover')
             record = release_install._read(ledger)
+            assert not record.get('pending')
+            result['interruptedInstallRecovered'] = True
             current = releases.cached_release(cache/'releases'/record['activeReleaseDigest'], key, kind)
             root = h.managed.state_root(record, current)
             integration = authority.read_authority(app)['desktopEntry']; desktop = Path(integration['path'])

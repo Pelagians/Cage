@@ -192,7 +192,12 @@ def operate(app, key, kind, root, *, action='run', files=()):
                     _save_acceptance(target,record['pending']['acceptedContractDigest'])
                 if action=='rollback':record['previousReleaseDigest']=active['digest']
                 record['activeReleaseDigest']=target['digest'];record.pop('pending',None);legacy._save(folder,record)
-            return {'success':True,'action':action,'activeReleaseSha256':target['digest'],'stateRetained':True}
+            # Installation can stop after native deployment but before desktop
+            # registration. Recovery must complete that owned integration too.
+            from artifact.desktop_integration import install as integrate
+            integration=integrate(target,root)
+            return {'success':True,'action':action,'activeReleaseSha256':target['digest'],'stateRetained':True,
+                    'desktopIntegration':integration}
         if action!='run':raise r.ReleaseError('unsupported v2 release operation')
         legacy._check_deployment(record,active)
         managed_launch.launch(record,active,folder,root,files=files)

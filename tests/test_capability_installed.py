@@ -5,7 +5,6 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from artifact import releases
 from tests.test_capability_delivery import plan
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,3 +53,35 @@ class InstalledProbeEvidenceTests(unittest.TestCase):
                     raise RuntimeError('interrupted')
             self.assertEqual(dict(os.environ), before)
             self.assertEqual(sentinel.read_bytes(), b'retain')
+
+class InstalledRecoveryTests(unittest.TestCase):
+    def test_interrupted_install_recovery_completes_owned_desktop_registration(self):
+        from unittest.mock import patch
+        from artifact import release_v2, authority, release_install, desktop_integration
+        from runtime.desktop_launch import _write_state_record
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); app = 'org.example.InstalledRecovery'; key = root/'publisher.pem'
+            release = {'digest':'a'*64, 'entry':{'identity':{'same':'state'}, 'format':'appimage'},
+                       'manifest':{'application':{'id':app}}}
+            record = {'schemaVersion':release_v2.SCHEMA, 'pending':{'action':'install', 'acceptedContractDigest':'b'*64},
+                      'publisherKeySha256':'c'*64}
+            folder = root/'ledger';folder.mkdir()
+            sentinel = root/'recovery';sentinel.write_text('retain original recovery')
+            with patch.dict(os.environ, {'XDG_DATA_HOME':str(root/'data')}), \
+                 patch.object(authority,'registered',return_value=({'publisherKeySha256':'c'*64},root,key)), \
+                 patch.object(release_v2.r,'public_key',return_value=(None,'c'*64)), \
+                 patch.object(release_install,'installation',return_value=folder), \
+                 patch.object(release_install,'_read',return_value=record), \
+                 patch.object(release_v2,'selected',return_value=release), \
+                 patch.object(release_v2,'_safe_state'), \
+                 patch.object(release_v2,'_install') as install, \
+                 patch.object(release_v2,'_save_acceptance') as accept, \
+                 patch.object(desktop_integration,'install',return_value={'status':'installed'}) as desktop:
+                result=release_v2.operate(app,key,'appimage',root,action='recover')
+                install.assert_called_once_with(record,release,folder,restore=True)
+                accept.assert_called_once_with(release,'b'*64)
+                desktop.assert_called_once_with(release,root)
+                self.assertNotIn('pending',record)
+                self.assertEqual(result['desktopIntegration']['status'],'installed')
+                self.assertEqual(sentinel.read_text(),'retain original recovery')

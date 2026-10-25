@@ -197,7 +197,7 @@ def configure(app,kind,paths,network,rebound,evidence,*,devices=True):
 
 
 def config(app,kind,paths,active,case,port,abstract,device,host_process,shm,evidence,counter,devices_granted):
-    output=active/(kind+'-'+case+'-'+str(counter));output.mkdir()
+    output=active/(kind+'-'+case+'-'+str(counter)+'-'+hashlib.sha256(str(evidence).encode()).hexdigest()[:8]);output.mkdir()
     py='/run/cage/native/usr/python/bin/python3' if kind=='appimage' else '/usr/bin/python3'
     seed={'oci':'/opt/cage/bundle/prefix','flatpak':'/app/share/cage/'+app+'/seed',
           'appimage':'/app/usr/share/cage/'+app+'/seed'}[kind]
@@ -225,7 +225,11 @@ def run_case(release,record,work,paths,case,port,abstract,device,host_process,sh
     assert host_process.poll() is None,'host process control exited'
     assert b'cage-parity-host-control' in Path(f'/proc/{host_process.pid}/cmdline').read_bytes()
     assert shm.read_bytes()==b'cage-probe-canary\n','host shared-memory control unavailable'
-    active=configure(app,kind,paths,case!='isolated',case=='rebound',evidence,devices=any(r['id']=='devices' for r in release['entry']['plan']['recipe']['permissions']['requests'])) if setup else paths['replacement'] if case=='rebound' else paths['write']
+    if setup:
+        has_devices=any(r['id']=='devices' for r in release['entry']['plan']['recipe']['permissions']['requests'])
+        active=configure(app,kind,paths,case!='isolated',case=='rebound',evidence,devices=has_devices)
+    else:
+        active=paths['replacement'] if case=='rebound' else paths['write']
     if kind=='flatpak':write(evidence/'native-policy.json',permissions.native_snapshot(release))
     effective=compile_capabilities(release['entry']['plan']['recipe'],kind,
         **permissions.applicable_inputs(release['entry']['plan']['recipe'],permissions.local_bindings(app,kind)))
