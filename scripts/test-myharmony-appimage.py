@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise MyHarmony's actual x86_64 AppImage in a selected clean userland."""
 from pathlib import Path
+import argparse
 import atexit
 import importlib.util
 import json
@@ -21,8 +22,14 @@ APP = 'io.github.Pelagians.Cage.MyHarmony'
 
 
 def main():
-    package = Path(sys.argv[1]).resolve()
-    image = sys.argv[2] if len(sys.argv) > 2 else 'registry.fedoraproject.org/fedora:44'
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('package', type=Path)
+    parser.add_argument('image', nargs='?', default='registry.fedoraproject.org/fedora:44')
+    parser.add_argument('--service-http-status', type=int,
+                        help='Independent discovery endpoint probe; HTTP 403 permits runtime-only evidence')
+    options = parser.parse_args()
+    package = options.package.resolve()
+    image = options.image
     libc = consumer_glibc(image)
     original_package = package
     relocated_package = package.with_name('Relocated café ' + package.name)
@@ -48,12 +55,17 @@ def main():
     argv += [image, 'sh', '-ec', 'if command -v wine || command -v python3; then exit 1; fi; exec "$@"', 'consumer', str(package)]
     logs = []
     process = None
+    service_blocked = False
     def window():
+        nonlocal service_blocked
         if process is not None and process.poll() is not None:
             raise AssertionError('AppImage exited before opening its window: ' + str(process.returncode))
         errors = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', '^Server error$'], capture_output=True, text=True)
         if errors.returncode == 0:
-            raise AssertionError('MyHarmony reported a service connection error')
+            if options.service_http_status != 403:
+                raise AssertionError('MyHarmony reported a service connection error')
+            service_blocked = True
+            return errors.stdout.splitlines()[-1]
         return gui.command('xdotool', 'search', '--onlyvisible', '--name', '^MyHarmony$').splitlines()[-1]
     try:
         before = None
@@ -74,7 +86,10 @@ def main():
                 return (sum(b > 110 and b > r * 1.25 and g > r * 1.15 for r,g,b in pixels) > 800
                     and sum(max(r,g,b) < 70 for r,g,b in pixels) > 800
                     and sum(min(r,g,b) > 220 for r,g,b in pixels) > 800)
-            gui.wait_for(rendered, 'rendered online Logitech interface', seconds=180)
+            if service_blocked:
+                subprocess.run(['scrot', '-u', str(screenshot)], check=True)
+            else:
+                gui.wait_for(rendered, 'rendered online Logitech interface', seconds=180)
             maps = private_runtime_maps(name)
             user_reg = (state / 'prefix/user.reg').read_text(errors='replace')
             assert '"Desktop"="MyHarmony"' not in user_reg
@@ -96,9 +111,12 @@ def main():
                 package.rename(relocated_package)
                 package = relocated_package
                 argv[-1] = str(package)
-        result = {'status': 'passed', 'architecture': 'x86_64', 'consumerImage': image,
+        result = {'status': 'runtime-passed-service-blocked' if service_blocked else 'passed',
+            'architecture': 'x86_64', 'consumerImage': image,
             'consumerImageId': gui.command('podman', 'image', 'inspect', '--format', '{{.Id}}', image),
-            'normalWindow': True, 'onlineInterfaceRendered': True, 'relaunch': True,
+            'nativeStartup': True, 'normalWindow': not service_blocked,
+            'onlineInterfaceRendered': not service_blocked, 'serviceHttpStatus': options.service_http_status,
+            'serviceErrorDialog': service_blocked, 'relaunch': True, 'bootedDistroQualification': False,
             'sameStateGeneration': True, 'persistentUserFile': True,
             'consumerGlibc': libc, 'privateRuntimeMaps': maps, 'packageRelocated': True,
             'hostWineRequired': False, 'hostPythonRequired': False,

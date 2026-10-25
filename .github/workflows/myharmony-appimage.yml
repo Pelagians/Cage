@@ -44,7 +44,7 @@ jobs:
           RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
           CONSUMER
           mkdir -p dist/myharmony-evidence
-          curl --verbose --max-time 30 https://svcs.myharmony.com/Discovery/Discovery.svc >dist/myharmony-evidence/service.html 2>dist/myharmony-evidence/service-host.log
+          curl --verbose --max-time 30 --output dist/myharmony-evidence/service.html --write-out '%{http_code}' https://svcs.myharmony.com/Discovery/Discovery.svc >dist/myharmony-evidence/service-status.txt 2>dist/myharmony-evidence/service-host.log
           podman run --rm registry.fedoraproject.org/fedora:44 sh -c 'ls -l /etc/pki/tls/certs/ca-bundle.crt; getent hosts svcs.myharmony.com; curl -v --max-time 30 https://svcs.myharmony.com/Discovery/Discovery.svc' >dist/myharmony-evidence/service-consumer.log 2>&1 || true
       - name: Build and qualify actual AppImage
         run: |
@@ -64,8 +64,10 @@ jobs:
           rm -rf dist/MyHarmony-1.0.308-x86_64.AppImage.build dist/myharmony-bundles/myharmony-1.0.308/build/flatpak
           cp dist/MyHarmony-1.0.308-x86_64.AppImage dist/myharmony-x86_64/
           cp packaging/myharmony/* dist/myharmony-x86_64/
-          CAGE_TEST_EXPECT_GLIBC=2.35 CAGE_TEST_EVIDENCE="$PWD/dist/myharmony-evidence/ubuntu22-consumer" python scripts/test-myharmony-appimage.py dist/MyHarmony-1.0.308-x86_64.AppImage localhost/cage-myharmony-ubuntu22
-          CAGE_TEST_EVIDENCE="$PWD/dist/myharmony-evidence/fedora-consumer" python scripts/test-myharmony-appimage.py dist/MyHarmony-1.0.308-x86_64.AppImage
+          # HTTP 403 is an independently recorded CI service restriction. In
+          # that case retain explicit runtime-only evidence, never an online pass.
+          CAGE_TEST_EXPECT_GLIBC=2.35 CAGE_TEST_EVIDENCE="$PWD/dist/myharmony-evidence/ubuntu22-consumer" python scripts/test-myharmony-appimage.py dist/MyHarmony-1.0.308-x86_64.AppImage localhost/cage-myharmony-ubuntu22 --service-http-status "$(cat dist/myharmony-evidence/service-status.txt)"
+          CAGE_TEST_EVIDENCE="$PWD/dist/myharmony-evidence/fedora-consumer" python scripts/test-myharmony-appimage.py dist/MyHarmony-1.0.308-x86_64.AppImage --service-http-status "$(cat dist/myharmony-evidence/service-status.txt)"
           SH
           mv dist/MyHarmony-1.0.308-x86_64.AppImage dist/myharmony-x86_64/
           cp packaging/myharmony/* dist/myharmony-x86_64/
