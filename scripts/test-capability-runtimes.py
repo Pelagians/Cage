@@ -134,9 +134,8 @@ def build_candidates(work,store,app,recipe_path,evidence):
     write(evidence/'appimage-export.json',ai)
     command(['podman','--remote=false','pull','ghcr.io/pelagians/cage-wine:11.0'],evidence/'oci-pull.log')
     base=json.loads(command(['podman','--remote=false','image','inspect','ghcr.io/pelagians/cage-wine:11.0'],evidence/'oci-base.log'))[0]
-    pins=[pin for pin in base['RepoDigests'] if pin.startswith('ghcr.io/pelagians/cage-wine@sha256:')]
-    if len(pins)!=1:raise RuntimeError('expected one inspected Wine producer digest')
-    image=pins[0]
+    image='ghcr.io/pelagians/cage-wine@'+base['Digest']
+    if image not in base['RepoDigests']:raise RuntimeError('inspected platform digest has no Wine repository binding')
     command([sys.executable,'-m','cage','build',recipe_path,'--engine','podman','--workspace',work/'workspace',
              '--runtime-image',image,'--output',work/'oci-bundles','--build-timeout','900'],evidence/'build-oci.log')
     tag='localhost/cage-runtime-parity:'+hashlib.sha256(app.encode()).hexdigest()[:16]
@@ -208,6 +207,10 @@ def config(app,kind,paths,active,case,port,abstract,device,host_process,shm,evid
 
 def run_case(release,record,work,paths,case,port,abstract,device,host_process,shm,evidence,counter):
     app=release['manifest']['application']['id'];kind=release['entry']['format'];evidence.mkdir(parents=True)
+    print(f'[runtime parity] launch {kind}/{case}',flush=True)
+    assert host_process.poll() is None,'host process control exited'
+    assert b'cage-parity-host-control' in Path(f'/proc/{host_process.pid}/cmdline').read_bytes()
+    assert shm.read_bytes()==b'cage-probe-canary\n','host shared-memory control unavailable'
     active=configure(app,kind,paths,case!='isolated',case=='rebound',evidence)
     linux_path,win_path,ready,ack=config(app,kind,paths,active,case,port,abstract,device,host_process,shm,evidence)
     observer={'window':False,'transition':False};errors=[];stop=threading.Event()
@@ -239,9 +242,14 @@ def run_case(release,record,work,paths,case,port,abstract,device,host_process,sh
             finally:releases.command=saved
     finally:
         stop.set();thread.join(timeout=10)
+        # Retain child failures even when launch or readiness fails before the
+        # normal assertions. Wine can close a Unix child's diagnostic streams.
+        for source,name in ((linux_path,'linux.json'),(win_path,'windows.json')):
+            if source.is_file():shutil.copyfile(source,evidence/name)
     if thread.is_alive() or errors:raise AssertionError('host observer: '+str(errors))
     linux=json.loads(linux_path.read_text());win=json.loads(win_path.read_text())
     write(evidence/'linux.json',linux);write(evidence/'windows.json',win)
+    assert linux['status']=='observed',linux
     shared=case!='isolated';rebound=case=='rebound'
     expected_fs={'read':True,'readScopeMutation':False,'write':True,'siblingRead':False,'protectedRead':False,'previousRead':not rebound}
     for name,expected in expected_fs.items():
@@ -288,7 +296,7 @@ def main():
     os.environ['CONTAINERS_CONF']=str(config_path)
     consumer=work/'consumer';os.environ['FLATPAK_USER_DIR']=str(consumer)
     workspace=work/'workspace';workspace.mkdir()
-    paths={name:work/'fixtures'/name for name in ('read','write','replacement','denied')}
+    paths={name:work/'fixtures'/(name+' café') for name in ('read','write','replacement','denied')}
     paths['protected']=work/'trusted-cache'
     for path in paths.values():path.mkdir(parents=True);(path/'canary').write_bytes(b'cage-probe-canary\n')
     source_sha=prepare_payload(workspace,args.probe)
@@ -299,6 +307,7 @@ def main():
     with shm.open('xb') as output:output.write(b'cage-probe-canary\n')
     host_process=subprocess.Popen([sys.executable,'-c','import time;time.sleep(2400)','cage-parity-host-control'])
     result={'schemaVersion':'cage.runtime-parity-suite/v1','status':'running','applicationId':app,'sourceArchiveSha256':source_sha,
+            'testedCommit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
             'formats':{},'physicalUsbSynchronization':'unqualified','myHarmonyWorkflow':'not-qualified-by-probe-suite'}
     try:
         from importlib.util import spec_from_file_location,module_from_spec
@@ -335,9 +344,13 @@ def main():
                     result['formats'][kind]={'status':'passed','cases':summary,'recoveryPreserved':True,
                         'artifactIdentity':release['entry'].get('imageId',release['entry'].get('package',{}).get('sha256')),
                         'contractDigest':release['entry']['plan']['capabilities']['contractDigest']}
-                except BaseException as exc:
-                    result['formats'][kind]={'status':'failed','error':str(exc),'cases':summary};raise
+                except Exception as exc:
+                    # Independent format state permits collecting every adapter's
+                    # result in one VM without resetting a failed prefix.
+                    result['formats'][kind]={'status':'failed','error':str(exc),'cases':summary}
                 finally:write(evidence/'runtime-parity.json',result)
+            failures={kind:value['error'] for kind,value in result['formats'].items() if value['status']=='failed'}
+            if failures:raise RuntimeError(json.dumps(failures,sort_keys=True))
             result['status']='passed'
     except BaseException as exc:
         result['status']='failed';result['error']=str(exc);raise

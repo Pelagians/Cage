@@ -14,7 +14,7 @@ import time
 import tempfile
 import subprocess
 import sys
-import re
+import traceback
 
 
 def readable(path):
@@ -62,12 +62,7 @@ def safe_device(path):
 
 def readonly_mount(path):
     if not path or not Path(path).is_dir():return None
-    path=Path(path).resolve();matches=[]
-    for line in Path('/proc/self/mountinfo').read_text().splitlines():
-        fields=line.split()
-        mount=Path(re.sub(r'\\([0-7]{3})',lambda m:chr(int(m[1],8)),fields[4]))
-        if path==mount or mount in path.parents:matches.append((len(mount.parts),'ro' in fields[5].split(',')))
-    return max(matches)[1] if matches else None
+    return bool(os.statvfs(path).f_flag & os.ST_RDONLY)
 
 
 def emit(path,value):
@@ -129,7 +124,11 @@ def main():
     parser.add_argument('--old');parser.add_argument('--shm');parser.add_argument('--wine')
     parser.add_argument('--host-process-pid',type=int);parser.add_argument('--host-process-marker')
     parser.add_argument('--ready');parser.add_argument('--output')
-    args=parser.parse_args();result=observe(args)
+    args=parser.parse_args()
+    try:result=observe(args)
+    except Exception:
+        if args.output:emit(args.output,{'status':'failed','error':traceback.format_exc()})
+        raise
     if args.output:emit(args.output,result)
     else:print(json.dumps(result,sort_keys=True))
 

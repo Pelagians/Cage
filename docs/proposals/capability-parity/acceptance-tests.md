@@ -1,6 +1,8 @@
 # OCI Flatpak and AppImage parity acceptance tests
 
-Status: design specifications, not implemented runtime tests or passed results.
+Status: acceptance specifications with partial runtime automation; these tables
+are not a record of passed results. The actual-runtime CI fixture and its bounded
+coverage are described in [implementation status](implementation-status.md).
 Structural validation of the proposal does not qualify application behavior,
 desktop integration, physical hardware or enforcement.
 

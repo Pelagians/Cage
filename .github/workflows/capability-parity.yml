@@ -18,6 +18,8 @@ jobs:
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -69,6 +71,8 @@ jobs:
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -134,6 +138,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: v1-actual-runtime-parity-${{ github.sha }}
+          name: v1-actual-runtime-parity-${{ github.event.pull_request.head.sha || github.sha }}
           path: dist/runtime-parity
           retention-days: 14
