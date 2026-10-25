@@ -1,6 +1,7 @@
 """Trust/state/native-control boundaries. No application or physical-device claims."""
 import copy
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -34,6 +35,7 @@ class CapabilityDeliveryTests(unittest.TestCase):
         self.app=recipe()['id']
 
     def key(self,name):
+        if importlib.util.find_spec('cryptography') is None:self.skipTest('install cage[releases] for signature tests')
         private=self.root/(name+'.key');public=self.root/(name+'.pub')
         r.generate_key(private,public)
         return public

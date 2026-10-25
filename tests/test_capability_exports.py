@@ -1,5 +1,6 @@
 """v1 adapter wiring and signed contract tests; synthetic payloads are not qualification."""
 import copy
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -55,6 +56,7 @@ class CapabilityExportTests(unittest.TestCase):
             self.assertTrue(p['capabilities']['launchAllowed'])
 
     def signed_fixture(self,root):
+        if importlib.util.find_spec('cryptography') is None:self.skipTest('install cage[releases] for signature tests')
         source=plan();source['state']['namespace']='cage/appimage';source['layout']={'runtime':'/run/cage/native/usr/wine'}
         package=root/'fixture.AppImage';package.write_bytes(b'\x7fELF synthetic unit fixture')
         receipt={'schemaVersion':'cage.appimage-export-result/v0','sha256':r.hash_file(package),'plan':source}
