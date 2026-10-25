@@ -15,6 +15,7 @@ import importlib.util
 import json
 import os
 import shutil
+import stat
 import struct
 import subprocess
 import sys
@@ -113,7 +114,29 @@ def shutdown_trace(destination, executable, container_state):
                 trace.wait(timeout=10)
 
 
-def shutdown_diagnostics(process, destination, executable, *, container_state=None, kernel=False):
+def proof_lock_processes(state):
+    """Find this private proof's detached lease holders without reading environments."""
+    state = Path(state); lock = state / 'launch.lock'
+    if state.is_symlink() or lock.is_symlink():
+        raise RuntimeError('proof lifecycle lock must not be linked')
+    identity = lock.lstat()
+    if not stat.S_ISREG(identity.st_mode) or identity.st_uid != os.getuid():
+        raise RuntimeError('proof lifecycle lock must be an owned regular file')
+    found = []
+    for root in Path('/proc').iterdir():
+        if not root.name.isdigit():continue
+        try:
+            if root.stat().st_uid != os.getuid():continue
+            for descriptor in (root / 'fd').iterdir():
+                try:info = descriptor.stat()
+                except OSError:continue
+                if (info.st_dev, info.st_ino) == (identity.st_dev, identity.st_ino):
+                    found.append(int(root.name)); break
+        except OSError:continue
+    return sorted(found)
+
+
+def shutdown_diagnostics(process, destination, executable, *, container_state=None, lock_state=None, kernel=False):
     """Inspect this failed proof, including reparented processes in its container."""
     if kernel and os.environ.get('GITHUB_ACTIONS') == 'true':
         try:
@@ -128,6 +151,11 @@ def shutdown_diagnostics(process, destination, executable, *, container_state=No
             except OSError as exc:memory[name] = str(exc)
         destination.with_name(destination.name + '-memory.json').write_text(json.dumps(memory, indent=2) + '\n')
     pending = [process.pid]; seen = set(); records = []; matched_containers = []
+    if lock_state is not None:
+        holders = proof_lock_processes(lock_state)
+        destination.with_name(destination.name + '-lock.json').write_text(json.dumps(
+            {'state': str(lock_state), 'processes': holders}, indent=2) + '\n')
+        pending.extend(holders)
     if container_state is not None:
         # Rootless conmon/Wine need not remain descendants of the release CLI.
         # Match the unique private proof mount, then verify the mount explicitly.
@@ -209,6 +237,28 @@ def shutdown_diagnostics(process, destination, executable, *, container_state=No
                                            stdout=output, stderr=subprocess.STDOUT, timeout=30)
                 except (OSError, StopIteration, subprocess.TimeoutExpired) as exc:
                     destination.with_name(destination.name + '-windows-error.log').write_text(str(exc))
+
+
+def wait_for_idle(process, state, destination, executable, *, container_state=None):
+    last_error = None
+    def idle():
+        nonlocal last_error
+        try:
+            with lifecycle_lock(state):return True
+        except Exception as exc:
+            last_error = str(exc)
+            return False
+    try:
+        gui.wait_for(idle, 'Wine stopped and state committed', seconds=60)
+    except Exception:
+        destination.with_name(destination.name + '-error.json').write_text(json.dumps(
+            {'lastLockError': last_error}, indent=2) + '\n')
+        try:
+            shutdown_diagnostics(process, destination, executable, container_state=container_state,
+                                 lock_state=state, kernel=True)
+        except Exception as exc:
+            destination.with_name(destination.name + '-diagnostic-error.log').write_text(str(exc))
+        raise
 
 
 def main():
@@ -434,11 +484,8 @@ def main():
             shutdown_diagnostics(process, evidence / (label + '-shutdown'), workflow.executable,
                                  container_state=state.parent if kind in ('container', 'oci') else None, kernel=True)
             raise
-        def idle():
-            try:
-                with lifecycle_lock(state):return True
-            except Exception:return False
-        gui.wait_for(idle, 'Wine stopped and state committed', seconds=60)
+        wait_for_idle(process, state, evidence / (label + '-idle'), workflow.executable,
+                      container_state=state.parent if kind in ('container', 'oci') else None)
         gui.wait_for(lambda: not subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', workflow.window_pattern], capture_output=True).stdout, 'GUI closed')
         if kind == 'flatpak':
             gui.wait_for(lambda: app not in subprocess.check_output(['flatpak', 'ps', '--columns=application'],

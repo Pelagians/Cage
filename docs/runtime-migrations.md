@@ -165,9 +165,18 @@ not skip a requested repair trial or its Wine shutdown and generation commit
 checks. Older receipts remain readable; Cage never infers an exact deployment
 match from a plan identity alone.
 
-Dispatch `runtime-migrations.yml` with `rollback_repair=true` for this distinct
-qualification on both architectures and all adapters. Default runs retain the
-original exact-runtime migration/rollback gate. Repair mode signs and verifies
+Routine `runtime-migrations.yml` push/PR runs qualify explicit repaired rollback
+on ARM and retain exact runtime migration/rollback on x86_64. ARM repair uses the
+existing identified `cage1` runtime; it restores original settings and current
+documents into a fresh generation while retaining the original package and
+prefix unchanged. It does not execute the defective runtime after rollback or
+claim that the historical runtime now shuts down correctly.
+
+Manual dispatch defaults to `rollback_repair=true` for repaired rollback on both
+architectures. To diagnose the exact original runtime, explicitly dispatch with
+`rollback_repair=false`. That separately labelled diagnostic retains the original
+runtime, deadlines and failure gates; its failed trials remain failed.
+Repair mode signs and verifies
 fetch of the repaired target only; it cannot use that proof to sign an original
 baseline. End-to-end trusted repair GUI tests require independent matching
 original-package evidence via `--baseline-qualification`, alongside the repair's

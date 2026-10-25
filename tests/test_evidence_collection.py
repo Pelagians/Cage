@@ -205,3 +205,65 @@ def test_shutdown_trace_refuses_ambiguous_container_ownership(tmp_path, monkeypa
         with pytest.raises(RuntimeError, match='cannot identify'):
             with module.shutdown_trace(tmp_path / 'trace', 'app.exe', tmp_path):pass
         launch.assert_not_called()
+
+
+def test_idle_failure_finds_detached_proof_lock_holder_and_preserves_failure(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / 'scripts'))
+    spec = importlib.util.spec_from_file_location('onboarding_idle', ROOT / 'scripts/test-onboarding-poc.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    monkeypatch.setenv('GITHUB_ACTIONS', 'false')
+    state = tmp_path / 'proof'; state.mkdir()
+    unrelated = tmp_path / 'other-proof'; unrelated.mkdir()
+    code = ('import fcntl,sys,time\n'
+            'with open(sys.argv[1], "w") as lock:\n'
+            ' fcntl.flock(lock,fcntl.LOCK_EX);print("ready",flush=True);time.sleep(60)\n')
+    children = []
+    try:
+        for folder in (state, unrelated):
+            child = subprocess.Popen([sys.executable, '-c', code, str(folder / 'launch.lock')],
+                                     stdout=subprocess.PIPE, text=True)
+            children.append(child)
+            assert child.stdout.readline() == 'ready\n'
+        def timeout(condition, description, *, seconds):
+            assert seconds == 60 and condition() is False
+            raise AssertionError('timed out: ' + description)
+        destination = tmp_path / '6-relaunch-idle'
+        with patch.object(module.gui, 'wait_for', side_effect=timeout):
+            # The menu launcher is already gone; its private lease is the
+            # ownership boundary for discovering the surviving Wine process.
+            with pytest.raises(AssertionError, match='Wine stopped and state committed'):
+                module.wait_for_idle(SimpleNamespace(pid=99999999), state, destination, 'app.exe')
+        record = json.loads((tmp_path / '6-relaunch-idle-lock.json').read_text())
+        assert record['processes'] == [children[0].pid]
+        records = json.loads(destination.with_suffix('.json').read_text())
+        assert {r['pid'] for r in records} == {99999999, children[0].pid}
+        error = json.loads((tmp_path / '6-relaunch-idle-error.json').read_text())
+        assert 'already running' in error['lastLockError']
+    finally:
+        for child in children:
+            child.terminate(); child.wait(timeout=5); child.stdout.close()
+
+
+@pytest.mark.parametrize('linked_state', [False, True])
+def test_proof_lock_discovery_refuses_linked_state_or_lock(tmp_path, monkeypatch, linked_state):
+    monkeypatch.syspath_prepend(str(ROOT / 'scripts'))
+    spec = importlib.util.spec_from_file_location('onboarding_linked_lock', ROOT / 'scripts/test-onboarding-poc.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    state = tmp_path / 'proof'; state.mkdir(); (state / 'launch.lock').write_text('')
+    if linked_state:
+        alias = tmp_path / 'alias'; alias.symlink_to(state); state = alias
+    else:
+        (state / 'launch.lock').unlink(); (state / 'launch.lock').symlink_to(tmp_path / 'outside')
+    with pytest.raises(RuntimeError, match='must not be linked'):
+        module.proof_lock_processes(state)
+
+
+def test_idle_diagnostic_error_does_not_replace_original_failure(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / 'scripts'))
+    spec = importlib.util.spec_from_file_location('onboarding_idle_error', ROOT / 'scripts/test-onboarding-poc.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    with patch.object(module.gui, 'wait_for', side_effect=AssertionError('original idle timeout')), \
+         patch.object(module, 'shutdown_diagnostics', side_effect=OSError('collector unavailable')):
+        with pytest.raises(AssertionError, match='original idle timeout'):
+            module.wait_for_idle(SimpleNamespace(pid=99999999), tmp_path, tmp_path / 'idle', 'app.exe')
+    assert (tmp_path / 'idle-diagnostic-error.log').read_text() == 'collector unavailable'

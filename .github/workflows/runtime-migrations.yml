@@ -1,5 +1,5 @@
 name: Runtime migration and rollback proof
-run-name: Runtime proof (${{ inputs.rollback_repair && 'repaired rollback' || 'exact rollback' }})
+run-name: Runtime proof (${{ github.event_name != 'workflow_dispatch' && 'guarded ARM rollback' || inputs.rollback_repair && 'repaired rollback' || 'exact original rollback diagnostic' }})
 
 on:
   workflow_dispatch:
@@ -10,9 +10,9 @@ on:
         default: '0'
         options: ['0', '25']
       rollback_repair:
-        description: 'Qualify explicitly repaired rollback with a new runtime identity; original-runtime failures stay separate'
+        description: 'Use identified repaired rollback; false explicitly diagnoses exact original-runtime rollback'
         type: boolean
-        default: false
+        default: true
       original_oci_relaunches:
         description: 'Extra original ARM OCI save/close sessions before migration; first failure stops qualification'
         type: choice
@@ -34,8 +34,6 @@ env:
   PYTHONDONTWRITEBYTECODE: '1'
   CAGE_TEST_DISCARD_PREFIXES: '1'
   CAGE_TEST_SOURCE_REVISION: ${{ github.sha }}
-  CAGE_RUNTIME_PROOF_MODE: ${{ inputs.rollback_repair && 'rollback-repair' || 'runtime-migration' }}
-  CAGE_RUNTIME_PROPOSAL_FLAG: ${{ inputs.rollback_repair && '--rollback-repair' || '' }}
   # Existing generation-aware manager and original ARM Wine/FEX runtime.
   BASELINE_SOURCE: dd9646ab9468008e775b66a196ac91fbe023345c
 
@@ -54,6 +52,11 @@ jobs:
             provider: wine-arm64ec
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 140
+    env:
+      # Routine ARM recovery restores original settings with the identified
+      # guard. Exact original-runtime rollback remains an explicit diagnostic.
+      CAGE_RUNTIME_PROOF_MODE: ${{ (inputs.rollback_repair || (github.event_name != 'workflow_dispatch' && matrix.arch == 'aarch64')) && 'rollback-repair' || 'runtime-migration' }}
+      CAGE_RUNTIME_PROPOSAL_FLAG: ${{ (inputs.rollback_repair || (github.event_name != 'workflow_dispatch' && matrix.arch == 'aarch64')) && '--rollback-repair' || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -201,7 +204,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ${{ inputs.rollback_repair && 'rollback-repair' || 'runtime-migration' }}-desktop-${{ matrix.arch }}-${{ github.sha }}
+          name: ${{ env.CAGE_RUNTIME_PROOF_MODE }}-desktop-${{ matrix.arch }}-${{ github.sha }}
           retention-days: 14
           path: dist/onboarding-ci-evidence
 
@@ -224,6 +227,8 @@ jobs:
     timeout-minutes: 140
     env:
       CAGE_TEST_RELAUNCHES: ${{ matrix.arch == 'aarch64' && inputs.container_stress_relaunches || '0' }}
+      CAGE_RUNTIME_PROOF_MODE: ${{ (inputs.rollback_repair || (github.event_name != 'workflow_dispatch' && matrix.arch == 'aarch64')) && 'rollback-repair' || 'runtime-migration' }}
+      CAGE_RUNTIME_PROPOSAL_FLAG: ${{ (inputs.rollback_repair || (github.event_name != 'workflow_dispatch' && matrix.arch == 'aarch64')) && '--rollback-repair' || '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -322,6 +327,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ${{ inputs.rollback_repair && 'rollback-repair' || 'runtime-migration' }}-containers-${{ matrix.arch }}-${{ github.sha }}
+          name: ${{ env.CAGE_RUNTIME_PROOF_MODE }}-containers-${{ matrix.arch }}-${{ github.sha }}
           retention-days: 14
           path: dist/onboarding-ci-evidence
