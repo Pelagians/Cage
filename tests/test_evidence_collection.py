@@ -199,7 +199,7 @@ def test_shutdown_trace_attaches_only_owned_wine_and_detaches_on_failure(tmp_pat
         capture_args = launch.call_args.args[0]
         assert capture_args[:5] == ['sudo', '-n', 'env', 'GITHUB_ACTIONS=true', 'gdb']
         assert capture_args[capture_args.index('-p') + 1] == '102'
-        assert 'condition 1 $x0 == 11 && $x1 == 9' in capture_args
+        assert 'condition 1 $x0 == 11 && $x1 == 9' in (tmp_path / 'capture.gdb').read_text()
         capture_record = json.loads((tmp_path / 'capture.json').read_text())
         assert capture_record['diagnosticOnly'] is True and capture_record['observerChangesTiming'] is True
         record = json.loads((tmp_path / 'trace.json').read_text())

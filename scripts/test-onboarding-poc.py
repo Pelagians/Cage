@@ -116,9 +116,11 @@ def shutdown_trace(destination, executable, container_state, *, capture_kill=Fal
                     'shell touch ' + shlex.quote(str(attached_file)), 'continue',
                     f"if $x8 == 129 && $x0 == {application['namespacePids'][-1]} && $x1 == 9\n"
                     + 'shell ' + shlex.join(capture) + '\nend', 'detach']
+        command_file = destination.with_suffix('.gdb')
+        command_file.write_text('\n'.join(commands) + '\n')
         command = ['sudo', '-n', 'env', 'GITHUB_ACTIONS=true', 'gdb', '--batch', '--nx', '--nh', '-iex', 'set auto-load off',
                    '-iex', 'set debuginfod enabled off', '-p', str(server['hostPid']),
-                   *[arg for item in commands for arg in ('-ex', item)]]
+                   '-x', str(command_file)]
         targets = [server['hostPid']]
     destination.with_suffix('.json').write_text(json.dumps(record, indent=2) + '\n')
     with destination.with_name(destination.name + '-attach.log').open('w') as output:
