@@ -1,5 +1,5 @@
 name: Runtime migration and rollback proof
-run-name: Runtime proof (${{ github.event_name != 'workflow_dispatch' && 'guarded ARM rollback' || inputs.rollback_repair && 'repaired rollback' || 'exact original rollback diagnostic' }})
+run-name: Runtime proof (${{ inputs.capture_shutdown && 'native shutdown capture - NOT qualification' || github.event_name != 'workflow_dispatch' && 'guarded ARM rollback' || inputs.rollback_repair && 'repaired rollback' || 'exact original rollback diagnostic' }})
 
 on:
   workflow_dispatch:
@@ -22,6 +22,10 @@ on:
         description: 'Diagnostic: trace owned ARM application/Wine-server shutdown; first failed trial stops the proof'
         type: boolean
         default: false
+      capture_shutdown:
+        description: 'NOT qualification: capture native stack before an owned ARM OCI SIGKILL'
+        type: boolean
+        default: false
   push:
     paths: ['runtime/**', 'container/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'scripts/*runtime-migration*', 'scripts/test-onboarding-poc.py', 'scripts/application_workflows.py', 'tests/**', '.github/workflows/runtime-migrations.yml']
   pull_request:
@@ -31,7 +35,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.container_stress_relaunches || '0' }}-${{ inputs.original_oci_relaunches || '0' }}-${{ inputs.rollback_repair || false }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.container_stress_relaunches || '0' }}-${{ inputs.original_oci_relaunches || '0' }}-${{ inputs.rollback_repair || false }}-${{ inputs.capture_shutdown || false }}
   cancel-in-progress: false
 
 env:
@@ -43,7 +47,7 @@ env:
 
 jobs:
   desktop:
-    if: github.event_name != 'workflow_dispatch' || (!inputs.trace_shutdown && inputs.container_stress_relaunches == '0' && inputs.original_oci_relaunches == '0')
+    if: github.event_name != 'workflow_dispatch' || (!inputs.trace_shutdown && !inputs.capture_shutdown && inputs.container_stress_relaunches == '0' && inputs.original_oci_relaunches == '0')
     strategy:
       fail-fast: false
       matrix:
@@ -238,7 +242,8 @@ jobs:
     timeout-minutes: 140
     env:
       CAGE_TEST_RELAUNCHES: ${{ matrix.arch == 'aarch64' && inputs.container_stress_relaunches || '0' }}
-      CAGE_TEST_TRACE_SHUTDOWN: ${{ matrix.arch == 'aarch64' && inputs.trace_shutdown && '1' || '0' }}
+      CAGE_TEST_TRACE_SHUTDOWN: ${{ matrix.arch == 'aarch64' && (inputs.trace_shutdown || inputs.capture_shutdown) && '1' || '0' }}
+      CAGE_TEST_CAPTURE_SIGKILL: ${{ matrix.arch == 'aarch64' && inputs.capture_shutdown && '1' || '0' }}
       CAGE_RUNTIME_PROOF_MODE: ${{ (inputs.rollback_repair || (github.event_name != 'workflow_dispatch' && matrix.arch == 'aarch64')) && 'rollback-repair' || 'runtime-migration' }}
       CAGE_RUNTIME_PROPOSAL_FLAG: ${{ (inputs.rollback_repair || (github.event_name != 'workflow_dispatch' && matrix.arch == 'aarch64')) && '--rollback-repair' || '' }}
     steps:

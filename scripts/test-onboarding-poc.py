@@ -15,6 +15,7 @@ import importlib.util
 import json
 import os
 import shutil
+import shlex
 import stat
 import struct
 import subprocess
@@ -59,7 +60,7 @@ def proof_container_processes(container_state):
 
 
 @contextmanager
-def shutdown_trace(destination, executable, container_state):
+def shutdown_trace(destination, executable, container_state, *, capture_kill=False):
     """Opt-in CI observer: attach after save, detach before failure diagnostics.
 
     Trace the owned Wine processes, not the Podman client (which proxies signals).
@@ -87,16 +88,41 @@ def shutdown_trace(destination, executable, container_state):
             # A nonzero exit can remove /proc before failure collection. Retain
             # the mapping needed to resolve syscall IPs from this exact process.
             owned[-1]['maps'] = (root / 'maps').read_text()[:1024 * 1024]
+            owned[-1]['startTime'] = (root / 'stat').read_text().rsplit(')', 1)[1].split()[19]
             targets.append(pid); names.add(name)
     if (len(containers) != 1 or Path(executable).name[:15].casefold() not in names
             or not names.intersection({'wineserver', 'wineserver64'})):
         raise RuntimeError('cannot identify this proof application and Wine server for shutdown tracing')
-    destination.with_suffix('.json').write_text(json.dumps(
-        {'container': containers[0]['id'], 'targets': targets, 'processes': owned}, indent=2) + '\n')
+    record = {'container': containers[0]['id'], 'targets': targets, 'processes': owned, 'ownerUid': os.getuid()}
+    command = ['sudo', '-n', 'strace', '-f', '-ttt', '-T', '-i', '-e', 'trace=%process,%signal,%desc,%memory,futex',
+               '-o', str(destination.with_suffix('.log')), *[arg for pid in targets for arg in ('-p', str(pid))]]
+    if capture_kill:
+        if os.uname().machine != 'aarch64' or not shutil.which('gdb'):
+            raise RuntimeError('native kill capture requires ARM CI and gdb')
+        applications = [p for p in owned if p['comm'] == Path(executable).name[:15].casefold()]
+        servers = [p for p in owned if p['comm'] in ('wineserver', 'wineserver64')]
+        if len(applications) != 1 or len(servers) != 1:raise RuntimeError('native capture requires one application and Wine server')
+        application, server = applications[0], servers[0]
+        if not application['namespacePids']:raise RuntimeError('application PID namespace is unavailable')
+        record.update(diagnosticOnly=True, observerChangesTiming=True)
+        attached_file = destination.with_name(destination.name + '-attached')
+        capture = [sys.executable, str(ROOT / 'scripts/capture-owned-shutdown.py'),
+                   str(destination.with_suffix('.json')), executable,
+                   str(destination.with_name(destination.name + '-native'))]
+        # Stop this server at entry to kill(app, SIGKILL), before the kernel
+        # destroys the app. The separate helper can then attach to the app.
+        commands = ['handle SIGINT nostop noprint pass', 'catch syscall kill',
+                    f"condition 1 $x0 == {application['namespacePids'][-1]} && $x1 == 9",
+                    'shell touch ' + shlex.quote(str(attached_file)), 'continue',
+                    f"if $x8 == 129 && $x0 == {application['namespacePids'][-1]} && $x1 == 9\n"
+                    + 'shell ' + shlex.join(capture) + '\nend', 'detach']
+        command = ['sudo', '-n', 'env', 'GITHUB_ACTIONS=true', 'gdb', '--batch', '--nx', '--nh', '-iex', 'set auto-load off',
+                   '-iex', 'set debuginfod enabled off', '-p', str(server['hostPid']),
+                   *[arg for item in commands for arg in ('-ex', item)]]
+        targets = [server['hostPid']]
+    destination.with_suffix('.json').write_text(json.dumps(record, indent=2) + '\n')
     with destination.with_name(destination.name + '-attach.log').open('w') as output:
-        trace = subprocess.Popen(['sudo', '-n', 'strace', '-f', '-ttt', '-T', '-i', '-e', 'trace=%process,%signal,%desc,%memory,futex',
-                                  '-o', str(destination.with_suffix('.log')),
-                                  *[arg for pid in targets for arg in ('-p', str(pid))]],
+        trace = subprocess.Popen(command,
                                  stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
         try:
             def attached():
@@ -104,7 +130,7 @@ def shutdown_trace(destination, executable, container_state):
                 for pid in targets:
                     status = (Path('/proc') / str(pid) / 'status').read_text()
                     if '\nTracerPid:\t0\n' in '\n' + status:return False
-                return True
+                return not capture_kill or attached_file.exists()
             gui.wait_for(attached, 'shutdown tracer attached to private Wine processes', seconds=10)
             yield
         finally:
@@ -524,9 +550,12 @@ def main():
         subprocess.run(['scrot', str(evidence / (label + '.png'))], check=True)
         try:
             with shutdown_trace(evidence / (label + '-trace'), workflow.executable,
-                                state.parent if kind in ('container', 'oci') else None):
+                                state.parent if kind in ('container', 'oci') else None,
+                                capture_kill=kind == 'oci' and os.environ.get('CAGE_TEST_CAPTURE_SIGKILL') == '1'):
                 gui.command('xdotool', 'key', '--clearmodifiers', 'alt+F4')
                 code = process.wait(timeout=120)
+            if (evidence / (label + '-trace-native.json')).exists():
+                raise RuntimeError('native shutdown captured with altered debugger timing; this is not qualification')
             if code != 0:
                 shutdown_diagnostics(process, evidence / (label + '-nonzero'), workflow.executable,
                                      container_state=state.parent if kind in ('container', 'oci') else None, kernel=True)
@@ -648,6 +677,8 @@ def main():
                 run(baseline, '7-stress-' + str(index + 1))
                 assert prefix() == rolled and workflow.preference(prefix()) == preference
                 assert sha(original) == original_hash
+        if kind == 'oci' and os.environ.get('CAGE_TEST_CAPTURE_SIGKILL') == '1':
+            raise RuntimeError('native shutdown diagnostic finished without a qualifying result; no release may be signed')
         result = {'status': 'passed', 'application': args.application, 'format': kind, 'architecture': os.uname().machine,
                   'pageSize': os.sysconf('SC_PAGE_SIZE'), 'sessions': sessions, 'legacyMigration': bool(legacy),
                   'settingsPreserved': True, 'documentsPreserved': True, 'rollback': True, 'menuRelaunch': kind in ('appimage', 'flatpak'),

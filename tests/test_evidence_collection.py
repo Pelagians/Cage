@@ -175,6 +175,7 @@ def test_shutdown_trace_attaches_only_owned_wine_and_detaches_on_failure(tmp_pat
             if path.name == 'comm':return names[pid] + '\n'
             if path.name == 'status':return f'TracerPid:\t999\nNSpid:\t{pid}\t{pid - 90}\n'
             if path.name == 'maps':return 'private-runtime-mapping\n'
+            if path.name == 'stat':return str(pid) + ' (name) ' + ' '.join(['0'] * 19 + ['12345'])
         return real_read(path, *args, **kwargs)
     with patch.object(module, 'proof_container_processes', return_value=([{'id': 'owned'}], list(names))), \
          patch.object(Path, 'read_text', read), patch.object(module.shutil, 'which', return_value='/usr/bin/strace'), \
@@ -190,11 +191,22 @@ def test_shutdown_trace_attaches_only_owned_wine_and_detaches_on_failure(tmp_pat
         assert launch.call_args.kwargs['start_new_session'] is True
         detach.assert_called_once_with(['sudo', '-n', 'kill', '-INT', '--', '-999'], capture_output=True, timeout=10)
         observer.wait.assert_called_once_with(timeout=10)
+        with patch.object(module.os, 'uname', return_value=type('Uname', (), {'machine': 'aarch64'})()), \
+             patch.object(Path, 'exists', return_value=True):
+            with pytest.raises(subprocess.TimeoutExpired):
+                with module.shutdown_trace(tmp_path / 'capture', 'SumatraPDF.exe', tmp_path, capture_kill=True):
+                    raise subprocess.TimeoutExpired('application', 120)
+        capture_args = launch.call_args.args[0]
+        assert capture_args[:5] == ['sudo', '-n', 'env', 'GITHUB_ACTIONS=true', 'gdb']
+        assert capture_args[capture_args.index('-p') + 1] == '102'
+        assert 'condition 1 $x0 == 11 && $x1 == 9' in capture_args
+        capture_record = json.loads((tmp_path / 'capture.json').read_text())
+        assert capture_record['diagnosticOnly'] is True and capture_record['observerChangesTiming'] is True
         record = json.loads((tmp_path / 'trace.json').read_text())
         assert record['container'] == 'owned' and record['targets'] == [101, 102]
         assert record['processes'] == [
             {'hostPid': pid, 'comm': name.casefold(), 'namespacePids': [pid, pid - 90],
-             **({'maps': 'private-runtime-mapping\n'} if pid in (101, 102) else {})}
+             **({'maps': 'private-runtime-mapping\n', 'startTime': '12345'} if pid in (101, 102) else {})}
             for pid, name in names.items()]
 
 
@@ -270,3 +282,22 @@ def test_idle_diagnostic_error_does_not_replace_original_failure(tmp_path, monke
         with pytest.raises(AssertionError, match='original idle timeout'):
             module.wait_for_idle(SimpleNamespace(pid=99999999), tmp_path, tmp_path / 'idle', 'app.exe')
     assert (tmp_path / 'idle-diagnostic-error.log').read_text() == 'collector unavailable'
+
+
+def test_owned_native_capture_rejects_recycled_pid_and_qualifying_record(tmp_path, monkeypatch):
+    spec = importlib.util.spec_from_file_location('owned_capture', ROOT / 'scripts/capture-owned-shutdown.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+    pid = os.getpid(); root = Path('/proc') / str(pid); name = (root / 'comm').read_text().strip().casefold()
+    record = {'diagnosticOnly': True, 'observerChangesTiming': True, 'ownerUid': os.getuid(),
+              'processes': [{'hostPid': pid, 'comm': name, 'startTime': 'wrong-birth'}]}
+    path = tmp_path / 'observer.json'; path.write_text(json.dumps(record))
+    with pytest.raises(RuntimeError, match='identity changed'):
+        module.capture(path, name, tmp_path / 'capture')
+    record['diagnosticOnly'] = False; path.write_text(json.dumps(record))
+    with pytest.raises(RuntimeError, match='non-qualifying'):
+        module.capture(path, name, tmp_path / 'capture')
+    monkeypatch.setenv('GITHUB_ACTIONS', 'false')
+    with pytest.raises(RuntimeError, match='requires CI'):
+        module.capture(path, name, tmp_path / 'capture')
+    assert not (tmp_path / 'capture.json').exists()
