@@ -291,6 +291,24 @@ def _download_bytes(source, output, asset):
 
 def verify_evidence(entry, proof):
     kind=entry['format'];arch=entry['architecture']
+    fixture = proof.get('originalStateFixture')
+    if fixture is not None:
+        source = proof.get('repairSourcePlan', {})
+        try:
+            if not isinstance(source, dict):raise ValueError('invalid source plan')
+            source_identity = plan_identity(source)
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            raise ReleaseError('offline recovery fixture lacks a valid original source plan') from exc
+        if (not isinstance(fixture, dict)
+                or fixture.get('schemaVersion') != 'cage.repair-source-fixture/v1'
+                or fixture.get('originalRuntimeExecuted') is not False
+                or proof.get('qualificationKind') != 'rollback-repair'
+                or fixture.get('identity') == entry['identity']
+                or fixture.get('identity') != source_identity
+                or fixture.get('seedDigest') != source.get('seedDigest')
+                or not isinstance(fixture.get('stateDigest'), str)
+                or not re.fullmatch('[a-f0-9]{64}', fixture['stateDigest'])):
+            raise ReleaseError('offline original-state fixtures qualify only an explicit repaired target, never the original runtime')
     if (proof.get('status')!='passed' or proof.get('architecture')!=arch or proof.get('format')!=kind
         or not qualified_identity(proof,entry['identity'])
         or not all(proof.get(k) is True for k in ('settingsPreserved','documentsPreserved','rollback'))):

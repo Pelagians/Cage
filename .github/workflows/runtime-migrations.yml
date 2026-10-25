@@ -170,7 +170,11 @@ jobs:
           dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24' bash -eu -o pipefail <<'SH'
           openbox >dist/onboarding-evidence/flatpak-window-manager.log 2>&1 &
           export FLATPAK_USER_DIR="$PWD/.cage/flatpak-migration"
-          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/flatpak" python scripts/test-onboarding-poc.py flatpak dist/runtime-migration/baseline.flatpak dist/runtime-migration/candidate.flatpak --"$CAGE_RUNTIME_PROOF_MODE"
+          repair_options=()
+          if [ "$CAGE_RUNTIME_PROOF_MODE" = rollback-repair ]; then
+            repair_options=(--repair-source-bundle dist/runtime-migration/baseline/sumatrapdf-portable-3.6)
+          fi
+          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/flatpak" python scripts/test-onboarding-poc.py flatpak dist/runtime-migration/baseline.flatpak dist/runtime-migration/candidate.flatpak --"$CAGE_RUNTIME_PROOF_MODE" "${repair_options[@]}"
           if [ "$CAGE_RUNTIME_PROOF_MODE" = runtime-migration ]; then
             CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/trusted-flatpak" python scripts/test-onboarding-poc.py flatpak dist/runtime-migration/baseline.flatpak dist/runtime-migration/candidate.flatpak --"$CAGE_RUNTIME_PROOF_MODE" --trusted --qualification dist/onboarding-evidence/flatpak/result.json
           fi
@@ -190,6 +194,9 @@ jobs:
           for mode in "${modes[@]}"; do
             options=()
             if [ "$mode" = trusted ]; then options=(--trusted --qualification dist/onboarding-evidence/appimage/result.json); directory=trusted-appimage; else directory=appimage; fi
+            if [ "$CAGE_RUNTIME_PROOF_MODE" = rollback-repair ]; then
+              options+=(--repair-source-bundle dist/runtime-migration/baseline/sumatrapdf-portable-3.6)
+            fi
             podman run --rm --net=none --userns=keep-id --user "$(id -u):$(id -g)" --hostname "$(hostname)" \
               --security-opt label=disable -v "$PWD:$PWD" -v /tmp/.X11-unix:/tmp/.X11-unix:ro -v "$XAUTHORITY:$XAUTHORITY:ro" \
               -w "$PWD" -e DISPLAY -e XAUTHORITY -e HOME="$PWD/.cage/migration-consumer-home" -e APPIMAGE_EXTRACT_AND_RUN=1 \
@@ -315,8 +322,12 @@ jobs:
         run: |
           dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24' bash -eu -o pipefail <<'SH'
           openbox >dist/onboarding-evidence/container-proof-window-manager.log 2>&1 &
-          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/container" python scripts/test-onboarding-poc.py container dist/runtime-migration/baseline/sumatrapdf-portable-3.6 dist/runtime-migration/candidate/sumatrapdf-portable-3.6 --"$CAGE_RUNTIME_PROOF_MODE"
-          CAGE_TEST_INITIAL_RELAUNCHES="${{ matrix.arch == 'aarch64' && inputs.original_oci_relaunches || '0' }}" CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/oci" python scripts/test-onboarding-poc.py oci localhost/cage-runtime-migration:baseline localhost/cage-runtime-migration:candidate --"$CAGE_RUNTIME_PROOF_MODE"
+          repair_options=()
+          if [ "$CAGE_RUNTIME_PROOF_MODE" = rollback-repair ]; then
+            repair_options=(--repair-source-bundle dist/runtime-migration/baseline/sumatrapdf-portable-3.6)
+          fi
+          CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/container" python scripts/test-onboarding-poc.py container dist/runtime-migration/baseline/sumatrapdf-portable-3.6 dist/runtime-migration/candidate/sumatrapdf-portable-3.6 --"$CAGE_RUNTIME_PROOF_MODE" "${repair_options[@]}"
+          CAGE_TEST_INITIAL_RELAUNCHES="${{ matrix.arch == 'aarch64' && inputs.original_oci_relaunches || '0' }}" CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/oci" python scripts/test-onboarding-poc.py oci localhost/cage-runtime-migration:baseline localhost/cage-runtime-migration:candidate --"$CAGE_RUNTIME_PROOF_MODE" "${repair_options[@]}"
           if [ "$CAGE_RUNTIME_PROOF_MODE" = runtime-migration ]; then
             CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/trusted-oci" python scripts/test-onboarding-poc.py oci localhost/cage-runtime-migration:baseline localhost/cage-runtime-migration:candidate --"$CAGE_RUNTIME_PROOF_MODE" --trusted --qualification dist/onboarding-evidence/oci/result.json
           fi

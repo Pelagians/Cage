@@ -49,6 +49,14 @@ class SumatraPDF:
     extension = '.pdf'
     executable = 'drive_c/Program Files/SumatraPDF/SumatraPDF.exe'
 
+    def recovery_settings_fixture(self, prefix):
+        """Non-default retained settings for an offline original-state fixture."""
+        path = prefix / 'drive_c/users/Public/AppData/Local/SumatraPDF/SumatraPDF-settings.txt'
+        if path.is_symlink() or not path.is_file():
+            raise RuntimeError('original Sumatra settings seed must be an ordinary file')
+        data = re.sub(r'(?m)^\s*ShowToolbar\s*=.*$', '', path.read_text())
+        path.write_text(data.rstrip() + '\nShowToolbar = false\n')
+
     def fixture(self, path):
         # A deterministic two-page PDF, with no external fonts or fixture data.
         objects = [b'<< /Type /Catalog /Pages 2 0 R >>',

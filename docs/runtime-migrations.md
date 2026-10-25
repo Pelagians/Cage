@@ -158,6 +158,18 @@ An optional 25-session stress sequence stops at its first failure with the same
 runtime identities, committed audit, executable hashes and package/image bytes.
 It cannot sign the original or substitute for ordinary runtime-migration proof.
 
+Routine repair CI also passes `--repair-source-bundle` to initialize a declared
+private recovery fixture from the original producer's verified seed. The seed
+must match the original exported plan and package receipt; it is copied through
+the existing state manager before adding non-default test settings and a retained
+document. No original application session is run during this setup. All five GUI
+sessions then execute the guarded repair runtime. The fixture's original identity,
+seed digest and state inventory digest are recorded as `originalStateFixture`.
+This is recovery-test input, not successful qualification of the defective
+runtime. Release verification rejects fixture evidence for the original target,
+including attempts to remove its repair qualification label. It cannot replace
+independent original-package evidence for trusted repair deployment.
+
 Flatpak's package cache retains the export's OSTree commit alongside its bundle
 hash. Repeated repair or recovery verifies the retained bytes and reuses a
 deployment only when its installed commit matches that receipt. Reusing it does

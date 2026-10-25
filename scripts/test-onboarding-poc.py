@@ -26,7 +26,8 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from runtime.desktop_launch import inventory_tree, _read_generations, _generation, lifecycle_lock
+from runtime.desktop_launch import (inventory_tree, _read_generations, _generation, lifecycle_lock,
+                                    digest_json, plan_identity, prepare_generation)
 from application_workflows import WORKFLOWS, share_test_windows
 spec = importlib.util.spec_from_file_location('gui', ROOT / 'scripts/test-flatpak-poc.py')
 gui = importlib.util.module_from_spec(spec); spec.loader.exec_module(gui)
@@ -264,6 +265,43 @@ def wait_for_idle(process, state, destination, executable, *, container_state=No
         raise
 
 
+def repair_source_plan(kind, baseline):
+    if kind in ('flatpak', 'appimage'):
+        receipt = json.loads(Path(str(baseline) + '.json').read_text())
+        if (receipt.get('schemaVersion') != 'cage.' + kind + '-export-result/v0'
+                or receipt['sha256'] != sha(Path(baseline)) or receipt['plan'].get('format') != kind):
+            raise RuntimeError('original package differs from its export receipt')
+        return receipt['plan']
+    if kind == 'oci':
+        from artifact.releases import oci_metadata
+        return oci_metadata(baseline, 'podman')[0]
+    from runtime.container_state import managed_plan
+    path = baseline / 'metadata/native-launch.json'
+    return json.loads(path.read_text()) if path.exists() else managed_plan(baseline)
+
+
+def prepare_repair_source_fixture(bundle, state, plan, workflow):
+    """Create a declared test recovery source; never execute/qualify the old runtime."""
+    bundle = Path(bundle); seed = bundle / 'prefix'
+    inventory = inventory_tree(seed)
+    if digest_json(inventory) != plan['seedDigest']:
+        raise RuntimeError('original producer seed differs from the exported source plan')
+    if plan['desktop']['id'] != workflow.app_id:
+        raise RuntimeError('original producer application differs from the recovery fixture')
+    if plan.get('sourceManifestDigest') and digest_json(json.loads(
+            (bundle / 'manifest.cage.json').read_text())) != plan['sourceManifestDigest']:
+        raise RuntimeError('original producer manifest differs from the exported source plan')
+    with lifecycle_lock(state):
+        if _read_generations(state) is not None:
+            raise RuntimeError('recovery fixture requires fresh private state; existing state retained')
+        prefix, pending = prepare_generation(seed, inventory, state, plan_identity(plan), plan, 'launch')
+        assert pending is None
+        workflow.recovery_settings_fixture(prefix)
+    assert inventory_tree(seed) == inventory, 'original producer seed changed'
+    return {'schemaVersion': 'cage.repair-source-fixture/v1', 'identity': plan_identity(plan),
+            'seedDigest': plan['seedDigest'], 'originalRuntimeExecuted': False}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('format', choices=['flatpak', 'appimage', 'container', 'oci'])
@@ -274,17 +312,24 @@ def main():
     parser.add_argument('--runtime-migration', action='store_true', help='Qualify a same-application-version, explicitly allowed runtime transition')
     parser.add_argument('--rollback-repair', action='store_true', help='Qualify explicit repaired rollback with a new runtime identity')
     parser.add_argument('--baseline-qualification', help='Independent original-package evidence for trusted repair setup')
+    parser.add_argument('--repair-source-bundle', type=Path,
+                        help='Initialize a declared private recovery fixture from this verified original producer seed; never run its runtime')
     args = parser.parse_args(); kind = args.format; workflow = WORKFLOWS[args.application]()
     if args.rollback_repair and (args.legacy or args.runtime_migration):
         parser.error('repaired rollback is a distinct qualification, without legacy adoption or ordinary runtime migration')
     if args.rollback_repair and args.trusted and not args.baseline_qualification:
         parser.error('trusted repair requires independent original-package baseline qualification')
+    if args.repair_source_bundle and (not args.rollback_repair or args.trusted
+                                      or not hasattr(workflow, 'recovery_settings_fixture')):
+        parser.error('offline recovery fixtures require a supported ordinary repaired-rollback proof; they cannot qualify an original signed release')
     stress_relaunches = int(os.environ.get('CAGE_TEST_RELAUNCHES', '0'))
     if not 0 <= stress_relaunches <= 25:
         parser.error('CAGE_TEST_RELAUNCHES must be between 0 and 25')
     initial_relaunches = int(os.environ.get('CAGE_TEST_INITIAL_RELAUNCHES', '0'))
     if not 0 <= initial_relaunches <= 25:
         parser.error('CAGE_TEST_INITIAL_RELAUNCHES must be between 0 and 25')
+    if args.repair_source_bundle and initial_relaunches:
+        parser.error('original-runtime relaunches require the separate exact-runtime diagnostic')
     app = workflow.app_id
     baseline, candidate = (Path(p).resolve() if kind != 'oci' else p for p in (args.baseline, args.candidate))
     legacy = (args.legacy if kind == 'oci' else Path(args.legacy).resolve()) if args.legacy else None
@@ -507,7 +552,12 @@ def main():
 
     try:
         subprocess.run(['xrdb', '-merge'], input='Xft.dpi: 192\n', text=True, check=True)
-        run(first_package, '1-original', preference=True)
+        source_plan = repair_source_plan(kind, baseline) if args.rollback_repair else None
+        source_fixture = None
+        if args.repair_source_bundle:
+            source_fixture = prepare_repair_source_fixture(args.repair_source_bundle, state, source_plan, workflow)
+        else:
+            run(first_package, '1-original', preference=True)
         preference = workflow.preference(prefix()); assert preference not in (None, 'true', '0')
         first = prefix()
         initial_identity = _read_generations(state)
@@ -517,17 +567,10 @@ def main():
             assert _read_generations(state) == initial_identity and sha(original) == original_hash
         internal = Path('drive_c/users/Public/Documents/onboarding.txt')
         (first / internal).parent.mkdir(parents=True, exist_ok=True); (first / internal).write_text('before update')
+        if source_fixture:
+            source_fixture['stateDigest'] = digest_json(inventory_tree(first, state_snapshot=True))
+            (evidence / 'original-state-fixture.json').write_text(json.dumps(source_fixture, indent=2) + '\n')
         if args.rollback_repair:
-            from runtime.desktop_launch import plan_identity
-            if kind in ('flatpak','appimage'):
-                source_plan=json.loads(Path(str(baseline)+'.json').read_text())['plan']
-            elif kind=='oci':
-                from artifact.releases import oci_metadata
-                source_plan=oci_metadata(baseline,'podman')[0]
-            else:
-                from runtime.container_state import managed_plan
-                path=baseline/'metadata/native-launch.json'
-                source_plan=json.loads(path.read_text()) if path.exists() else managed_plan(baseline)
             old_identity=_generation(_read_generations(state),_read_generations(state)['active'])['identity']
             assert plan_identity(source_plan)==old_identity
             old_executable=sha(first/workflow.executable)
@@ -541,6 +584,8 @@ def main():
                 pins=json.loads((ROOT/'recipes/sumatrapdf-portable.releases.json').read_text())
                 assert old_executable==pins['3.6']['executableSha256']
             assert workflow.preference(repaired)==preference and (repaired/internal).read_text()=='before update'
+            if source_fixture:
+                run(candidate, '2-repair-relaunch', menu=True)
             run(candidate,'3-relaunch',preference=True,menu=True)
             assert workflow.preference(repaired)!=preference, 'qualify restoration, not merely identical preferences'
             (repaired/internal).write_text('latest document after update')
@@ -612,6 +657,7 @@ def main():
                 rollbackRepairs=[{'from':old_identity,'to':new_identity}],
                 originalGenerationsRetained=True,originalPrefixUnchanged=True,
                 settingsRestoredFromOriginal=True,freshRuntimeSeed=True)
+            if source_fixture:result['originalStateFixture'] = source_fixture
         if args.runtime_migration:
             result['runtimeMigrations'] = [{'from': old_identity, 'to': new_identity}]
         if stress_relaunches:result['stressRelaunches'] = stress_relaunches

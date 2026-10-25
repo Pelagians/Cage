@@ -13,6 +13,14 @@ original prefix and package unchanged, and requires actual zero exit, Wine
 quiescence and a committed generation before recording success. x86_64 automatic
 qualification retains exact runtime migration and rollback.
 
+Repair setup uses a declared original-state fixture from the original producer
+seed, verified against the source plan and export receipt. It does not first
+launch the defective original application to create settings. Non-default test
+settings and a retained document are added only to the fresh private state copy;
+all five GUI sessions execute the guarded runtime. Fixture provenance and state
+hashes are retained, and signing verification cannot use this evidence to qualify
+the original runtime or manufacture an original trusted release.
+
 Manual `rollback_repair=false` runs retain exact original-runtime diagnostics.
 The original ARM runtime and its failed trials remain unqualified; a guarded
 repair is not a repair of those immutable bytes. Repair proofs sign/fetch only
