@@ -43,7 +43,7 @@ env:
 
 jobs:
   desktop:
-    if: github.event_name != 'workflow_dispatch' || (inputs.container_stress_relaunches == '0' && inputs.original_oci_relaunches == '0')
+    if: github.event_name != 'workflow_dispatch' || (!inputs.trace_shutdown && inputs.container_stress_relaunches == '0' && inputs.original_oci_relaunches == '0')
     strategy:
       fail-fast: false
       matrix:
