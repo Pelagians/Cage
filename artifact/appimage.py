@@ -315,6 +315,14 @@ def stage_private_runtime(appdir, platform_root, architecture):
     return manifest
 
 
+def stage_native_locale(appdir, platform_root):
+    """Keep the private libc's UTF-8 path codec with that same pinned libc."""
+    source = platform_directory(Path(platform_root), 'lib/locale/C.utf8')
+    inventory_tree(source)
+    destination = Path(appdir) / 'usr/lib/cage-native/locale/C.utf8'
+    shutil.copytree(source, destination, copy_function=copy_file)
+
+
 def prepare_appdir(bundle, plan, context, *, store, cache):
     context, bundle = Path(context).resolve(), Path(bundle).resolve()
     if context.is_relative_to(bundle) or context.exists():
@@ -371,6 +379,8 @@ def prepare_appdir(bundle, plan, context, *, store, cache):
     (helpers / 'entry.py').write_text('import sys\nfrom pathlib import Path\n'
         'sys.path.insert(0, str(Path(__file__).resolve().parent))\n'
         'from appimage_runtime import bootstrap\nbootstrap()\n')
+    if plan.get('managedNamespace'):
+        stage_native_locale(appdir, Path(location) / 'files')
     closure['privateRuntime'] = stage_private_runtime(appdir, Path(location) / 'files', arch)
     # Hashes describe the final patched payload, including libc and its loader.
     closure['libraries'] = inventory_tree(appdir / 'usr/lib/cage-native')

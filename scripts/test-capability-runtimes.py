@@ -35,7 +35,7 @@ from artifact.inspection import verify_bundle
 from builder.flatpak import run_flatpak
 from core.capabilities import compile_capabilities
 from core.media import stage_media
-from runtime.desktop_launch import _write_state_record, inventory_tree, digest_json, plan_identity
+from runtime.desktop_launch import _write_state_record, inventory_tree, digest_json, plan_identity, _read_generations
 
 
 def write(path,value):
@@ -279,7 +279,7 @@ def run_case(release,record,work,paths,case,port,abstract,device,host_process,sh
     assert observer['window'] and win['windowCreated'] and win['nativeChildCompleted']
     assert win['wineDriveWrite'] is True
     assert win['stateCounter']==counter,(kind,case,win['stateCounter'],counter)
-    state_root=managed.state_root(record,release);state=json.loads((state_root/'state.json').read_text())
+    state_root=managed.state_root(record,release);state=_read_generations(state_root)
     assert state['generations'][0]['identity']==plan_identity(release['entry']['plan'])
     result={'status':'passed','case':case,'stateCounter':counter,'stateRoot':str(state_root),
             'activePrefix':state['active'],'compatibility':plan_identity(release['entry']['plan']),
@@ -342,7 +342,7 @@ def main():
                         if counter==1:
                             state_record=(state_root/'state.json').read_bytes()
                             recovery=state_root/'retained-recovery-fixture'
-                            shutil.copytree(state_root/state_record_path(state_record),recovery,symlinks=True)
+                            shutil.copytree(state_root/_read_generations(state_root)['active'],recovery,symlinks=True)
                             snapshot=digest_json(inventory_tree(recovery,state_snapshot=True))
                             write(folder/'recovery-inventory.json',inventory_tree(recovery,state_snapshot=True))
                             write(evidence/(kind+'.linux.json'),linux);write(evidence/(kind+'.windows.json'),win)
@@ -369,9 +369,6 @@ def main():
         host_process.terminate();host_process.wait(timeout=10)
         null.remove();shm.unlink()
     print(json.dumps(result,indent=2))
-
-
-def state_record_path(data):return json.loads(data)['active']
 
 
 if __name__=='__main__':main()

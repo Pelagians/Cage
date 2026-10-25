@@ -20,7 +20,7 @@ from unittest.mock import patch
 from artifact.appimage import (create_appimage_export_plan, apprun_script, checked_download,
                               unpack_python, stage_native_libraries)
 from artifact.appimage import stage_notices, omit_unqualified_modules, relocate_wine_links, platform_directory
-from artifact.appimage import stage_private_runtime
+from artifact.appimage import stage_private_runtime, stage_native_locale
 from runtime.appimage_runtime import materialize, interpreter_slot
 from runtime import desktop_launch
 from runtime.desktop_launch import DesktopError, digest_json
@@ -34,6 +34,17 @@ with patch.dict(sys.modules, {'desktop_launch': desktop_launch}):
 
 
 class AppImageTests(unittest.TestCase):
+    def test_managed_utf8_locale_is_copied_from_the_pinned_platform_and_rejects_escape(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);platform_root=root/'platform';locale=platform_root/'lib/locale/C.utf8';locale.mkdir(parents=True)
+            (locale/'LC_CTYPE').write_bytes(b'pinned locale fixture')
+            stage_native_locale(root/'app',platform_root)
+            self.assertEqual((root/'app/usr/lib/cage-native/locale/C.utf8/LC_CTYPE').read_bytes(),b'pinned locale fixture')
+            outside=root/'outside';outside.write_text('host data')
+            (locale/'LC_TIME').symlink_to(outside)
+            with self.assertRaisesRegex(DesktopError,'escaping'):stage_native_locale(root/'rejected',platform_root)
+            self.assertFalse((root/'rejected').exists())
+
     def test_legacy_fixture_retains_old_lifecycle_with_current_private_transport(self):
         prepare = runpy.run_path(str(ROOT / 'scripts/prepare-legacy-poc.py'))['main']
         fixture = ROOT / 'tests/fixtures/legacy-desktop/runtime'

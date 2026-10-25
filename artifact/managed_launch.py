@@ -173,7 +173,8 @@ def bubblewrap_args(release, appdir, prepared, root, effective, filter_fd, files
         if entry['granted']:args += ['--ro-bind' if entry['access']=='read-only' else '--bind',entry['host'],entry['host']]
     env={'HOME':str(home),'XDG_DATA_HOME':str(data),'XDG_CONFIG_HOME':str(root/'home/config'),
          'XDG_CACHE_HOME':str(root/'home/cache'),'PATH':'/run/cage/native/usr/wine/bin',
-         'USER':os.environ.get('USER','cage'),'LANG':os.environ.get('LANG','C.UTF-8'),**environment(release,effective)}
+         'USER':os.environ.get('USER','cage'),'LANG':os.environ.get('LANG','C.UTF-8'),
+         'LC_CTYPE':'C.UTF-8','LOCPATH':'/run/cage/native/usr/lib/cage-native/locale',**environment(release,effective)}
     if effective['display']:
         display=effective['display'];args+=['--ro-bind',display['socket'],display['socket'],'--ro-bind',display['authority'],'/run/cage/Xauthority']
         env.update(DISPLAY=display['display'],XAUTHORITY='/run/cage/Xauthority')

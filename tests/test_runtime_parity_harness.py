@@ -31,6 +31,20 @@ class RuntimeParityHarnessTests(unittest.TestCase):
                 self.assertTrue(denied['launchAllowed'])
                 self.assertTrue(all(not item['grant'] for item in denied['requests'] if item['id'] in ('network','devices')))
 
+    def test_state_reader_accepts_compact_v2_without_rewriting_it(self):
+        from runtime.desktop_launch import prepare_generation, inventory_tree, plan_identity
+        from tests.test_capability_delivery import plan
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);seed=root/'seed';(seed/'drive_c').mkdir(parents=True)
+            p=plan();p['seedDigest']=harness.digest_json(inventory_tree(seed))
+            state=root/'state';prefix,_=prepare_generation(seed,inventory_tree(seed),state,plan_identity(p),p,'launch')
+            before=(state/'state.json').read_bytes()
+            self.assertNotIn('generations',json.loads(before))
+            record=harness._read_generations(state)
+            self.assertEqual(state/record['active'],prefix)
+            self.assertEqual(record['generations'][0]['identity'],plan_identity(p))
+            self.assertEqual((state/'state.json').read_bytes(),before)
+
     def test_synthetic_fixture_refuses_preexisting_object(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture=harness.NullFixture('unit-test')
