@@ -119,6 +119,34 @@ controlled device detection/reconnect, target selection and physical
 synchronization with retained hardware backups. Broad USB permissions do not
 establish compatibility with every Harmony device.
 
+## x86_64 CI result, 25 October 2026
+
+The new [Ubuntu x86_64 workflow completed successfully](https://github.com/Pelagians/Cage/actions/runs/40171367024)
+on source commit `584f5ae`: **679 tests passed, one opt-in component test skipped**
+in the general suite, plus **260 passing subtests**. The dedicated native
+namespace component then passed separately. The Windows x86_64 probe compiled
+with warnings treated as errors. The reference checker accepted 16 field
+projections, rejected 47 structural negatives, and retained the 45 acceptance
+specifications without treating them as runtime passes.
+
+CI fixes installed the wheel-test backend explicitly, guarded the compiler's
+Unicode definitions, and made signature tests respect the optional releases
+dependency in existing base packaging jobs. The new workflow installs that
+dependency and executes the signature tests. AppArmor stayed enabled, its global
+unprivileged namespace restriction stayed at `1`, and only the disposable test
+executable received scoped namespace permission.
+
+The [CI receipt](ci-evidence.json) binds the run, exact tested source, artifact,
+OS/tool versions and retained evidence hashes. Existing local app state, USB
+rules and recovery data were not changed. The earlier local receipt below is
+retained as development history.
+
+**The uploaded three-format report remains blocked in every adapter case.**
+This successful source/component job does not qualify full OCI/Flatpak/AppImage
+runtime parity, MyHarmony login or physical USB synchronization. Real dedicated
+hardware and retained backups are still required before synchronization can be
+qualified. No qualified v1 MyHarmony release was issued.
+
 ## Local execution result
 
 The full suite ran with Python 3.14.8 / zlib-ng on ARM: 677 passed, 2 skipped,

@@ -1,0 +1,112 @@
+{
+  "applicationWorkflow": "not-qualified-by-this-report",
+  "artifactMetadata": [
+    {
+      "created_at": "2026-10-25T07:04:46Z",
+      "digest": "sha256:31731c5dd29de3897d1ebbfd99bdf0178bc7b450848f5067a3988335c84c0c32",
+      "expired": false,
+      "id": 12590680941,
+      "name": "v1-source-and-component-evidence",
+      "size_in_bytes": 123262
+    }
+  ],
+  "branch": "codex/myharmony-appimage",
+  "clientDate": "2026-10-25",
+  "clientTimezone": "America/Vancouver",
+  "existingLocalAppStateModified": false,
+  "fixes": [
+    {
+      "change": "Install setuptools and wheel for the test that disables build isolation.",
+      "commit": "eb16bbc"
+    },
+    {
+      "change": "Guard MinGW Unicode macros without suppressing compiler warnings.",
+      "commit": "2b04203"
+    },
+    {
+      "change": "Skip signature-specific tests only when the optional releases dependency is absent; the v1 CI installs it and runs those tests.",
+      "commit": "584f5ae"
+    }
+  ],
+  "host": {
+    "apparmorEnabled": true,
+    "kernel": "Linux runnervmtai0g 6.17.0-1022-azure #22-Ubuntu SMP Mon Jul 27 17:24:03 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux",
+    "namespaceAuthorization": "scoped profile for a disposable bwrap copy; global restriction retained",
+    "nativeComponentRuntime": {
+      "exactPatchVersion": "not recorded",
+      "executable": "/usr/bin/python3",
+      "scope": "OS runtime fixture for namespace component only; not Wine qualification"
+    },
+    "osRelease": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n",
+    "sourceTestPython": "3.12.15",
+    "tools": {
+      "bubblewrapPackage": "0.9.0-1ubuntu0.3",
+      "libseccompPackage": "2.5.5-1ubuntu3.1",
+      "mingwGccPackage": "13.2.0-6ubuntu1+26.1"
+    },
+    "unprivilegedNamespaceRestriction": "kernel.apparmor_restrict_unprivileged_userns = 1"
+  },
+  "localRecoveryDataRemoved": false,
+  "localUsbRulesApplied": false,
+  "nativeNamespaceComponent": {
+    "architecture": "x86_64",
+    "passed": 1,
+    "status": "passed",
+    "wineApplicationQualification": false
+  },
+  "physicalUsbSynchronization": "unqualified; not tested with dedicated real hardware",
+  "priorRuns": [
+    {
+      "conclusion": "failure",
+      "reason": "missing wheel-test backend",
+      "runId": 40170727753
+    },
+    {
+      "conclusion": "failure",
+      "reason": "Windows probe Unicode macro redefinition",
+      "runId": 40170866100
+    },
+    {
+      "commit": "2b0420370c9180ab0153c70cfe43961cce5c429f",
+      "conclusion": "success",
+      "runId": 40171083444
+    }
+  ],
+  "qualifiedV1MyHarmonyReleaseIssued": false,
+  "repository": "Pelagians/Cage",
+  "retainedLocalEvidenceSha256": {
+    ".cage/parity-ci-evidence/40171367024-metadata.json": "aa2af3927beafe55e23ebd8ee1420a407c7f7a4090fd8e25349b16906f457956",
+    ".cage/parity-ci-evidence/40171367024.log": "aa1e81c20f16cfbf2f8bc901d7de163b08ed6dd50bf7b0ed1820add6dfb7d0cf",
+    ".cage/parity-ci-evidence/40171367024/artifact/apparmor.txt": "e8ce657871e39310b44c1ae3cd6f1c12501449d77fa121db08e8655bb2136f92",
+    ".cage/parity-ci-evidence/40171367024/artifact/kernel.txt": "40e1b96798b16f24a59a712a1088b111fc257a3b3f4b48594a8c7995e6a0c523",
+    ".cage/parity-ci-evidence/40171367024/artifact/namespace-policy.txt": "9aea25871d648a9b1e7a422ff78bfc50e418059d2cdaecf2d810dcf9c3c44e02",
+    ".cage/parity-ci-evidence/40171367024/artifact/os-release.txt": "87458b3b1f1ca0e5c693ade771de7007c3783bdc692fa6b39eb6414bf2af2763",
+    ".cage/parity-ci-evidence/40171367024/artifact/parity.json": "2fd58b7ff7435dad75b45e3304191c051ce42284ca58595332e27d3619709bec",
+    ".cage/parity-ci-evidence/40171367024/artifact/windows-probe.exe": "74e42ac270e6ab9d1ae78c732ebbb0aacf557c8f86cf298e2a9398dc48d67899"
+  },
+  "schemaVersion": "cage.capability-parity-ci-evidence/v1",
+  "scope": "source contracts, reference schema, Windows probe compilation, native Linux namespace component",
+  "sourceTests": {
+    "passed": 679,
+    "skipped": 1,
+    "status": "passed",
+    "subtestsPassed": 260
+  },
+  "testedCommit": "584f5aef51e46a169201cad299b7093c4f8ed980",
+  "threeFormatRuntimeParity": "blocked",
+  "windowsProbe": {
+    "executed": false,
+    "machine": "AMD64",
+    "sha256": "74e42ac270e6ab9d1ae78c732ebbb0aacf557c8f86cf298e2a9398dc48d67899",
+    "status": "compiled"
+  },
+  "workflow": {
+    "completedAt": "2026-10-25T07:04:50Z",
+    "conclusion": "success",
+    "event": "push",
+    "jobId": 121102694659,
+    "path": ".github/workflows/capability-parity.yml",
+    "runId": 40171367024,
+    "url": "https://github.com/Pelagians/Cage/actions/runs/40171367024"
+  }
+}
