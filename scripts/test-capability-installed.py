@@ -128,7 +128,12 @@ def qualify(h, candidates, work, store, paths, port, abstract, device, host_proc
     if len(candidates) != 1:
         raise RuntimeError('--installed-releases requires --format so each adapter has its own desktop default')
     kind, baseline = next(iter(candidates.items())); app = baseline['manifest']['application']['id']
-    evidence.mkdir(parents=True); host = host_identity(); h.write(evidence/'host.json', host)
+    evidence.mkdir(parents=True); host = host_identity()
+    profile = evidence.parent/'namespace-profile.txt'
+    if not profile.is_file():raise RuntimeError('retain the actual scoped namespace profile before qualification')
+    host['securityPolicy']['namespaceProfileSha256'] = releases.hash_file(profile)
+    host['securityPolicy']['bubblewrapExecutableSha256'] = releases.hash_file(Path(shutil.which('bwrap')))
+    h.write(evidence/'host.json', host)
     private = work/'publisher-private.pem'; key = work/'publisher-public.pem'; releases.generate_key(private, key)
     shutil.copyfile(key, evidence/'publisher-public.pem')
     result = {'schemaVersion': 'cage.installed-release-parity/v1', 'status': 'running', 'format': kind,
@@ -217,6 +222,8 @@ def qualify(h, candidates, work, store, paths, port, abstract, device, host_proc
             def installed_run(counter, case, label, desktop_launch=False):
                 rec, rel, _ = permissions.installed(app, kind)
                 document = paths['replacement' if case == 'rebound' else 'write']/'canary'
+                overrides = Path(os.environ['FLATPAK_USER_DIR'])/'overrides'
+                override_inventory = inventory_tree(overrides) if overrides.exists() else []
                 def launch(log):
                     if desktop_launch:
                         # Parse the installed Exec field and expand only the
@@ -229,6 +236,7 @@ def qualify(h, candidates, work, store, paths, port, abstract, device, host_proc
                 value, _, win = h.run_case(rel, rec, work, paths, case, port, abstract, device, host_process, shm,
                                            evidence/'consumer'/label, counter, launch=launch, setup=False)
                 assert win['forwardedDocumentReadable'] is True
+                assert (inventory_tree(overrides) if overrides.exists() else []) == override_inventory, 'Cage launch changed native overrides'
                 result['sessions'].append({**value, 'operation': label, 'releaseDigest': rel['digest'], 'desktopExec': desktop_launch})
                 h.write(evidence/'installed-release.json', result)
                 return value
@@ -250,6 +258,16 @@ def qualify(h, candidates, work, store, paths, port, abstract, device, host_proc
                    'historical-contract-needs-review', 'accept')
             h.command([sys.executable, '-m', 'cage', 'permissions', 'accept', app, '--format', kind, '--contract', baseline['entry']['plan']['capabilities']['contractDigest']], evidence/'accept-historical.log')
             installed_run(3, 'isolated', 'rollback-keeps-revocations', True)
+            if kind == 'flatpak':
+                # An independent native grant must block launch, remain intact,
+                # and be removed only by the explicit test operator.
+                h.command(['flatpak', 'override', '--user', '--filesystem='+str(paths['denied'])+':ro', app], evidence/'operator-extra-grant.log')
+                overrides = Path(os.environ['FLATPAK_USER_DIR'])/'overrides'
+                independent = inventory_tree(overrides)
+                reject([sys.executable, '-m', 'cage', 'release', 'run', app, '--format', kind, '--key', key, '--cache-dir', cache],
+                       'unreviewed-native-grant', 'exceeds')
+                assert inventory_tree(overrides) == independent
+                h.command(['flatpak', 'override', '--user', '--nofilesystem='+str(paths['denied']), app], evidence/'operator-remove-extra-grant.log')
             # Bind must preview, leave the receipt unchanged, then verify the
             # independent native edit. Other formats adopt directly.
             before = permissions.bindings_path(app, kind).read_bytes()
@@ -282,11 +300,17 @@ def qualify(h, candidates, work, store, paths, port, abstract, device, host_proc
             h.write(evidence/'consumer-ledger.json', final)
             h.write(evidence/'consumer-generations.json', _read_generations(root))
             result.update(recoveryPreserved=True, generationRecordPreserved=True, publisherKeySha256=final['publisherKeySha256'],
-                          highWater=final['highWater'], desktopExecFormats=[kind])
+                          highWater=final['highWater'], desktopExecFormats=[kind], nativeOverridesWrittenByCage=False)
         # Back in the producer's untouched environment, adopt the exact already
         # observed native package and prefix through the public signed API.
         assert digest_json(inventory_tree(producer_root, state_snapshot=True)) == producer_inventory
         extra = ['--state-dir', work/'oci-state'] if kind == 'oci' else []
+        unverified = subprocess.run(list(map(str, [sys.executable, '-m', 'cage', 'release', 'install', signed[0], '--key', key,
+            '--format', kind, '--cache-dir', work/'trusted-cache', '--accept-permissions', baseline['entry']['plan']['capabilities']['contractDigest'], *extra])),
+            capture_output=True, text=True, timeout=240)
+        h.write(evidence/'unverified-adoption-refused.json', {'exitCode':unverified.returncode, 'stderr':unverified.stderr, 'stdout':unverified.stdout})
+        assert unverified.returncode != 0 and 'adopt' in unverified.stdout+unverified.stderr
+        assert digest_json(inventory_tree(producer_root, state_snapshot=True)) == producer_inventory
         h.command([sys.executable, '-m', 'cage', 'release', 'install', signed[0], '--key', key, '--format', kind,
                    '--cache-dir', work/'trusted-cache', '--accept-permissions', baseline['entry']['plan']['capabilities']['contractDigest'],
                    '--adopt-existing', *extra], evidence/'verified-adoption.log', timeout=240)
