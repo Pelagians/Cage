@@ -1,11 +1,11 @@
 # Proposed Cage recipe permission schema
 
-Status: prospective `cage.app/v1` design. Examples are not accepted by the
-production parser. The companion JSON Schema validates the projection containing
-`schemaVersion`, `id`, `execution` and `permissions`; all other application fields
-reuse the existing validators with explicit v1 migration adaptations below.
-In particular, the current desktop validator's offline-only rule must be
-adapted and requalified; this draft does not make it accept online v1 recipes.
+Status: `cage.app/v1` parsing/normalization and the initial capability subset are
+implemented. The companion JSON Schema validates the projection containing
+`schemaVersion`, `id`, `execution` and `permissions`; other application fields
+reuse existing validators with explicit v1 adaptations. Export plans accept the
+online X11/All Devices candidate; that does not establish runtime qualification.
+The strict selected-USB fixture remains a required-unsupported negative case.
 
 ## Recipe envelope
 

@@ -1,8 +1,9 @@
 # Cage capability parity design
 
-Status: proposed design, 24 October 2026. This proposal does not change the
-accepted v0 recipe, launchers, exporters, installed permissions, or application
-state. It defines a prospective v1 contract and acceptance gates.
+Status: v1 source implementation, qualification pending, 24 October 2026. The explicit parser,
+shared planner, managed adapters and trust/state records are implemented. The
+v0 recipe keeps its existing behavior. Runtime, desktop and physical hardware
+qualification remain separate release gates; see [implementation status](implementation-status.md).
 
 Cage should export one application contract to OCI, Flatpak, and AppImage, with
 comparable application behavior and access controls on qualified Linux hosts.
@@ -25,9 +26,11 @@ privileged daemon.
   This is not a complete standalone application schema or a production parser.
 - [Acceptance tests](acceptance-tests.md): shared scenarios, target assertions,
   evidence requirements, and release gates. These are specifications, not an
-  implemented test suite or passed results.
-- [MyHarmony example](examples/myharmony.cage.yaml): full prospective recipe,
-  derived from the current checked-in source recipe; the v1 parser accepts this candidate; qualification is separate.
+  complete runtime test suite or passed results. Source tests and shared probes now accompany these specifications.
+- [MyHarmony example](examples/myharmony.cage.yaml): strict negative fixture derived from
+  the checked-in source recipe. Its selected USB request is recognized and
+  unsupported; the [broad candidate](examples/myharmony-compat.cage.yaml) uses
+  All Devices consistently on the three targets.
 - [All Devices example](examples/all-devices.contract.yaml): proposed field
   projection showing the broad device request; not a runnable application.
 - [Local binding example](examples/local-bindings.yaml): prospective local

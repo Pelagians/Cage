@@ -1,0 +1,98 @@
+{
+  "armNamespaceComponent": {
+    "passed": 1,
+    "scope": "isolated namespace component on aarch64; not Wine/AppImage/x86_64 qualification",
+    "status": "passed"
+  },
+  "baselineCommit": "06bff7ad060946e1ac2941f807b197f33fa2306e",
+  "ciWorkflow": {
+    "file": ".github/workflows/capability-parity.yml",
+    "scope": "source and native namespace components; three-format/hardware report remains blocked",
+    "status": "not-run"
+  },
+  "clientDate": "2026-10-24",
+  "clientTimezone": "America/Vancouver",
+  "contractValidation": {
+    "acceptanceSpecifications": 45,
+    "deviceClassHotplugDefault": "startup-only",
+    "draftSchemaValid": true,
+    "executionIsolationFieldRemoved": true,
+    "invalidStructuralCasesRejected": 47,
+    "networkRequestHasNoMode": true,
+    "newLocalDocumentationLinksChecked": 19,
+    "productionParserSupportsV1": true,
+    "removedFieldsRejected": true,
+    "runtimeParityTestsExecuted": false,
+    "usbHotplugDefault": "required",
+    "usbPresenceRequiresLaunchPrerequisite": true,
+    "v0ApplicationPayloadPreserved": true,
+    "validFieldProjectionCases": 16,
+    "yamlExamplesParsedByBothLoaders": 4
+  },
+  "existingApplicationStateModified": false,
+  "focusedV1Suite": {
+    "passed": 41,
+    "status": "passed",
+    "subtestsPassed": 10
+  },
+  "fullSuite": {
+    "failed": 1,
+    "knownFailure": {
+      "baselineFilesUnchanged": true,
+      "compressedArchiveEqual": false,
+      "decompressedMembersEqual": true,
+      "hostCompression": "zlib-ng",
+      "test": "test_chocolatey_smoke.py::ChocolateySmokePackageTests::test_packaged_smoke_nupkg_matches_committed_source"
+    },
+    "passed": 677,
+    "skipped": 2,
+    "status": "failed",
+    "subtestsPassed": 260
+  },
+  "host": {
+    "architecture": "aarch64",
+    "kernel": "7.1.13-402.asahi.fc44.aarch64+16k",
+    "osRelease": "NAME=\"Fedora Linux Asahi Remix\"\nVERSION=\"44 (Workstation Edition)\"\nRELEASE_TYPE=stable\nID=fedora-asahi-remix\nID_LIKE=fedora\nVERSION_ID=44\nVERSION_CODENAME=\"\"\nPRETTY_NAME=\"Fedora Linux Asahi Remix 44 (Workstation Edition)\"\nANSI_COLOR=\"0;38;2;60;110;180\"\nLOGO=fedora-logo-icon\nCPE_NAME=\"cpe:/o:fedoraproject:fedora-asahi-remix:44\"\nDEFAULT_HOSTNAME=\"fedora\"\nHOME_URL=\"https://fedora-asahi-remix.org/\"\nDOCUMENTATION_URL=\"https://docs.fedoraproject.org/en-US/fedora-asahi-remix/\"\nSUPPORT_URL=\"https://discussion.fedoraproject.org/c/neighbors/asahi/asahi-help/94\"\nBUG_REPORT_URL=\"https://bugzilla.redhat.com/\"\nREDHAT_BUGZILLA_PRODUCT=\"Fedora\"\nREDHAT_BUGZILLA_PRODUCT_VERSION=44\nREDHAT_SUPPORT_PRODUCT=\"Fedora\"\nREDHAT_SUPPORT_PRODUCT_VERSION=44\nVARIANT=\"Workstation Edition\"\nVARIANT_ID=workstation\n",
+    "python": "3.14.8",
+    "tools": {
+      "bwrap": [
+        "bubblewrap 0.12.0"
+      ],
+      "crun": [
+        "crun version 1.28",
+        "commit: 54f16ffbefcd022bf032af768b5c5ce075c18bfc"
+      ],
+      "flatpak": [
+        "Flatpak 1.18.4"
+      ],
+      "podman": [
+        "Failed to obtain podman configuration: set sticky bit on: chmod /run/user/1000/libpod: read-only file system"
+      ]
+    },
+    "zlibRuntime": "1.3.1.zlib-ng"
+  },
+  "hostRulesApplied": false,
+  "hostRulesCommit": "37959b2",
+  "implementationCommit": "03117d8",
+  "logs": {
+    ".cage/parity-implementation-evidence/arm-namespace-component.log": "59907462a8d5fd93406cdf4c7d1eb2f7b7a96664ae85c4ec202693d419cd019e",
+    ".cage/parity-implementation-evidence/contract.json": "4c7252fe070ded151d8c2684f327ace8a7dc0c157e5254ffd90900df9acd824d",
+    ".cage/parity-implementation-evidence/focused-tests.log": "458e4faa4bea01584bb9881b4b04512bc9ba08202f4a9ef0000e1b328dfde210",
+    ".cage/parity-implementation-evidence/full-tests.log": "eed16d441bb7eca6ce683cb638a8360d49a4e9f2fdee2e9b27c8dade1e2e2b54",
+    ".cage/parity-implementation-evidence/parity-blocked.json": "2fd58b7ff7435dad75b45e3304191c051ce42284ca58595332e27d3619709bec"
+  },
+  "myHarmony": {
+    "deviceDetectionAndReconnect": "not-run-for-v1",
+    "hardwareBackupQualification": "not-established",
+    "normalWindowAndLogin": "not-run-for-v1",
+    "status": "blocked",
+    "targetSelectionAndSynchronization": "not-run"
+  },
+  "nativeOverridesModified": false,
+  "qualifiedV1ReleaseIssued": false,
+  "runtimeParity": {
+    "reason": "requires native Ubuntu 24.04 x86_64, qualified runtime/LSM/tool tuples and shared Linux/Windows observations for each adapter",
+    "status": "blocked"
+  },
+  "schemaVersion": "cage.capability-parity-development-evidence/v1"
+}

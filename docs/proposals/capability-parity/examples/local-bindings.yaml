@@ -1,15 +1,11 @@
-# DESIGN ONLY. verifiedOrigin is a reference resolved by the trusted launcher,
-# not a self-declared authorization. Flatpak grants stay in native overrides/stores.
-# The binding replaces the recipe's Harmony folder; it does not add a second grant.
-# The operator edits native permissions; Cage only previews/verifies and adopts
-# its binding receipt. Concurrent drift never causes a native rollback.
+# Projection of a Cage-generated receipt, not a user-imported authorization.
+# Publisher, installation and exact release provenance are resolved from the
+# canonical authority and signed release ledger. Native grants remain native.
+# Cage's full JSON receipt also records verified release/native snapshot digests.
 schemaVersion: cage.local-capability-bindings/v1
-application:
-  id: io.github.Pelagians.Cage.MyHarmony
-  installation: local-operator-selected-installation
-  verifiedOrigin: resolved-from-installation-trust-record
+applicationId: io.github.Pelagians.Cage.MyHarmony
 bindings:
-  - request: harmony-files
-    location:
-      base: xdg-documents
-      path: Remote Backups
+  harmony-files:
+    base: xdg-documents
+    path: Remote Backups
+decisions: {}
