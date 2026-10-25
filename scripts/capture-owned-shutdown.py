@@ -55,7 +55,11 @@ def capture(record_path, executable, destination):
         for path in (ctl, ack):
             os.mkfifo(path, 0o600); pipes.append((path, os.open(path, os.O_RDWR | os.O_NONBLOCK)))
         with destination.with_name(destination.name + '-perf.log').open('w') as log:
+            # perf 6.8 selects VG from a hardware-PMU probe on SVE hosts, but
+            # the software clock PMU rejects extended registers. Keep the
+            # ordinary AArch64 registers needed for native DWARF unwinding.
             recorder = subprocess.Popen([perf, 'record', '-e', 'cpu-clock:u', '-F', '99', '--call-graph', 'dwarf,8192',
+                '--user-regs=' + ','.join([*('x' + str(i) for i in range(30)), 'lr', 'sp', 'pc']),
                 '--namespaces', '--delay=-1', '--control=fifo:' + str(ctl) + ',' + str(ack),
                 '-p', str(app['hostPid']), '-o', str(data)], stdout=log, stderr=subprocess.STDOUT)
             children.append(recorder); os.write(pipes[0][1], b'enable\n')
@@ -90,7 +94,7 @@ def capture(record_path, executable, destination):
         destination.with_name(destination.name + '-profile.json').write_text(json.dumps({
             'schemaVersion': 'cage.shutdown-profile/v1', 'diagnosticOnly': True, 'observerChangesTiming': True,
             'pid': app['hostPid'], 'startTime': app['startTime'], 'exitCode': outcome['exitCode'],
-            'event': 'cpu-clock:u', 'frequencyHz': 99, 'symbols': libraries,
+            'event': 'cpu-clock:u', 'frequencyHz': 99, 'registers': 'ordinary AArch64; no extended SVE registers', 'symbols': libraries,
             'skippedSymbols': skipped, 'bytes': data.stat().st_size}, indent=2) + '\n')
     finally:
         for child in children:
