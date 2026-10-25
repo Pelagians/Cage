@@ -228,8 +228,9 @@ class AppImageTests(unittest.TestCase):
             libc = subprocess.check_output(['cc', '-print-file-name=libc.so.6'], text=True).strip()
             shutil.copyfile(libc, native / 'libc.so.6')
             platform_root = root / 'platform'
-            (platform_root / 'lib').mkdir(parents=True)
-            shutil.copy2(loader, platform_root / 'lib' / loader.name)
+            triplet = {'x86_64': 'x86_64-linux-gnu', 'aarch64': 'aarch64-linux-gnu'}[os.uname().machine]
+            (platform_root / 'lib' / triplet).mkdir(parents=True)
+            shutil.copy2(loader, platform_root / 'lib' / triplet / loader.name)
             (source / 'usr/wine/bin/alias').symlink_to('probe')
             manifest = stage_private_runtime(source, platform_root, os.uname().machine)
             moved = root / 'relocated AppDir'

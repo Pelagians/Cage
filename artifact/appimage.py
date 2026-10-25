@@ -262,14 +262,14 @@ def stage_private_runtime(appdir, platform_root, architecture):
     """Reserve relocatable interpreter slots and bind every native ELF to libc."""
     appdir, platform_root = Path(appdir), Path(platform_root)
     loader = {'x86_64': 'ld-linux-x86-64.so.2', 'aarch64': 'ld-linux-aarch64.so.1'}[architecture]
+    triplet = {'x86_64': 'x86_64-linux-gnu', 'aarch64': 'aarch64-linux-gnu'}[architecture]
     native = appdir / 'usr/lib/cage-native'
-    source = platform_root / 'lib' / loader
+    source = platform_root / 'lib' / triplet / loader
     if not source.is_file() or not source.resolve().is_relative_to(platform_root.resolve()):
         raise DesktopError('missing or escaping pinned glibc loader')
     copy_file(source.resolve(), native / loader)
     if not (native / 'libc.so.6').is_file():
         raise DesktopError('private runtime requires pinned libc.so.6')
-    triplet = {'x86_64': 'x86_64-linux-gnu', 'aarch64': 'aarch64-linux-gnu'}[architecture]
     gconv = platform_root / 'lib' / triplet / 'gconv'
     if gconv.is_dir():
         shutil.copytree(gconv, native / 'gconv', symlinks=True, copy_function=copy_file)
