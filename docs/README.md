@@ -21,6 +21,7 @@ CFW-backed recipe must not declare `runtime.runner` or a Cage `compatibility` bl
 ## Specifications
 
 - [Spec v0](spec-v0.md) - Recipe schema and module system
+- [Capability Parity Design](proposals/capability-parity/README.md) - Proposed OCI, Flatpak and AppImage capability matrix, recipe schema and acceptance tests
 - [Reference Study](reference-study.md) - Comparison with BlueBuild, etc.
 
 ## Decisions
