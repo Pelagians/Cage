@@ -302,7 +302,9 @@ def migrate(root, metadata, plan, previous, files):
         if not record or _generation(record, record['active'])['identity'] != plan_identity(old):
             raise DesktopError('legacy package and recorded state differ; all files retained')
         usr = Path(metadata).parents[3]
-        environment = {**os.environ, 'LD_LIBRARY_PATH': str(usr / 'lib/cage-native')}
+        environment = dict(os.environ)
+        if not plan['target'].get('privateRuntime'):
+            environment['LD_LIBRARY_PATH'] = str(usr / 'lib/cage-native')
         assert_quiescent(state, str(usr / 'wine' / plan['target']['wineserver']), environment)
         backup = snapshot_legacy(state, plan_identity(plan), reuse=False)
         directory = installed_directory(plan)

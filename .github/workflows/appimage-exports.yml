@@ -3,9 +3,9 @@ name: Desktop AppImage proof
 on:
   workflow_dispatch:
   push:
-    paths: ['artifact/**', 'builder/**', 'runtime/**', 'cage/**', 'core/**', 'tests/**', 'scripts/*poc.py', 'pyproject.toml', '.github/workflows/appimage-exports.yml']
+    paths: ['artifact/**', 'builder/**', 'runtime/**', 'cage/**', 'core/**', 'tests/**', 'scripts/*poc.py', 'scripts/appimage_consumer.py', 'pyproject.toml', '.github/workflows/appimage-exports.yml']
   pull_request:
-    paths: ['artifact/**', 'builder/**', 'runtime/**', 'cage/**', 'core/**', 'tests/**', 'scripts/*poc.py', 'pyproject.toml', '.github/workflows/appimage-exports.yml']
+    paths: ['artifact/**', 'builder/**', 'runtime/**', 'cage/**', 'core/**', 'tests/**', 'scripts/*poc.py', 'scripts/appimage_consumer.py', 'pyproject.toml', '.github/workflows/appimage-exports.yml']
 
 permissions:
   contents: read
@@ -24,11 +24,13 @@ jobs:
             arch: x86_64
             recipe: notepadplusplus-portable
             store: .cage/flatpak
+            ubuntu22: docker.io/library/ubuntu@sha256:98510ac07bb4545e389be502a8918b385c018bfe4ceeb5ac7e0375c782268b04
             ubuntu: docker.io/library/ubuntu@sha256:42527649dbc4f9197a6073f426f488cbff0e9cc9f2afce32d91c383e4875634a
           - runner: ubuntu-24.04-arm
             arch: aarch64
             recipe: notepadplusplus-portable-arm64
             store: .cage/flatpak-arm64
+            ubuntu22: docker.io/library/ubuntu@sha256:88881eb36da489f9ff8746ece8048ca16cc94f80e8cd3ae7e8335d8822631591
             ubuntu: docker.io/library/ubuntu@sha256:7f787d965bc0e4cd42b5f74c013515d6e24ce691c881c81c42e4db59a791e5ce
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
@@ -42,7 +44,7 @@ jobs:
       - name: Install producer and GUI test tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak podman uidmap slirp4netns fuse-overlayfs rpm2cpio squashfs-tools binutils xvfb openbox xdotool scrot xdg-utils
+          sudo apt-get install -y flatpak podman uidmap slirp4netns fuse-overlayfs rpm2cpio squashfs-tools binutils patchelf xvfb openbox xdotool scrot xdg-utils
           python -m pip install PyYAML pytest setuptools wheel
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           mkdir -p "$HOME/.config/containers"
@@ -58,6 +60,7 @@ jobs:
             desktop-flatpak-${{ runner.arch }}-
       - name: Pull clean consumer distributions
         run: |
+          podman pull ${{ matrix.ubuntu22 }}
           podman pull ${{ matrix.ubuntu }}
           podman pull registry.fedoraproject.org/fedora:44
       - name: Build shared recipe, export and exercise clean consumers
@@ -79,9 +82,11 @@ jobs:
           cp dist/*.AppImage.build/appdir-inventory.json dist/appimage-evidence/payload/
           rm -rf -- dist/notepadplusplus-8.8.8-${{ matrix.arch }}.AppImage.build
           rm -rf -- dist/appimage-bundles/${{ matrix.recipe }}-8.8.8/build/flatpak
-          # Ubuntu 24.04 is a producer, below the declared consumer glibc ABI.
-          # Run the package in clean contemporary distro userlands, sharing only
-          # the test X server, package and dedicated writable test directories.
+          # Prove the private runtime on the old 2.35 host ABI as well as
+          # contemporary userlands; these share only X11 and test paths.
+          CAGE_TEST_EXPECT_GLIBC=2.35 CAGE_TEST_EVIDENCE="$PWD/dist/appimage-evidence/ubuntu22-consumer" \
+            python scripts/test-appimage-consumer-poc.py dist/notepadplusplus-8.8.8-${{ matrix.arch }}.AppImage \
+            ${{ matrix.ubuntu22 }}
           CAGE_TEST_EVIDENCE="$PWD/dist/appimage-evidence/ubuntu-consumer" \
             python scripts/test-appimage-consumer-poc.py dist/notepadplusplus-8.8.8-${{ matrix.arch }}.AppImage \
             ${{ matrix.ubuntu }}

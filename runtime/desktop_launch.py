@@ -895,7 +895,10 @@ def _launch_locked(metadata_path, files, plan, inventory, state_root, identity, 
         environment['FONTCONFIG_PATH'] = str(runtime_root / 'share/cage')
     if plan.get("format") == "appimage":
         usr = metadata_path.parents[3]
-        environment["LD_LIBRARY_PATH"] = str(usr / "lib/cage-native")
+        if not plan['target'].get('privateRuntime'):
+            environment["LD_LIBRARY_PATH"] = str(usr / "lib/cage-native")
+        else:
+            environment['GCONV_PATH'] = str(usr / 'lib/cage-native/gconv')
         environment["WINEDLLPATH"] = str(runtime_root / plan["target"]["wineDllDirectory"])
         environment["FONTCONFIG_FILE"] = str(usr / "share/cage/fonts.conf")
         environment["FONTCONFIG_PATH"] = str(usr / "share/cage")

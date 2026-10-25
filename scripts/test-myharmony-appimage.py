@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise MyHarmony's actual x86_64 AppImage in a clean Fedora userland."""
+"""Exercise MyHarmony's actual x86_64 AppImage in a selected clean userland."""
 from pathlib import Path
 import atexit
 import importlib.util
@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 from PIL import Image
+from appimage_consumer import consumer_glibc, private_runtime_maps
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('gui', ROOT / 'scripts/test-flatpak-poc.py')
@@ -21,7 +22,10 @@ APP = 'io.github.Pelagians.Cage.MyHarmony'
 
 def main():
     package = Path(sys.argv[1]).resolve()
-    image = 'registry.fedoraproject.org/fedora:44'
+    image = sys.argv[2] if len(sys.argv) > 2 else 'registry.fedoraproject.org/fedora:44'
+    libc = consumer_glibc(image)
+    original_package = package
+    relocated_package = package.with_name('Relocated café ' + package.name)
     evidence = Path(os.environ['CAGE_TEST_EVIDENCE']).resolve()
     evidence.mkdir(parents=True, exist_ok=False)
     data, home, temporary = [evidence / name for name in ('data', 'home', 'temporary')]
@@ -71,6 +75,7 @@ def main():
                     and sum(max(r,g,b) < 70 for r,g,b in pixels) > 800
                     and sum(min(r,g,b) > 220 for r,g,b in pixels) > 800)
             gui.wait_for(rendered, 'rendered online Logitech interface', seconds=180)
+            maps = private_runtime_maps(name)
             user_reg = (state / 'prefix/user.reg').read_text(errors='replace')
             assert '"Desktop"="MyHarmony"' not in user_reg
             assert 'Explorer\\\\Desktops' not in user_reg
@@ -87,10 +92,15 @@ def main():
             if before is not None:
                 assert record == before
             before = record
+            if run == 1:
+                package.rename(relocated_package)
+                package = relocated_package
+                argv[-1] = str(package)
         result = {'status': 'passed', 'architecture': 'x86_64', 'consumerImage': image,
             'consumerImageId': gui.command('podman', 'image', 'inspect', '--format', '{{.Id}}', image),
             'normalWindow': True, 'onlineInterfaceRendered': True, 'relaunch': True,
             'sameStateGeneration': True, 'persistentUserFile': True,
+            'consumerGlibc': libc, 'privateRuntimeMaps': maps, 'packageRelocated': True,
             'hostWineRequired': False, 'hostPythonRequired': False,
             'physicalUsbDetectionQualified': False, 'physicalSynchronizationQualified': False}
         (evidence / 'functional-test.json').write_text(json.dumps(result, indent=2) + '\n')
@@ -100,6 +110,8 @@ def main():
         raise
     finally:
         subprocess.run(['podman', 'rm', '-f', name], capture_output=True, timeout=30)
+        if package == relocated_package:
+            package.rename(original_package)
         for log in logs:
             log.close()
         for basename in ('debug.log', 'console.log'):

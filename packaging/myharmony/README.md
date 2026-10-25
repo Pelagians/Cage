@@ -5,8 +5,10 @@ and start it as your regular desktop user.
 It opens MyHarmony in its own normal window. Internet access is required for
 Logitech's hosted interface and account service.
 
-This build needs Linux x86_64, glibc 2.43 or newer (for example Fedora 44),
-and X11 or XWayland. Wine and Python are bundled. If FUSE is unavailable:
+This build needs Linux x86_64, X11 or XWayland, and executable temporary
+storage. Wine, Python, glibc and its matching loader are bundled. The build
+tests the application on an Ubuntu 22.04 userland with host glibc 2.35; a
+system libc upgrade is unnecessary. If FUSE is unavailable:
 
 ```
 APPIMAGE_EXTRACT_AND_RUN=1 ./MyHarmony-1.0.308-x86_64.AppImage
