@@ -1,10 +1,10 @@
 # AppImage desktop proof of concept
 
-Cage exports the same pinned portable Notepad++ recipes as Flatpak and AppImage,
-using the existing ordered build pipeline and shared Wine-prefix launcher. There
-is no second application installer or recipe language. Container builds remain
-the default. AppImage export is experimental and qualifies one application, not
-arbitrary Windows software.
+Cage exports sealed desktop application bundles as Flatpak and AppImage, using
+the existing ordered build pipeline and shared Wine-prefix launcher. There is no
+second application installer or recipe language. Container builds remain the
+default. AppImage compatibility is qualified per application; the shared private
+runtime applies to every AppImage export.
 
 ## Target and dependencies
 
@@ -36,7 +36,7 @@ commands do not inherit the packaged libc through `LD_LIBRARY_PATH`.
 
 The AppImage-only profile omits the Unix `winedmo.so` module: FFmpeg-backed
 DirectShow decoding is outside this text-editor proof and would add an
-unnecessary codec stack, including x86 imports requiring glibc 2.44. The
+additional codec stack that remains unqualified. The
 exclusion and original module hashes are recorded in the target/receipt;
 Flatpak and container payloads are unchanged. Wine's optional camera, Kerberos
 and packet-capture modules can have unavailable

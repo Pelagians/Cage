@@ -8,7 +8,9 @@ Logitech's hosted interface and account service.
 This build needs Linux x86_64, X11 or XWayland, and executable temporary
 storage. Wine, Python, glibc and its matching loader are bundled. The build
 tests the application on an Ubuntu 22.04 userland with host glibc 2.35; a
-system libc upgrade is unnecessary. If FUSE is unavailable:
+system libc upgrade is unnecessary. CI verifies native startup, relaunch and
+state persistence. Logitech returns HTTP 403 to the CI runner, so its online
+login screen and physical USB synchronization remain unqualified. If FUSE is unavailable:
 
 ```
 APPIMAGE_EXTRACT_AND_RUN=1 ./MyHarmony-1.0.308-x86_64.AppImage

@@ -1,5 +1,50 @@
 # AppImage qualification
 
+## Private runtime qualification — 2026-10-24
+
+New exports bundle glibc **2.44** and its matching loader from the pinned
+Freedesktop platform. The old host-glibc requirement below applies only to the
+historical packages in that snapshot. New exports do not require host glibc 2.43.
+
+[Desktop AppImage proof 40162107434](https://github.com/Pelagians/Cage/actions/runs/40162107434)
+passed on both **x86_64 and aarch64**, using exporter implementation revision
+`a4eb04c9f6e2e58fa4b544e41323f1e1610b143b`. Each architecture passed the full
+Python suite: **609 passed, 29 skipped, 233 subtests passed**. Each actual
+Notepad++ AppImage then passed save, close, relaunch, second save, persistent
+state identity, and relocation to a filename containing spaces and Unicode in:
+
+- Pinned Ubuntu 22.04 userland, explicitly asserting **host glibc 2.35**.
+- The existing pinned contemporary Ubuntu consumer.
+- Fedora 44.
+
+All consumers lacked installed Wine and Python. Live process maps verified that
+Wine, its native children, and wineserver loaded `usr/lib/cage-native/libc.so.6`.
+The unchanged shared exporter handles these applications and architectures;
+there is no Harmony-specific loader path. A native ELF regression additionally
+checks a library canonicalizing its own path and re-executing a neighboring
+binary after package relocation, including paths with spaces and Unicode.
+
+[MyHarmony runtime proof 40162463198](https://github.com/Pelagians/Cage/actions/runs/40162463198)
+rebuilt MyHarmony 1.0.308 at revision `f5deedeeebfa37deb9f97f5cd80d5b84563f4a4f`
+using that same exporter. Native startup, private-libc process maps, relaunch,
+package relocation, and retained user-file/state identity passed on Ubuntu
+22.04/glibc 2.35 and Fedora 44. The rebuilt x86_64 package is **248,330,744 bytes**
+with SHA-256
+`1a240fd6525083c2aea6b734dd0af73d32106aaeda248302d4b9832c02267d97`. Logitech's discovery endpoint independently
+returned **HTTP 403** from CI. The test records `runtime-passed-service-blocked`
+and `onlineInterfaceRendered: false`; this is not an online login qualification.
+Without an independently supplied HTTP 403 probe, a service-error dialog still
+fails the test. Physical USB detection and synchronization remain unqualified.
+
+These are clean consumer **userland** tests using the runner's kernel and X11
+server, not booted Pop!_OS or physical-device qualification. Producer tools
+include `patchelf`; consumers do not need it. See
+[the shared runtime layout](appimage-exports.md) for the temporary native ELF tree,
+matching libc/loader, source receipts, and host graphics boundary.
+
+## Historical host-glibc snapshot
+
+
 This qualifies pinned Notepad++ 8.8.8, using the existing x86 Wine 11.0 and ARM
 Wine 11.20/FEX 2610 targets. It does not establish general Windows application,
 GPU, CFW, or ARM hardware compatibility. The recipe files are shared with the
