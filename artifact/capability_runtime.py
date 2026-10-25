@@ -104,8 +104,12 @@ def x11():
 def native_policy(release, capabilities, paths, root=None):
     snapshot = native_snapshot(release)
     context = snapshot['policy'].get('Context', {})
-    if any(k.startswith(('LD_', 'WINE', 'XDG_')) or k in ('PYTHONPATH','PYTHONHOME','HOME') for k in snapshot['policy'].get('Environment',{})):
-        raise r.ReleaseError('native environment changes reserved runtime/state paths; reconcile through native controls')
+    defaults = snapshot.get('runtimeEnvironment', {})
+    for key,value in snapshot['policy'].get('Environment',{}).items():
+        if key in ('XDG_DATA_DIRS','XDG_CONFIG_DIRS') and key in defaults and value == defaults[key]:
+            continue  # Resource lookup from the pinned runtime, not a state override.
+        if key.startswith(('LD_', 'WINE', 'XDG_')) or key in ('PYTHONPATH','PYTHONHOME','HOME'):
+            raise r.ReleaseError('native environment changes reserved runtime/state paths: '+key+'; reconcile through native controls')
     shared = set(context.get('shared', '').split(';'))
     devices = set(context.get('devices', '').split(';')) - {''}
     sockets = set(context.get('sockets', '').split(';')) - {''}

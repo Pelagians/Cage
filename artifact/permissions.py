@@ -65,7 +65,11 @@ def native_snapshot(release):
                          '--command=/usr/bin/cat',ref,'/app/share/cage/'+app+'/desktop.json'])
     if json.loads(metadata) != plan:raise r.ReleaseError('installed native plan differs from signed release')
     snapshot = policy_snapshot(text)
-    return {'policy':snapshot, 'digest':policy_digest(snapshot), 'ref':ref,'scope':'new-native-launch-snapshot'}
+    # Only metadata from the already verified runtime commit supplies defaults.
+    location = Path(_command(['flatpak','info','--user','--show-location',runtime]))
+    if location.name != target['platformCommit']:raise r.ReleaseError('native runtime metadata is not the pinned deployment')
+    defaults = policy_snapshot(r.small(r.regular(location/'metadata')).decode('utf-8')).get('Environment',{})
+    return {'runtimeEnvironment':defaults, 'policy':snapshot, 'digest':policy_digest(snapshot), 'ref':ref,'scope':'new-native-launch-snapshot'}
 
 
 def _locations():

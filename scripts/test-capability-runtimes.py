@@ -217,6 +217,7 @@ def run_case(release,record,work,paths,case,port,abstract,device,host_process,sh
     assert b'cage-parity-host-control' in Path(f'/proc/{host_process.pid}/cmdline').read_bytes()
     assert shm.read_bytes()==b'cage-probe-canary\n','host shared-memory control unavailable'
     active=configure(app,kind,paths,case!='isolated',case=='rebound',evidence)
+    if kind=='flatpak':write(evidence/'native-policy.json',permissions.native_snapshot(release))
     linux_path,win_path,ready,ack=config(app,kind,paths,active,case,port,abstract,device,host_process,shm,evidence)
     observer={'window':False,'transition':False};errors=[];stop=threading.Event()
     def observe():
@@ -237,8 +238,12 @@ def run_case(release,record,work,paths,case,port,abstract,device,host_process,sh
         # Exact real exporter outputs; no mock policies, substituted runtime,
         # unsandboxed application path or prequalified signature is involved.
         with (evidence/'launch.log').open('w') as output:
-            saved=releases.command
+            saved=releases.command;commands=[]
             def captured(args,**kwargs):
+                commands.append(list(map(str,args)));write(evidence/'commands.json',commands)
+                for argument in args:
+                    if str(argument).startswith('--security-opt=seccomp='):
+                        shutil.copyfile(str(argument).split('=',2)[2],evidence/'seccomp.json')
                 # Capture child output while retaining command/preflight behavior.
                 if kwargs.get('capture_output'):return saved(args,**kwargs)
                 return saved(args,stdout=output,stderr=subprocess.STDOUT,timeout=240,**kwargs)

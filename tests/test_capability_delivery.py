@@ -188,6 +188,49 @@ class CapabilityDeliveryTests(unittest.TestCase):
         bad=self.root/'bad';bad.mkdir()
         with self.assertRaisesRegex(ValueError,'metadata'):materialize(source,bad,manifest,namespace_root='/app')
 
+    def test_trusted_extractor_accepts_version_exit_one_but_rejects_errors(self):
+        import subprocess
+        source=self.root/'fixture.AppImage';source.write_bytes(b'not executed')
+        rel={'directory':str(self.root),'digest':'f'*64,
+             'entry':{'plan':{'desktop':{'id':self.app}},'package':{'name':source.name,'sha256':r.hash_file(source)}}}
+        for code,version,accepted in ((1,'4.6.1',True),(2,'4.6.1',False),(0,'4.6.0',False)):
+            with self.subTest(code=code,version=version), patch.object(managed_launch,'_tool',return_value='/usr/bin/unsquashfs'), \
+                 patch.object(managed_launch.subprocess,'run',return_value=subprocess.CompletedProcess([],code,'unsquashfs version '+version,'')), \
+                 patch.object(managed_launch,'squash_offset',side_effect=ValueError('reached archive validation')) as offset:
+                if accepted:
+                    with self.assertRaisesRegex(ValueError,'reached archive validation'):managed_launch.import_appimage(rel,self.root/'cache')
+                    offset.assert_called_once_with(source)
+                else:
+                    with self.assertRaisesRegex(r.ReleaseError,'trusted extraction'):managed_launch.import_appimage(rel,self.root/'cache')
+                    offset.assert_not_called()
+
+    def test_native_defaults_are_read_from_the_exact_runtime_deployment(self):
+        p=plan('flatpak');p['target'].update(platform='org.freedesktop.Platform',branch='26.08',platformCommit='f'*64)
+        rel={'entry':{'plan':p,'flatpakCommit':'a'*64}}
+        deployment=self.root/('f'*64);deployment.mkdir()
+        (deployment/'metadata').write_text('[Environment]\nXDG_DATA_DIRS=/app/share:/usr/share\n')
+        def command(args):
+            if '--show-location' in args:return str(deployment)
+            if '--show-commit' in args:return 'a'*64 if args[-1].startswith('app/') else 'f'*64
+            return '[Context]\nshared=network;\n' if args[-1]=='/.flatpak-info' else json.dumps(p)
+        with patch.object(permissions,'_command',side_effect=command):
+            self.assertEqual(permissions.native_snapshot(rel)['runtimeEnvironment']['XDG_DATA_DIRS'],'/app/share:/usr/share')
+            deployment=deployment.with_name('e'*64)
+            with self.assertRaisesRegex(r.ReleaseError,'pinned deployment'):permissions.native_snapshot(rel)
+
+    def test_native_resource_defaults_are_pinned_and_state_overrides_still_reject(self):
+        raw=recipe();raw['permissions']['requests']=[r for r in raw['permissions']['requests'] if r['kind']!='filesystem']
+        capabilities=compile_capabilities(raw,'flatpak')
+        defaults={'XDG_DATA_DIRS':'/app/share:/usr/share:/usr/share/runtime/share'}
+        snapshot={'policy':{'Context':{'shared':'network;','devices':'all;','sockets':'x11;'},
+                            'Environment':dict(defaults)},'runtimeEnvironment':defaults,'digest':'f'*64}
+        with patch.object(host,'native_snapshot',return_value=snapshot):
+            self.assertEqual(host.native_policy({},capabilities,[])['digest'],'f'*64)
+            snapshot['policy']['Environment']['XDG_DATA_DIRS']='/var/data/untrusted'
+            with self.assertRaisesRegex(r.ReleaseError,'XDG_DATA_DIRS'):host.native_policy({},capabilities,[])
+            snapshot['policy']['Environment']=dict(defaults,HOME='/var/data')
+            with self.assertRaisesRegex(r.ReleaseError,'HOME'):host.native_policy({},capabilities,[])
+
     def test_oci_uses_rootless_private_baseline_without_privileged_fallback(self):
         p=plan('oci');p['target']['platformCommit']='f'*64
         rel={'manifest':{'application':{'id':self.app}},'entry':{'plan':p,'format':'oci','imageId':'sha256:'+'a'*64}}
@@ -201,7 +244,7 @@ class CapabilityDeliveryTests(unittest.TestCase):
         self.assertIn('--cap-drop=ALL',args);self.assertIn('--security-opt=no-new-privileges',args)
         self.assertIn('--ipc=private',args);self.assertIn('--network=host',args)
         self.assertIn('--mount=type=bind,source=/dev,destination=/dev',args)
-        self.assertIn('--tmpfs=/dev/shm:rw,nosuid,nodev',args)
+        self.assertIn('--tmpfs=/dev/shm:rw,nosuid,nodev,notmpcopyup',args)
         self.assertFalse(any('label=disable' in a or a=='--privileged' or a==':z' for a in args))
         info['host']['security']['rootless']=False
         Result.stdout=json.dumps(info)

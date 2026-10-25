@@ -74,9 +74,9 @@ def import_appimage(release, folder):
         return appdir
     if destination.exists():raise r.ReleaseError('interrupted AppImage import retained; move it aside before retrying')
     extractor=_tool('unsquashfs')
-    version=subprocess.run([extractor,'-version'],capture_output=True,text=True,check=True)
+    version=subprocess.run([extractor,'-version'],capture_output=True,text=True,check=False)
     match=re.search(r'unsquashfs version (\d+)\.(\d+)(?:\.(\d+))?',version.stdout+version.stderr)
-    if not match or tuple(int(v or 0) for v in match.groups()) < (4,6,1):
+    if version.returncode not in (0,1) or not match or tuple(int(v or 0) for v in match.groups()) < (4,6,1):
         raise r.ReleaseError('trusted extraction requires host squashfs-tools >= 4.6.1')
     offset=squash_offset(source)
     destination.mkdir(parents=True,mode=0o700)
@@ -200,7 +200,7 @@ def container_args(record, release, effective, files=(), action=None, *, seccomp
           '--mount=type=bind,source='+str(state)+',destination=/var/lib/cage/state',
           '-e','PUID='+str(os.getuid()),'-e','PGID='+str(os.getgid()),'-e','CAGE_SESSION_MODE=desktop']
     if policy.all_devices(effective['capabilities']):
-        args+=['--mount=type=bind,source=/dev,destination=/dev','--tmpfs=/dev/shm:rw,nosuid,nodev']
+        args+=['--mount=type=bind,source=/dev,destination=/dev','--tmpfs=/dev/shm:rw,nosuid,nodev,notmpcopyup']
         if not Path('/run/udev').is_dir():raise r.ReleaseError('required host udev enumeration metadata unavailable')
         args+=['--mount=type=bind,source=/run/udev,destination=/run/udev,ro=true']
     for entry in effective['paths']:
