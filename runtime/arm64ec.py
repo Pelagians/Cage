@@ -15,6 +15,7 @@ import urllib.request
 from runtime.desktop_launch import DesktopError, inventory_tree, verify_inventory, copy_file
 
 LOCK = Path(__file__).with_name("wine-arm64ec-11.20-fex-2610.json")
+NATIVE_EXIT_VENDOR = Path(__file__).parent / 'vendor/wine-11.20-exit1'
 
 
 def runtime_target():
@@ -24,14 +25,14 @@ def runtime_target():
 def existing_runtime_target(target):
     """Read/launch old sealed bundles without changing their runtime identity.
 
-    Producers still use runtime_target(). Only the exact previously shipped
-    pin is accepted here; this does not permit cross-runtime prefix migration.
+    Producers still use runtime_target(). Only exact previously shipped
+    pins are accepted here; this does not permit cross-runtime prefix migration.
     """
     if target == runtime_target():
         return target
-    previous = json.loads((LOCK.parent / 'legacy/wine-arm64ec-11.20-fex-2610.json').read_text())
-    if target == previous:
-        return target
+    for name in ('wine-arm64ec-11.20-fex-2610.json', 'wine-arm64ec-11.20-fex-2610-cage1.json'):
+        previous = json.loads((LOCK.parent / 'legacy' / name).read_text())
+        if target == previous:return target
     raise DesktopError('unknown ARM64EC runtime identity; retained state was not changed')
 
 
@@ -76,6 +77,66 @@ def install_termination_guard(root):
     for original in (source, vendor / 'LICENSES.txt',
                      Path(__file__).parent / 'patches/fex-2610-process-termination.patch'):
         shutil.copyfile(original, notices / original.name)
+
+
+def _native_exit_source():
+    target = runtime_target()['nativeExit']
+    source = NATIVE_EXIT_VENDOR / 'source.json'
+    if sha256_file(source) != target['sourceSha256']:
+        raise DesktopError('Wine native exit source identity mismatch')
+    record = json.loads(source.read_text())
+    patch = Path(__file__).parent / 'patches/wine-11.20-native-exit-order.patch'
+    rpm = next(p for p in runtime_target()['packages'] if p['name'] == 'wine-core')
+    if (record['schemaVersion'] != 'cage.runtime-instruction-patch/v1' or record['id'] != target['id']
+            or record['source']['rpmSha256'] != rpm['sha256'] or sha256_file(patch) != record['patch']['sha256']):
+        raise DesktopError('Wine native exit source/patch identity mismatch')
+    return record, (source, NATIVE_EXIT_VENDOR / 'NOTICE.txt', patch)
+
+
+def _native_exit_payload(data, record):
+    elf = record['elf']
+    if len(data) != elf['size'] or hashlib.sha256(data).hexdigest() != elf['originalSha256']:
+        raise DesktopError('Wine native exit repair requires the exact pinned RPM ELF')
+    output = bytearray(data); end = 0
+    for edit in sorted(elf['edits'], key=lambda item: item['offset']):
+        offset = edit['offset']; before = bytes.fromhex(edit['before']); after = bytes.fromhex(edit['after'])
+        if (offset < end or not before or len(before) != len(after) or offset + len(before) > len(output)
+                or output[offset:offset + len(before)] != before):
+            raise DesktopError('Wine native exit instruction identity mismatch')
+        output[offset:offset + len(before)] = after; end = offset + len(before)
+    if hashlib.sha256(output).hexdigest() != elf['sha256']:
+        raise DesktopError('Wine native exit transformed ELF checksum mismatch')
+    return bytes(output)
+
+
+def native_exit_payload(data):
+    """Reproduce the source-equivalent instruction edit and derived build ID."""
+    record, _ = _native_exit_source()
+    return _native_exit_payload(data, record)
+
+
+def install_native_exit_order(root):
+    """Keep the Wine process socket open until kernel teardown, after libc exit."""
+    record, notices = _native_exit_source()
+    destination = Path(root) / record['elf']['path']
+    if destination.is_symlink() or not destination.is_file() or destination.stat().st_size != record['elf']['size']:
+        raise DesktopError('Wine native exit repair requires the exact pinned RPM ELF')
+    data = _native_exit_payload(destination.read_bytes(), record)
+    temporary = destination.with_name(destination.name + '.cage-new')
+    created = False
+    try:
+        with temporary.open('xb') as output:
+            created = True
+            output.write(data)
+        temporary.chmod(stat.S_IMODE(destination.stat().st_mode))
+        os.replace(temporary, destination)
+    finally:
+        if created:temporary.unlink(missing_ok=True)
+    directory = Path(root) / 'share/licenses/cage-wine-11.20-exit1'
+    directory.mkdir(parents=True, exist_ok=True); directory.chmod(0o755)
+    for original in notices:
+        copied = directory / original.name
+        shutil.copyfile(original, copied); copied.chmod(0o644)
 
 
 def acquire_packages(cache):
@@ -194,7 +255,7 @@ def _materialize_payload(cache):
     cache = Path(cache).resolve()
     packages = acquire_packages(cache / "packages")
     # Retain the original immutable cache: old export contexts may still use it.
-    payload, receipt = cache / "files-fex-cage1", cache / "inventory-fex-cage1.json"
+    payload, receipt = cache / "files-fex-cage1-wine-exit1", cache / "inventory-fex-cage1-wine-exit1.json"
     if payload.exists():
         inventory = json.loads(receipt.read_text())
         if digest_json(inventory) != runtime_target()["payloadDigest"]:
@@ -232,6 +293,7 @@ def _materialize_payload(cache):
         if digest_json(inventory_tree(root)) != runtime_target()['rpmPayloadDigest']:
             raise DesktopError('extracted ARM runtime differs from pinned RPM payload')
         install_termination_guard(root)
+        install_native_exit_order(root)
         inventory = inventory_tree(root)
         if digest_json(inventory) != runtime_target()["payloadDigest"]:
             raise DesktopError("extracted ARM runtime payload differs from the pinned inventory")
@@ -247,6 +309,7 @@ def install_container_runtime(cache):
     packages = acquire_packages(cache)
     subprocess.run(["dnf", "-y", "--setopt=install_weak_deps=False", "install", *map(str, packages)], check=True)
     install_termination_guard('/usr')
+    install_native_exit_order('/usr')
 
 
 def verify_container_runtime(engine, image, *, execution_target=None):

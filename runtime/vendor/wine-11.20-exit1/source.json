@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "cage.runtime-instruction-patch/v1",
+  "id": "wine-11.20-exit1",
+  "source": {
+    "url": "https://github.com/wine-mirror/wine",
+    "commit": "7298a818b79446bae153b8d5aa27235ab3703bf9",
+    "version": "wine-11.20",
+    "provider": "https://github.com/lacamar/wine-arm64ec-rpm/tree/9d4dab54af9ae2b80977cf865743bc50167d8d04",
+    "rpmSha256": "980a27a056e39a8c46bd07c8b47df2bf2e7e13b63acaf5e75fa1e22226325f6c"
+  },
+  "patch": {
+    "path": "../../patches/wine-11.20-native-exit-order.patch",
+    "sha256": "c0a553805cad4ac0ccc05313d0bce2a2664eb9f9c34b6cbd574b8b05d44a807f"
+  },
+  "elf": {
+    "path": "lib64/wine-wow64/wine/aarch64-unix/ntdll.so",
+    "size": 539488,
+    "originalSha256": "efacecc5569c42c90cd38a1a3e6930e0407fb2f95be88843b60153dde767e222",
+    "sha256": "8da1b9995537ee45f1e571ec6decf978c632dfa0bb4e72c669215089d035f4b1",
+    "edits": [
+      {
+        "offset": 197764,
+        "before": "f75bff97",
+        "after": "1f2003d5",
+        "meaning": "process_exit_wrapper: bl close@plt -> nop; exit(status) remains"
+      },
+      {
+        "offset": 472,
+        "before": "f9e82861008c202d1bdbf0c53e8e5427c419e3c6",
+        "after": "d0c5f47a6b09a41041833ff915194d5854f285fc",
+        "meaning": "new GNU build ID: SHA-1 of transformed ELF with this note zeroed"
+      }
+    ]
+  }
+}

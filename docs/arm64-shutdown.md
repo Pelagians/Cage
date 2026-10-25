@@ -2,8 +2,44 @@
 
 The shared ARM runtime includes `fex-2610-cage1`, a small source patch to FEX
 2610's ARM64EC termination callback. Flatpak, AppImage and native containers
-consume the same checked DLL. Wine, the FEX WoW64 module, application archives,
+consume the same checked DLL. The current target also includes Wine's native
+exit-order repair described below. FEX's WoW64 module, application archives,
 CFW and the x86_64 runtime retain their existing implementations.
+
+## Native exit ordering
+
+The `wine-11.20-exit1` target retains the process socket until kernel descriptor
+teardown. Wine 11.20 previously closed it immediately before `exit(status)`.
+That EOF makes wineserver remove the final Windows thread and begin its bounded
+Unix-process death timer, while native libc finalizers can still be running.
+[The failed guarded OCI trace](https://github.com/Pelagians/Cage/actions/runs/40221893175)
+records the application's socket close followed about 0.485 seconds later by
+the identified Wine server's `kill(application, SIGKILL)`. The application was
+reported killed rather than returning its intended status.
+
+The source change removes the premature close. Native `exit(status)` and its
+finalizers still run; kernel exit closes the socket after native cleanup. The
+Wine-server timer and Cage's 120-second application deadline remain. A native
+cleanup deadlock therefore still fails qualification instead of being hidden
+by a forced exit or a normalized status.
+
+`runtime/vendor/wine-11.20-exit1/source.json` binds the upstream Wine commit,
+provider RPM checksum, source patch, complete original/derived ELF hashes and
+two exact edits: one AArch64 call becomes a NOP, and the derived ELF gets its
+own GNU build ID. This is a reproducible instruction-level application of the
+source change, not a claim to have rebuilt Wine. Unknown input bytes are refused;
+atomic replacement retains any hardlinked original. Source and notices ship
+with all three formats. To reproduce from the checked original RPM module:
+
+```sh
+python scripts/reproduce-wine-exit-order.py original-ntdll.so new-ntdll.so
+```
+
+The new identity is `wine-arm64ec-11.20-exit1-fex-2610-cage1-aarch64`. Both
+previous exact targets remain available for sealed original-runtime recovery.
+New payload caches have separate names. Qualification of this target requires
+its own real exit, idle, document/settings and retained-generation checks;
+earlier `cage1` results are not relabelled as evidence for `exit1`.
 
 ## Failure and repair
 

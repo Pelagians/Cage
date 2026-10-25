@@ -120,8 +120,10 @@ python scripts/prepare-runtime-migration-poc.py shared-recipe.json \
 
 Build/export that recipe normally and qualify each exact pair. No new Wine or
 CFW payload is downloaded at application launch, and no existing package or
-prefix is patched in place. The guarded ARM payload is the existing pinned
-`wine-arm64ec-11.20-fex-2610-cage1-aarch64` runtime.
+prefix is patched in place. The current repaired ARM target is
+`wine-arm64ec-11.20-exit1-fex-2610-cage1-aarch64`; it combines the translator
+guard with [native process-exit ordering](arm64-shutdown.md#native-exit-ordering).
+Earlier original and `cage1` targets retain their own exact recovery identities.
 
 The operation first checks the previous generation for an exact repair rule.
 If none matches, it can repair the active original generation after an already

@@ -88,14 +88,17 @@ def capture(record_path, executable, destination):
                 with target.open('rb') as source:digest = hashlib.file_digest(source, 'sha256').hexdigest()
                 libraries.append({'path': path, 'sha256': digest})
         symbols.mkdir(exist_ok=True)
-        with destination.with_name(destination.name + '-profile.log').open('w') as output:
-            subprocess.run([perf, 'script', '-i', str(data), '--symfs', str(symbols), '--max-stack', '64'],
-                           stdout=output, stderr=subprocess.STDOUT, timeout=30, check=True)
+        # perf creates a root-owned 0600 file. Return ownership to the proof's
+        # original user so the unprivileged bounded collector can retain it.
+        os.chown(data, record['ownerUid'], -1)
         destination.with_name(destination.name + '-profile.json').write_text(json.dumps({
             'schemaVersion': 'cage.shutdown-profile/v1', 'diagnosticOnly': True, 'observerChangesTiming': True,
             'pid': app['hostPid'], 'startTime': app['startTime'], 'exitCode': outcome['exitCode'],
             'event': 'cpu-clock:u', 'frequencyHz': 99, 'registers': 'ordinary AArch64; no extended SVE registers', 'symbols': libraries,
             'skippedSymbols': skipped, 'bytes': data.stat().st_size}, indent=2) + '\n')
+        with destination.with_name(destination.name + '-profile.log').open('w') as output:
+            subprocess.run([perf, 'script', '-i', str(data), '--symfs', str(symbols), '--max-stack', '64'],
+                           stdout=output, stderr=subprocess.STDOUT, timeout=30, check=True)
     finally:
         for child in children:
             if child.poll() is None:child.send_signal(signal.SIGINT); child.wait(timeout=10)
