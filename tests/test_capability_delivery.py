@@ -260,6 +260,18 @@ class CapabilityDeliveryTests(unittest.TestCase):
             self.assertEqual(desktop_integration.install(rel,cache)['status'],'conflict')
             self.assertTrue(target.read_text().endswith('# user edit\n'))
 
+    def test_native_broader_folder_union_refuses_without_rewriting_it(self):
+        raw=recipe();request=next(x for x in raw['permissions']['requests'] if x['kind']=='filesystem')
+        granted=self.root/'granted';extra=self.root/'independent';granted.mkdir();extra.mkdir()
+        request['location']={'base':'absolute','path':str(granted)}
+        capabilities=compile_capabilities(raw,'flatpak');paths=host.resolve_files(capabilities,self.app)
+        snapshot={'policy':{'Context':{'filesystems':str(granted)+':rw;'+str(extra)+':rw;',
+                                    'shared':'network;','devices':'all;','sockets':'x11;'}},'digest':'f'*64}
+        original=snapshot['policy']['Context']['filesystems']
+        with patch.object(host,'native_snapshot',return_value=snapshot):
+            with self.assertRaisesRegex(r.ReleaseError,'union exceeds'):host.native_policy({},capabilities,paths)
+        self.assertEqual(snapshot['policy']['Context']['filesystems'],original)
+
     def test_import_rejects_non_type2_without_executing(self):
         package=self.root/'bad.AppImage';package.write_bytes(b'#!/bin/sh\nexit 100\n')
         with self.assertRaisesRegex(r.ReleaseError,'type-2'):managed_launch.squash_offset(package)

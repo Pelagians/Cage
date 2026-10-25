@@ -128,6 +128,8 @@ def native_policy(release, capabilities, paths, root=None):
         path = _native_path(token)
         if path is None or any(overlaps(path, p) for p in protected_paths(capabilities['applicationId'], root)):
             raise r.ReleaseError('native folder grant exposes protected/unsupported scope; review native permissions')
+        if not any(entry['intentGranted'] and (path.resolve()==Path(entry['host']) or Path(entry['host']) in path.resolve().parents) for entry in paths):
+            raise r.ReleaseError('native filesystem union exceeds the resolved v1 contract; retain native grants and expand/rebind the reviewed recipe before qualified launch')
         if path.absolute()!=path.resolve():raise r.ReleaseError('native folder alias requires an explicit canonical binding before v1 launch')
         if path.is_dir():
             info=path.stat()
