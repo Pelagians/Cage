@@ -9,3 +9,7 @@ selected by production build/export commands.
 same verified application seed and runtime as a managed baseline. This proves
 migration from an actual old launcher and old AppImage installation receipt,
 rather than merely editing a modern prefix's state marker.
+
+For AppImages the current private-runtime bootstrap and pinned tools are added
+beside these frozen files. The native transport matches the managed baseline;
+the historical lifecycle and installation helpers remain byte-for-byte intact.

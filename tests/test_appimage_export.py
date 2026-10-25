@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import importlib.util
+import contextlib
+import hashlib
+import io
 import json
 import os
+import runpy
 import shutil
 from pathlib import Path
 import subprocess
@@ -30,6 +34,38 @@ with patch.dict(sys.modules, {'desktop_launch': desktop_launch}):
 
 
 class AppImageTests(unittest.TestCase):
+    def test_legacy_fixture_retains_old_lifecycle_with_current_private_transport(self):
+        prepare = runpy.run_path(str(ROOT / 'scripts/prepare-legacy-poc.py'))['main']
+        fixture = ROOT / 'tests/fixtures/legacy-desktop/runtime'
+        historical = {name: (fixture / name).read_bytes()
+                      for name in ('desktop_launch.py', 'appimage_launch.py')}
+        transport = (ROOT / 'runtime/appimage_runtime.py').read_bytes()
+        with tempfile.TemporaryDirectory() as td:
+            bundle = bundle_at(td)
+            def export(source, **options):
+                from artifact import appimage
+                runtime = appimage.ROOT / 'runtime'
+                for name, content in historical.items():
+                    self.assertEqual((runtime / name).read_bytes(), content)
+                self.assertEqual((runtime / 'appimage_runtime.py').read_bytes(), transport)
+                plan = appimage.create_appimage_export_plan(source, allow_host_access=True)
+                self.assertEqual(plan['state']['schemaVersion'], 'cage.desktop-state/v0')
+                self.assertNotIn('managerVersion', plan['state'])
+                self.assertEqual(plan['state']['privateRuntimeSha256'], hashlib.sha256(transport).hexdigest())
+                self.assertEqual(plan['state']['integrationSha256'], hashlib.sha256(historical['appimage_launch.py']).hexdigest())
+                self.assertIn('usr/lib/cage-native', appimage.apprun_script(plan))
+                return {'plan': plan}
+            output = io.StringIO()
+            with patch.object(sys, 'argv', ['prepare-legacy-poc.py', 'appimage', str(bundle),
+                                          '--output', str(Path(td) / 'legacy.AppImage')]), \
+                    patch('artifact.appimage.export_appimage', side_effect=export) as producer, \
+                    contextlib.redirect_stdout(output):
+                prepare()
+            producer.assert_called_once()
+            result = json.loads(output.getvalue())
+            self.assertEqual(result['legacyTestFixture']['launcherSha256'],
+                             hashlib.sha256(historical['desktop_launch.py']).hexdigest())
+
     def test_absolute_platform_data_link_uses_pinned_tree(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / 'platform'
