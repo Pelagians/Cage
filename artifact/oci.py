@@ -59,7 +59,7 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str =
     if native:
         from runtime.arm64ec import native_launch_script
         native_launch_script(bundle, [])  # Verify the same seed/runtime seal.
-    managed_desktop = (manifest.get('desktop', {}).get('updates') and runtime.get('launcher') == 'wine'
+    managed_desktop = ((manifest.get('desktop', {}).get('updates') or manifest.get('schemaVersion') == 'cage.app/v1') and runtime.get('launcher') == 'wine'
                        and not runtime.get('runnerUrl') and 'desktop' in graph.get('graphics', {}).get('supportedModes', []))
     allowed = {'headless', 'desktop'} if native else {'headless', 'selkies'} | ({'desktop'} if managed_desktop else set())
     if graphics not in allowed:
@@ -90,9 +90,11 @@ def create_oci_export_plan(bundle_path: Path | str, *, tag: str, graphics: str =
         image_graphics=graphics,
     )
     managed_state = None
-    if not native and manifest.get('desktop', {}).get('updates'):
+    if not native and (manifest.get('desktop', {}).get('updates') or manifest.get('schemaVersion') == 'cage.app/v1'):
         from runtime.container_state import managed_plan
         managed_state = managed_plan(bundle, derived_image or base_image)
+        if managed_state['state'].get('managerVersion') == 2 and graphics != 'desktop':
+            raise OCIExportError('managed v1 OCI requires the qualified local desktop path')
     labels = _oci_labels(application, runtime, base_image)
     labels['io.cage.graphics'] = graphics
     if derived_image:
@@ -179,6 +181,8 @@ def prepare_oci_build_context(
         shutil.copyfile(desktop_launch.__file__, lifecycle / 'desktop_launch.py')
         shutil.copyfile(container_state.__file__, lifecycle / 'container_state.py')
         shutil.copyfile(Path(container_state.__file__).with_name('container_init.py'), lifecycle / 'container_init.py')
+        if plan['managedState']['state'].get('managerVersion') == 2:
+            shutil.copyfile(Path(container_state.__file__).with_name('capability_guard.py'), lifecycle / 'capability_guard.py')
         _write_json(lifecycle / 'plan.json', plan['managedState'])
         legacy = _launcher_script()
         # Preserve all existing image launch setup, skip its first-use copy only.

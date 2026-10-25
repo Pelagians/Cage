@@ -20,11 +20,18 @@ ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox
 
 def create_flatpak_export_plan(bundle):
     plan = create_desktop_export_plan(bundle)
+    if plan.get('recipe', {}).get('schemaVersion') == 'cage.app/v1':
+        from core.capabilities import compile_capabilities, flatpak_permissions
+        capabilities = compile_capabilities(plan['recipe'], 'flatpak')
+        plan['capabilities'] = capabilities
+        permissions = flatpak_permissions(capabilities)
+    else:
+        permissions = ["--unshare=network", "--share=ipc", "--socket=x11",
+                       "--filesystem=xdg-documents/" + plan["desktop"]["documentsDirectory"] + ":create"]
     return {**plan, "format": "flatpak", "branch": "stable",
             "state": {**plan["state"], "packagerSha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()},
             "layout": {"runtime": "/app"},
-            "permissions": ["--unshare=network", "--share=ipc", "--socket=x11",
-                            "--filesystem=xdg-documents/" + plan["desktop"]["documentsDirectory"] + ":create"],
+            "permissions": permissions,
             "prerequisites": ["Flatpak", plan["target"]["platform"] + "//" + plan["target"]["branch"]],
             "distribution": "local proof of concept; unsigned; no publication performed"}
 
@@ -66,6 +73,9 @@ def prepare_flatpak_context(bundle, plan, context, *, store):
     helper = files / "libexec/cage-desktop-launch.py"
     helper.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(desktop_launch.__file__, helper)
+    if plan.get('state', {}).get('managerVersion') == 2:
+        from runtime import capability_guard
+        shutil.copyfile(capability_guard.__file__, helper.parent/'capability_guard.py')
     if hashlib.sha256(helper.read_bytes()).hexdigest() != plan["state"]["launcherSha256"]:
         raise DesktopError("lifecycle helper changed after export planning")
     wrapper = files / "bin/cage-desktop-launch"

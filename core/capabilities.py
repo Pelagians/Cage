@@ -243,7 +243,7 @@ def compile_capabilities(manifest, target, *, decisions=None, bindings=None):
                 supported = path != PurePosixPath('/') and not any(path == PurePosixPath(x) or PurePosixPath(x) in path.parents for x in ('/dev', '/proc', '/sys', '/run', '/app', '/usr', '/etc', '/var', '/opt'))
             if loc['base'] in {'home', 'xdg-data', 'xdg-cache', 'xdg-config'} and not loc.get('path'):
                 supported = False  # Would include protected host policy/installation stores.
-            if ':' in loc.get('path', ''):
+            if any(c in loc.get('path', '') for c in ':;,\\'):
                 supported = False  # Native Flatpak filesystem suffixes cannot represent this safely.
         supported |= kind == 'device-class' and request['class'] == 'all' and (request['hotplug'] == 'startup-only' or network)
         grant, fallback = copy.deepcopy(request), None

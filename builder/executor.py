@@ -691,7 +691,7 @@ def execute_inside_container(
         _verify_root_build_capability(engine, img)
 
     from artifact.linux_state import declared_outputs
-    managed_wine = (manifest.desktop.get('updates') and manifest.runtime.provider in {'wine', 'staging'}
+    managed_wine = ((manifest.desktop.get('updates') or manifest.schema_version == 'cage.app/v1') and manifest.runtime.provider in {'wine', 'staging'}
                     and not manifest.runtime.runner)
     if declared_outputs(bundle_path) or manifest.runtime.provider == "wine-arm64ec" or managed_wine:
         img = _immutable_image_ref(engine, img)

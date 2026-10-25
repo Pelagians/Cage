@@ -177,6 +177,25 @@ def digest_json(value):
 
 
 def plan_identity(plan):
+    if plan.get('state', {}).get('managerVersion') == 2:
+        target = json.loads(json.dumps(plan['target']))
+        if isinstance(target.get('runtime'), dict):
+            target['runtime'].pop('network', None)
+        # Compatibility deliberately excludes policy/source-manifest digests,
+        # deployment/cache paths and adapter implementation hashes. Exact source
+        # bytes remain verified by the signed release and runtime closure seal.
+        inputs = {'applicationId': plan['desktop']['id'], 'application': plan.get('application'),
+                  'seedDigest': plan['seedDigest'], 'target': target,
+                  'launch': plan['launch'], 'environment': plan.get('environment', {}),
+                  'compatibility': plan.get('recipe',{}).get('compatibility',{}),
+                  'updatePolicy': plan['desktop'].get('updates'),
+                  'lifecycleABI': 'cage.desktop-generations/v1',
+                  'closure': plan.get('runtimeClosureDigest'),
+                  'materializerABI': plan.get('materializerABI')}
+        return {'schemaVersion': 'cage.desktop-state/v2', 'seedDigest': plan['seedDigest'],
+                'runtimeDigest': digest_json({'target': target, 'closure': inputs['closure'],
+                                              'materializerABI': inputs['materializerABI']}),
+                'contractDigest': digest_json(inputs)}
     identity = {"schemaVersion": "cage.desktop-state/v0", "seedDigest": plan["seedDigest"],
                 "runtimeDigest": digest_json(plan["target"])}
     if plan.get("state", {}).get("managerVersion") == 1:
@@ -472,6 +491,9 @@ def runtime_migration(previous, identity, plan, *, repair=False):
 
 def validate_runtime_update(previous_plan, plan, *, repair=False):
     """Package-side preflight before deployment or ledger changes."""
+    if plan.get('state', {}).get('managerVersion') == 2 or previous_plan.get('state', {}).get('managerVersion') == 2:
+        if not repair and plan_identity(previous_plan) == plan_identity(plan):return None
+        raise DesktopError('v2 state-affecting transition lacks a qualified migration; all prefixes and recovery generations retained')
     old_policy = previous_plan['desktop']['updates']
     if old_policy['profile'] != plan['desktop']['updates']['profile']:
         raise DesktopError('runtime or migration profile changed; no deployment changed')
@@ -689,6 +711,8 @@ def prepare_generation(seed, inventory, root, identity, plan, action):
         initialize_state(seed, inventory, root, identity)
         record = _read_generations(root)
     current = _generation(record, record["active"])
+    if identity.get('schemaVersion') == 'cage.desktop-state/v2' and current['identity'] != identity:
+        raise DesktopError('v2 state-affecting transition is unqualified; all prefixes and recovery generations retained')
     transition = runtime_migration(current, identity, plan) if action in {'update', 'migrate'} else None
     repair_source = None
     if action == 'rollback-repair':
@@ -715,6 +739,8 @@ def prepare_generation(seed, inventory, root, identity, plan, action):
             current.update(profile=policy["profile"], application=plan.get("application", {}))
             _write_state_record(root / "state.json", record)
         return _real_path(root, current["prefix"]), None
+    if identity.get('schemaVersion') == 'cage.desktop-state/v2':
+        raise DesktopError('v2 state-affecting transition is unqualified; all prefixes and recovery generations retained')
     if action not in {"update", "rollback", "rollback-repair"}:
         raise DesktopError("different seed/runtime; close the app and use --cage-update, or restore the previous package and use --cage-rollback")
     if not policy:
@@ -828,6 +854,11 @@ def lifecycle_lock(root):
 def launch(metadata_path, files):
     metadata_path = Path(metadata_path)
     plan = json.loads(metadata_path.read_text())
+    if plan.get('state', {}).get('managerVersion') == 2:
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from capability_guard import check
+        check(plan)
     page_sizes = plan["target"].get("translation", {}).get("hostPageSizes")
     if page_sizes and os.sysconf("SC_PAGE_SIZE") not in page_sizes:
         raise DesktopError("Wine/FEX runtime does not qualify this kernel page size")
@@ -880,7 +911,7 @@ def launch(metadata_path, files):
 
 def _launch_locked(metadata_path, files, plan, inventory, state_root, identity, seed, action, lock_fd):
     runtime_root = Path(plan["layout"]["runtime"])
-    if plan.get("format") == "appimage":
+    if plan.get("format") == "appimage" and not plan.get('managedNamespace'):
         # AppImage mounts and extracted AppDirs relocate between launches.
         runtime_root = metadata_path.parents[3] / "wine"
     wine = str(runtime_root / plan["target"]["wine"])
@@ -894,7 +925,7 @@ def _launch_locked(metadata_path, files, plan, inventory, state_root, identity, 
         environment['FONTCONFIG_FILE'] = str(runtime_root / 'share/cage/fonts.conf')
         environment['FONTCONFIG_PATH'] = str(runtime_root / 'share/cage')
     if plan.get("format") == "appimage":
-        usr = metadata_path.parents[3]
+        usr = Path('/run/cage/native/usr') if plan.get('managedNamespace') else metadata_path.parents[3]
         if not plan['target'].get('privateRuntime'):
             environment["LD_LIBRARY_PATH"] = str(usr / "lib/cage-native")
         else:
@@ -922,6 +953,8 @@ def _launch_locked(metadata_path, files, plan, inventory, state_root, identity, 
     zdrive = prefix / "dosdevices/z:"
     if not zdrive.exists() and not zdrive.is_symlink():
         zdrive.symlink_to("/")
+    if plan.get('state', {}).get('managerVersion') == 2:
+        configure_managed_drives(prefix, environment)
     arguments = document_arguments(files)
     contract = plan["launch"]
     executable = windows_path(prefix, contract["entrypoint"])
@@ -936,6 +969,28 @@ def _launch_locked(metadata_path, files, plan, inventory, state_root, identity, 
     if pending is not None and result == 0:
         commit_generation(state_root, pending)
     return result
+
+
+def configure_managed_drives(prefix, environment):
+    """Aliases reflect current grants; actual namespace mounts enforce access."""
+    import re
+    drives = json.loads(environment.get('CAGE_WINE_DRIVES', '{}'))
+    if not isinstance(drives, dict) or any(not re.fullmatch('[A-BD-Y]', k) or not isinstance(v,str) or not v.startswith('/') for k,v in drives.items()):
+        raise DesktopError('invalid host-resolved Wine drive receipt')
+    marker = Path(prefix)/'.cage-capability-drives.json'
+    previous = json.loads(marker.read_text()) if marker.is_file() and not marker.is_symlink() else {}
+    if not isinstance(previous,dict) or any(not isinstance(k,str) or not re.fullmatch('[A-BD-Y]',k) or not isinstance(v,str) or not v.startswith('/') for k,v in previous.items()):
+        raise DesktopError('invalid retained Wine drive receipt; aliases retained')
+    directory = Path(prefix)/'dosdevices'
+    directory.mkdir(exist_ok=True)
+    for name in set(previous)|set(drives):
+        path = directory/(name.lower()+':')
+        if path.exists() or path.is_symlink():
+            if not path.is_symlink() or os.readlink(path) not in {previous.get(name),drives.get(name)}:
+                raise DesktopError('unowned Wine drive alias retained; reconcile before binding')
+            path.unlink()
+        if name in drives:path.symlink_to(drives[name])
+    _write_state_record(marker,drives)
 
 
 def assert_quiescent(root, server, environment):

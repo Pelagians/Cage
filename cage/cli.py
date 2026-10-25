@@ -38,6 +38,7 @@ from compat.corpus import load_default_corpus
 from compat.evidence import run_compat_test
 from compat.failure_analysis import FailureAnalysisError, analyze_failure_path
 from core.manifest import ManifestError, RuntimeSpec, load_manifest
+from core.capabilities import CapabilityError
 from core.sources import audit_manifest_sources, verify_manifest_sources
 from core.media import MediaStageError, stage_media
 from runtime.providers import list_providers, resolve_manifest_runtime, resolve_runtime
@@ -256,7 +257,7 @@ def cmd_build(args):
     binding = resolve_manifest_runtime(manifest)
     base_image = getattr(args, "runtime_image", None) or binding.oci_image or get_image_ref(
         manifest.runtime.provider, manifest.runtime.version)
-    if (manifest.desktop.get('updates') and manifest.runtime.provider in {'wine', 'staging'}
+    if ((manifest.desktop.get('updates') or manifest.schema_version=='cage.app/v1') and manifest.runtime.provider in {'wine', 'staging'}
             and not manifest.runtime.runner and not args.dry_run and not args.runtime_image):
         from builder.executor import _find_engine, _resolve_image_ref
         base_image = _resolve_image_ref(manifest, _find_engine(args.engine)) or base_image
@@ -408,7 +409,8 @@ def cmd_release(args):
                       'publisherKeySha256': value['manifest']['publisherKeySha256']}
         elif operation in ('install', 'update', 'rollback-repair'):
             result = deploy(args.release, args.key, args.format, action=operation, cache=args.cache_dir,
-                            files=args.files, engine=args.engine, state_dir=args.state_dir, exports_dir=args.exports_dir)
+                            files=args.files, engine=args.engine, state_dir=args.state_dir, exports_dir=args.exports_dir,
+                            accepted=args.accept_permissions, adopt=args.adopt_existing)
         else:
             result = operate(args.application, args.key, args.format, action=operation,
                              cache=args.cache_dir, files=getattr(args, 'files', ()))
@@ -417,6 +419,27 @@ def cmd_release(args):
 
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
         raise releases.ReleaseError(str(exc)) from exc
+
+
+def cmd_permissions(args):
+    from artifact import permissions
+    from core.capabilities import compile_capabilities
+    if args.permissions_command == 'plan':
+        result = compile_capabilities(load_manifest(Path(args.recipe)), args.format)
+    elif args.permissions_command == 'bind':
+        location = {'base':args.base}
+        if args.path is not None:location['path']=args.path
+        result = permissions.bind(args.application,args.format,args.request,location)
+    elif args.permissions_command == 'accept':
+        from artifact.release_v2 import _accept, _save_acceptance
+        _, release, _ = permissions.installed(args.application,args.format)
+        contract = _accept(release,args.contract)
+        _save_acceptance(release,contract)
+        result = {'acceptedContractDigest':contract,'applicationId':args.application,'nativeOverridesWritten':False}
+    else:
+        result = permissions.inspect(args.application,args.format)
+    print(json.dumps(result,indent=2,sort_keys=True))
+    return 0
 
 
 def cmd_recover_flatpak(args):
@@ -434,6 +457,9 @@ def cmd_migrate(args):
         return 0
     if args.cache_dir or args.state_dir:
         raise DesktopError('AppImage migration uses its installed application state and package directory')
+    receipt=Path(str(args.package)+'.json')
+    if receipt.is_file() and json.loads(receipt.read_text()).get('plan',{}).get('state',{}).get('managerVersion')==2:
+        raise DesktopError('v1 AppImage state transitions require separately qualified managed release support; no artifact code executed')
     import subprocess
     return subprocess.run([str(Path(args.package).absolute()), '--cage-migrate', '--previous-package',
                            str(Path(args.previous_package).absolute()), '--', *args.files]).returncode
@@ -819,9 +845,25 @@ def build_parser():
             rp.add_argument('--engine', default='podman')
             rp.add_argument('--state-dir', help='OCI persistent state parent, fixed at installation')
             rp.add_argument('--exports-dir', help='OCI document directory, fixed at installation')
+            rp.add_argument('--accept-permissions', metavar='CONTRACT_SHA256', help='Explicitly accept the inspected v1 capability contract, including broad grants')
+            rp.add_argument('--adopt-existing', action='store_true', help='Verify and adopt an exact existing v2 installation/state; never resets data')
         if operation in ('install', 'update', 'run', 'rollback', 'rollback-repair'):
             rp.add_argument('files', nargs='*', help='Documents to open during launch or trial')
         rp.set_defaults(func=cmd_release)
+
+    p = sub.add_parser('permissions', help='Plan, inspect and adopt native-first v1 capabilities')
+    psub = p.add_subparsers(dest='permissions_command', required=True)
+    for operation in ('plan','inspect','bind','accept'):
+        pp = psub.add_parser(operation)
+        pp.add_argument('recipe' if operation == 'plan' else 'application')
+        pp.add_argument('--format', required=True, choices=['oci','flatpak','appimage'])
+        if operation == 'bind':
+            from core.capabilities import BASES
+            pp.add_argument('request')
+            pp.add_argument('--base',required=True,choices=sorted(BASES))
+            pp.add_argument('--path')
+        if operation == 'accept':pp.add_argument('--contract',required=True,help='Inspected capability contract SHA256')
+        pp.set_defaults(func=cmd_permissions)
 
     # image
     p = sub.add_parser("image", help="Inspect and verify Cage application OCI images")
@@ -1084,7 +1126,7 @@ def main(argv=None):
     except StorageError as exc:
         print(f"cage: storage error: {exc}", file=sys.stderr)
         return 15
-    except ManifestError as exc:
+    except (ManifestError, CapabilityError) as exc:
         print(f"cage: manifest error: {exc}", file=sys.stderr)
         return 2
     except DesktopError as exc:

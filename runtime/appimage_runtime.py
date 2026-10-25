@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import struct
@@ -13,6 +14,7 @@ import tempfile
 # Linux permits PT_INTERP up to PATH_MAX bytes, including the terminating NUL.
 # Export reserves space; launch changes only these bytes in temporary copies.
 INTERPRETER_PLACEHOLDER = '/CAGE_PRIVATE_LOADER_' + '.' * (4095 - len('/CAGE_PRIVATE_LOADER_'))
+MATERIALIZER_ABI = 'cage.elf-materializer/v1'
 
 
 def interpreter_slot(path):
@@ -39,13 +41,18 @@ def interpreter_slot(path):
     return None
 
 
-def materialize(source, destination, manifest):
+def materialize(source, destination, manifest, *, namespace_root=None):
     """Copy native ELFs, preserving realpath identity for child-loader discovery."""
     source, destination = Path(source).resolve(), Path(destination).resolve()
     if manifest.get('schemaVersion') != 'cage.appimage-private-runtime/v1':
         raise ValueError('unsupported AppImage private runtime')
+    if set(manifest) != {'schemaVersion','loader','files'} or not isinstance(manifest['files'],list) or not 1 <= len(manifest['files']) <= 8192:
+        raise ValueError('invalid private runtime manifest')
     paths = {}
     for entry in manifest['files']:
+        if (not isinstance(entry,dict) or set(entry) != {'path','interpreter','sha256'} or not isinstance(entry['path'],str)
+                or type(entry['interpreter']) is not bool or not isinstance(entry['sha256'],str) or not re.fullmatch('[a-f0-9]{64}',entry['sha256'])):
+            raise ValueError('invalid private executable metadata')
         relative = Path(entry['path'])
         if relative.is_absolute() or '..' in relative.parts or relative.parts[:1] != ('usr',) or relative in paths:
             raise ValueError('unsafe private executable path')
@@ -54,9 +61,12 @@ def materialize(source, destination, manifest):
     if loader_relative.is_absolute() or '..' in loader_relative.parts or loader_relative.parts[:3] != ('usr', 'lib', 'cage-native'):
         raise ValueError('unsafe private loader path')
     loader = source / loader_relative
-    if not loader.resolve().is_relative_to(source) or not loader.is_file():
+    if loader_relative not in paths or not loader.resolve().is_relative_to(source) or not loader.is_file():
         raise ValueError('missing private loader')
-    interpreter = os.fsencode(loader) + b'\0'
+    exposed = Path(namespace_root) if namespace_root is not None else source
+    if not exposed.is_absolute() or '..' in exposed.parts:
+        raise ValueError('private runtime namespace root must be absolute')
+    interpreter = os.fsencode(exposed / loader_relative) + b'\0'
     directories = {parent for relative in paths for parent in relative.parents}
 
     def mirror(root, relative=Path()):
@@ -89,7 +99,7 @@ def materialize(source, destination, manifest):
             else:
                 # Preserve aliases such as bin/wine -> ../lib/.../wine. Absolute
                 # links here would bypass the patched copy of the executable.
-                target.symlink_to(os.readlink(path) if path.is_symlink() else path,
+                target.symlink_to(os.readlink(path) if path.is_symlink() else exposed / name,
                                   target_is_directory=path.is_dir())
     mirror(source)
     if any(not (destination / path).is_file() for path in paths):

@@ -43,7 +43,8 @@ def tools_lock():
 
 def create_appimage_export_plan(bundle, *, allow_host_access=False):
     source = create_desktop_export_plan(bundle)
-    if not allow_host_access:
+    managed = source.get('state', {}).get('managerVersion') == 2
+    if not managed and not allow_host_access:
         raise DesktopError('AppImage cannot enforce runtime.network: none or filesystem isolation; '
                            'export requires --allow-host-access to explicitly accept ordinary host-process access')
     lock = tools_lock()
@@ -52,7 +53,7 @@ def create_appimage_export_plan(bundle, *, allow_host_access=False):
         'privateRuntime': lock['privateRuntime'], 'toolsDigest': digest_json(lock),
         'excludedUnixModules': lock['excludedUnixModules'],
         'wineDllDirectory': ('lib64/wine-wow64/wine' if source['target']['provider'] == 'wine-arm64ec' else 'lib/wine')}
-    return {**source, 'target': target, 'sourceTarget': source['target'], 'format': 'appimage',
+    plan = {**source, 'target': target, 'sourceTarget': source['target'], 'format': 'appimage',
         'layout': {'runtime': 'usr/wine'},
         'state': {**source['state'], 'namespace': 'cage/appimage',
                   'packagerSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
@@ -63,6 +64,16 @@ def create_appimage_export_plan(bundle, *, allow_host_access=False):
         'tools': lock, 'prerequisites': ['Linux ' + target['architecture'],
              'X11/XWayland; FUSE or extraction fallback; executable temporary storage'],
         'distribution': 'local unsigned proof; application compatibility is qualified separately'}
+    if managed:
+        from core.capabilities import compile_capabilities, require_supported
+        from runtime.appimage_runtime import MATERIALIZER_ABI
+        capabilities = compile_capabilities(source['recipe'], 'appimage')
+        require_supported(capabilities)
+        plan.update(capabilities=capabilities, managedNamespace=True, materializerABI=MATERIALIZER_ABI,
+                    permissions={'isolation':'cage.local-desktop/v1','hostCageRequired':True},
+                    layout={'runtime':'/run/cage/native/usr/wine'},
+                    prerequisites=['native Linux x86_64', 'host Cage', 'Bubblewrap', 'SquashFS tools >= 4.6.1', 'qualified user namespace and LSM policy'])
+    return plan
 
 
 def checked_download(spec, cache):
@@ -354,6 +365,8 @@ def prepare_appdir(bundle, plan, context, *, store, cache):
                                   'appimage_runtime.py': 'privateRuntimeSha256'}[name]]
         if hashlib.sha256((helpers / name).read_bytes()).hexdigest() != expected:
             raise DesktopError('lifecycle helper changed after export planning')
+    if plan.get('managedNamespace'):
+        shutil.copyfile(ROOT/'runtime/capability_guard.py', helpers/'capability_guard.py')
     # -I excludes host Python paths; only the one packaged helper directory is added.
     (helpers / 'entry.py').write_text('import sys\nfrom pathlib import Path\n'
         'sys.path.insert(0, str(Path(__file__).resolve().parent))\n'
@@ -361,6 +374,11 @@ def prepare_appdir(bundle, plan, context, *, store, cache):
     closure['privateRuntime'] = stage_private_runtime(appdir, Path(location) / 'files', arch)
     # Hashes describe the final patched payload, including libc and its loader.
     closure['libraries'] = inventory_tree(appdir / 'usr/lib/cage-native')
+    if plan.get('managedNamespace'):
+        # Final closure identity includes both patched native executables and
+        # dependency bytes. Temporary materialization paths are excluded.
+        plan['runtimeClosureDigest'] = digest_json({'privateRuntime':closure['privateRuntime'], 'libraries':closure['libraries']})
+        (destination/'desktop.json').write_text(json.dumps(plan, indent=2, sort_keys=True)+'\n')
     (appdir / 'AppRun').write_text(apprun_script(plan))
     (appdir / 'AppRun').chmod(0o755)
     (appdir / (app_id + '.svg')).write_text(ICON)
@@ -379,6 +397,10 @@ def prepare_appdir(bundle, plan, context, *, store, cache):
 
 
 def apprun_script(plan):
+    if plan.get('managedNamespace'):
+        # A v1 package cannot bootstrap artifact Python in the host namespace.
+        # Installation/launch uses the host CLI and its verified release ledger.
+        return '#!/bin/sh\necho "Import and run this managed v1 AppImage with host-installed cage release." >&2\nexit 1\n'
     arch = plan['target']['architecture']
     loader = {'x86_64': 'ld-linux-x86-64.so.2', 'aarch64': 'ld-linux-aarch64.so.1'}[arch]
     return f'''#!/bin/sh
