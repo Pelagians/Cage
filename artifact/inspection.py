@@ -619,9 +619,24 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
 
     manifest_runtime = manifest.get("runtime") if isinstance(manifest.get("runtime"), dict) else {}
     manifest_network = manifest_runtime["network"] if "network" in manifest_runtime else "none"
+    network_shape_ok = True
+    if manifest.get('schemaVersion') == 'cage.app/v1':
+        # v1 serializes network intent only in permissions. The portable
+        # desktop graph records its offline build runtime; the OCI graph keeps
+        # the normalized default launch scope. Local decisions apply at launch.
+        from core.capabilities import normalize
+        try:
+            contract = normalize(manifest.get('id'), manifest.get('execution'), manifest.get('permissions'),
+                                 manifest.get('desktop', {}).get('id'))
+            requested_network = any(item['kind'] == 'network' for item in contract['permissions']['requests'])
+            manifest_network = ('host' if requested_network else 'none') if graph.get('schemaVersion') != DESKTOP_SCHEMA_VERSION else 'none'
+            network_shape_ok = 'network' not in manifest_runtime
+        except (ValueError, TypeError, KeyError):
+            network_shape_ok = False
     runner_network = graph_runner["network"] if "network" in graph_runner else "none"
     network_ok = (
-        isinstance(manifest_network, str)
+        network_shape_ok
+        and isinstance(manifest_network, str)
         and isinstance(runner_network, str)
         and manifest_network in SUPPORTED_NETWORK_MODES
         and runner_network in SUPPORTED_NETWORK_MODES

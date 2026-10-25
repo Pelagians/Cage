@@ -31,6 +31,7 @@ sys.path.insert(0,str(ROOT))
 from artifact import managed_launch as managed, permissions, releases
 from artifact.flatpak import export_flatpak
 from artifact.appimage import export_appimage
+from artifact.inspection import verify_bundle
 from builder.flatpak import run_flatpak
 from core.capabilities import compile_capabilities
 from core.media import stage_media
@@ -136,10 +137,14 @@ def build_candidates(work,store,app,recipe_path,evidence):
     base=json.loads(command(['podman','--remote=false','image','inspect','ghcr.io/pelagians/cage-wine:11.0'],evidence/'oci-base.log'))[0]
     image='ghcr.io/pelagians/cage-wine@'+base['Digest']
     if image not in base['RepoDigests']:raise RuntimeError('inspected platform digest has no Wine repository binding')
-    command([sys.executable,'-m','cage','build',recipe_path,'--engine','podman','--workspace',work/'workspace',
-             '--runtime-image',image,'--output',work/'oci-bundles','--build-timeout','900'],evidence/'build-oci.log')
+    oci_bundle=work/'oci-bundles/cage-runtime-parity-1.0.0'
+    try:
+        command([sys.executable,'-m','cage','build',recipe_path,'--engine','podman','--workspace',work/'workspace',
+                 '--runtime-image',image,'--output',work/'oci-bundles','--build-timeout','900'],evidence/'build-oci.log')
+    finally:
+        if oci_bundle.is_dir():write(evidence/'oci-bundle-verification.json',verify_bundle(oci_bundle))
     tag='localhost/cage-runtime-parity:'+hashlib.sha256(app.encode()).hexdigest()[:16]
-    command([sys.executable,'-m','cage','export','oci',work/'oci-bundles/cage-runtime-parity-1.0.0',
+    command([sys.executable,'-m','cage','export','oci',oci_bundle,
              '--engine','podman','--graphics','desktop','--tag',tag,'--context-dir',work/'oci-export'],evidence/'oci-export.log')
     oci_plan,arch,image_id,recipe_digest=releases.oci_metadata(tag,'podman')
     write(evidence/'oci-plan.json',oci_plan)

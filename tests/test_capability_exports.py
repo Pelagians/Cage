@@ -14,6 +14,7 @@ from artifact.desktop import create_desktop_export_plan, desktop_target, seal_de
 from artifact.flatpak import create_flatpak_export_plan
 from artifact.appimage import create_appimage_export_plan, apprun_script
 from artifact.oci import create_oci_export_plan
+from artifact.inspection import verify_bundle
 from runtime.container_state import managed_plan
 from runtime.desktop_launch import digest_json, plan_identity
 from core.manifest import Manifest
@@ -23,6 +24,19 @@ from tests.test_capability_delivery import plan
 
 
 class CapabilityExportTests(unittest.TestCase):
+    def test_v1_oci_verification_uses_network_request_and_keeps_mismatch_rejection(self):
+        for network in (True,False):
+            with self.subTest(network=network), tempfile.TemporaryDirectory() as temp:
+                raw=recipe();raw.pop('sources');raw.pop('modules')
+                if not network:
+                    raw['permissions']['requests']=[r for r in raw['permissions']['requests'] if r['kind'] not in ('network','device-class')]
+                manifest=Manifest.from_dict(raw);bundle=create_bundle(manifest,Path(temp),dry_run=True)
+                materialize_runnable_prefix(bundle,entrypoint=manifest.launch.entrypoint)
+                self.assertTrue(verify_bundle(bundle)['runnable'],verify_bundle(bundle)['errors'])
+                path=bundle/'metadata/graph.json';graph=json.loads(path.read_text())
+                graph['runnerRuntime']['network']='none' if network else 'host';path.write_text(json.dumps(graph))
+                self.assertFalse(next(c for c in verify_bundle(bundle)['checks'] if c['id']=='runtime-network-match')['ok'])
+
     def test_v1_desktop_export_native_metadata_and_host_appimage_path(self):
         with tempfile.TemporaryDirectory() as temp:
             raw=recipe();raw.pop('sources');raw.pop('modules')
