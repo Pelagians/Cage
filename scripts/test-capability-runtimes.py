@@ -168,12 +168,12 @@ def build_candidates(work,store,app,recipe_path,evidence,formats=('oci','flatpak
     return candidates
 
 
-def install_native(release,consumer,evidence):
+def install_native(release,consumer,evidence,*,replace=False):
     target=release['entry']['plan']['target'];runtime=target['platform']+'/'+target['architecture']+'/'+target['branch']
     run_flatpak(['remote-add','--user','--if-not-exists','flathub',target['remoteUrl']],store=consumer)
     run_flatpak(['install','--user','--noninteractive','--assumeyes','--no-related','flathub',runtime],store=consumer)
     run_flatpak(['update','--user','--noninteractive','--assumeyes','--no-related','--commit='+target['platformCommit'],runtime],store=consumer)
-    command(['flatpak','install','--user','--noninteractive','--assumeyes','--no-deps','--no-related','--bundle',
+    command(['flatpak','install','--user','--noninteractive','--assumeyes','--no-deps','--no-related',*(['--reinstall'] if replace else []),'--bundle',
              Path(release['directory'])/release['entry']['package']['name']],evidence/'flatpak-install.log')
 
 

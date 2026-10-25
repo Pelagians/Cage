@@ -145,9 +145,9 @@ def qualify(h, candidates, work, store, paths, port, abstract, device, host_proc
         # relaunch the original and policy-revised packages before signing.
         sessions = [candidate_run(baseline, 4, 'restore-original-policy')]
         variant = policy_variant(h, baseline, work, store, evidence)
-        if kind == 'flatpak': h.install_native(variant, Path(os.environ['FLATPAK_USER_DIR']), evidence/'producer/variant-install')
+        if kind == 'flatpak': h.install_native(variant, Path(os.environ['FLATPAK_USER_DIR']), evidence/'producer/variant-install', replace=True)
         sessions.append(candidate_run(variant, 5, 'policy-revision'))
-        if kind == 'flatpak': h.install_native(baseline, Path(os.environ['FLATPAK_USER_DIR']), evidence/'producer/baseline-restore')
+        if kind == 'flatpak': h.install_native(baseline, Path(os.environ['FLATPAK_USER_DIR']), evidence/'producer/baseline-restore', replace=True)
         sessions.append(candidate_run(baseline, 6, 'policy-rollback'))
         assert (paths['write']/'canary').read_bytes() == b'cage-probe-canary\n'
         signed = []

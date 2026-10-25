@@ -34,15 +34,17 @@ static int runtime_parity(const wchar_t *config, const wchar_t *document) {
     }
     if(!child_ready)return 26;
     /* A stable user preference is independent of the advancing launch count. */
-    char preference[32]={0};
+    static const char preference_value[]="cage-user-preference-v1\n";
+    const size_t preference_size=sizeof(preference_value)-1;
+    char preference[sizeof(preference_value)]={0};
     f=_wfopen(L"C:\\cage-parity-preference.txt",L"rb");
-    if(f){if(fread(preference,1,23,f)!=23){fclose(f);return 33;}fclose(f);}
+    if(f){if(fread(preference,1,preference_size,f)!=preference_size){fclose(f);return 33;}fclose(f);}
     else {
         f=_wfopen(L"C:\\cage-parity-preference.txt",L"wb");if(!f)return 34;
-        if(fwrite("cage-user-preference-v1\n",1,23,f)!=23){fclose(f);return 35;}fclose(f);
-        memcpy(preference,"cage-user-preference-v1\n",23);
+        if(fwrite(preference_value,1,preference_size,f)!=preference_size){fclose(f);return 35;}fclose(f);
+        memcpy(preference,preference_value,preference_size);
     }
-    int settings_preserved=memcmp(preference,"cage-user-preference-v1\n",23)==0;
+    int settings_preserved=memcmp(preference,preference_value,preference_size)==0;
     if(!settings_preserved)return 36;
     int forwarded=document?read_canary(document):0;
     unsigned counter=0;
