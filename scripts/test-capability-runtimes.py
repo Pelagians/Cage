@@ -31,7 +31,6 @@ sys.path.insert(0,str(ROOT))
 from artifact import managed_launch as managed, permissions, releases
 from artifact.flatpak import export_flatpak
 from artifact.appimage import export_appimage
-from artifact.desktop import desktop_target
 from builder.flatpak import run_flatpak
 from core.capabilities import compile_capabilities
 from core.media import stage_media
@@ -47,6 +46,7 @@ def windows(path):return 'Z:'+str(path).replace('/','\\')
 
 
 def command(args,log,timeout=1500):
+    print('[runtime parity] '+str(log),flush=True)
     result=subprocess.run(list(map(str,args)),capture_output=True,text=True,stdin=subprocess.DEVNULL,timeout=timeout)
     Path(log).parent.mkdir(parents=True,exist_ok=True)
     Path(log).write_text(result.stdout+'\n'+result.stderr)
@@ -133,7 +133,10 @@ def build_candidates(work,store,app,recipe_path,evidence):
     ai=export_appimage(bundle,output=work/'probe.AppImage',store=store,cache=ROOT/'.cage/appimage-tools')
     write(evidence/'appimage-export.json',ai)
     command(['podman','--remote=false','pull','ghcr.io/pelagians/cage-wine:11.0'],evidence/'oci-pull.log')
-    image=command(['podman','--remote=false','image','inspect','--format={{.Id}}','ghcr.io/pelagians/cage-wine:11.0'],evidence/'oci-base.log')
+    base=json.loads(command(['podman','--remote=false','image','inspect','ghcr.io/pelagians/cage-wine:11.0'],evidence/'oci-base.log'))[0]
+    pins=[pin for pin in base['RepoDigests'] if pin.startswith('ghcr.io/pelagians/cage-wine@sha256:')]
+    if len(pins)!=1:raise RuntimeError('expected one inspected Wine producer digest')
+    image=pins[0]
     command([sys.executable,'-m','cage','build',recipe_path,'--engine','podman','--workspace',work/'workspace',
              '--runtime-image',image,'--output',work/'oci-bundles','--build-timeout','900'],evidence/'build-oci.log')
     tag='localhost/cage-runtime-parity:'+hashlib.sha256(app.encode()).hexdigest()[:16]
@@ -254,7 +257,9 @@ def run_case(release,record,work,paths,case,port,abstract,device,host_process,sh
     assert win['network']['tcp'] is shared
     assert linux['devices']['initialAccessible'] is shared
     assert linux['devices']['liveTransitionObserved'] is shared
+    assert linux['devices']['reconnectObserved'] is shared
     assert observer['window'] and win['windowCreated'] and win['nativeChildCompleted']
+    assert win['wineDriveWrite'] is True
     assert win['stateCounter']==counter,(kind,case,win['stateCounter'],counter)
     state_root=managed.state_root(record,release);state=json.loads((state_root/'state.json').read_text())
     assert state['generations'][0]['identity']==plan_identity(release['entry']['plan'])

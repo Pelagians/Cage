@@ -104,12 +104,38 @@ observations. Missing controls/probes/hardware yield **blocked**. A failed
 observed assertion yields **failed**. This report qualifies neither the actual
 application workflow nor synchronization.
 
-The new `capability-parity.yml` workflow runs source tests, reference validation,
-Windows probe compilation and an opt-in native Bubblewrap component probe. It
-keeps AppArmor and its global namespace restriction enabled and loads scoped
-permission only for a disposable test executable. It explicitly publishes the
-unrun three-format/hardware gates as blocked. A component test is not an AppImage,
-Wine, desktop, OCI or three-format qualification pass.
+The `capability-parity.yml` workflow runs source tests, reference validation,
+Windows probe compilation and an opt-in native Bubblewrap component probe, then
+an independent actual-runtime job. Both jobs keep AppArmor and its global
+namespace restriction enabled and load scoped permission only for a disposable
+test executable. Missing runtime observations and hardware gates remain blocked.
+A component test alone does not qualify an adapter.
+
+`scripts/test-capability-runtimes.py` builds one pinned Wine 11 desktop bundle,
+exports real Flatpak and AppImage packages, and separately builds and exports a
+digest-pinned OCI image. These local producer candidates run through the actual
+host-managed adapters, including native Flatpak inspection/guard and AppImage
+import/materialization. They bootstrap runtime evidence without inventing a
+prequalified signed release. They do not test release installation authority.
+
+For each format, a Windows x86_64 application creates an X11 window, runs the
+Linux probe as a native child through Wine, and persists a counter in its active
+prefix. Three launches cover shared networking/All Devices, denied optional
+networking/devices, and replacement of a writable folder. The Linux and Windows
+probes check read-only/read-write scope, unrelated and protected canaries,
+network endpoints and the current Wine drive alias. Native observations also
+check read-only package/runtime mounts, privilege/syscall boundaries, private
+process/shared-memory views and synthetic device removal/reappearance.
+
+Every run uses a fresh app ID, isolated XDG/Flatpak/container stores and disposable
+folders. The first prefix is copied to a retained recovery fixture; later launches
+must preserve its inventory hash and exact generation record while the active
+counter advances. Only the test's owned synthetic null device, shared-memory
+canary and sentinel process are cleaned up. No existing user prefix, native
+override or recovery data is touched. The synthetic device is an owned alias of
+`/dev/null`; it neither sends USB commands nor qualifies Harmony protocols,
+physical reconnect or synchronization. The shared report deliberately keeps
+those hardware cases blocked.
 
 V2 release signing additionally requires successful, artifact-bound capability
 cases and recorded native OS, tool, Wine and security-policy identities.

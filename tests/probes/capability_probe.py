@@ -107,11 +107,14 @@ def observe(args):
         if not getattr(args,'output',None):
             print(json.dumps({'event':'hotplug-ready','initialDeviceAccessible':initial}),flush=True)
         end=time.monotonic()+args.hotplug_seconds
-        changed=False
+        changed=False;reconnected=False
         while time.monotonic()<end:
-            if safe_device(args.device)!=initial:changed=True;break
+            accessible=safe_device(args.device)
+            if accessible!=initial:changed=True
+            if changed and accessible==initial:reconnected=True;break
             time.sleep(.1)
         result['devices']={'initialAccessible':initial,'liveTransitionObserved':changed,
+                           'reconnectObserved':reconnected,
                            'sysfsUsbPresent':Path('/sys/bus/usb/devices').is_dir(),'udevDataPresent':Path('/run/udev/data').is_dir()}
     return result
 
