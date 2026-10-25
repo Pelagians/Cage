@@ -348,6 +348,27 @@ class TrustedReleaseTests(unittest.TestCase):
         old_entry=r.parse(self.old.read_bytes())['artifacts'][0]
         with self.assertRaises(r.ReleaseError):r.verify_evidence(old_entry,original)
 
+    def test_offline_source_fixture_qualifies_only_repair_even_if_original_label_is_changed(self):
+        repair=self.release('offline-repair',2,runtime='guarded',repair_from=self.old)
+        entry=r.parse(repair.read_bytes())['artifacts'][0]
+        proof=json.loads((repair.parent/'result.json').read_text())
+        source=proof['repairSourcePlan']
+        proof['originalStateFixture']={'schemaVersion':'cage.repair-source-fixture/v1',
+            'identity':plan_identity(source),'seedDigest':source['seedDigest'],
+            'stateDigest':'c'*64,'originalRuntimeExecuted':False}
+        r.verify_evidence(entry,proof)
+        old_entry=r.parse(self.old.read_bytes())['artifacts'][0]
+        with self.assertRaisesRegex(r.ReleaseError,'never the original runtime'):
+            r.verify_evidence(old_entry,proof)
+        for edit in (lambda p:p.pop('qualificationKind'),
+                     lambda p:p['originalStateFixture'].update(originalRuntimeExecuted=True),
+                     lambda p:p['originalStateFixture'].update(seedDigest='b'*64),
+                     lambda p:p['originalStateFixture'].update(stateDigest='invalid'),
+                     lambda p:p.update(repairSourcePlan={}),
+                     lambda p:p.update(repairSourcePlan={'state':None})):
+            changed=json.loads(json.dumps(proof));edit(changed)
+            with self.subTest(edit=edit),self.assertRaises(r.ReleaseError):r.verify_evidence(entry,changed)
+
     def test_storage_reports_pending_release_recovery_without_pruning_history(self):
         self.fake_runtime();self.install_run();self.fail='before'
         with self.assertRaises(r.ReleaseError):delivery.deploy(self.new,self.key,'appimage',action='update',cache=self.cache)

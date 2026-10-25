@@ -15,6 +15,7 @@ import importlib.util
 import json
 import os
 import shutil
+import stat
 import struct
 import subprocess
 import sys
@@ -25,7 +26,8 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from runtime.desktop_launch import inventory_tree, _read_generations, _generation, lifecycle_lock
+from runtime.desktop_launch import (inventory_tree, _read_generations, _generation, lifecycle_lock,
+                                    digest_json, plan_identity, prepare_generation)
 from application_workflows import WORKFLOWS, share_test_windows
 spec = importlib.util.spec_from_file_location('gui', ROOT / 'scripts/test-flatpak-poc.py')
 gui = importlib.util.module_from_spec(spec); spec.loader.exec_module(gui)
@@ -57,7 +59,7 @@ def proof_container_processes(container_state):
 
 
 @contextmanager
-def shutdown_trace(destination, executable, container_state):
+def shutdown_trace(destination, executable, container_state, *, capture_kill=False, launcher=None):
     """Opt-in CI observer: attach after save, detach before failure diagnostics.
 
     Trace the owned Wine processes, not the Podman client (which proxies signals).
@@ -82,16 +84,30 @@ def shutdown_trace(destination, executable, container_state):
                                if line.startswith('NSpid:')), [])
         owned.append({'hostPid': pid, 'comm': name, 'namespacePids': namespace_pids})
         if name in {Path(executable).name[:15].casefold(), 'wineserver', 'wineserver64'}:
+            # A nonzero exit can remove /proc before failure collection. Retain
+            # the mapping needed to resolve syscall IPs from this exact process.
+            owned[-1]['maps'] = (root / 'maps').read_text()[:1024 * 1024]
+            owned[-1]['startTime'] = (root / 'stat').read_text().rsplit(')', 1)[1].split()[19]
             targets.append(pid); names.add(name)
     if (len(containers) != 1 or Path(executable).name[:15].casefold() not in names
             or not names.intersection({'wineserver', 'wineserver64'})):
         raise RuntimeError('cannot identify this proof application and Wine server for shutdown tracing')
-    destination.with_suffix('.json').write_text(json.dumps(
-        {'container': containers[0]['id'], 'targets': targets, 'processes': owned}, indent=2) + '\n')
+    record = {'container': containers[0]['id'], 'targets': targets, 'processes': owned, 'ownerUid': os.getuid()}
+    command = ['sudo', '-n', 'strace', '-f', '-ttt', '-T', '-i', '-e', 'trace=%process,%signal,%desc,%memory,futex',
+               '-o', str(destination.with_suffix('.log')), *[arg for pid in targets for arg in ('-p', str(pid))]]
+    if capture_kill:
+        if os.uname().machine != 'aarch64':raise RuntimeError('native sampling requires ARM CI')
+        applications = [p for p in owned if p['comm'] == Path(executable).name[:15].casefold()]
+        servers = [p for p in owned if p['comm'] in ('wineserver', 'wineserver64')]
+        if len(applications) != 1 or len(servers) != 1:raise RuntimeError('native capture requires one application and Wine server')
+        record.update(diagnosticOnly=True, observerChangesTiming=True)
+        attached_file = destination.with_name(destination.name + '-attached')
+        command = ['sudo', '-n', 'env', 'GITHUB_ACTIONS=true', sys.executable,
+                   str(ROOT / 'scripts/capture-owned-shutdown.py'),
+                   str(destination.with_suffix('.json')), executable, str(destination)]
+    destination.with_suffix('.json').write_text(json.dumps(record, indent=2) + '\n')
     with destination.with_name(destination.name + '-attach.log').open('w') as output:
-        trace = subprocess.Popen(['sudo', '-n', 'strace', '-f', '-ttt', '-e', 'trace=%process,%signal',
-                                  '-o', str(destination.with_suffix('.log')),
-                                  *[arg for pid in targets for arg in ('-p', str(pid))]],
+        trace = subprocess.Popen(command,
                                  stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
         try:
             def attached():
@@ -99,21 +115,46 @@ def shutdown_trace(destination, executable, container_state):
                 for pid in targets:
                     status = (Path('/proc') / str(pid) / 'status').read_text()
                     if '\nTracerPid:\t0\n' in '\n' + status:return False
-                return True
-            gui.wait_for(attached, 'shutdown tracer attached to private Wine processes', seconds=10)
+                return not capture_kill or attached_file.exists()
+            gui.wait_for(attached, 'shutdown tracer attached to private Wine processes', seconds=25 if capture_kill else 10)
             yield
         finally:
-            # The new process group contains only sudo/strace. Attached Wine
+            if capture_kill:
+                destination.with_name(destination.name + '-outcome.json').write_text(json.dumps(
+                    {'exitCode': launcher.poll() if launcher is not None else None}) + '\n')
+            # The new process group contains only diagnostic tools. Attached Wine
             # processes retain their own groups; SIGINT detaches the observer.
             if trace.poll() is None:
                 result = subprocess.run(['sudo', '-n', 'kill', '-INT', '--', '-' + str(trace.pid)],
                                         capture_output=True, timeout=10)
                 if result.returncode and trace.poll() is None:
                     raise RuntimeError('could not detach the private shutdown tracer')
-                trace.wait(timeout=10)
+                trace.wait(timeout=45 if capture_kill else 10)
 
 
-def shutdown_diagnostics(process, destination, executable, *, container_state=None, kernel=False):
+def proof_lock_processes(state):
+    """Find this private proof's detached lease holders without reading environments."""
+    state = Path(state); lock = state / 'launch.lock'
+    if state.is_symlink() or lock.is_symlink():
+        raise RuntimeError('proof lifecycle lock must not be linked')
+    identity = lock.lstat()
+    if not stat.S_ISREG(identity.st_mode) or identity.st_uid != os.getuid():
+        raise RuntimeError('proof lifecycle lock must be an owned regular file')
+    found = []
+    for root in Path('/proc').iterdir():
+        if not root.name.isdigit():continue
+        try:
+            if root.stat().st_uid != os.getuid():continue
+            for descriptor in (root / 'fd').iterdir():
+                try:info = descriptor.stat()
+                except OSError:continue
+                if (info.st_dev, info.st_ino) == (identity.st_dev, identity.st_ino):
+                    found.append(int(root.name)); break
+        except OSError:continue
+    return sorted(found)
+
+
+def shutdown_diagnostics(process, destination, executable, *, container_state=None, lock_state=None, kernel=False):
     """Inspect this failed proof, including reparented processes in its container."""
     if kernel and os.environ.get('GITHUB_ACTIONS') == 'true':
         try:
@@ -127,7 +168,15 @@ def shutdown_diagnostics(process, destination, executable, *, container_state=No
             try:memory[name] = (Path('/sys/fs/cgroup') / name).read_text()[:4096]
             except OSError as exc:memory[name] = str(exc)
         destination.with_name(destination.name + '-memory.json').write_text(json.dumps(memory, indent=2) + '\n')
-    pending = [process.pid]; seen = set(); records = []; matched_containers = []
+    # Menu launchers can already be gone at the idle gate. Do not inspect a
+    # recycled launcher PID; detached Wine is resolved by the private lock.
+    pending = [process.pid] if not hasattr(process, 'poll') or process.poll() is None else []
+    seen = set(); records = []; matched_containers = []
+    if lock_state is not None:
+        holders = proof_lock_processes(lock_state)
+        destination.with_name(destination.name + '-lock.json').write_text(json.dumps(
+            {'state': str(lock_state), 'processes': holders}, indent=2) + '\n')
+        pending.extend(holders)
     if container_state is not None:
         # Rootless conmon/Wine need not remain descendants of the release CLI.
         # Match the unique private proof mount, then verify the mount explicitly.
@@ -211,6 +260,65 @@ def shutdown_diagnostics(process, destination, executable, *, container_state=No
                     destination.with_name(destination.name + '-windows-error.log').write_text(str(exc))
 
 
+def wait_for_idle(process, state, destination, executable, *, container_state=None):
+    last_error = None
+    def idle():
+        nonlocal last_error
+        try:
+            with lifecycle_lock(state):return True
+        except Exception as exc:
+            last_error = str(exc)
+            return False
+    try:
+        gui.wait_for(idle, 'Wine stopped and state committed', seconds=60)
+    except Exception:
+        destination.with_name(destination.name + '-error.json').write_text(json.dumps(
+            {'lastLockError': last_error}, indent=2) + '\n')
+        try:
+            shutdown_diagnostics(process, destination, executable, container_state=container_state,
+                                 lock_state=state, kernel=True)
+        except Exception as exc:
+            destination.with_name(destination.name + '-diagnostic-error.log').write_text(str(exc))
+        raise
+
+
+def repair_source_plan(kind, baseline):
+    if kind in ('flatpak', 'appimage'):
+        receipt = json.loads(Path(str(baseline) + '.json').read_text())
+        if (receipt.get('schemaVersion') != 'cage.' + kind + '-export-result/v0'
+                or receipt['sha256'] != sha(Path(baseline)) or receipt['plan'].get('format') != kind):
+            raise RuntimeError('original package differs from its export receipt')
+        return receipt['plan']
+    if kind == 'oci':
+        from artifact.releases import oci_metadata
+        return oci_metadata(baseline, 'podman')[0]
+    from runtime.container_state import managed_plan
+    path = baseline / 'metadata/native-launch.json'
+    return json.loads(path.read_text()) if path.exists() else managed_plan(baseline)
+
+
+def prepare_repair_source_fixture(bundle, state, plan, workflow):
+    """Create a declared test recovery source; never execute/qualify the old runtime."""
+    bundle = Path(bundle); seed = bundle / 'prefix'
+    inventory = inventory_tree(seed)
+    if digest_json(inventory) != plan['seedDigest']:
+        raise RuntimeError('original producer seed differs from the exported source plan')
+    if plan['desktop']['id'] != workflow.app_id:
+        raise RuntimeError('original producer application differs from the recovery fixture')
+    if plan.get('sourceManifestDigest') and digest_json(json.loads(
+            (bundle / 'manifest.cage.json').read_text())) != plan['sourceManifestDigest']:
+        raise RuntimeError('original producer manifest differs from the exported source plan')
+    with lifecycle_lock(state):
+        if _read_generations(state) is not None:
+            raise RuntimeError('recovery fixture requires fresh private state; existing state retained')
+        prefix, pending = prepare_generation(seed, inventory, state, plan_identity(plan), plan, 'launch')
+        assert pending is None
+        workflow.recovery_settings_fixture(prefix)
+    assert inventory_tree(seed) == inventory, 'original producer seed changed'
+    return {'schemaVersion': 'cage.repair-source-fixture/v1', 'identity': plan_identity(plan),
+            'seedDigest': plan['seedDigest'], 'originalRuntimeExecuted': False}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('format', choices=['flatpak', 'appimage', 'container', 'oci'])
@@ -221,17 +329,24 @@ def main():
     parser.add_argument('--runtime-migration', action='store_true', help='Qualify a same-application-version, explicitly allowed runtime transition')
     parser.add_argument('--rollback-repair', action='store_true', help='Qualify explicit repaired rollback with a new runtime identity')
     parser.add_argument('--baseline-qualification', help='Independent original-package evidence for trusted repair setup')
+    parser.add_argument('--repair-source-bundle', type=Path,
+                        help='Initialize a declared private recovery fixture from this verified original producer seed; never run its runtime')
     args = parser.parse_args(); kind = args.format; workflow = WORKFLOWS[args.application]()
     if args.rollback_repair and (args.legacy or args.runtime_migration):
         parser.error('repaired rollback is a distinct qualification, without legacy adoption or ordinary runtime migration')
     if args.rollback_repair and args.trusted and not args.baseline_qualification:
         parser.error('trusted repair requires independent original-package baseline qualification')
+    if args.repair_source_bundle and (not args.rollback_repair or args.trusted
+                                      or not hasattr(workflow, 'recovery_settings_fixture')):
+        parser.error('offline recovery fixtures require a supported ordinary repaired-rollback proof; they cannot qualify an original signed release')
     stress_relaunches = int(os.environ.get('CAGE_TEST_RELAUNCHES', '0'))
     if not 0 <= stress_relaunches <= 25:
         parser.error('CAGE_TEST_RELAUNCHES must be between 0 and 25')
     initial_relaunches = int(os.environ.get('CAGE_TEST_INITIAL_RELAUNCHES', '0'))
     if not 0 <= initial_relaunches <= 25:
         parser.error('CAGE_TEST_INITIAL_RELAUNCHES must be between 0 and 25')
+    if args.repair_source_bundle and initial_relaunches:
+        parser.error('original-runtime relaunches require the separate exact-runtime diagnostic')
     app = workflow.app_id
     baseline, candidate = (Path(p).resolve() if kind != 'oci' else p for p in (args.baseline, args.candidate))
     legacy = (args.legacy if kind == 'oci' else Path(args.legacy).resolve()) if args.legacy else None
@@ -423,7 +538,8 @@ def main():
         subprocess.run(['scrot', str(evidence / (label + '.png'))], check=True)
         try:
             with shutdown_trace(evidence / (label + '-trace'), workflow.executable,
-                                state.parent if kind in ('container', 'oci') else None):
+                                state.parent if kind in ('container', 'oci') else None,
+                                capture_kill=kind == 'oci' and os.environ.get('CAGE_TEST_CAPTURE_SIGKILL') == '1', launcher=process):
                 gui.command('xdotool', 'key', '--clearmodifiers', 'alt+F4')
                 code = process.wait(timeout=120)
             if code != 0:
@@ -434,11 +550,8 @@ def main():
             shutdown_diagnostics(process, evidence / (label + '-shutdown'), workflow.executable,
                                  container_state=state.parent if kind in ('container', 'oci') else None, kernel=True)
             raise
-        def idle():
-            try:
-                with lifecycle_lock(state):return True
-            except Exception:return False
-        gui.wait_for(idle, 'Wine stopped and state committed', seconds=60)
+        wait_for_idle(process, state, evidence / (label + '-idle'), workflow.executable,
+                      container_state=state.parent if kind in ('container', 'oci') else None)
         gui.wait_for(lambda: not subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', workflow.window_pattern], capture_output=True).stdout, 'GUI closed')
         if kind == 'flatpak':
             gui.wait_for(lambda: app not in subprocess.check_output(['flatpak', 'ps', '--columns=application'],
@@ -457,7 +570,12 @@ def main():
 
     try:
         subprocess.run(['xrdb', '-merge'], input='Xft.dpi: 192\n', text=True, check=True)
-        run(first_package, '1-original', preference=True)
+        source_plan = repair_source_plan(kind, baseline) if args.rollback_repair else None
+        source_fixture = None
+        if args.repair_source_bundle:
+            source_fixture = prepare_repair_source_fixture(args.repair_source_bundle, state, source_plan, workflow)
+        else:
+            run(first_package, '1-original', preference=True)
         preference = workflow.preference(prefix()); assert preference not in (None, 'true', '0')
         first = prefix()
         initial_identity = _read_generations(state)
@@ -467,17 +585,10 @@ def main():
             assert _read_generations(state) == initial_identity and sha(original) == original_hash
         internal = Path('drive_c/users/Public/Documents/onboarding.txt')
         (first / internal).parent.mkdir(parents=True, exist_ok=True); (first / internal).write_text('before update')
+        if source_fixture:
+            source_fixture['stateDigest'] = digest_json(inventory_tree(first, state_snapshot=True))
+            (evidence / 'original-state-fixture.json').write_text(json.dumps(source_fixture, indent=2) + '\n')
         if args.rollback_repair:
-            from runtime.desktop_launch import plan_identity
-            if kind in ('flatpak','appimage'):
-                source_plan=json.loads(Path(str(baseline)+'.json').read_text())['plan']
-            elif kind=='oci':
-                from artifact.releases import oci_metadata
-                source_plan=oci_metadata(baseline,'podman')[0]
-            else:
-                from runtime.container_state import managed_plan
-                path=baseline/'metadata/native-launch.json'
-                source_plan=json.loads(path.read_text()) if path.exists() else managed_plan(baseline)
             old_identity=_generation(_read_generations(state),_read_generations(state)['active'])['identity']
             assert plan_identity(source_plan)==old_identity
             old_executable=sha(first/workflow.executable)
@@ -491,6 +602,8 @@ def main():
                 pins=json.loads((ROOT/'recipes/sumatrapdf-portable.releases.json').read_text())
                 assert old_executable==pins['3.6']['executableSha256']
             assert workflow.preference(repaired)==preference and (repaired/internal).read_text()=='before update'
+            if source_fixture:
+                run(candidate, '2-repair-relaunch', menu=True)
             run(candidate,'3-relaunch',preference=True,menu=True)
             assert workflow.preference(repaired)!=preference, 'qualify restoration, not merely identical preferences'
             (repaired/internal).write_text('latest document after update')
@@ -550,6 +663,8 @@ def main():
                 run(baseline, '7-stress-' + str(index + 1))
                 assert prefix() == rolled and workflow.preference(prefix()) == preference
                 assert sha(original) == original_hash
+        if kind == 'oci' and os.environ.get('CAGE_TEST_CAPTURE_SIGKILL') == '1':
+            raise RuntimeError('native shutdown diagnostic finished without a qualifying result; no release may be signed')
         result = {'status': 'passed', 'application': args.application, 'format': kind, 'architecture': os.uname().machine,
                   'pageSize': os.sysconf('SC_PAGE_SIZE'), 'sessions': sessions, 'legacyMigration': bool(legacy),
                   'settingsPreserved': True, 'documentsPreserved': True, 'rollback': True, 'menuRelaunch': kind in ('appimage', 'flatpak'),
@@ -562,6 +677,7 @@ def main():
                 rollbackRepairs=[{'from':old_identity,'to':new_identity}],
                 originalGenerationsRetained=True,originalPrefixUnchanged=True,
                 settingsRestoredFromOriginal=True,freshRuntimeSeed=True)
+            if source_fixture:result['originalStateFixture'] = source_fixture
         if args.runtime_migration:
             result['runtimeMigrations'] = [{'from': old_identity, 'to': new_identity}]
         if stress_relaunches:result['stressRelaunches'] = stress_relaunches

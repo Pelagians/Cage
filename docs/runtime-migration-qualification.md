@@ -4,6 +4,34 @@ Implementation source: `85fc1881b3c085b452350bb76d990254e08eaa10`.
 Date: 2026-10-23. Usage and compatibility policy:
 [safe runtime migrations](runtime-migrations.md).
 
+## Routine ARM repaired rollback
+
+Automatic ARM qualification now uses the existing explicit repaired-rollback
+operation and the identified `fex-2610-cage1` runtime. It restores original
+settings and current documents into a fresh guarded generation, retains the
+original prefix and package unchanged, and requires actual zero exit, Wine
+quiescence and a committed generation before recording success. x86_64 automatic
+qualification retains exact runtime migration and rollback.
+
+Repair setup uses a declared original-state fixture from the original producer
+seed, verified against the source plan and export receipt. It does not first
+launch the defective original application to create settings. Non-default test
+settings and a retained document are added only to the fresh private state copy;
+all five GUI sessions execute the guarded runtime. Fixture provenance and state
+hashes are retained, and signing verification cannot use this evidence to qualify
+the original runtime or manufacture an original trusted release.
+
+Manual `rollback_repair=false` runs retain exact original-runtime diagnostics.
+The original ARM runtime and its failed trials remain unqualified; a guarded
+repair is not a repair of those immutable bytes. Repair proofs sign/fetch only
+the repaired target. Full trusted repair deployment still requires independent
+matching original-package qualification as described in the usage document.
+
+Idle-lock timeout collection also records the lock error and finds detached
+processes holding that private proof's exact lock inode. Menu-launcher exit zero
+cannot suppress a live lease or turn a failed shutdown into a passing trial.
+The 120-second process deadline and 60-second quiescence deadline are unchanged.
+
 ## Final CI result on 2026-10-23
 
 All six workflows completed successfully at source

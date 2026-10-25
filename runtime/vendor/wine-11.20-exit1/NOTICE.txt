@@ -1,0 +1,15 @@
+Wine 11.20 native exit-order repair, Cage exit1
+
+Wine remains LGPL-2.1-or-later. The original RPM's Wine license notices remain
+in the runtime payload. Complete upstream sources and provider build sources
+are identified in source.json; the corresponding source change accompanies it.
+
+The checked transformation replaces the premature close() call with an AArch64
+NOP in the exact pinned provider ELF and gives the derived ELF a new build ID.
+It is an instruction-level application of the accompanying source change, not
+a claim to have recompiled Wine. Reproduction needs the original checked RPM
+ELF and the repository's Python transformer. No compiler is required by users.
+
+Native libc exit(status), finalizers and the original process status remain.
+Kernel teardown closes the process socket. Cage's normal exit, quiescence and
+preservation gates still apply. Original runtime artifacts are never rewritten.

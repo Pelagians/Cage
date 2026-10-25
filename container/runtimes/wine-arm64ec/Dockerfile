@@ -7,8 +7,10 @@ RUN test "$(uname -m)" = aarch64 && test "$WINE_VERSION" = 11.20 && \
     dnf clean all
 COPY runtime/__init__.py runtime/arm64ec.py runtime/desktop_launch.py runtime/wine-arm64ec-11.20-fex-2610.json /usr/lib/cage-runtime/runtime/
 COPY runtime/vendor/fex-2610-cage1 /usr/lib/cage-runtime/runtime/vendor/fex-2610-cage1
+COPY runtime/vendor/wine-11.20-exit1 /usr/lib/cage-runtime/runtime/vendor/wine-11.20-exit1
 COPY runtime/patches/fex-2610-process-termination.patch /usr/lib/cage-runtime/runtime/patches/fex-2610-process-termination.patch
-COPY runtime/legacy/wine-arm64ec-11.20-fex-2610.json /usr/lib/cage-runtime/runtime/legacy/wine-arm64ec-11.20-fex-2610.json
+COPY runtime/patches/wine-11.20-native-exit-order.patch /usr/lib/cage-runtime/runtime/patches/wine-11.20-native-exit-order.patch
+COPY runtime/legacy /usr/lib/cage-runtime/runtime/legacy
 RUN --mount=type=cache,target=/tmp/cage-arm-rpms PYTHONPATH=/usr/lib/cage-runtime python3 -m runtime.arm64ec --container-install && \
     PYTHONPATH=/usr/lib/cage-runtime python3 -c 'from runtime.arm64ec import runtime_target; from runtime.desktop_launch import digest_json; import os; assert digest_json(runtime_target()) == os.environ["RUNTIME_LOCK_SHA256"]' && \
     wine --version && dnf clean all

@@ -249,6 +249,7 @@ runtime-migration workflow can stress the exact original OCI target separately:
 ```sh
 gh workflow run runtime-migrations.yml \
   --ref codex/safe-export-updates \
+  -f rollback_repair=false \
   -f original_oci_relaunches=25 -f container_stress_relaunches=0
 ```
 

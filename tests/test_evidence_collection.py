@@ -21,7 +21,7 @@ def test_collector_cli_retains_records_without_user_state_or_drive_links(tmp_pat
     expected = {'result.json', 'run.log', 'failure.png', 'publisher-public.pem', 'trusted-cache/releases/one/release.json.sig'}
     for name in expected:
         path = source / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text(name)
-    for name in ('state', 'data', 'documents', 'package-cache'):
+    for name in ('state', 'data', 'documents', 'package-cache', 'native-symbols'):
         path = source / name; path.mkdir(); (path / 'private.json').write_text('private')
     (source / 'z:').symlink_to(outside, target_is_directory=True)
     (source / 'linked.json').symlink_to(outside / 'private.json')
@@ -174,6 +174,8 @@ def test_shutdown_trace_attaches_only_owned_wine_and_detaches_on_failure(tmp_pat
             pid = int(path.parent.name)
             if path.name == 'comm':return names[pid] + '\n'
             if path.name == 'status':return f'TracerPid:\t999\nNSpid:\t{pid}\t{pid - 90}\n'
+            if path.name == 'maps':return 'private-runtime-mapping\n'
+            if path.name == 'stat':return str(pid) + ' (name) ' + ' '.join(['0'] * 19 + ['12345'])
         return real_read(path, *args, **kwargs)
     with patch.object(module, 'proof_container_processes', return_value=([{'id': 'owned'}], list(names))), \
          patch.object(Path, 'read_text', read), patch.object(module.shutil, 'which', return_value='/usr/bin/strace'), \
@@ -185,13 +187,25 @@ def test_shutdown_trace_attaches_only_owned_wine_and_detaches_on_failure(tmp_pat
                 raise subprocess.TimeoutExpired('application', 120)
         args = launch.call_args.args[0]
         assert args[-4:] == ['-p', '101', '-p', '102']
+        assert '-i' in args and '-T' in args and 'trace=%process,%signal,%desc,%memory,futex' in args
         assert launch.call_args.kwargs['start_new_session'] is True
         detach.assert_called_once_with(['sudo', '-n', 'kill', '-INT', '--', '-999'], capture_output=True, timeout=10)
         observer.wait.assert_called_once_with(timeout=10)
+        with patch.object(module.os, 'uname', return_value=type('Uname', (), {'machine': 'aarch64'})()), \
+             patch.object(Path, 'exists', return_value=True):
+            with pytest.raises(subprocess.TimeoutExpired):
+                with module.shutdown_trace(tmp_path / 'capture', 'SumatraPDF.exe', tmp_path, capture_kill=True):
+                    raise subprocess.TimeoutExpired('application', 120)
+        capture_args = launch.call_args.args[0]
+        assert capture_args[:4] == ['sudo', '-n', 'env', 'GITHUB_ACTIONS=true']
+        assert 'capture-owned-shutdown.py' in capture_args[5]
+        capture_record = json.loads((tmp_path / 'capture.json').read_text())
+        assert capture_record['diagnosticOnly'] is True and capture_record['observerChangesTiming'] is True
         record = json.loads((tmp_path / 'trace.json').read_text())
         assert record['container'] == 'owned' and record['targets'] == [101, 102]
         assert record['processes'] == [
-            {'hostPid': pid, 'comm': name.casefold(), 'namespacePids': [pid, pid - 90]}
+            {'hostPid': pid, 'comm': name.casefold(), 'namespacePids': [pid, pid - 90],
+             **({'maps': 'private-runtime-mapping\n', 'startTime': '12345'} if pid in (101, 102) else {})}
             for pid, name in names.items()]
 
 
@@ -205,3 +219,96 @@ def test_shutdown_trace_refuses_ambiguous_container_ownership(tmp_path, monkeypa
         with pytest.raises(RuntimeError, match='cannot identify'):
             with module.shutdown_trace(tmp_path / 'trace', 'app.exe', tmp_path):pass
         launch.assert_not_called()
+
+
+def test_idle_failure_finds_detached_proof_lock_holder_and_preserves_failure(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / 'scripts'))
+    spec = importlib.util.spec_from_file_location('onboarding_idle', ROOT / 'scripts/test-onboarding-poc.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    monkeypatch.setenv('GITHUB_ACTIONS', 'false')
+    state = tmp_path / 'proof'; state.mkdir()
+    unrelated = tmp_path / 'other-proof'; unrelated.mkdir()
+    code = ('import fcntl,sys,time\n'
+            'with open(sys.argv[1], "w") as lock:\n'
+            ' fcntl.flock(lock,fcntl.LOCK_EX);print("ready",flush=True);time.sleep(60)\n')
+    children = []
+    try:
+        for folder in (state, unrelated):
+            child = subprocess.Popen([sys.executable, '-c', code, str(folder / 'launch.lock')],
+                                     stdout=subprocess.PIPE, text=True)
+            children.append(child)
+            assert child.stdout.readline() == 'ready\n'
+        def timeout(condition, description, *, seconds):
+            assert seconds == 60 and condition() is False
+            raise AssertionError('timed out: ' + description)
+        destination = tmp_path / '6-relaunch-idle'
+        with patch.object(module.gui, 'wait_for', side_effect=timeout):
+            # The menu launcher is already gone; its private lease is the
+            # ownership boundary for discovering the surviving Wine process.
+            with pytest.raises(AssertionError, match='Wine stopped and state committed'):
+                module.wait_for_idle(SimpleNamespace(pid=99999999, poll=lambda: 0), state, destination, 'app.exe')
+        record = json.loads((tmp_path / '6-relaunch-idle-lock.json').read_text())
+        assert record['processes'] == [children[0].pid]
+        records = json.loads(destination.with_suffix('.json').read_text())
+        assert {r['pid'] for r in records} == {children[0].pid}
+        error = json.loads((tmp_path / '6-relaunch-idle-error.json').read_text())
+        assert 'already running' in error['lastLockError']
+    finally:
+        for child in children:
+            child.terminate(); child.wait(timeout=5); child.stdout.close()
+
+
+@pytest.mark.parametrize('linked_state', [False, True])
+def test_proof_lock_discovery_refuses_linked_state_or_lock(tmp_path, monkeypatch, linked_state):
+    monkeypatch.syspath_prepend(str(ROOT / 'scripts'))
+    spec = importlib.util.spec_from_file_location('onboarding_linked_lock', ROOT / 'scripts/test-onboarding-poc.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    state = tmp_path / 'proof'; state.mkdir(); (state / 'launch.lock').write_text('')
+    if linked_state:
+        alias = tmp_path / 'alias'; alias.symlink_to(state); state = alias
+    else:
+        (state / 'launch.lock').unlink(); (state / 'launch.lock').symlink_to(tmp_path / 'outside')
+    with pytest.raises(RuntimeError, match='must not be linked'):
+        module.proof_lock_processes(state)
+
+
+def test_idle_diagnostic_error_does_not_replace_original_failure(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / 'scripts'))
+    spec = importlib.util.spec_from_file_location('onboarding_idle_error', ROOT / 'scripts/test-onboarding-poc.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    with patch.object(module.gui, 'wait_for', side_effect=AssertionError('original idle timeout')), \
+         patch.object(module, 'shutdown_diagnostics', side_effect=OSError('collector unavailable')):
+        with pytest.raises(AssertionError, match='original idle timeout'):
+            module.wait_for_idle(SimpleNamespace(pid=99999999), tmp_path, tmp_path / 'idle', 'app.exe')
+    assert (tmp_path / 'idle-diagnostic-error.log').read_text() == 'collector unavailable'
+
+
+def test_owned_native_capture_rejects_recycled_pid_and_qualifying_record(tmp_path, monkeypatch):
+    spec = importlib.util.spec_from_file_location('owned_capture', ROOT / 'scripts/capture-owned-shutdown.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+    pid = os.getpid(); root = Path('/proc') / str(pid); name = (root / 'comm').read_text().strip().casefold()
+    record = {'diagnosticOnly': True, 'observerChangesTiming': True, 'ownerUid': os.getuid(),
+              'processes': [{'hostPid': pid, 'comm': name, 'startTime': 'wrong-birth'}]}
+    path = tmp_path / 'observer.json'; path.write_text(json.dumps(record))
+    with pytest.raises(RuntimeError, match='identity changed'):
+        module.capture(path, name, tmp_path / 'capture')
+    record['diagnosticOnly'] = False; path.write_text(json.dumps(record))
+    with pytest.raises(RuntimeError, match='non-qualifying'):
+        module.capture(path, name, tmp_path / 'capture')
+    monkeypatch.setenv('GITHUB_ACTIONS', 'false')
+    with pytest.raises(RuntimeError, match='requires CI'):
+        module.capture(path, name, tmp_path / 'capture')
+    assert not (tmp_path / 'capture.json').exists()
+
+
+def test_collector_only_retains_bounded_declared_native_profiles(tmp_path):
+    source = tmp_path / 'source'; source.mkdir()
+    for name in ('owned-profile', 'ordinary-profile', 'undeclared-profile', 'wrong-magic-profile'):
+        (source / (name + '.perf')).write_bytes(b'PERFILE2' if name != 'wrong-magic-profile' else b'private')
+    metadata = {'schemaVersion': 'cage.shutdown-profile/v1', 'diagnosticOnly': True}
+    for name in ('owned-profile', 'ordinary-profile', 'wrong-magic-profile'):
+        (source / (name + '.json')).write_text(json.dumps(metadata | {'diagnosticOnly': name != 'ordinary-profile'}))
+    destination = tmp_path / 'collected'
+    subprocess.run([sys.executable, str(COLLECTOR), '--source', str(source), '--destination', str(destination)], check=True)
+    assert [p.name for p in destination.glob('*.perf')] == ['owned-profile.perf']

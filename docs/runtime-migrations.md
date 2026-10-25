@@ -120,8 +120,10 @@ python scripts/prepare-runtime-migration-poc.py shared-recipe.json \
 
 Build/export that recipe normally and qualify each exact pair. No new Wine or
 CFW payload is downloaded at application launch, and no existing package or
-prefix is patched in place. The guarded ARM payload is the existing pinned
-`wine-arm64ec-11.20-fex-2610-cage1-aarch64` runtime.
+prefix is patched in place. The current repaired ARM target is
+`wine-arm64ec-11.20-exit1-fex-2610-cage1-aarch64`; it combines the translator
+guard with [native process-exit ordering](arm64-shutdown.md#native-exit-ordering).
+Earlier original and `cage1` targets retain their own exact recovery identities.
 
 The operation first checks the previous generation for an exact repair rule.
 If none matches, it can repair the active original generation after an already
@@ -158,6 +160,18 @@ An optional 25-session stress sequence stops at its first failure with the same
 runtime identities, committed audit, executable hashes and package/image bytes.
 It cannot sign the original or substitute for ordinary runtime-migration proof.
 
+Routine repair CI also passes `--repair-source-bundle` to initialize a declared
+private recovery fixture from the original producer's verified seed. The seed
+must match the original exported plan and package receipt; it is copied through
+the existing state manager before adding non-default test settings and a retained
+document. No original application session is run during this setup. All five GUI
+sessions then execute the guarded repair runtime. The fixture's original identity,
+seed digest and state inventory digest are recorded as `originalStateFixture`.
+This is recovery-test input, not successful qualification of the defective
+runtime. Release verification rejects fixture evidence for the original target,
+including attempts to remove its repair qualification label. It cannot replace
+independent original-package evidence for trusted repair deployment.
+
 Flatpak's package cache retains the export's OSTree commit alongside its bundle
 hash. Repeated repair or recovery verifies the retained bytes and reuses a
 deployment only when its installed commit matches that receipt. Reusing it does
@@ -165,9 +179,18 @@ not skip a requested repair trial or its Wine shutdown and generation commit
 checks. Older receipts remain readable; Cage never infers an exact deployment
 match from a plan identity alone.
 
-Dispatch `runtime-migrations.yml` with `rollback_repair=true` for this distinct
-qualification on both architectures and all adapters. Default runs retain the
-original exact-runtime migration/rollback gate. Repair mode signs and verifies
+Routine `runtime-migrations.yml` push/PR runs qualify explicit repaired rollback
+on ARM and retain exact runtime migration/rollback on x86_64. ARM repair uses the
+existing identified `cage1` runtime; it restores original settings and current
+documents into a fresh generation while retaining the original package and
+prefix unchanged. It does not execute the defective runtime after rollback or
+claim that the historical runtime now shuts down correctly.
+
+Manual dispatch defaults to `rollback_repair=true` for repaired rollback on both
+architectures. To diagnose the exact original runtime, explicitly dispatch with
+`rollback_repair=false`. That separately labelled diagnostic retains the original
+runtime, deadlines and failure gates; its failed trials remain failed.
+Repair mode signs and verifies
 fetch of the repaired target only; it cannot use that proof to sign an original
 baseline. End-to-end trusted repair GUI tests require independent matching
 original-package evidence via `--baseline-qualification`, alongside the repair's

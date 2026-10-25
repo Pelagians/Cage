@@ -1,0 +1,18 @@
+From: Cage contributors
+Subject: [PATCH] ntdll: retain process socket through native exit cleanup
+
+Closing fd_socket starts wineserver's process-death timer while libc exit()
+can still be running native finalizers. Let kernel descriptor teardown report
+process death after native cleanup. Preserve exit(status), all native cleanup,
+and Wine's server-side timer; no exit status or application deadline changes.
+
+SPDX-License-Identifier: LGPL-2.1-or-later
+--- a/dlls/ntdll/unix/server.c
++++ b/dlls/ntdll/unix/server.c
+@@ -1594,6 +1594,5 @@
+  */
+ void process_exit_wrapper( int status )
+ {
+-    close( fd_socket );
+     exit( status );
+ }
