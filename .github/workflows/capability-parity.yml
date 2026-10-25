@@ -22,7 +22,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bubblewrap libseccomp2 squashfs-tools patchelf flatpak gcc gcc-mingw-w64-x86-64 apparmor-utils
-          python -m pip install -e '.[dev,releases]' jsonschema
+          # The wheel-content regression deliberately disables build isolation;
+          # its backend must exist in this test interpreter as well.
+          python -m pip install setuptools wheel -e '.[dev,releases]' jsonschema
       - name: Keep AppArmor enabled and grant a scoped test executable user namespaces
         run: |
           test "$(cat /sys/module/apparmor/parameters/enabled)" = Y
