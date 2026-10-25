@@ -185,6 +185,7 @@ def test_shutdown_trace_attaches_only_owned_wine_and_detaches_on_failure(tmp_pat
                 raise subprocess.TimeoutExpired('application', 120)
         args = launch.call_args.args[0]
         assert args[-4:] == ['-p', '101', '-p', '102']
+        assert '-i' in args and 'trace=%process,%signal,futex,close' in args
         assert launch.call_args.kwargs['start_new_session'] is True
         detach.assert_called_once_with(['sudo', '-n', 'kill', '-INT', '--', '-999'], capture_output=True, timeout=10)
         observer.wait.assert_called_once_with(timeout=10)

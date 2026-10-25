@@ -91,7 +91,7 @@ def shutdown_trace(destination, executable, container_state):
     destination.with_suffix('.json').write_text(json.dumps(
         {'container': containers[0]['id'], 'targets': targets, 'processes': owned}, indent=2) + '\n')
     with destination.with_name(destination.name + '-attach.log').open('w') as output:
-        trace = subprocess.Popen(['sudo', '-n', 'strace', '-f', '-ttt', '-e', 'trace=%process,%signal',
+        trace = subprocess.Popen(['sudo', '-n', 'strace', '-f', '-ttt', '-i', '-e', 'trace=%process,%signal,futex,close',
                                   '-o', str(destination.with_suffix('.log')),
                                   *[arg for pid in targets for arg in ('-p', str(pid))]],
                                  stdout=output, stderr=subprocess.STDOUT, start_new_session=True)

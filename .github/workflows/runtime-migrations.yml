@@ -18,6 +18,10 @@ on:
         type: choice
         default: '0'
         options: ['0', '25']
+      trace_shutdown:
+        description: 'Diagnostic: trace owned ARM application/Wine-server shutdown; first failed trial stops the proof'
+        type: boolean
+        default: false
   push:
     paths: ['runtime/**', 'container/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'scripts/*runtime-migration*', 'scripts/test-onboarding-poc.py', 'scripts/application_workflows.py', 'tests/**', '.github/workflows/runtime-migrations.yml']
   pull_request:
@@ -234,6 +238,7 @@ jobs:
     timeout-minutes: 140
     env:
       CAGE_TEST_RELAUNCHES: ${{ matrix.arch == 'aarch64' && inputs.container_stress_relaunches || '0' }}
+      CAGE_TEST_TRACE_SHUTDOWN: ${{ matrix.arch == 'aarch64' && inputs.trace_shutdown && '1' || '0' }}
       CAGE_RUNTIME_PROOF_MODE: ${{ (inputs.rollback_repair || (github.event_name != 'workflow_dispatch' && matrix.arch == 'aarch64')) && 'rollback-repair' || 'runtime-migration' }}
       CAGE_RUNTIME_PROPOSAL_FLAG: ${{ (inputs.rollback_repair || (github.event_name != 'workflow_dispatch' && matrix.arch == 'aarch64')) && '--rollback-repair' || '' }}
     steps:
@@ -246,7 +251,7 @@ jobs:
       - name: Prepare tools and historical runtime
         run: |
           sudo apt-get update
-          sudo apt-get install -y podman uidmap slirp4netns fuse-overlayfs rpm2cpio gdb xvfb openbox xdotool scrot xdg-utils x11-xserver-utils
+          sudo apt-get install -y podman uidmap slirp4netns fuse-overlayfs rpm2cpio strace gdb xvfb openbox xdotool scrot xdg-utils x11-xserver-utils
           python -m pip install PyYAML pytest setuptools wheel 'cryptography>=43'
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           mkdir -p "$HOME/.config/containers" dist/onboarding-evidence dist/runtime-migration
