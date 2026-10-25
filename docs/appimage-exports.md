@@ -25,8 +25,10 @@ dynamically. The build fails for unresolved required dependencies and for
 imports newer than the private runtime's declared glibc ceiling. `patchelf` adds
 private library paths and reserves ELF interpreter slots at export time. At
 launch, bundled Python creates an exclusive temporary tree, copies and verifies
-only the native executables, and fills their interpreter slots with the mounted
-package's loader path. Libraries and data remain linked to the immutable package.
+the native ELF files, and fills executable interpreter slots with the mounted
+package's loader path. Native libraries are copied too because Wine canonicalizes
+their paths to locate child loaders. Windows payloads and other data remain
+linked to the immutable package.
 This covers Wine's native child processes and wineserver while retaining correct
 executable identity and supporting relocated packages. Consumers need no patching
 tools. The temporary tree is removed after normal application shutdown. Host

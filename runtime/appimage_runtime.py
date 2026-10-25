@@ -40,12 +40,12 @@ def interpreter_slot(path):
 
 
 def materialize(source, destination, manifest):
-    """Mirror immutable files, copying only executables that need PT_INTERP edits."""
+    """Copy native ELFs, preserving realpath identity for child-loader discovery."""
     source, destination = Path(source).resolve(), Path(destination).resolve()
     if manifest.get('schemaVersion') != 'cage.appimage-private-runtime/v1':
         raise ValueError('unsupported AppImage private runtime')
     paths = {}
-    for entry in manifest['executables']:
+    for entry in manifest['files']:
         relative = Path(entry['path'])
         if relative.is_absolute() or '..' in relative.parts or relative.parts[:1] != ('usr',) or relative in paths:
             raise ValueError('unsafe private executable path')
@@ -68,17 +68,18 @@ def materialize(source, destination, manifest):
                     raise ValueError('private executable is not a regular file')
                 if hashlib.sha256(path.read_bytes()).hexdigest() != paths[name]['sha256']:
                     raise ValueError('private executable digest mismatch: ' + str(name))
-                slot = interpreter_slot(path)
-                if not slot or len(interpreter) > slot[1]:
-                    raise ValueError('private loader path exceeds interpreter slot')
-                with path.open('rb') as handle:
-                    handle.seek(slot[0])
-                    if handle.read(slot[1]) != os.fsencode(INTERPRETER_PLACEHOLDER) + b'\0':
-                        raise ValueError('unreserved private interpreter slot')
                 shutil.copyfile(path, target)
-                with target.open('r+b') as handle:
-                    handle.seek(slot[0])
-                    handle.write(interpreter.ljust(slot[1], b'\0'))
+                if paths[name]['interpreter']:
+                    slot = interpreter_slot(path)
+                    if not slot or len(interpreter) > slot[1]:
+                        raise ValueError('private loader path exceeds interpreter slot')
+                    with path.open('rb') as handle:
+                        handle.seek(slot[0])
+                        if handle.read(slot[1]) != os.fsencode(INTERPRETER_PLACEHOLDER) + b'\0':
+                            raise ValueError('unreserved private interpreter slot')
+                    with target.open('r+b') as handle:
+                        handle.seek(slot[0])
+                        handle.write(interpreter.ljust(slot[1], b'\0'))
                 target.chmod(path.stat().st_mode & 0o777)
             elif name in directories:
                 if path.is_symlink() or not path.is_dir():

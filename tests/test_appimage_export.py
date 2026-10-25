@@ -216,11 +216,19 @@ class AppImageTests(unittest.TestCase):
             (source / 'usr/libexec').mkdir()
             code = root / 'probe.c'
             code.write_text('#define _GNU_SOURCE\n#include <stdio.h>\n#include <unistd.h>\n#include <dlfcn.h>\n'
-                            'int main(int argc,char **argv){ if(argc==1){char *a[]={argv[0],"child",NULL};'
-                            'execv(argv[0],a);return 3;} Dl_info i; if(!dladdr(dlsym(RTLD_NEXT,"printf"),&i))return 4;'
+                            'int main(int argc,char **argv){ if(argc==1){void *h=dlopen("libpath.so",RTLD_NOW);'
+                            'if(!h)return 6;const char *(*next)(void)=dlsym(h,"next_binary");'
+                            'char *a[]={(char *)next(),"child",NULL};'
+                            'execv(a[0],a);return 3;} Dl_info i; if(!dladdr(dlsym(RTLD_NEXT,"printf"),&i))return 4;'
                             'char p[4096]; int n=readlink("/proc/self/exe",p,4095);if(n<0)return 5;'
                             'p[n]=0;printf("%s\\n%s\\n",i.dli_fname,p);return 0;}')
-            subprocess.run(['cc', str(code), '-ldl', '-o', str(binary)], check=True)
+            library = root / 'path.c'
+            library.write_text('#define _GNU_SOURCE\n#include <dlfcn.h>\n#include <stdlib.h>\n#include <string.h>\n'
+                               'const char *next_binary(void){static char p[4096];Dl_info i;'
+                               'if(!dladdr(next_binary,&i)||!realpath(i.dli_fname,p))return "/missing";'
+                               'strcpy(strrchr(p,\'/\')+1,"probe");return p;}')
+            subprocess.run(['cc', '-shared', '-fPIC', str(library), '-ldl', '-o', str(binary.with_name('libpath.so'))], check=True)
+            subprocess.run(['cc', str(code), '-ldl', '-Wl,-rpath,$ORIGIN', '-o', str(binary)], check=True)
             start, size = interpreter_slot(binary)
             with binary.open('rb') as handle:
                 handle.seek(start)

@@ -273,33 +273,33 @@ def stage_private_runtime(appdir, platform_root, architecture):
     gconv = platform_root / 'lib' / triplet / 'gconv'
     if gconv.is_dir():
         shutil.copytree(gconv, native / 'gconv', symlinks=True, copy_function=copy_file)
-    executables = []
+    files = []
     for base in (appdir / 'usr/wine', appdir / 'usr/python', native):
         for path in sorted(base.rglob('*')):
             if path.is_symlink() or not path.is_file():
                 continue
             info = elf_information(path)
-            if not info or (not info['needed'] and not interpreter_slot(path)):
+            if not info:
                 continue
             # The loader relocates itself before normal dependency lookup;
             # rewriting its dynamic section can break that bootstrap. Keep
             # the matching glibc family byte-for-byte from the platform.
-            if path.parent == native and path.name in LIBC_LIBRARIES:
-                continue
-            # Keep existing relative paths for Wine/Python's private modules.
-            old = subprocess.check_output(['patchelf', '--print-rpath', str(path)], text=True).strip()
-            private = '$ORIGIN/' + os.path.relpath(native, path.parent)
-            paths = [private, *(p for p in old.split(':') if p.startswith('$ORIGIN'))]
-            args = ['patchelf', '--force-rpath', '--set-rpath', ':'.join(dict.fromkeys(paths))]
-            if interpreter_slot(path):
-                args += ['--set-interpreter', INTERPRETER_PLACEHOLDER]
-            subprocess.run([*args, str(path)], check=True, capture_output=True)
+            if not (path.parent == native and path.name in LIBC_LIBRARIES) and (info['needed'] or interpreter_slot(path)):
+                # Keep existing relative paths for Wine/Python's private modules.
+                old = subprocess.check_output(['patchelf', '--print-rpath', str(path)], text=True).strip()
+                private = '$ORIGIN/' + os.path.relpath(native, path.parent)
+                paths = [private, *(p for p in old.split(':') if p.startswith('$ORIGIN'))]
+                args = ['patchelf', '--force-rpath', '--set-rpath', ':'.join(dict.fromkeys(paths))]
+                if interpreter_slot(path):
+                    args += ['--set-interpreter', INTERPRETER_PLACEHOLDER]
+                subprocess.run([*args, str(path)], check=True, capture_output=True)
             slot = interpreter_slot(path)
-            if slot:
-                executables.append({'path': str(path.relative_to(appdir)),
-                                    'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+            # Wine canonicalizes ntdll.so to locate child loaders. Every native
+            # ELF must retain launch-tree identity, including shared libraries.
+            files.append({'path': str(path.relative_to(appdir)), 'interpreter': bool(slot) and path.name not in LIBC_LIBRARIES,
+                          'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
     manifest = {'schemaVersion': 'cage.appimage-private-runtime/v1',
-                'loader': 'usr/lib/cage-native/' + loader, 'executables': executables}
+                'loader': 'usr/lib/cage-native/' + loader, 'files': files}
     (appdir / 'usr/libexec/private-runtime.json').write_text(json.dumps(manifest, indent=2) + '\n')
     return manifest
 
