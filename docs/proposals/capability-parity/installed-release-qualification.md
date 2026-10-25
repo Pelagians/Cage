@@ -24,6 +24,11 @@ bundle inventories must remain unchanged. The revision changes the reviewed
 capability contract while preserving the effective requested scope and state
 compatibility. This does not qualify arbitrary runtime or application migrations.
 
+Managed v2 Flatpak deployment verifies the installed runtime's exact qualified
+commit and uses `--no-deps` for install, replacement and recovery. It never advances
+the platform as a bundle dependency side effect. Missing or changed runtime
+prerequisites require explicit native setup before recovery; app state is retained.
+
 ## Consumer checks
 
 Each adapter uses a fresh app ID and a disposable consumer home, XDG directories,

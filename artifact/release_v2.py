@@ -95,10 +95,17 @@ def _install(record, release, folder, *, restore=False):
     else:
         from artifact.updates import _ref
         import subprocess
+        target=release['entry']['plan']['target']
+        runtime=target['platform']+'/'+target['architecture']+'/'+target['branch']
+        platform=subprocess.run(['flatpak','info','--user','--show-commit',runtime],capture_output=True,text=True)
+        if platform.returncode or platform.stdout.strip()!=target['platformCommit']:
+            raise r.ReleaseError('qualified Flatpak runtime prerequisite differs; install '+runtime+' at commit '+target['platformCommit']+' through native controls, then recover; all app state retained')
         installed=subprocess.run(['flatpak','info','--user','--show-commit',_ref({'plan':release['entry']['plan']})],capture_output=True,text=True)
         if installed.returncode or installed.stdout.strip()!=release['entry']['flatpakCommit']:
-            r.command(['flatpak','install','--user','--noninteractive','--assumeyes','--no-related',
-                       *(['--reinstall','--no-deps'] if restore else ['--or-update']),'--bundle',legacy.package(release)],capture_output=True,text=True)
+            # Native dependency resolution may advance an already installed
+            # platform. Its exact qualified commit is a separate prerequisite.
+            r.command(['flatpak','install','--user','--noninteractive','--assumeyes','--no-related','--no-deps',
+                       *(['--reinstall'] if restore or installed.returncode==0 else []),'--bundle',legacy.package(release)],capture_output=True,text=True)
         legacy._check_deployment(record,release)
         from artifact.permissions import native_snapshot
         native_snapshot(release)

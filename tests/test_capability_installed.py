@@ -101,3 +101,39 @@ class InstalledRecoveryTests(unittest.TestCase):
                 self.assertNotIn('pending',record)
                 self.assertEqual(result['desktopIntegration']['status'],'installed')
                 self.assertEqual(sentinel.read_text(),'retain original recovery')
+
+    def test_flatpak_install_and_replacement_never_resolve_runtime_dependencies(self):
+        from unittest.mock import patch
+        from subprocess import CompletedProcess
+        from artifact import release_v2, release_install, permissions, releases
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            target={'platform':'org.freedesktop.Platform','architecture':'x86_64','branch':'25.08','platformCommit':'a'*64}
+            rel={'directory':str(root),'entry':{'format':'flatpak','plan':{'target':target,'desktop':{'id':'org.example.Probe'},'branch':'stable'},
+                 'flatpakCommit':'b'*64,'package':{'name':'probe.flatpak'}}}
+            for existing in (False,True):
+                for restore in (False,True):
+                    with self.subTest(existing=existing,restore=restore), \
+                         patch('subprocess.run',side_effect=[CompletedProcess([],0,'a'*64,''),CompletedProcess([],0 if existing else 1,'c'*64,'')]), \
+                         patch.object(releases,'command') as command, \
+                         patch.object(release_install,'_check_deployment'), \
+                         patch.object(permissions,'native_snapshot'):
+                        release_v2._install({},rel,root,restore=restore)
+                        args=command.call_args.args[0]
+                        self.assertIn('--no-deps',args)
+                        self.assertEqual('--reinstall' in args,existing or restore)
+                        self.assertNotIn('--or-update',args)
+
+    def test_flatpak_wrong_platform_pin_refuses_before_app_deployment(self):
+        from unittest.mock import patch
+        from subprocess import CompletedProcess
+        from artifact import release_v2, releases
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);sentinel=root/'recovery';sentinel.write_text('keep')
+            target={'platform':'org.freedesktop.Platform','architecture':'x86_64','branch':'25.08','platformCommit':'a'*64}
+            release={'entry':{'format':'flatpak','plan':{'target':target}}}
+            with patch('subprocess.run',return_value=CompletedProcess([],0,'wrong','')),patch.object(releases,'command') as command:
+                with self.assertRaisesRegex(releases.ReleaseError,'runtime prerequisite differs'):
+                    release_v2._install({},release,root)
+                command.assert_not_called()
+                self.assertEqual(sentinel.read_text(),'keep')

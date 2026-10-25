@@ -198,6 +198,9 @@ def qualify(h, candidates, work, store, paths, port, abstract, device, host_proc
                 h.run_flatpak(['remote-add', '--user', '--if-not-exists', 'flathub', target['remoteUrl']], store=Path(os.environ['FLATPAK_USER_DIR']))
                 h.run_flatpak(['install', '--user', '--noninteractive', '--assumeyes', '--no-related', 'flathub', runtime], store=Path(os.environ['FLATPAK_USER_DIR']))
                 h.run_flatpak(['update', '--user', '--noninteractive', '--assumeyes', '--no-related', '--commit='+target['platformCommit'], runtime], store=Path(os.environ['FLATPAK_USER_DIR']))
+                observed = h.run_flatpak(['info', '--user', '--show-commit', runtime], store=Path(os.environ['FLATPAK_USER_DIR'])).strip()
+                h.write(evidence/'consumer-runtime-prerequisite.json', {'expected':target['platformCommit'], 'observed':observed})
+                assert observed == target['platformCommit'], 'native runtime bootstrap did not install the qualified pin'
             def cli(operation, value=app, *extra, accept=None):
                 args = [sys.executable, '-m', 'cage', 'release', operation, value, '--key', key, '--format', kind, '--cache-dir', cache]
                 if accept: args += ['--accept-permissions', accept]
@@ -233,7 +236,9 @@ def qualify(h, candidates, work, store, paths, port, abstract, device, host_proc
             root = h.managed.state_root(record, current)
             integration = authority.read_authority(app)['desktopEntry']; desktop = Path(integration['path'])
             assert integration['format'] == kind and releases.hash_file(desktop) == integration['sha256']
+            preference_snapshot = None
             def installed_run(counter, case, label, desktop_launch=False):
+                nonlocal preference_snapshot
                 rec, rel, _ = permissions.installed(app, kind)
                 expected = expected_digests[1 if label == 'compatible-policy-update' else 0]
                 assert rel['digest'] == expected, 'exact release selection differed despite compatible state'
@@ -251,6 +256,11 @@ def qualify(h, candidates, work, store, paths, port, abstract, device, host_proc
                     h.command(args, log, timeout=240)
                 value, _, win = h.run_case(rel, rec, work, paths, case, port, abstract, device, host_process, shm,
                                            evidence/'consumer'/label, counter, launch=launch, setup=False)
+                preference = releases.regular(root/value['activePrefix']/'drive_c/cage-parity-preference.txt')
+                info = preference.stat()
+                observed_preference = (preference.read_bytes(), info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns)
+                if counter == 1:preference_snapshot = observed_preference
+                else:assert observed_preference == preference_snapshot, 'user preference was replaced or rewritten'
                 assert win['forwardedDocumentReadable'] is True
                 assert (inventory_tree(overrides) if overrides.exists() else []) == override_inventory, 'Cage launch changed native overrides'
                 result['sessions'].append({**value, 'operation': label, 'releaseDigest': rel['digest'], 'desktopExec': desktop_launch})
@@ -317,7 +327,7 @@ def qualify(h, candidates, work, store, paths, port, abstract, device, host_proc
             h.write(evidence/'consumer-ledger.json', final)
             h.write(evidence/'consumer-generations.json', _read_generations(root))
             result.update(recoveryPreserved=True, generationRecordPreserved=True, publisherKeySha256=final['publisherKeySha256'],
-                          highWater=final['highWater'], desktopExecFormats=[kind], nativeOverridesWrittenByCage=False)
+                          highWater=final['highWater'], desktopExecFormats=[kind], nativeOverridesWrittenByCage=False, userPreferenceUnchanged=True)
         # Back in the producer's untouched environment, adopt the exact already
         # observed native package and prefix through the public signed API.
         assert digest_json(inventory_tree(producer_root, state_snapshot=True)) == producer_inventory
