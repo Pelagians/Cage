@@ -12,6 +12,9 @@ import socket
 import stat
 import time
 import tempfile
+import subprocess
+import sys
+import re
 
 
 def readable(path):
@@ -57,6 +60,25 @@ def safe_device(path):
     except OSError:return False
 
 
+def readonly_mount(path):
+    if not path or not Path(path).is_dir():return None
+    path=Path(path).resolve();matches=[]
+    for line in Path('/proc/self/mountinfo').read_text().splitlines():
+        fields=line.split()
+        mount=Path(re.sub(r'\\([0-7]{3})',lambda m:chr(int(m[1],8)),fields[4]))
+        if path==mount or mount in path.parents:matches.append((len(mount.parts),'ro' in fields[5].split(',')))
+    return max(matches)[1] if matches else None
+
+
+def emit(path,value):
+    path=Path(path)
+    with tempfile.NamedTemporaryFile(mode='w',dir=path.parent,delete=False) as output:
+        json.dump(value,output,sort_keys=True);output.write('\n');output.flush();os.fsync(output.fileno())
+        temporary=Path(output.name)
+    try:temporary.replace(path)
+    finally:temporary.unlink(missing_ok=True)
+
+
 def observe(args):
     status=dict(line.split(':',1) for line in Path('/proc/self/status').read_text().splitlines() if ':' in line)
     result={'schemaVersion':'cage.capability-probe/v1','status':'observed','qualification':'not-an-application-or-hardware-pass',
@@ -67,10 +89,23 @@ def observe(args):
                           'runtimeMutation':writable(args.runtime) if args.runtime else None,'siblingRead':readable(args.denied),'protectedRead':readable(args.protected)},
             'network':{'tcp':connect(('127.0.0.1',args.port)) if args.port else None,
                        'abstract':connect('\0'+args.abstract,socket.AF_UNIX) if args.abstract else None}}
+    result['mounts']={'packageReadOnly':readonly_mount(args.package),'runtimeReadOnly':readonly_mount(args.runtime)}
+    if getattr(args,'old',None):result['filesystem']['previousRead']=readable(args.old)
+    if getattr(args,'shm',None):result['baseline']['hostSharedMemoryVisible']=readable(args.shm)
+    if getattr(args,'host_process_pid',None):
+        try:visible=args.host_process_marker.encode() in Path(f'/proc/{args.host_process_pid}/cmdline').read_bytes()
+        except OSError:visible=False
+        result['baseline']['hostProcessVisible']=visible
+    if getattr(args,'wine',None):
+        version=subprocess.run([args.wine,'--version'],capture_output=True,text=True,check=True,timeout=15)
+        result['runtime']={'wine':version.stdout.strip(),'python':sys.version.split()[0],
+                           'executable':os.readlink('/proc/self/exe')}
     if args.device:
         if not str(args.device).startswith('/dev/cage-parity-'):raise ValueError('use a dedicated /dev/cage-parity-* null fixture')
         initial=safe_device(args.device)
-        print(json.dumps({'event':'hotplug-ready','initialDeviceAccessible':initial}),flush=True)
+        if getattr(args,'ready',None):emit(args.ready,{'initialDeviceAccessible':initial})
+        if not getattr(args,'output',None):
+            print(json.dumps({'event':'hotplug-ready','initialDeviceAccessible':initial}),flush=True)
         end=time.monotonic()+args.hotplug_seconds
         changed=False
         while time.monotonic()<end:
@@ -88,7 +123,12 @@ def main():
     parser.add_argument('--package');parser.add_argument('--runtime')
     parser.add_argument('--port',type=int);parser.add_argument('--abstract')
     parser.add_argument('--device');parser.add_argument('--hotplug-seconds',type=float,default=15)
-    args=parser.parse_args();print(json.dumps(observe(args),sort_keys=True))
+    parser.add_argument('--old');parser.add_argument('--shm');parser.add_argument('--wine')
+    parser.add_argument('--host-process-pid',type=int);parser.add_argument('--host-process-marker')
+    parser.add_argument('--ready');parser.add_argument('--output')
+    args=parser.parse_args();result=observe(args)
+    if args.output:emit(args.output,result)
+    else:print(json.dumps(result,sort_keys=True))
 
 
 if __name__=='__main__':main()

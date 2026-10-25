@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <wchar.h>
 #include <string.h>
+#include <stdlib.h>
 
 static int read_canary(const wchar_t *path) {
     char buffer[64]={0};DWORD count=0;
@@ -52,7 +53,10 @@ static int tcp(int port) {
     if(ok)ok=send(s,"cage-parity-ping\n",17,0)==17 && recv(s,buffer,64,0)==17 && memcmp(buffer,"cage-parity-pong\n",17)==0;
     closesocket(s);WSACleanup();return ok;
 }
+#include "runtime_parity.h"
+
 int wmain(int argc,wchar_t **argv) {
+    if(argc==3 && !wcscmp(argv[1],L"--runtime-config"))return runtime_parity(argv[2]);
     if(argc<5 || argc>6)return 2;
     printf("{\"schemaVersion\":\"cage.windows-capability-probe/v1\",\"status\":\"observed\",\"filesystem\":{\"read\":%s,\"write\":%s,\"siblingRead\":%s,\"protectedRead\":%s},\"network\":{\"tcp\":%s},\"hidInterfaces\":%u}\n",
       read_canary(argv[1])?"true":"false",writable(argv[2])?"true":"false",read_canary(argv[3])?"true":"false",read_canary(argv[4])?"true":"false",
