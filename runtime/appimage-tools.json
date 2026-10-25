@@ -14,7 +14,7 @@
   },
   "privateRuntime": {
     "schemaVersion": "cage.appimage-private-runtime/v1",
-    "maximumGlibc": "2.43",
+    "maximumGlibc": "2.44",
     "source": "pinned desktop Freedesktop platform",
     "interpreterSlotBytes": 4096
   },
