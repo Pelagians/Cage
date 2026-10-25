@@ -38,6 +38,17 @@ def host_identity():
                 'namespaceAuthorization': 'scoped test executable; global restriction retained'}}
 
 
+def bundle_inputs(bundle):
+    """Immutable export inputs; build/flatpak is an unused SDK staging tree."""
+    result = {}
+    for name in ('manifest.cage.json', 'prefix', 'metadata', 'runtime', 'launch', 'linux-root',
+                 'build/build-plan.json', 'build/media.py'):
+        path = bundle/name
+        if path.is_dir():result[name] = inventory_tree(path)
+        elif path.exists():result[name] = releases.hash_file(releases.regular(path))
+    return result
+
+
 def policy_variant(h, release, work, store, evidence):
     """Re-export our owned seed with a permission-reason-only recipe revision.
 
@@ -46,9 +57,10 @@ def policy_variant(h, release, work, store, evidence):
     """
     kind = release['entry']['format']
     source = work/('oci-bundles' if kind == 'oci' else 'desktop-bundles')/'cage-runtime-parity-1.0.0'
-    original = digest_json(inventory_tree(source))
+    original = digest_json(bundle_inputs(source))
     bundle = work/('policy-'+kind)/'bundle'
-    shutil.copytree(source, bundle, symlinks=True, copy_function=copy_file)
+    shutil.copytree(source, bundle, symlinks=True, copy_function=copy_file,
+                    ignore=lambda directory, names: ['flatpak'] if Path(directory) == source/'build' else [])
     raw = json.loads((bundle/'manifest.cage.json').read_text())
     raw['permissions']['requests'][0]['reason'] += ' (reviewed policy revision)'
     if 'compatibility' in raw:
@@ -80,7 +92,7 @@ def policy_variant(h, release, work, store, evidence):
         result = {'entry': entry, 'directory': str(work), 'digest': exported['sha256'], 'manifest': release['manifest']}
     assert plan_identity(entry['plan']) == plan_identity(release['entry']['plan']), 'policy revision changed state identity'
     assert entry['plan']['capabilities']['contractDigest'] != release['entry']['plan']['capabilities']['contractDigest']
-    assert digest_json(inventory_tree(source)) == original, 'original producer bundle changed'
+    assert digest_json(bundle_inputs(source)) == original, 'original producer bundle changed'
     return result
 
 
@@ -214,6 +226,8 @@ def qualify(h, candidates, work, store, paths, port, abstract, device, host_proc
             cli('recover')
             record = release_install._read(ledger)
             assert not record.get('pending')
+            expected_digests = [releases.hash_file(path) for path in signed]
+            assert record['activeReleaseDigest'] == expected_digests[0] and record['previousReleaseDigest'] is None
             result['interruptedInstallRecovered'] = True
             current = releases.cached_release(cache/'releases'/record['activeReleaseDigest'], key, kind)
             root = h.managed.state_root(record, current)
@@ -221,6 +235,8 @@ def qualify(h, candidates, work, store, paths, port, abstract, device, host_proc
             assert integration['format'] == kind and releases.hash_file(desktop) == integration['sha256']
             def installed_run(counter, case, label, desktop_launch=False):
                 rec, rel, _ = permissions.installed(app, kind)
+                expected = expected_digests[1 if label == 'compatible-policy-update' else 0]
+                assert rel['digest'] == expected, 'exact release selection differed despite compatible state'
                 document = paths['replacement' if case == 'rebound' else 'write']/'canary'
                 overrides = Path(os.environ['FLATPAK_USER_DIR'])/'overrides'
                 override_inventory = inventory_tree(overrides) if overrides.exists() else []
@@ -278,7 +294,7 @@ def qualify(h, candidates, work, store, paths, port, abstract, device, host_proc
                 h.command(binding['nativeCommand'], evidence/'operator-rebind.log')
                 binding = permissions.bind(app, kind, 'write-files', loc)
             assert binding['adopted'] and binding['nativeOverridesWritten'] is False
-            # Rebound tests expect networking/devices granted; retain revocation
+            # Rebound tests expect networking granted; retain revocation
             # coverage above and explicitly restore just the test's decisions.
             local = permissions.local_bindings(app, kind)
             local['decisions'] = {}
@@ -292,6 +308,7 @@ def qualify(h, candidates, work, store, paths, port, abstract, device, host_proc
             reject([sys.executable, '-m', 'cage', 'release', 'update', signed[0], '--format', kind, '--key', key, '--cache-dir', cache],
                    'stale-sequence', 'stale')
             final = release_install._read(ledger)
+            assert final['activeReleaseDigest'] == expected_digests[0] and final['previousReleaseDigest'] == expected_digests[1]
             assert final['highWater'] == 2 and len(final['releases']) == 2 and not final.get('pending')
             assert (root/'state.json').read_bytes() == generation, 'compatible operations changed prefix generations'
             assert digest_json(inventory_tree(recovery, state_snapshot=True)) == recovery_hash

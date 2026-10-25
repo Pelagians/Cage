@@ -41,6 +41,22 @@ class InstalledProbeEvidenceTests(unittest.TestCase):
                     installed.proof(self, release, {}, sessions, output)
                 self.assertFalse(output.exists())
 
+    def test_bundle_snapshot_excludes_sdk_staging_but_seals_prefix_and_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root/'prefix').mkdir(); (root/'prefix/settings').write_text('seed')
+            (root/'metadata').mkdir(); (root/'metadata/seal.json').write_text('{}')
+            sdk = root/'build/flatpak/files/bin'; sdk.mkdir(parents=True)
+            (sdk/'tool').symlink_to('/usr/bin/tool')
+            before = installed.bundle_inputs(root)
+            (sdk/'unconsumed').write_text('build-only')
+            self.assertEqual(installed.bundle_inputs(root), before)
+            (root/'prefix/settings').write_text('changed')
+            self.assertNotEqual(installed.bundle_inputs(root), before)
+            (root/'prefix/escape').symlink_to('/usr/bin/tool')
+            with self.assertRaisesRegex(ValueError, 'escaping payload symlink'):
+                installed.bundle_inputs(root)
+
     def test_fresh_consumer_restores_environment_without_removing_state(self):
         import os
         before = dict(os.environ)
