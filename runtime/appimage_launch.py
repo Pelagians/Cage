@@ -10,9 +10,15 @@ import subprocess
 import sys
 import shutil
 
-from desktop_launch import (DesktopError, launch, digest_json, _write_state_record,
-                            lifecycle_lock, _read_generations, _generation, _real_path, plan_identity, copy_file,
-                            desktop_entry, snapshot_legacy, assert_quiescent, _flush_tree, validate_update_policy)
+try:
+    from .desktop_launch import (DesktopError, launch, digest_json, _write_state_record,
+                                lifecycle_lock, _read_generations, _generation, _real_path, plan_identity, copy_file,
+                                desktop_entry, snapshot_legacy, assert_quiescent, _flush_tree, validate_update_policy)
+except ImportError:  # Standalone packaged helper directory.
+    from desktop_launch import (DesktopError, launch, digest_json, _write_state_record,
+                                lifecycle_lock, _read_generations, _generation, _real_path, plan_identity, copy_file,
+                                desktop_entry, snapshot_legacy, assert_quiescent, _flush_tree, validate_update_policy)
+
 
 
 def refresh_desktop_cache(directory):

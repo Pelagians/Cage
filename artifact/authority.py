@@ -72,6 +72,17 @@ def claim(app, key, kind, ledger_root, *, native_ref=None, adopt=False, occupied
         record = read_authority(app)
         if record and record['publisherKeySha256'] != fingerprint:
             raise r.ReleaseError('app ID belongs to a different publisher; use a fresh application ID')
+        # Existing format ledgers predate the canonical pin. Do not let a new
+        # format or cache establish a contradictory authority over their ID.
+        roots={root,folder.parent.parent}
+        roots.update(Path(value['ledgerRoot']) for value in (record or {}).get('formats',{}).values())
+        for known_root in roots:
+            for known_format in r.FORMATS:
+                ledger=known_root/'installed'/app/known_format/'installation.json'
+                if ledger.exists() or ledger.is_symlink():
+                    installed=r.parse(r.small(r.regular(ledger)))
+                    if installed.get('publisherKeySha256')!=fingerprint:
+                        raise r.ReleaseError('existing format ledger belongs to a different publisher; use a fresh application ID')
         old = (record or {}).get('formats', {}).get(kind)
         if old and old['ledgerRoot'] != str(root):
             raise r.ReleaseError('application format is registered in another cache; use its existing ledger root')

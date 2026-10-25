@@ -272,6 +272,20 @@ class CapabilityDeliveryTests(unittest.TestCase):
             with self.assertRaisesRegex(r.ReleaseError,'union exceeds'):host.native_policy({},capabilities,paths)
         self.assertEqual(snapshot['policy']['Context']['filesystems'],original)
 
+    def test_existing_v1_format_authority_cannot_be_taken_over_by_v2(self):
+        key=self.key('publisher');other=self.key('other')
+        canonical=authority.authority_folder(self.app).parent.parent
+        legacy=canonical/'installed'/self.app/'appimage/installation.json';legacy.parent.mkdir(parents=True)
+        legacy.write_text(json.dumps({'schemaVersion':'cage.release-installation/v1','publisherKeySha256':r.public_key(other)[1]}))
+        original=legacy.read_bytes()
+        with self.assertRaisesRegex(r.ReleaseError,'existing format ledger'):authority.claim(self.app,key,'oci',self.root/'another-cache')
+        self.assertIsNone(authority.read_authority(self.app));self.assertEqual(legacy.read_bytes(),original)
+
+    def test_host_desktop_integration_imports_in_a_clean_process(self):
+        import subprocess,sys
+        result=subprocess.run([sys.executable,'-c','from artifact.desktop_integration import install'],cwd=Path(__file__).resolve().parents[1],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
     def test_import_rejects_non_type2_without_executing(self):
         package=self.root/'bad.AppImage';package.write_bytes(b'#!/bin/sh\nexit 100\n')
         with self.assertRaisesRegex(r.ReleaseError,'type-2'):managed_launch.squash_offset(package)

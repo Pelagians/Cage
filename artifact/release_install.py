@@ -254,6 +254,12 @@ def deploy(source, key, kind, *, action='install', cache=None, files=(), engine=
 
 def operate(app, key, kind, *, action='run', cache=None, files=()):
     root=r.cache_root(cache);folder=installation(root,app,kind)
+    from artifact import authority
+    pin=authority.read_authority(app)
+    if pin:
+        if r.public_key(key)[1]!=pin['publisherKeySha256']:raise r.ReleaseError('canonical app ID belongs to another publisher; use a fresh ID')
+        registered=pin['formats'].get(kind)
+        if registered and Path(registered['ledgerRoot']).resolve()!=root.resolve():raise r.ReleaseError('app/format is registered in another cache')
     existing=_read(folder)
     if existing and existing.get('schemaVersion')=='cage.release-installation/v2':
         from artifact import release_v2
