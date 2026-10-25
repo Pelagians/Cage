@@ -18,7 +18,7 @@ from artifact.graph import DESKTOP_SCHEMA_VERSION
 from core.chocolatey.assets.runtime_artifact import profile_identity
 
 GRAPH_SCHEMA_VERSION = "cage.execution-graph/v0"
-MANIFEST_SCHEMA_VERSIONS = {"cage.app/v0", "cage.dev/v0"}
+MANIFEST_SCHEMA_VERSIONS = {"cage.app/v0", "cage.dev/v0", "cage.app/v1"}
 INSPECTION_SCHEMA_VERSION = "cage.bundle-inspection/v0"
 VERIFICATION_SCHEMA_VERSION = "cage.bundle-verification/v0"
 STATUS_SCHEMA_VERSION = "cage.bundle-status/v0"

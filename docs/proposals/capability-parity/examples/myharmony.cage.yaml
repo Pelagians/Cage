@@ -1,4 +1,4 @@
-# DESIGN ONLY: prospective v1; current Cage rejects this schemaVersion.
+# v1 strict negative fixture: selected USB is recognized but currently unsupported.
 schemaVersion: cage.app/v1
 name: myharmony
 version: 1.0.308

@@ -27,7 +27,7 @@ privileged daemon.
   evidence requirements, and release gates. These are specifications, not an
   implemented test suite or passed results.
 - [MyHarmony example](examples/myharmony.cage.yaml): full prospective recipe,
-  derived from the current checked-in source recipe; current Cage rejects v1.
+  derived from the current checked-in source recipe; the v1 parser accepts this candidate; qualification is separate.
 - [All Devices example](examples/all-devices.contract.yaml): proposed field
   projection showing the broad device request; not a runnable application.
 - [Local binding example](examples/local-bindings.yaml): prospective local
@@ -302,7 +302,7 @@ USB presence constraints and explicit hotplug defaults as well as prior negative
 Schema/example validation is recorded separately from runtime qualification.
 Authority, native-edit races, runtime staging and broad-device cases are included.
 Removing the proposed fields from the MyHarmony example restores the existing
-normalized v0 application recipe. During design the production parser rejects v1;
+normalized v0 application recipe. The production parser now supports v1;
 implementation replaces that check with correct v1 support and unchanged v0. These
 checks do not execute or qualify any proposed runtime capability.
 
