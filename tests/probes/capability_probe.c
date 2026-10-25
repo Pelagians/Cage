@@ -3,8 +3,12 @@
  * Usage: probe.exe READ_CANARY WRITABLE_DIRECTORY DENIED_CANARY PROTECTED_CANARY [TCP_PORT]
  * Output is evidence for a host-side assertion, never a hardware compatibility pass.
  */
+#ifndef UNICODE
 #define UNICODE
+#endif
+#ifndef _UNICODE
 #define _UNICODE
+#endif
 #include <winsock2.h>
 #include <windows.h>
 #include <setupapi.h>
