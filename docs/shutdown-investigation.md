@@ -1,5 +1,37 @@
 # Wine shutdown investigation
 
+## Fresh-install reproduction and capture verification
+
+The two completed ARM diagnostic cohorts passed 60 trusted AppImage sessions,
+but each cohort reused its initial prefix for the added relaunches. Neither
+produced a failure stack, and neither repairs the original post-merge timeout.
+
+Manual onboarding input `appimage_fresh_installs=10` instead runs ten independent
+trusted installs in new consumer homes, XDG state directories and release caches.
+Each performs only its first real document open, preference change, Save As,
+normal shutdown and idle check. The first failure stops the cohort with the same
+120-second application deadline and host stack observer. Trial state must be
+absent before installation, sequence must remain one and only one generation
+may exist. Source package hashes and document bytes must remain unchanged.
+
+These partial trials write `first-launch-diagnostic.json` with status `observed`
+and `diagnosticOnly=true`; they never write a qualifying `result.json`. Release
+creation still requires independently completed full application evidence. Only
+after a successful trial are its disposable prefix and verified consumed cache
+payload retired; signed manifests, proofs, receipts and diagnostic records stay.
+Failed trials, producer packages and user recovery data are not removed.
+
+The separate `observer-component` job exercises actual rootless PID mapping,
+host GDB attachment, registers and native stack output on both CI architectures.
+A normal native process must produce no request or dump. A deliberately stalled
+private `sleep` process triggers the real failure request path; the observer
+must collect a native `#0` frame while preserving the fixture's exit 73. This
+controlled deadline is confined to the component test. It does not change Wine
+deadlines, qualify an application or prove ARM64EC guest-frame unwinding. A real
+Wine failure capture is still required for that evidence. Consumer privileges
+stay unchanged, and the component grants namespace creation only to Podman
+while retaining the host's global AppArmor setting.
+
 ## Post-merge ARM AppImage failure at `8afc3e6c`
 
 [The PR #22 post-merge onboarding run](https://github.com/Pelagians/Cage/actions/runs/40252503312/job/121347251449)
