@@ -80,6 +80,7 @@ class MacOSTargetTests(unittest.TestCase):
         with self.assertRaisesRegex(DesktopError, 'graphics overrides'):
             validate_recipe(Manifest.from_dict(payload))
         payload = m.to_dict(); payload['launch']['env'] = {'GRAPHICS_BACKEND': 'dxvk'}
+        payload['entrypoints'][0]['env'] = dict(payload['launch']['env'])
         with self.assertRaisesRegex(DesktopError, 'runtime-owned'):
             validate_recipe(Manifest.from_dict(payload))
         payload = m.to_dict(); payload['modules'] = [{'type': 'check', 'command': {'run': 'echo unsafe', 'exitCode': 0}}]
