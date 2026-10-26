@@ -86,6 +86,21 @@ def display_preferences(root):
     return value
 
 
+def verify_wayland_driver(wine):
+    """Inspect modules in the exact native runtime before touching a prefix."""
+    executable=Path(shutil.which(str(wine)) or wine).resolve()
+    root=executable.parent.parent
+    files=[]
+    for suffix in ('x86_64-windows/winewayland.drv','x86_64-unix/winewayland.so'):
+        matches=list({(root/base/'wine'/suffix).resolve():root/base/'wine'/suffix for base in ('lib','lib64')
+                      if (root/base/'wine'/suffix).is_file() and (root/base/'wine'/suffix).stat().st_size>0}.values())
+        if len(matches)!=1:
+            raise DesktopError('selected runtime lacks an unambiguous native Wayland driver: '+suffix)
+        path=matches[0]
+        files.append({'path':str(path.relative_to(root)),'sha256':hashlib.sha256(path.read_bytes()).hexdigest()})
+    return {'backend':'wayland','files':files}
+
+
 def prefix_dpi(prefix):
     path = _real_path(prefix, 'user.reg')
     if not path.is_file():
@@ -940,6 +955,13 @@ def _launch_locked(metadata_path, files, plan, inventory, state_root, identity, 
     if plan["target"]["graphics"] == "x11":
         environment.pop("WAYLAND_DISPLAY", None)
         environment.pop("WAYLAND_SOCKET", None)
+    elif plan['target']['graphics'] == 'wayland':
+        verify_wayland_driver(wine)
+        environment.pop('DISPLAY', None)
+        environment.pop('XAUTHORITY', None)
+        environment.pop('WAYLAND_SOCKET', None)
+        if not environment.get('WAYLAND_DISPLAY') or not environment.get('XDG_RUNTIME_DIR'):
+            raise DesktopError('native Wayland requires its granted compositor socket')
     assert_quiescent(state_root, server, environment)
     prefix, pending = prepare_generation(seed, inventory, state_root, identity, plan, action)
     environment["WINEPREFIX"] = str(prefix)

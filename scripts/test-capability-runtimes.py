@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import socket
 import socketserver
@@ -244,7 +245,17 @@ def run_case(release,record,work,paths,case,port,abstract,device,host_process,sh
                 if time.monotonic()>deadline:raise RuntimeError('native child readiness timed out')
             initial=json.loads(ready.read_text())['initialDeviceAccessible']
             if initial != devices_granted:raise AssertionError('initial device view differs from request')
-            observer['window']=subprocess.run(['xdotool','search','--onlyvisible','--name','^Cage Runtime Parity$'],capture_output=True).returncode==0
+            if release['entry']['plan']['recipe']['runtime'].get('wineGraphics')=='wayland':
+                # The actual Wine client must name and attach a buffer to its
+                # Wayland surface. No XWayland server or X11 mount is supplied.
+                deadline=time.monotonic()+30
+                while time.monotonic()<deadline:
+                    log=(evidence/'launch.log').read_text(errors='replace') if (evidence/'launch.log').exists() else ''
+                    if 'set_title("Cage Runtime Parity")' in log and re.search(r'wl_surface[@#][0-9]+\.attach\(wl_buffer',log):
+                        observer['window']=True;break
+                    if stop.wait(.1):break
+            else:
+                observer['window']=subprocess.run(['xdotool','search','--onlyvisible','--name','^Cage Runtime Parity$'],capture_output=True).returncode==0
             if devices_granted:
                 device.remove();time.sleep(.7);device.create();observer['transition']=True
         except BaseException as exc:errors.append(str(exc))
@@ -295,6 +306,9 @@ def run_case(release,record,work,paths,case,port,abstract,device,host_process,sh
     assert linux['devices']['liveTransitionObserved'] is devices_granted
     assert linux['devices']['reconnectObserved'] is devices_granted
     assert observer['window'] and win['windowCreated'] and win['nativeChildCompleted']
+    if release['entry']['plan']['recipe']['runtime'].get('wineGraphics')=='wayland':
+        assert win['waylandDriverLoaded'] is True and win['x11DriverLoaded'] is False,win
+        assert linux['display']=={'x11EnvironmentPresent':False,'waylandEnvironmentPresent':True,'x11SocketsVisible':False},linux['display']
     assert win['wineDriveWrite'] is True
     assert win['settingsPreserved'] is True
     assert win['stateCounter']==counter,(kind,case,win['stateCounter'],counter)
@@ -315,6 +329,7 @@ def main():
     parser.add_argument('--probe',type=Path,required=True);parser.add_argument('--evidence',type=Path,required=True)
     parser.add_argument('--format',choices=('oci','flatpak','appimage'))
     parser.add_argument('--installed-releases',action='store_true',help='Also qualify signed installed lifecycle in disposable consumer homes')
+    parser.add_argument('--display',choices=('x11','wayland'),default='x11')
     args=parser.parse_args()
     if platform.machine()!='x86_64' or os.getuid()==0:raise RuntimeError('run as a regular user on native Ubuntu x86_64')
     work=args.workspace.resolve();work.mkdir(parents=True,exist_ok=False)
@@ -333,6 +348,11 @@ def main():
     for path in paths.values():path.mkdir(parents=True);(path/'canary').write_bytes(b'cage-probe-canary\n')
     source_sha=prepare_payload(workspace,args.probe)
     recipe=fixture_recipe(app,workspace,paths)
+    if args.display=='wayland':
+        if args.installed_releases:raise RuntimeError('Wayland installed-release qualification is a separate follow-up')
+        recipe['runtime']['wineGraphics']='wayland'
+        next(r for r in recipe['permissions']['requests'] if r['kind']=='display')['backend']='wayland'
+        recipe['launch']['env']={'WAYLAND_DEBUG':'client','WINEDEBUG':'+loaddll'}
     if args.installed_releases:
         # Hardware cases stay blocked; never sign synthetic null-device views
         # as the required controlled Windows device/hotplug evidence.
@@ -344,8 +364,10 @@ def main():
     with shm.open('xb') as output:output.write(b'cage-probe-canary\n')
     host_process=subprocess.Popen([sys.executable,'-c','import time;time.sleep(2400)','cage-parity-host-control'])
     result={'schemaVersion':'cage.runtime-parity-suite/v1','status':'running','applicationId':app,'sourceArchiveSha256':source_sha,
+            'displayBackend':args.display,
             'testedCommit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
             'formats':{},'physicalUsbSynchronization':'unqualified','myHarmonyWorkflow':'not-qualified-by-probe-suite'}
+    weston=None
     try:
         from importlib.util import spec_from_file_location,module_from_spec
         spec=spec_from_file_location('parity_linux_control',ROOT/'tests/probes/capability_probe.py');probe=module_from_spec(spec);spec.loader.exec_module(probe)
@@ -358,6 +380,18 @@ def main():
             write(evidence/'host.json',{'controls':controls,'host':{'architecture':platform.machine(),'kernel':platform.release()}})
             formats=(args.format,) if args.format else ('oci','flatpak','appimage')
             candidates=build_candidates(work,args.store.resolve(),app,recipe_path,evidence,formats)
+            if args.display=='wayland':
+                # Builds retain their existing disposable Xvfb path. Only
+                # payload execution uses Weston, without XWayland enabled.
+                weston_log=(evidence/'weston.log').open('w')
+                weston=subprocess.Popen(['weston','--no-config','--backend=headless-backend.so','--use-pixman',
+                    '--socket=cage-wayland','--idle-time=0','--width=1280','--height=900'],stdout=weston_log,stderr=subprocess.STDOUT)
+                weston_log.close()
+                deadline=time.monotonic()+20
+                while not (Path(os.environ['XDG_RUNTIME_DIR'])/'cage-wayland').exists():
+                    if weston.poll() is not None or time.monotonic()>deadline:raise RuntimeError('headless Weston unavailable; retain logs')
+                    time.sleep(.1)
+                os.environ['WAYLAND_DISPLAY']='cage-wayland';os.environ.pop('DISPLAY',None);os.environ.pop('XAUTHORITY',None)
             if 'flatpak' in candidates:install_native(candidates['flatpak'],consumer,evidence)
             for kind in formats:
                 release=candidates[kind];record={'stateDirectory':str(work/'oci-state')};folder=evidence/kind
@@ -399,6 +433,8 @@ def main():
         result['status']='failed';result['error']=str(exc);raise
     finally:
         write(evidence/'runtime-parity.json',result)
+        if weston is not None:
+            weston.terminate();weston.wait(timeout=10)
         host_process.terminate();host_process.wait(timeout=10)
         null.remove();shm.unlink()
     print(json.dumps(result,indent=2))

@@ -192,7 +192,7 @@ def platform_directory(platform_root, relative):
     return path
 
 
-def stage_native_libraries(appdir, platform_root, minimum_glibc):
+def stage_native_libraries(appdir, platform_root, minimum_glibc, *, graphics='x11'):
     """Resolve ELF imports without executing ldd, plus the qualified X11 dlopens."""
     appdir, platform_root = Path(appdir), Path(platform_root)
     native = appdir / 'usr/lib/cage-native'
@@ -220,7 +220,8 @@ def stage_native_libraries(appdir, platform_root, minimum_glibc):
                 queue.append(path)
                 if base.name == 'wine':
                     internal[path.name] = path
-    for name in [*DYNAMIC_LIBRARIES, *sorted(LIBC_LIBRARIES & available.keys()),
+    display_libraries = ['libwayland-client.so.0','libxkbcommon.so.0'] if graphics=='wayland' else []
+    for name in [*DYNAMIC_LIBRARIES, *display_libraries, *sorted(LIBC_LIBRARIES & available.keys()),
                  *sorted({'libnss_dns.so.2', 'libnss_files.so.2'} & available.keys())]:
         if name not in available:
             raise DesktopError('missing qualified X11 runtime dependency: ' + name)
@@ -355,7 +356,7 @@ def prepare_appdir(bundle, plan, context, *, store, cache):
     unpack_python(checked_download(plan['tools']['python'][arch], cache), appdir / 'usr')
     location = run_flatpak(['info', '--user', '--show-location',
         plan['sourceTarget']['platform'] + '/' + arch + '/' + plan['sourceTarget']['branch']], store=store)
-    closure = stage_native_libraries(appdir, Path(location) / 'files', plan['tools']['privateRuntime']['maximumGlibc'])
+    closure = stage_native_libraries(appdir, Path(location) / 'files', plan['tools']['privateRuntime']['maximumGlibc'], graphics=plan['target']['graphics'])
     closure['omittedUnixModules'] = omitted
     closure['relocatedWineLinks'] = relocated
     stage_desktop_fonts(appdir / 'usr', Path(location) / 'files')

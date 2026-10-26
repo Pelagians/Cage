@@ -71,7 +71,14 @@ def validate_desktop_recipe(manifest):
         raise DesktopError("the desktop target requires its pinned Wine provider/version")
     if manifest.runtime.runner or manifest.runtime.image or manifest.runtime.digest or manifest.runtime.source or manifest.runtime.channel:
         raise DesktopError("custom OCI images/runners cannot be substituted for a qualified desktop runtime")
-    if manifest.runtime.wine_graphics != "xwayland" or (manifest.schema_version != "cage.app/v1" and manifest.runtime.network != "none") or manifest.build.network != "none":
+    wayland = manifest.schema_version == 'cage.app/v1' and manifest.runtime.wine_graphics == 'wayland'
+    if wayland:
+        displays = [r for r in manifest.to_dict()['permissions']['requests'] if r['kind'] == 'display']
+        if (target['architecture'] != 'x86_64' or target['provider'] != 'wine' or target['version'] != '11.0'
+                or len(displays) != 1 or displays[0]['backend'] != 'wayland' or not displays[0]['required']):
+            raise DesktopError('native Wayland initially requires pinned x86_64 Wine 11.0 and a required matching display request')
+        target = {**target, 'id':target['id']+'-wayland', 'graphics':'wayland'}
+    if (manifest.runtime.wine_graphics != "xwayland" and not wayland) or (manifest.schema_version != "cage.app/v1" and manifest.runtime.network != "none") or manifest.build.network != "none":
         raise DesktopError("the desktop POC supports X11/XWayland and offline build/run only")
     if manifest.exports:
         raise DesktopError("additional outputs need later desktop qualification")
@@ -98,7 +105,7 @@ def validate_desktop_recipe(manifest):
             raise DesktopError("invalid desktop environment key")
         if key in {"PATH", "WINEPREFIX", "WINE", "WINESERVER", "WINELOADER", "HOME", "FLATPAK_ID"} or key.startswith(("LD_", "DYLD_", "XDG_")):
             raise DesktopError(f"desktop environment key is runtime-owned: {key}")
-        if manifest.schema_version == 'cage.app/v1' and key.startswith('CAGE_'):
+        if manifest.schema_version == 'cage.app/v1' and (key.startswith('CAGE_') or key in {'DISPLAY','WAYLAND_DISPLAY','WAYLAND_SOCKET','XAUTHORITY'}):
             raise DesktopError('v1 managed environment keys are runtime-owned')
     if "WINEARCH" in manifest.launch.env:
         raise DesktopError("launch.env cannot override desktop WINEARCH")
@@ -135,7 +142,7 @@ def seal_desktop_bundle(bundle, target, runtime_evidence):
     graph.update(schemaVersion=DESKTOP_SCHEMA_VERSION, executionTarget=target,
                  builderRuntime=native, runnerRuntime=native,
                  graphics={"defaultMode": "desktop", "supportedModes": ["desktop"],
-                           "sessionBackend": "x11", "wineGraphics": "xwayland"})
+                           "sessionBackend": target['graphics'], "wineGraphics": "wayland" if target['graphics']=='wayland' else "xwayland"})
     for node in graph["nodes"]:
         if node["kind"] == "runtime-image":
             node.update(kind="runtime-target", label=target["id"], runtime=native)

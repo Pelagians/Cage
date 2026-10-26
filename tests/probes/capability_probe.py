@@ -85,6 +85,9 @@ def observe(args):
             'network':{'tcp':connect(('127.0.0.1',args.port)) if args.port else None,
                        'abstract':connect('\0'+args.abstract,socket.AF_UNIX) if args.abstract else None}}
     result['mounts']={'packageReadOnly':readonly_mount(args.package),'runtimeReadOnly':readonly_mount(args.runtime)}
+    result['display']={'x11EnvironmentPresent':bool(os.environ.get('DISPLAY')),
+                       'waylandEnvironmentPresent':bool(os.environ.get('WAYLAND_DISPLAY')),
+                       'x11SocketsVisible':bool(list(Path('/tmp/.X11-unix').glob('X*')))}
     if getattr(args,'old',None):result['filesystem']['previousRead']=readable(args.old)
     if getattr(args,'shm',None):result['baseline']['hostSharedMemoryVisible']=readable(args.shm)
     if getattr(args,'host_process_pid',None):

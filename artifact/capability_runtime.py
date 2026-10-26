@@ -101,6 +101,27 @@ def x11():
     return {'display':display,'socket':str(socket),'authority':str(auth.absolute())}
 
 
+def wayland():
+    """Resolve one owned compositor socket, never the whole host runtime dir."""
+    directory = Path(os.environ.get('XDG_RUNTIME_DIR', ''))
+    name = os.environ.get('WAYLAND_DISPLAY', '')
+    if not directory.is_absolute() or directory.is_symlink() or not re.fullmatch(r'[A-Za-z0-9_.-]+', name) or name in ('.','..'):
+        raise r.ReleaseError('Wayland requires an owned runtime directory and a local socket basename')
+    info = directory.stat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+        raise r.ReleaseError('Wayland runtime directory must be private and owned by the current user')
+    path = directory/name
+    info = path.lstat()
+    if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid():
+        raise r.ReleaseError('Wayland compositor socket must be owned by the current user')
+    return {'backend':'wayland','socket':str(path),'device':info.st_dev,'inode':info.st_ino}
+
+
+def display_backend(capabilities):
+    requests = grants(capabilities, 'display')
+    return requests[0]['grant']['backend'] if requests else None
+
+
 def native_policy(release, capabilities, paths, root=None):
     snapshot = native_snapshot(release)
     context = snapshot['policy'].get('Context', {})
@@ -108,7 +129,7 @@ def native_policy(release, capabilities, paths, root=None):
     for key,value in snapshot['policy'].get('Environment',{}).items():
         if key in ('XDG_DATA_DIRS','XDG_CONFIG_DIRS') and key in defaults and value == defaults[key]:
             continue  # Resource lookup from the pinned runtime, not a state override.
-        if key.startswith(('LD_', 'WINE', 'XDG_')) or key in ('PYTHONPATH','PYTHONHOME','HOME'):
+        if key.startswith(('LD_', 'WINE', 'XDG_')) or key in ('PYTHONPATH','PYTHONHOME','HOME','DISPLAY','XAUTHORITY','WAYLAND_DISPLAY','WAYLAND_SOCKET'):
             raise r.ReleaseError('native environment changes reserved runtime/state paths: '+key+'; reconcile through native controls')
     shared = set(context.get('shared', '').split(';'))
     devices = set(context.get('devices', '').split(';')) - {''}
@@ -117,12 +138,14 @@ def native_policy(release, capabilities, paths, root=None):
         raise r.ReleaseError('native device/shared-memory policy violates the requested v1 boundary')
     if ('network' in shared) != bool(grants(capabilities, 'network')):
         raise r.ReleaseError('effective native network permission differs; change it through Flatseal/native CLI')
-    if not sockets <= ({'x11', 'fallback-x11'} if grants(capabilities, 'display') else set()):
+    backend = display_backend(capabilities)
+    allowed = {'wayland'} if backend == 'wayland' else {'x11','fallback-x11'} if backend else set()
+    if not sockets <= allowed:
         raise r.ReleaseError('native socket grant exceeds the supported v1 combination')
     if all_devices(capabilities) and 'all' not in devices:
         raise r.ReleaseError('required native All Devices permission is absent')
-    if grants(capabilities, 'display') and not sockets & {'x11','fallback-x11'}:
-        raise r.ReleaseError('required native X11 permission is absent')
+    if backend and not sockets & allowed:
+        raise r.ReleaseError('required native '+backend+' permission is absent')
     if context.get('features', '').strip(';'):
         raise r.ReleaseError('native feature extensions require separate qualification')
     # Independent folder grants are native authority, but cannot expose policy,
@@ -174,7 +197,8 @@ def prepare(release, root, *, accepted=None, create=False):
     if accepted != capabilities['contractDigest'] and local.get('acceptedContractDigest') != capabilities['contractDigest']:
         raise r.ReleaseError('permissions require explicit acceptance of contract ' + capabilities['contractDigest'] + '; inspect the release plan first')
     paths = resolve_files(capabilities,app,root,create=False)
-    display = x11() if grants(capabilities,'display') else None
+    backend = display_backend(capabilities)
+    display = wayland() if backend == 'wayland' else x11() if backend else None
     snapshot = native_policy(release,capabilities,paths,root) if kind=='flatpak' else None
     # Denied native grants and missing display/sandbox prerequisites cannot
     # cause Cage to create a host folder as a side effect of failed preflight.

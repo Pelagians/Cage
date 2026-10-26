@@ -159,6 +159,9 @@ def build_flatpak_bundle(manifest, output, *, workspace, store, timeout=900):
     try:
         inputs = snapshot_sources(manifest, workspace, bundle / "build/inputs")
         initialize_flatpak(build_dir, manifest.desktop["id"], target, store)
+        if target['graphics'] == 'wayland':
+            from runtime.desktop_launch import verify_wayland_driver
+            verify_wayland_driver(build_dir/'files/bin/wine')
     except (DesktopError, OSError, ValueError) as exc:
         update_bundle_execution_metadata(bundle, state="build-failed", runnable=False,
                                          has_default_launch=True, error=str(exc), log_excerpt=str(exc))

@@ -31,6 +31,13 @@ def check(plan, *, environment=None, proc=Path('/proc'), flatpak_info=Path('/.fl
     env = os.environ if environment is None else environment
     if env.get('CAGE_MANAGED_V1') != '1':
         raise ValueError('v1 payload requires the trusted host Cage launch path')
+    backend=plan.get('target',{}).get('graphics')
+    if backend == 'wayland':
+        # Flatpak may retain an inherited DISPLAY even without its X11 socket.
+        # This is process environment selection, never a native override edit.
+        for name in ('DISPLAY','XAUTHORITY','WAYLAND_SOCKET'):env.pop(name,None)
+        if not env.get('WAYLAND_DISPLAY') or not env.get('XDG_RUNTIME_DIR'):
+            raise ValueError('native Wayland socket environment is unavailable')
     status = dict(line.split(':', 1) for line in (proc/'self/status').read_text().splitlines() if ':' in line)
     if (status.get('NoNewPrivs', '').strip() != '1' or int(status.get('CapEff', '1').strip(), 16) != 0
             or status.get('Seccomp', '').strip() != '2'):

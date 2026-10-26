@@ -6,6 +6,14 @@ No installed user prefix, native override, host udev rule or native trust record
 was adopted/reset during development. The current machine is ARM Fedora Asahi;
 it cannot establish the initial native Ubuntu 24.04 x86_64 tuple.
 
+## Native Wayland follow-up
+
+An explicit pinned Wine 11.0 x86_64 native Wayland candidate is being added in
+PR #23. The adapter/socket/runtime checks and a separate three-format CI job are
+implemented; actual qualification is pending its exact-head evidence. See
+[Wayland selection and boundaries](wayland.md). X11 remains the default, and
+existing installations are not migrated automatically.
+
 ## Implemented contract
 
 - Strict v1 parsing and semantic normalization, preserving v0 parsing and launch

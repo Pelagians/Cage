@@ -55,8 +55,13 @@ def managed_plan(bundle, image=None):
         from core.capabilities import compile_capabilities, require_supported
         if manifest['runtime']['provider'] != 'wine' or manifest['runtime']['version'] != '11.0' or runtime.get('architecture','x86_64') not in ('amd64','x86_64'):
             raise state.DesktopError('managed v1 OCI initially requires native x86_64 Wine 11.0')
-        if any(k.startswith('CAGE_') for k in environment):raise state.DesktopError('reserved managed environment variable')
+        if any(k.startswith('CAGE_') or k in {'DISPLAY','WAYLAND_DISPLAY','WAYLAND_SOCKET','XAUTHORITY'} for k in environment):raise state.DesktopError('reserved managed environment variable')
         capabilities = compile_capabilities(manifest,'oci');require_supported(capabilities)
+        if manifest['runtime'].get('wineGraphics') == 'wayland':
+            display=[r for r in manifest['permissions']['requests'] if r['kind']=='display']
+            if len(display)!=1 or display[0]['backend']!='wayland' or not display[0]['required']:
+                raise state.DesktopError('native Wayland requires a matching required display request')
+            plan['target']['graphics']='wayland'
         plan.update(format='oci', recipe=manifest, capabilities=capabilities, managedNamespace=True,
                     sourceManifestDigest=state.digest_json(manifest), environment=environment)
         plan['state'].update(managerVersion=2, schemaVersion='cage.desktop-state/v2')
@@ -67,6 +72,8 @@ def run(plan, script, arguments):
     if plan.get('state', {}).get('managerVersion') == 2:
         from capability_guard import check
         check(plan)
+        if plan['target'].get('graphics') == 'wayland':
+            state.verify_wayland_driver('wine')
     action = os.environ.get('CAGE_STATE_ACTION', 'launch')
     if arguments[:1] and arguments[0] in {'--cage-update', '--cage-rollback', '--cage-state-info', '--cage-migrate', '--cage-rollback-repair'}:
         action, arguments = arguments[0][7:], arguments[1:]

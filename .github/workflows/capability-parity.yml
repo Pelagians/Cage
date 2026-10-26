@@ -142,6 +142,85 @@ jobs:
           path: dist/runtime-parity
           retention-days: 14
 
+  runtime-wayland:
+    needs: source-and-native-components
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install actual runtime and GUI tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap libseccomp2 squashfs-tools patchelf flatpak podman crun uidmap slirp4netns fuse-overlayfs xvfb openbox xdotool xauth weston apparmor-utils
+          python -m pip install -e '.[releases]'
+      - name: Keep the host namespace restriction and authorize only the test tool
+        run: |
+          test "$(cat /sys/module/apparmor/parameters/enabled)" = Y
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
+          mkdir -p "$RUNNER_TEMP/cage-tools" dist/wayland-parity
+          cp /usr/bin/bwrap "$RUNNER_TEMP/cage-tools/bwrap"
+          sed "s|@EXECUTABLE@|$RUNNER_TEMP/cage-tools/bwrap|g" packaging/apparmor/cage-v1-userns.profile.in > "$RUNNER_TEMP/cage-runtime-userns.profile"
+          sudo apparmor_parser -r "$RUNNER_TEMP/cage-runtime-userns.profile"
+          echo "$RUNNER_TEMP/cage-tools" >> "$GITHUB_PATH"
+          cp "$RUNNER_TEMP/cage-runtime-userns.profile" dist/wayland-parity/namespace-profile.txt
+          uname -a > dist/wayland-parity/kernel.txt
+          cat /etc/os-release > dist/wayland-parity/os-release.txt
+          podman --version > dist/wayland-parity/podman-version.txt
+          crun --version > dist/wayland-parity/crun-version.txt
+          flatpak --version > dist/wayland-parity/flatpak-version.txt
+          /usr/bin/python3 --version > dist/wayland-parity/native-python-version.txt
+          bwrap --version > dist/wayland-parity/bwrap-version.txt
+          dpkg-query -W libseccomp2 > dist/wayland-parity/libseccomp-version.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: v1-source-and-component-evidence
+          path: ${{ runner.temp }}/cage-parity-probe
+      - uses: actions/cache@v4
+        id: runtime-cache
+        with:
+          path: .cage/flatpak
+          key: capability-wayland-x86_64-${{ hashFiles('runtime/desktop-wine-11.0.json') }}
+          restore-keys: |
+            desktop-flatpak-X64-
+            appimage-native-x86_64-
+      - name: Build actual exports and run Linux and Windows probes through all adapters
+        run: |
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24' bash -eu -o pipefail <<'SH'
+          openbox >dist/wayland-parity/window-manager.log 2>&1 &
+          python scripts/test-capability-runtimes.py \
+            --workspace "$RUNNER_TEMP/cage-wayland-parity" \
+            --store .cage/flatpak \
+            --probe "$RUNNER_TEMP/cage-parity-probe/windows-probe.exe" \
+            --evidence dist/wayland-parity --display wayland
+          SH
+      - name: Retain the distinction between runtime observations and hardware qualification
+        if: always()
+        run: |
+          if test -f dist/wayland-parity/recipe.json; then
+            python scripts/check-capability-parity-evidence.py dist/wayland-parity/recipe.json dist/wayland-parity --output dist/wayland-parity/parity.json
+          fi
+          test "$(cat /sys/module/apparmor/parameters/enabled)" = Y
+          sysctl kernel.apparmor_restrict_unprivileged_userns > dist/wayland-parity/namespace-policy.txt
+          sudo aa-status > dist/wayland-parity/apparmor.txt
+      - uses: actions/cache/save@v4
+        if: always() && steps.runtime-cache.outputs.cache-hit != 'true'
+        with:
+          path: .cage/flatpak
+          key: capability-wayland-x86_64-${{ hashFiles('runtime/desktop-wine-11.0.json') }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v1-actual-wayland-parity-${{ github.event.pull_request.head.sha || github.sha }}
+          path: dist/wayland-parity
+          retention-days: 14
+
   installed-release-parity:
     name: Installed release parity (${{ matrix.format }})
     strategy:

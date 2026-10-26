@@ -63,9 +63,10 @@ static int runtime_parity(const wchar_t *config, const wchar_t *document) {
     f=_wfopen(values[10],L"wb");if(!f)return 31;
     fprintf(f,"{\"schemaVersion\":\"cage.windows-capability-probe/v1\",\"status\":\"observed\","
         "\"filesystem\":{\"read\":%s,\"readScopeMutation\":%s,\"write\":%s,\"siblingRead\":%s,\"protectedRead\":%s,\"previousRead\":%s},"
-        "\"network\":{\"tcp\":%s},\"wineDriveWrite\":%s,\"hidInterfaces\":%u,\"stateCounter\":%u,\"settingsPreserved\":%s,\"forwardedDocumentReadable\":%s,\"windowCreated\":true,\"nativeChildCompleted\":true}\n",
+        "\"network\":{\"tcp\":%s},\"wineDriveWrite\":%s,\"hidInterfaces\":%u,\"stateCounter\":%u,\"settingsPreserved\":%s,\"forwardedDocumentReadable\":%s,\"waylandDriverLoaded\":%s,\"x11DriverLoaded\":%s,\"windowCreated\":true,\"nativeChildCompleted\":true}\n",
         read?"true":"false",read_mutation?"true":"false",write?"true":"false",denied?"true":"false",
-        protected_read?"true":"false",old?"true":"false",network?"true":"false",writable(L"H:\\")?"true":"false",hids,counter,settings_preserved?"true":"false",document?(forwarded?"true":"false"):"null");
+        protected_read?"true":"false",old?"true":"false",network?"true":"false",writable(L"H:\\")?"true":"false",hids,counter,settings_preserved?"true":"false",document?(forwarded?"true":"false"):"null",
+        GetModuleHandleW(L"winewayland.drv")?"true":"false",GetModuleHandleW(L"winex11.drv")?"true":"false");
     if(fclose(f))return 32;
     DestroyWindow(window);return 0;
 }

@@ -227,6 +227,7 @@ def compile_capabilities(manifest, target, *, decisions=None, bindings=None):
     if set(decisions) - ids or set(bindings) - ids or any(v not in ('allow', 'deny') for v in decisions.values()):
         raise CapabilityError('unresolved local decision/binding')
     network = any(r['kind'] == 'network' and decisions.get(r['id']) != 'deny' for r in contract['permissions']['requests'])
+    runtime = manifest.get('runtime', {})
     records = []
     for original in contract['permissions']['requests']:
         request = copy.deepcopy(original)
@@ -235,7 +236,11 @@ def compile_capabilities(manifest, target, *, decisions=None, bindings=None):
                 raise CapabilityError('only filesystem locations can be rebound')
             request['location'] = location(bindings[request['id']])
         kind, rid = request['kind'], request['id']
-        supported = kind in {'filesystem', 'network'} or (kind == 'display' and request['backend'] == 'x11')
+        # Planning is not runtime qualification. Native Wayland initially uses
+        # the pinned Wine 11 candidate; packaging/launch also verify its driver.
+        supported = kind in {'filesystem', 'network'} or (kind == 'display' and (
+            request['backend'] == 'x11' or (runtime.get('provider') == 'wine'
+            and runtime.get('version') == '11.0' and runtime.get('wineGraphics') == 'wayland')))
         if kind == 'filesystem':
             loc = request['location']
             if loc['base'] == 'absolute':
@@ -290,7 +295,7 @@ def flatpak_permissions(plan):
             continue
         r = item['grant']; kind = r['kind']
         if kind == 'network': flags.append('--share=network')
-        elif kind == 'display': flags.append('--socket=x11')
+        elif kind == 'display': flags.append('--socket=' + r['backend'])
         elif kind == 'filesystem':
             loc = r['location']; path = loc.get('path', '')
             base = loc['base']
