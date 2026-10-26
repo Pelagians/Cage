@@ -640,6 +640,20 @@ def cmd_export_appimage(args):
     return 0
 
 
+def cmd_export_macos_app(args):
+    from artifact.macos_app import create_macos_app_plan, export_macos_app
+    bundle = resolve_bundle_reference(args.bundle, index_path=args.artifact_index)
+    options = dict(allow_host_access=args.allow_host_access, store=args.macos_store, state_dir=args.state_dir)
+    if args.dry_run:
+        result = create_macos_app_plan(bundle, **options)
+    else:
+        if not args.output:
+            raise DesktopError("--output is required unless --dry-run")
+        result = export_macos_app(bundle, output=args.output, cache=args.tool_cache, **options)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
 def cmd_export_kube(args):
     bundle = resolve_bundle_reference(args.bundle, index_path=args.artifact_index)
     image_verification = None
@@ -1099,6 +1113,17 @@ def build_parser():
     ep.add_argument("--timeout", type=int, default=1800)
     ep.add_argument("--dry-run", action="store_true")
     ep.set_defaults(func=cmd_export_appimage)
+
+    ep = esub.add_parser("macos-app", help="Export a sealed native macOS bundle as a local .app")
+    ep.add_argument("bundle")
+    ep.add_argument("--artifact-index", default=None)
+    ep.add_argument("--output", help="New .app directory; existing packages are retained")
+    ep.add_argument("--macos-store", help="Existing verified Wine cache; never embedded or acquired by the app")
+    ep.add_argument("--state-dir", help="State parent; defaults to the same native CLI namespace")
+    ep.add_argument("--tool-cache", default=".cage/macos-app-tools")
+    ep.add_argument("--allow-host-access", action="store_true")
+    ep.add_argument("--dry-run", action="store_true")
+    ep.set_defaults(func=cmd_export_macos_app)
 
     ep = esub.add_parser("oci", help="Export a verified bundle as a runnable OCI application image")
     ep.add_argument("bundle", help="Path to Cage bundle directory or app name from artifact index")

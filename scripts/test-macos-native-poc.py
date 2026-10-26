@@ -36,6 +36,7 @@ def main():
     work = args.work.absolute()
     result = {"schemaVersion": "cage.macos-native-functional-test/v0", "status": "failed", "forcedCleanup": False}
     processes, bundle, helper_env, runtime = [], None, None, None
+    packaged, package_inventory = None, None
     try:
         if platform.system() != "Darwin" or platform.machine() != "arm64":
             raise RuntimeError("native Apple Silicon macOS required")
@@ -80,13 +81,34 @@ def main():
             raise RuntimeError("native run planning created mutable state")
         identity = None
         rounds = []
-        for number, expected in ((1, gui.FIRST), (2, gui.SECOND)):
+        packaged_first = gui.SECOND + b"Packaged launch verified\n"
+        packaged_second = packaged_first + b"Packaged relaunch verified\n"
+        for number, expected in ((1, gui.FIRST), (2, gui.SECOND), (3, packaged_first), (4, packaged_second)):
+            if number == 3:
+                output = work / "Notepad Cage.app"
+                export = [*cli, "export", "macos-app", bundle, "--output", output,
+                          "--macos-store", store, "--state-dir", state, "--tool-cache", work / "app-tools", "--allow-host-access"]
+                command([*export, "--dry-run"], evidence / "app-export-plan.json")
+                if output.exists(): raise RuntimeError("app export planning created a package")
+                command(export, evidence / "app-export.json", timeout=600)
+                receipt = json.loads((evidence / "app-export.json").read_text())
+                if receipt["plan"]["config"]["identity"] != json.loads(identity)["generations"][0]["identity"]:
+                    raise RuntimeError("packaging changed the CLI state identity")
+                packaged = work / "Applications with spaces" / "Notepad café.app"
+                packaged.parent.mkdir(); shutil.move(output, packaged)
+                package_inventory = inventory_tree(packaged)
+                command([packaged / "Contents/MacOS/CageLauncher", "--cage-verify"], evidence / "app-relocated-signature.log")
+            if number == 4:
+                moved = work / "Moved again" / "Notepad café.app"
+                moved.parent.mkdir(); shutil.move(packaged, moved); packaged = moved
+            launch = run if number <= 2 else ["/usr/bin/open", "-n", "-W", "-a", packaged, document]
             report = evidence / f"round-{number}.json"
             ready, close = Path(str(report) + ".ready"), Path(str(report) + ".close")
             application_log = root / "application.log"
             previous_log = application_log.stat().st_mtime_ns if application_log.exists() else None
+            previous_result = (root / "last-run.json").stat().st_mtime_ns if (root / "last-run.json").exists() else None
             with (evidence / f"cage-run-{number}.json").open("wb") as out, (evidence / f"cage-run-{number}.log").open("wb") as err:
-                app = subprocess.Popen(list(map(str, run)), cwd=ROOT, stdout=out, stderr=err)
+                app = subprocess.Popen(list(map(str, launch)), cwd=work, stdout=out, stderr=err)
                 processes.append(app)
                 gui.wait_for((root / "state.json").is_file, "Cage persistent state initialization", app, seconds=90)
                 # Retained state already exists on relaunch. Starting the Wine
@@ -111,7 +133,9 @@ def main():
                 if app.wait(timeout=90) != 0:
                     raise RuntimeError("cage run failed its application or natural server shutdown gate")
             closed = json.loads(report.read_text())
-            run_result = json.loads((evidence / f"cage-run-{number}.json").read_text())
+            if (root / "last-run.json").stat().st_mtime_ns == previous_result:
+                raise RuntimeError("application returned without a new Cage lifecycle receipt")
+            run_result = json.loads((root / "last-run.json").read_text())
             if (closed["applicationExitCode"] != 0 or not closed["registrySeedVerified"] or closed["launchCounter"] != number
                     or not run_result["success"] or not run_result["naturalServerShutdown"] or run_result["forcedCleanup"]):
                 raise RuntimeError("native close/state receipts do not establish success")
@@ -119,6 +143,8 @@ def main():
             (evidence / f"processes-after-{number}.txt").write_text(listing)
             if remaining:
                 raise RuntimeError("native processes remain after Cage returned")
+            if packaged is not None and any(str(packaged) in line for line in listing.splitlines()):
+                raise RuntimeError("packaged launcher/Python remains after LaunchServices returned")
             if identity is None:
                 identity = (root / "state.json").read_bytes()
             elif (root / "state.json").read_bytes() != identity:
@@ -139,15 +165,29 @@ def main():
         finally:
             canary.write_bytes(original)
         verify_runtime(store)
+        if inventory_tree(packaged) != package_inventory:
+            raise RuntimeError("launch modified the application package")
+        # The native host must reject changed resources before executing Python.
+        config = packaged / "Contents/Resources/app-config.json"
+        original_config = config.read_bytes()
+        try:
+            config.write_bytes(original_config + b"\n ")
+            denied = command([packaged / "Contents/MacOS/CageLauncher", "--cage-verify"], evidence / "app-tamper-refusal.log", check=False)
+            if denied.returncode == 0 or (root / "state.json").read_bytes() != identity:
+                raise RuntimeError("changed app package accepted or altered state")
+        finally:
+            config.write_bytes(original_config)
+        command([packaged / "Contents/MacOS/CageLauncher", "--cage-verify"], evidence / "app-final-signature.log")
         final_verification = verify_bundle(bundle)
         if not final_verification["valid"]:
             raise RuntimeError("sealed native bundle changed after launch")
         command(["sw_vers"], evidence / "macos-version.txt")
         result.update(status="passed", build=True, run=True, saveRelaunch=True, registryPersistence=True,
                       sameStateGeneration=True, immutableSeed=True, runtimeTamperRefused=True, cleanShutdown=True,
+                      appPackaging=True, launchServices=True, appRelocation=True, immutableApp=True, appTamperRefused=True,
                       rounds=rounds, target=target["id"], runtimePayloadDigest=target["payloadDigest"],
                       hostPageSize=os.sysconf("SC_PAGE_SIZE"), runnerImage=os.environ.get("ImageVersion"),
-                      testedCommit=os.environ.get("GITHUB_SHA"), scope="CLI native target; ordinary host access; no .app packaging")
+                      testedCommit=os.environ.get("GITHUB_SHA"), scope="native CLI and local ad-hoc-signed .app; ordinary host access")
     except BaseException as exc:
         result.update(error=type(exc).__name__ + ": " + str(exc), forcedCleanup=True)
         for process in processes:
@@ -165,6 +205,10 @@ def main():
             for name in ("application.log", "server-shutdown.log", "last-run.json"):
                 if (state_root / name).is_file():
                     shutil.copyfile(state_root / name, evidence / ("final-" + name))
+        if (work / "Notepad Cage.app.build").exists():
+            shutil.copytree(work / "Notepad Cage.app.build", evidence / "app-build", dirs_exist_ok=True)
+        for log in (Path.home() / "Library/Logs/Cage").glob("*/app-launch.log"):
+            shutil.copyfile(log, evidence / "app-launch.log")
         write(evidence / "result.json", result)
         print(json.dumps(result, indent=2), flush=True)
 

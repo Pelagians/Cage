@@ -1,4 +1,4 @@
-name: macOS native build and persistence proof
+name: macOS native build, app and persistence proof
 
 on:
   workflow_dispatch:
@@ -16,6 +16,7 @@ on:
       - 'tests/probes/notepad_gui.c'
       - 'tests/test_macos_runtime_proof.py'
       - 'tests/test_macos_target.py'
+      - 'tests/test_macos_app.py'
       - 'recipes/notepadplusplus-portable.cage.yaml'
       - 'recipes/notepadplusplus-portable-macos.cage.yaml'
   pull_request:
@@ -32,6 +33,7 @@ on:
       - 'tests/probes/notepad_gui.c'
       - 'tests/test_macos_runtime_proof.py'
       - 'tests/test_macos_target.py'
+      - 'tests/test_macos_app.py'
       - 'recipes/notepadplusplus-portable.cage.yaml'
       - 'recipes/notepadplusplus-portable-macos.cage.yaml'
 
@@ -79,13 +81,13 @@ jobs:
       - name: Install proof dependencies and check verification boundaries
         run: |
           python -m pip install -e '.[dev]'
-          python -m pytest -q tests/test_macos_runtime_proof.py tests/test_macos_target.py
+          python -m pytest -q tests/test_macos_runtime_proof.py tests/test_macos_target.py tests/test_macos_app.py
           test "$(uname -m)" = arm64
       - uses: actions/download-artifact@v4
         with:
           name: macos-gui-driver-${{ github.sha }}
           path: ${{ runner.temp }}/cage-macos-driver
-      - name: Prove native Cage build, run, registry/settings persistence and natural shutdown
+      - name: Prove CLI and relocated app launches, shared persistence and natural shutdown
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |

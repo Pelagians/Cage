@@ -25,8 +25,14 @@
 #define IDM_FILE_SAVE 41006
 
 static const char original[] = "Original macOS document\n";
-static const char first[] = "Cage macOS saved through Notepad++\n";
+#define FIRST_TEXT "Cage macOS saved through Notepad++\n"
+#define SECOND_TEXT FIRST_TEXT "Relaunch verified\n"
+#define THIRD_TEXT SECOND_TEXT "Packaged launch verified\n"
+#define FOURTH_TEXT THIRD_TEXT "Packaged relaunch verified\n"
+static const char first[] = FIRST_TEXT;
 static const char second[] = "Relaunch verified\n";
+static const char third[] = "Packaged launch verified\n";
+static const char fourth[] = "Packaged relaunch verified\n";
 static DWORD app_pid;
 static HWND main_window, editor;
 static RECT window_bounds;
@@ -74,7 +80,7 @@ static int registry_persistence(int round) {
             || type != REG_SZ || wcscmp(seed, L"recipe-ordered")) { RegCloseKey(key); return 0; }
     size = sizeof(counter);
     LSTATUS status = RegQueryValueExW(key, L"LaunchCount", NULL, &type, (BYTE *)&counter, &size);
-    if ((round == 1 && status != ERROR_FILE_NOT_FOUND) || (round == 2 && (status || type != REG_DWORD || counter != 1))) {
+    if ((round == 1 && status != ERROR_FILE_NOT_FOUND) || (round >= 2 && (status || type != REG_DWORD || counter != (DWORD)(round - 1)))) {
         RegCloseKey(key); return 0;
     }
     counter = (DWORD)round;
@@ -107,7 +113,8 @@ int wmain(int argc, wchar_t **argv) {
     if (argc != 5) return 2;
     attach_mode = !wcscmp(argv[1], L"--attach");
     int round = _wtoi(argv[attach_mode ? 2 : 1]);
-    if (round != 1 && round != 2) return 2;
+    if (round < 1 || round > (attach_mode ? 4 : 2)) return 2;
+    const char *initial = round == 1 ? original : round == 2 ? first : round == 3 ? SECOND_TEXT : THIRD_TEXT;
     document_name = wcsrchr(argv[3], L'\\');
     document_name = document_name ? document_name + 1 : argv[3];
     wchar_t command[32768], ready[32768], close_request[32768];
@@ -123,11 +130,11 @@ int wmain(int argc, wchar_t **argv) {
     ULONGLONG start = GetTickCount64();
     while (GetTickCount64() - start < 90000) {
         EnumWindows(find_main, 0);
-        if (editor && matches(round == 1 ? original : first)) break;
+        if (editor && matches(initial)) break;
         if (process.hProcess && WaitForSingleObject(process.hProcess, 0) == WAIT_OBJECT_0) return 6;
         Sleep(100);
     }
-    if (!main_window || !editor || !matches(round == 1 ? original : first)) return 7;
+    if (!main_window || !editor || !matches(initial)) return 7;
     if (attach_mode) {
         process.hProcess = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, app_pid);
         if (!process.hProcess || !registry_persistence(round)) return 16;
@@ -135,18 +142,18 @@ int wmain(int argc, wchar_t **argv) {
     GetWindowRect(main_window, &window_bounds);
     if (window_bounds.right <= window_bounds.left || window_bounds.bottom <= window_bounds.top) return 8;
     /* Verify settings were loaded by the new process before editing again. */
-    if (round == 2 && message(editor, SCI_GETZOOM, 0, 0) != 3) return 9;
+    if (round >= 2 && message(editor, SCI_GETZOOM, 0, 0) != 3) return 9;
     message(editor, SCI_SETZOOM, 3, 0);
     if (round == 1) message(editor, SCI_SELECTALL, 0, 0);
     else message(editor, SCI_GOTOPOS, (WPARAM)message(editor, SCI_GETLENGTH, 0, 0), 0);
-    const char *text = round == 1 ? first : second;
+    const char *text = round == 1 ? first : round == 2 ? second : round == 3 ? third : fourth;
     for (size_t i = 0; text[i]; ++i) {
         if (text[i] == '\n') {
             message(editor, WM_KEYDOWN, VK_RETURN, 1);
             message(editor, WM_KEYUP, VK_RETURN, 1);
         } else message(editor, WM_CHAR, (WPARAM)text[i], 1);
     }
-    char expected[256]; snprintf(expected, sizeof(expected), "%s%s", first, round == 2 ? second : "");
+    const char *expected = round == 1 ? FIRST_TEXT : round == 2 ? SECOND_TEXT : round == 3 ? THIRD_TEXT : FOURTH_TEXT;
     if (!matches(expected) || message(editor, SCI_GETZOOM, 0, 0) != 3) return 10;
     message(main_window, WM_COMMAND, IDM_FILE_SAVE, 0);
     if (!receipt(ready, round, "saved-awaiting-host-verification", STILL_ACTIVE)) return 11;
