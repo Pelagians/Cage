@@ -747,6 +747,9 @@ def verify_bundle(bundle_path: Path | str) -> dict[str, Any]:
                 and not runtime_pair["image"] and not builder_pair["image"] and not runner_pair["image"]
             )
             verify_inventory(bundle / "prefix", receipt.get("inventory", []))
+            if target.get("os") == "darwin" or runtime.get("provider") == "wine-macos":
+                from artifact.macos import verify_seal
+                verify_seal(bundle, target, receipt)
         except (OSError, ValueError, KeyError, TypeError):
             desktop_ok = False
         add_check("desktop-target-integrity", desktop_ok,

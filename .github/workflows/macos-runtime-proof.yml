@@ -1,0 +1,108 @@
+name: macOS native build, app and persistence proof
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/macos-runtime-proof.yml'
+      - 'scripts/test-macos-runtime-poc.py'
+      - 'scripts/test-macos-native-poc.py'
+      - 'runtime/**'
+      - 'artifact/**'
+      - 'builder/**'
+      - 'core/**'
+      - 'cage/**'
+      - 'pyproject.toml'
+      - 'tests/probes/notepad_gui.c'
+      - 'tests/test_macos_runtime_proof.py'
+      - 'tests/test_macos_target.py'
+      - 'tests/test_macos_app.py'
+      - 'recipes/notepadplusplus-portable.cage.yaml'
+      - 'recipes/notepadplusplus-portable-macos.cage.yaml'
+  pull_request:
+    paths:
+      - '.github/workflows/macos-runtime-proof.yml'
+      - 'scripts/test-macos-runtime-poc.py'
+      - 'scripts/test-macos-native-poc.py'
+      - 'runtime/**'
+      - 'artifact/**'
+      - 'builder/**'
+      - 'core/**'
+      - 'cage/**'
+      - 'pyproject.toml'
+      - 'tests/probes/notepad_gui.c'
+      - 'tests/test_macos_runtime_proof.py'
+      - 'tests/test_macos_target.py'
+      - 'tests/test_macos_app.py'
+      - 'recipes/notepadplusplus-portable.cage.yaml'
+      - 'recipes/notepadplusplus-portable-macos.cage.yaml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-runtime-proof-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  gui-driver:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the x64 Windows GUI test driver
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64
+          mkdir -p dist/macos-gui-driver
+          x86_64-w64-mingw32-gcc -Wall -Wextra -Werror -municode -static \
+            tests/probes/notepad_gui.c -o dist/macos-gui-driver/notepad-gui.exe -luser32 -ladvapi32
+          sha256sum dist/macos-gui-driver/notepad-gui.exe | cut -d ' ' -f 1 > dist/macos-gui-driver/probe.sha256
+          x86_64-w64-mingw32-gcc --version > dist/macos-gui-driver/compiler.txt
+          git rev-parse HEAD > dist/macos-gui-driver/source-commit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-gui-driver-${{ github.sha }}
+          path: dist/macos-gui-driver
+          if-no-files-found: error
+          retention-days: 14
+
+  native-proof:
+    needs: gui-driver
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install proof dependencies and check verification boundaries
+        run: |
+          python -m pip install -e '.[dev]'
+          python -m pytest -q tests/test_macos_runtime_proof.py tests/test_macos_target.py tests/test_macos_app.py
+          test "$(uname -m)" = arm64
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-gui-driver-${{ github.sha }}
+          path: ${{ runner.temp }}/cage-macos-driver
+      - name: Prove CLI and relocated app launches, shared persistence and natural shutdown
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/test-macos-native-poc.py \
+            --work "$RUNNER_TEMP/cage-macos-proof" \
+            --evidence "$GITHUB_WORKSPACE/dist/macos-runtime-proof" \
+            --probe "$RUNNER_TEMP/cage-macos-driver/notepad-gui.exe" \
+            --probe-sha256 "$(cat "$RUNNER_TEMP/cage-macos-driver/probe.sha256")"
+      - name: Retain evidence even when a runtime gate fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-runtime-proof-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            dist/macos-runtime-proof
+            ${{ runner.temp }}/cage-macos-driver

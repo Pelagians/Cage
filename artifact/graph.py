@@ -59,8 +59,8 @@ def build_execution_graph(manifest: Manifest) -> dict[str, Any]:
         },
         {
             "id": runtime_node_id,
-            "kind": "runtime-image",
-            "label": builder_runtime_payload["image"],
+            "kind": "runtime-image" if builder_runtime_payload.get("image") else "runtime-target",
+            "label": builder_runtime_payload.get("image") or runtime.execution_target["id"],
             "runtime": dict(builder_runtime_payload),
         },
         *phase_nodes,

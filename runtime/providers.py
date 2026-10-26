@@ -102,6 +102,14 @@ def register_provider(provider: RuntimeProvider):
     _EXTRA_PROVIDERS[provider.name] = provider
 
 def resolve_runtime(spec: RuntimeSpec) -> RuntimeBinding:
+    if spec.provider == "wine-macos":
+        from runtime.macos import runtime_target
+        target = runtime_target()
+        if spec.version != target["version"] or any((spec.runner, spec.image, spec.digest, spec.source, spec.channel)):
+            raise ManifestError("native macOS requires its exact pinned runtime without overrides")
+        return RuntimeBinding(provider=spec.provider, version=spec.version, launcher="wine",
+                              architecture="arm64", runtime_usable=True,
+                              session_contract="cage.macos-wine/v0", execution_target=target)
     if spec.provider in _EXTRA_PROVIDERS:
         return _EXTRA_PROVIDERS[spec.provider].resolve(spec)
 
@@ -199,7 +207,7 @@ def resolve_manifest_runtime(manifest) -> RuntimeBinding:
     artifact = required_cfw_runtime_artifact(manifest)
     if artifact is None:
         return binding
-    if binding.architecture == "aarch64":
+    if binding.architecture in {"aarch64", "arm64"}:
         raise ManifestError("CFW prepared prefixes are not qualified for ARM64EC; retain the producer's x86_64 runtime")
     image = artifact["wineImage"]
     return replace(
@@ -213,7 +221,7 @@ def resolve_manifest_runtime(manifest) -> RuntimeBinding:
 
 
 def list_providers() -> list[str]:
-    return sorted(set(list_catalog_providers()) | set(_EXTRA_PROVIDERS))
+    return sorted(set(list_catalog_providers()) | set(_EXTRA_PROVIDERS) | {"wine-macos"})
 
 
 def resolve_image(provider: str, version: str) -> str | None:

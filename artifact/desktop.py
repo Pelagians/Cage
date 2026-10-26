@@ -131,11 +131,13 @@ def seal_desktop_bundle(bundle, target, runtime_evidence):
     graph = json.loads(graph_path.read_text())
     graph["recipeRuntime"] = {"builder": graph["builderRuntime"], "runner": graph["runnerRuntime"]}
     native = {"provider": target["provider"], "version": target["version"], "resolvedVersion": target["version"],
-              "launcher": "wine", "executionTarget": target, "targetDigest": digest_json(target), "network": "none"}
+              "launcher": "wine", "executionTarget": target, "targetDigest": digest_json(target),
+              "network": "host" if target.get("os") == "darwin" else "none"}
     graph.update(schemaVersion=DESKTOP_SCHEMA_VERSION, executionTarget=target,
                  builderRuntime=native, runnerRuntime=native,
                  graphics={"defaultMode": "desktop", "supportedModes": ["desktop"],
-                           "sessionBackend": "x11", "wineGraphics": "xwayland"})
+                           "sessionBackend": "winemac" if target.get("os") == "darwin" else "x11",
+                           "wineGraphics": "winemac" if target.get("os") == "darwin" else "xwayland"})
     for node in graph["nodes"]:
         if node["kind"] == "runtime-image":
             node.update(kind="runtime-target", label=target["id"], runtime=native)

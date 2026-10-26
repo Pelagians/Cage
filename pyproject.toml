@@ -48,7 +48,7 @@ namespaces = false
 
 [tool.setuptools.package-data]
 "compat.corpus" = ["*.json"]
-runtime = ["catalog.json", "desktop-wine-11.0.json", "wine-arm64ec-11.20-fex-2610.json", "appimage-tools.json", "patches/*.patch", "vendor/fex-2610-cage1/*", "vendor/wine-11.20-exit1/*", "legacy/*.json"]
+runtime = ["catalog.json", "desktop-wine-11.0.json", "wine-arm64ec-11.20-fex-2610.json", "macos-metalsharp-v2.0.json", "macos-app-tools.json", "macos_app.m", "appimage-tools.json", "patches/*.patch", "vendor/fex-2610-cage1/*", "vendor/wine-11.20-exit1/*", "legacy/*.json"]
 "core.chocolatey.assets" = ["*.sh", "*.ps1", "*.nupkg", "*.py", "*.json"]
 container = [
   "build.sh",

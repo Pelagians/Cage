@@ -199,6 +199,23 @@ def cmd_compat_corpus(args):
 
 def cmd_build(args):
     manifest = load_manifest(Path(args.manifest))
+    if args.target == "macos":
+        from artifact.macos import validate_recipe
+        from builder.macos import build_macos_bundle
+        if any(getattr(args, name, None) for name in ("engine", "runtime_image", "image_tag", "runner_cache_dir", "module_cache_dir", "requalify_cfw_runtime")):
+            raise DesktopError("container runtime/cache options do not apply to native macOS")
+        if args.dry_run:
+            result = {"schemaVersion": "cage.macos-build-plan/v0", "target": validate_recipe(manifest),
+                      "phases": build_plan(manifest), "dryRun": True,
+                      "hostAccess": "requires --allow-host-access; ordinary user access without sandbox"}
+        else:
+            result = build_macos_bundle(manifest, Path(args.output), workspace=Path(args.workspace or Path.cwd()),
+                                        store=args.macos_store, allow_host_access=args.allow_host_access,
+                                        timeout=min(args.build_timeout, 900))
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    if manifest.runtime.provider == "wine-macos":
+        raise DesktopError("wine-macos recipes require --target macos; Linux/container targets are unchanged")
     if getattr(args, "target", "container") in {"flatpak", "appimage"}:
         from artifact.desktop import validate_desktop_recipe
         from builder.flatpak import build_flatpak_bundle
@@ -360,6 +377,18 @@ def cmd_build(args):
 
 def cmd_run(args):
     bundle = resolve_bundle_reference(args.bundle, index_path=args.artifact_index)
+    target_path = Path(bundle) / "metadata/execution-target.json"
+    if target_path.is_file() and json.loads(target_path.read_text()).get("os") == "darwin":
+        from runtime.macos_launch import run_plan, execute
+        if (args.engine or args.entrypoint or args.runner_cache_dir or args.name
+                or args.graphics not in {None, "desktop"} or args.network not in {None, "host"}
+                or args.writable_files):
+            raise DesktopError("container options do not apply to native macOS; --allow-host-access acknowledges ordinary host access")
+        plan = run_plan(bundle, store=args.macos_store, state_dir=args.state_dir, files=args.files,
+                        allow_host_access=args.allow_host_access)
+        result = plan if args.dry_run else execute(plan, timeout=args.timeout, state_action=args.state_action)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0 if args.dry_run or result.get("success") else int(result.get("exitCode") or 1)
     plan = build_run_plan(
         bundle,
         graphics=args.graphics,
@@ -611,6 +640,20 @@ def cmd_export_appimage(args):
     return 0
 
 
+def cmd_export_macos_app(args):
+    from artifact.macos_app import create_macos_app_plan, export_macos_app
+    bundle = resolve_bundle_reference(args.bundle, index_path=args.artifact_index)
+    options = dict(allow_host_access=args.allow_host_access, store=args.macos_store, state_dir=args.state_dir)
+    if args.dry_run:
+        result = create_macos_app_plan(bundle, **options)
+    else:
+        if not args.output:
+            raise DesktopError("--output is required unless --dry-run")
+        result = export_macos_app(bundle, output=args.output, cache=args.tool_cache, **options)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
 def cmd_export_kube(args):
     bundle = resolve_bundle_reference(args.bundle, index_path=args.artifact_index)
     image_verification = None
@@ -748,11 +791,13 @@ def build_parser():
 
     # build
     p = sub.add_parser("build", help="Create an immutable execution bundle "
-                                     "(dry-run or real via container)")
+                                     "(dry-run or real with the selected target)")
     p.add_argument("manifest")
-    p.add_argument("--target", choices=["container", "flatpak", "appimage"], default="container",
+    p.add_argument("--target", choices=["container", "flatpak", "appimage", "macos"], default="container",
                    help="Build execution target; container remains the default")
     p.add_argument("--flatpak-store", default=".cage/flatpak", help="Isolated desktop build dependency store")
+    p.add_argument("--macos-store", help="Pinned native macOS runtime cache (separate from application state)")
+    p.add_argument("--allow-host-access", action="store_true", help="Accept ordinary host access for the native macOS build")
     p.add_argument("--output", default="dist",
                    help="Output directory")
     p.add_argument("--workspace",
@@ -781,6 +826,8 @@ def build_parser():
     p.add_argument("bundle", help="Path to Cage bundle directory or app name from artifact index")
     p.add_argument("--artifact-index", default=None,
                    help="Artifact index path for resolving app names (default: dist/.cage/artifacts.json)")
+    p.add_argument("--macos-store", help="Existing verified native macOS runtime cache; launch never downloads")
+    p.add_argument("--allow-host-access", action="store_true", help="Accept ordinary host access for native macOS execution")
     p.add_argument("--graphics", choices=["headless", "selkies", "desktop"],
                    help="Graphics mode; defaults to metadata/graph.json defaultMode")
     p.add_argument("--engine", default=None,
@@ -790,7 +837,7 @@ def build_parser():
     p.add_argument("--network", choices=["none", "bridge", "host"],
                    help="Runtime container network mode; defaults to bundle runtime.network")
     p.add_argument("--entrypoint", help="Named suite entrypoint id to run")
-    p.add_argument("--state-dir", help="Persistent managed Wine container state directory")
+    p.add_argument("--state-dir", help="Persistent Wine state parent directory")
     p.add_argument("--state-action", choices=["update", "rollback", "state-info", "migrate", "rollback-repair"], help="Explicit generation action; requires --state-dir")
     p.add_argument("--writable-files", action="store_true", help="Allow writes within the parent directories of explicitly passed files")
     p.add_argument("files", nargs="*", help="Host files to pass to the selected application entrypoint")
@@ -1066,6 +1113,17 @@ def build_parser():
     ep.add_argument("--timeout", type=int, default=1800)
     ep.add_argument("--dry-run", action="store_true")
     ep.set_defaults(func=cmd_export_appimage)
+
+    ep = esub.add_parser("macos-app", help="Export a sealed native macOS bundle as a local .app")
+    ep.add_argument("bundle")
+    ep.add_argument("--artifact-index", default=None)
+    ep.add_argument("--output", help="New .app directory; existing packages are retained")
+    ep.add_argument("--macos-store", help="Existing verified Wine cache; never embedded or acquired by the app")
+    ep.add_argument("--state-dir", help="State parent; defaults to the same native CLI namespace")
+    ep.add_argument("--tool-cache", default=".cage/macos-app-tools")
+    ep.add_argument("--allow-host-access", action="store_true")
+    ep.add_argument("--dry-run", action="store_true")
+    ep.set_defaults(func=cmd_export_macos_app)
 
     ep = esub.add_parser("oci", help="Export a verified bundle as a runnable OCI application image")
     ep.add_argument("bundle", help="Path to Cage bundle directory or app name from artifact index")
