@@ -52,3 +52,33 @@ pull request, or using workflow dispatch once the definition is on the default
 branch. Each proof artifact contains `result.json`, provenance/signature/source
 records, source and runtime inventories, GUI receipts, saved text, settings,
 process snapshots and logs. A source-only test pass is not a macOS runtime pass.
+
+## Observed proof — 2026-10-25
+
+[Successful workflow 40261187561](https://github.com/Pelagians/Cage/actions/runs/40261187561)
+tested implementation `9460998422d7412461448e1370aad585fa4edfa4` through PR merge
+revision `3b35c2c1dc6365ee37c8d680fd21ed0f654a7cc7`. Later documentation-only
+changes do not change those tested implementation bytes.
+
+The Apple Silicon runner used macOS 15.7.9, build `24G830`, image
+`20260907.0337.1`, with 16,384-byte host pages. Both visible Notepad++ sessions
+passed initial-content checks, exact host-file saves and exit code zero. The
+second process loaded the first save and zoom `3` from the same prefix, appended
+text and saved again. Both natural Wine-server waits completed, process checks
+found no remaining runtime process, and no forced cleanup occurred. Both
+screenshots show the real macOS desktop and application window.
+
+The runtime's recorded SHA-256, publisher/source pins and component notices were
+verified. All 117 audited core Mach-O files passed architecture, signature and
+import checks; all 7,936 extracted runtime inventory entries remained unchanged.
+The application seed also remained unchanged. Separate source CI passed
+681 tests and 255 subtests, with 40 skips. This establishes one unentitled
+Darwin ARM64 runtime/x64 application case, not a full native Cage target,
+source-to-binary reproducibility, restricted-entitlement or redistribution proof.
+
+The workflow artifact retains the receipts, screenshots, inventories and logs
+for 14 days. A local evidence copy is retained in ignored
+`.cage/macos-proof-evidence/40261187561/`. The initial attempts found a GUI-driver
+Unicode-definition error and unhandled BSD-tar AppleDouble metadata; both were
+corrected in the proof harness before the successful run, without changing
+MetalSharp's runtime bytes or weakening the runtime gates.
