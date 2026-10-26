@@ -15,7 +15,8 @@ requests are rejected rather than silently ignored. Build and run require
 
 ## Build and run
 
-On Apple Silicon macOS 15 or newer, with Python 3.11+ and Cage installed, prepare
+On Apple Silicon macOS 15 or newer, with Python 3.11+, Xcode Command Line Tools
+(for the native binary audit) and Cage installed, prepare
 the existing checksum-pinned x64 application source in a fresh checkout/staging
 area, then build:
 

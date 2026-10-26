@@ -55,8 +55,8 @@ def main():
         command([*build, "--dry-run"], evidence / "build-plan.json")
         if store.exists() or state.exists() or (work / "bundles").exists():
             raise RuntimeError("native planning created runtime, state or bundle files")
-        command(build, evidence / "build.log", timeout=1200)
         bundle = work / "bundles" / (manifest.name + "-" + manifest.version)
+        command(build, evidence / "build.log", timeout=1200)
         verification = verify_bundle(bundle)
         write(evidence / "bundle-verification.json", verification)
         if not verification["valid"] or not verification["runnable"]:
@@ -83,10 +83,17 @@ def main():
         for number, expected in ((1, gui.FIRST), (2, gui.SECOND)):
             report = evidence / f"round-{number}.json"
             ready, close = Path(str(report) + ".ready"), Path(str(report) + ".close")
+            application_log = root / "application.log"
+            previous_log = application_log.stat().st_mtime_ns if application_log.exists() else None
             with (evidence / f"cage-run-{number}.json").open("wb") as out, (evidence / f"cage-run-{number}.log").open("wb") as err:
                 app = subprocess.Popen(list(map(str, run)), cwd=ROOT, stdout=out, stderr=err)
                 processes.append(app)
                 gui.wait_for((root / "state.json").is_file, "Cage persistent state initialization", app, seconds=90)
+                # Retained state already exists on relaunch. Starting the Wine
+                # driver at that point races Cage's quiescence check. Cage opens
+                # this log only after that check and generation preparation.
+                gui.wait_for(lambda: application_log.exists() and application_log.stat().st_mtime_ns != previous_log,
+                             "Cage application launch after quiescence check", app, seconds=90)
                 record = json.loads((root / "state.json").read_text())
                 prefix = root / record.get("active", "prefix")
                 helper_env = execution_environment(runtime, prefix, root / "home")
@@ -119,6 +126,7 @@ def main():
             rounds.append(closed)
             shutil.copyfile(root / "state.json", evidence / f"state-{number}.json")
             shutil.copyfile(root / "last-run.json", evidence / f"last-run-{number}.json")
+            shutil.copyfile(application_log, evidence / f"application-{number}.log")
         if inventory_tree(bundle / "prefix") != seed:
             raise RuntimeError("launch changed the sealed source prefix")
         # Modified runtime files must fail before mutable state or Wine starts.
@@ -153,6 +161,10 @@ def main():
                 shutil.copytree(bundle / directory, evidence / ("bundle-" + directory), dirs_exist_ok=True)
         if (work / "runtime/verification").is_dir():
             shutil.copytree(work / "runtime/verification", evidence / "runtime-verification", dirs_exist_ok=True)
+        for state_root in (work / "state").glob("*"):
+            for name in ("application.log", "server-shutdown.log", "last-run.json"):
+                if (state_root / name).is_file():
+                    shutil.copyfile(state_root / name, evidence / ("final-" + name))
         write(evidence / "result.json", result)
         print(json.dumps(result, indent=2), flush=True)
 
