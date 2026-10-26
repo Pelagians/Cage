@@ -207,6 +207,22 @@ def shutdown_diagnostics(process, destination, executable, *, container_state=No
         except OSError:pass
         record['threads'] = threads; records.append(record)
     destination.with_suffix('.json').write_text(json.dumps(records, indent=2) + '\n')
+    if os.environ.get('CAGE_TEST_HOST_DIAGNOSTICS') == '1':
+        # The clean AppImage consumer has no debugger or ptrace capability.
+        # Ask its host observer only after the unchanged shutdown gate failed.
+        request = destination.with_name(destination.name + '-host-request.json')
+        targets = []
+        for record in records:
+            if record.get('comm', '').strip().casefold() != Path(executable).name[:15].casefold():continue
+            try:
+                start = (Path('/proc') / str(record['pid']) / 'stat').read_text().rsplit(')', 1)[1].split()[19]
+                targets.append({'pid': record['pid'], 'startTime': start})
+            except OSError:pass
+        staged = request.with_suffix('.tmp')
+        staged.write_text(json.dumps({'executable': executable, 'targets': targets}) + '\n')
+        staged.replace(request)
+        deadline = time.monotonic() + 60
+        while not request.with_suffix('.done').exists() and time.monotonic() < deadline:time.sleep(.2)
     # CI-only debugger, no auto-loaded scripts or network symbol fetching.
     # Attaching is diagnostic after failure; it cannot turn the trial into a pass.
     if os.environ.get('GITHUB_ACTIONS') == 'true' and shutil.which('gdb'):

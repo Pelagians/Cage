@@ -1,10 +1,16 @@
 name: Application onboarding and legacy migration
+run-name: Onboarding (${{ inputs.appimage_shutdown_relaunches == '25' && 'AppImage shutdown investigation' || github.event_name }})
 
 on:
   workflow_dispatch:
     inputs:
       shutdown_relaunches:
         description: 'Repeat initial container sessions with shutdown signal tracing (no retries)'
+        type: choice
+        options: ['0', '25']
+        default: '0'
+      appimage_shutdown_relaunches:
+        description: 'Additional consecutive trusted AppImage sessions; first failure stops, no retries'
         type: choice
         options: ['0', '25']
         default: '0'
@@ -41,6 +47,7 @@ jobs:
       PYTHONDONTWRITEBYTECODE: '1'
       CAGE_TEST_DISCARD_PREFIXES: '1'
       CAGE_TEST_SOURCE_REVISION: ${{ github.sha }}
+      CAGE_TEST_APPIMAGE_RELAUNCHES: ${{ inputs.appimage_shutdown_relaunches || '0' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -112,20 +119,22 @@ jobs:
           mkdir -p .cage/onboarding-consumer-home .cage/onboarding-appimage-tmp
           dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24 -extension MIT-SHM' bash -eu -o pipefail <<'SH'
           openbox >dist/onboarding-evidence/window-manager-appimage.log 2>&1 &
-          podman run --rm --net=none --userns=keep-id --user "$(id -u):$(id -g)" --hostname "$(hostname)" \
+          python scripts/observe-appimage-proof.py --cidfile "$RUNNER_TEMP/onboarding-appimage.cid" --evidence dist/onboarding-evidence/appimage -- \
+          podman run --cidfile "$RUNNER_TEMP/onboarding-appimage.cid" --rm --net=none --userns=keep-id --user "$(id -u):$(id -g)" --hostname "$(hostname)" \
             --security-opt label=disable -v "$PWD:$PWD" -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
             -v "$XAUTHORITY:$XAUTHORITY:ro" -w "$PWD" -e DISPLAY -e XAUTHORITY \
             -e HOME="$PWD/.cage/onboarding-consumer-home" -e APPIMAGE_EXTRACT_AND_RUN=1 \
-            -e TMPDIR="$PWD/.cage/onboarding-appimage-tmp" -e CAGE_TEST_DISCARD_PREFIXES=1 \
+            -e TMPDIR="$PWD/.cage/onboarding-appimage-tmp" -e CAGE_TEST_DISCARD_PREFIXES=1 -e GITHUB_ACTIONS -e CAGE_TEST_HOST_DIAGNOSTICS=1 \
             -e CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/appimage" \
             localhost/cage-onboarding-tools python3 scripts/test-onboarding-poc.py appimage dist/onboarding-3.6.AppImage dist/onboarding-3.6.1.AppImage --legacy dist/onboarding-legacy.AppImage
-          podman run --rm --net=none --userns=keep-id --user "$(id -u):$(id -g)" --hostname "$(hostname)" \
+          python scripts/observe-appimage-proof.py --cidfile "$RUNNER_TEMP/onboarding-trusted-appimage.cid" --evidence dist/onboarding-evidence/trusted-appimage -- \
+          podman run --cidfile "$RUNNER_TEMP/onboarding-trusted-appimage.cid" --rm --net=none --userns=keep-id --user "$(id -u):$(id -g)" --hostname "$(hostname)" \
             --security-opt label=disable -v "$PWD:$PWD" -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
             -v "$XAUTHORITY:$XAUTHORITY:ro" -w "$PWD" -e DISPLAY -e XAUTHORITY \
             -e HOME="$PWD/.cage/onboarding-consumer-home" -e APPIMAGE_EXTRACT_AND_RUN=1 \
-            -e TMPDIR="$PWD/.cage/onboarding-appimage-tmp" -e CAGE_TEST_DISCARD_PREFIXES=1 \
+            -e TMPDIR="$PWD/.cage/onboarding-appimage-tmp" -e CAGE_TEST_DISCARD_PREFIXES=1 -e GITHUB_ACTIONS -e CAGE_TEST_HOST_DIAGNOSTICS=1 \
             -e CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/trusted-appimage" \
-            -e CAGE_TEST_SOURCE_REVISION \
+            -e CAGE_TEST_SOURCE_REVISION -e CAGE_TEST_INITIAL_RELAUNCHES="$CAGE_TEST_APPIMAGE_RELAUNCHES" \
             localhost/cage-onboarding-tools python3 scripts/test-onboarding-poc.py appimage dist/onboarding-3.6.AppImage dist/onboarding-3.6.1.AppImage --trusted --qualification dist/onboarding-evidence/appimage/result.json
           SH
       - name: Collect records without following Wine drive links

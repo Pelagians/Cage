@@ -1,5 +1,35 @@
 # Wine shutdown investigation
 
+## Post-merge ARM AppImage failure at `8afc3e6c`
+
+[The PR #22 post-merge onboarding run](https://github.com/Pelagians/Cage/actions/runs/40252503312/job/121347251449)
+failed in trusted ARM AppImage `1-original` at the unchanged 120-second shutdown
+deadline. The document was saved and the window closed. The retained process
+record shows one running SumatraPDF thread and waiting launcher ancestors, but
+no native stack. This does not establish whether the previously repaired lock
+path or another cleanup path is responsible. Its trusted lifecycle remains
+unqualified; the earlier successful PR run is separate evidence.
+
+The other 25 post-merge checks passed, including all three x86_64 v1 installed
+release cells, the nine generic runtime scenarios, and ARM repaired rollback
+and update/rollback. Physical USB synchronization remains unqualified.
+
+The clean consumer now requests host diagnostics only after a failed shutdown
+gate. A host observer owns the exact Podman invocation and resolves the failed
+application through that container's PID mapping, checking its host owner,
+executable name and start time. The existing CI debugger collects native
+registers, Wine syscall context and stacks before failure cleanup. No debugger,
+ptrace privilege or network access is added to the consumer. Observer errors
+remain diagnostic errors; the original trial still fails, and the child exit
+status is preserved. Normal sessions never attach a debugger.
+
+Manual `appimage_shutdown_relaunches=25` adds consecutive initial trusted
+AppImage save/close sessions. It stops at the first failure, without retrying a
+trial or changing its deadline, normal-exit, idle or preservation assertions.
+This is an investigation mechanism, not a runtime repair or evidence that the
+post-merge hang has been fixed. Existing application and recovery state are not
+used by these disposable tests.
+
 This investigation keeps failed trials as failures. A GUI disappearing, an
 application log saying `exit code: 0`, or a later successful retry is not sufficient
 to qualify a clean Wine shutdown. The 120-second GUI shutdown deadline, zero exit
