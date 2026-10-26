@@ -7,7 +7,7 @@ SUPPORTED_SCHEMA_VERSIONS = {SCHEMA_VERSION, LEGACY_SCHEMA_VERSION, "cage.app/v1
 
 ALLOWED_RUNTIME_PROVIDERS = {"wine", "staging", "umu-proton-ge"}
 ALLOWED_RUNTIME_NETWORK_MODES = {"none", "bridge", "host"}
-ALLOWED_WINE_GRAPHICS_MODES = {"xwayland", "wayland"}
+ALLOWED_WINE_GRAPHICS_MODES = {"xwayland", "wayland", "winemac"}
 
 ROOT_FIELDS = {
     "schemaVersion",

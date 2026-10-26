@@ -1,10 +1,12 @@
 # Native macOS runtime experiment
 
-The `macOS MetalSharp runtime proof` workflow tests an exact upstream runtime
-outside Cage's build/run/export adapters. It does not add a macOS target or
-change Linux/Asahi runtime selection.
+The original `macOS MetalSharp runtime proof` tested an exact upstream runtime
+outside Cage's build/run/export adapters. That completed proof is recorded
+below. The workflow now exercises the [minimal native CLI target](macos-native-target.md)
+through build/run and persistence, with Linux/Asahi selection unchanged.
 
-The lock is `tests/fixtures/macos-metalsharp-v2.0.json`. It binds the published
+The lock, originally `tests/fixtures/macos-metalsharp-v2.0.json`, now lives in
+`runtime/macos-metalsharp-v2.0.json` for the native provider. It binds the published
 v2.0 relocatable ARM64 tar archive, its byte size and SHA-256, the publisher's
 checksum manifest, the release/tag/source identities and Wine/FEX/graphics
 source gitlinks. The proof retains pinned license files, release metadata, a

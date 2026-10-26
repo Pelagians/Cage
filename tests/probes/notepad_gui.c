@@ -30,6 +30,8 @@ static const char second[] = "Relaunch verified\n";
 static DWORD app_pid;
 static HWND main_window, editor;
 static RECT window_bounds;
+static int attach_mode;
+static const wchar_t *document_name;
 
 static LRESULT message(HWND window, UINT id, WPARAM w, LPARAM l) {
     DWORD_PTR result = 0;
@@ -51,14 +53,33 @@ static BOOL CALLBACK find_editor(HWND window, LPARAM unused) {
 }
 
 static BOOL CALLBACK find_main(HWND window, LPARAM unused) {
-    wchar_t name[128]; DWORD pid = 0; (void)unused;
+    wchar_t name[128], title[4096]; DWORD pid = 0; (void)unused;
     GetWindowThreadProcessId(window, &pid);
     GetClassNameW(window, name, 128);
-    if (pid == app_pid && !wcscmp(name, L"Notepad++") && IsWindowVisible(window)) {
+    GetWindowTextW(window, title, 4096);
+    if ((attach_mode ? wcsstr(title, document_name) != NULL : pid == app_pid)
+            && !wcscmp(name, L"Notepad++") && IsWindowVisible(window)) {
+        app_pid = pid;
         main_window = window;
         EnumChildWindows(window, find_editor, 0);
+        return FALSE;
     }
     return TRUE;
+}
+
+static int registry_persistence(int round) {
+    HKEY key; wchar_t seed[128]; DWORD size = sizeof(seed), type = 0, counter = 0;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Cage\\NativeProof", 0, KEY_READ | KEY_WRITE, &key)) return 0;
+    if (RegQueryValueExW(key, L"SeedValue", NULL, &type, (BYTE *)seed, &size)
+            || type != REG_SZ || wcscmp(seed, L"recipe-ordered")) { RegCloseKey(key); return 0; }
+    size = sizeof(counter);
+    LSTATUS status = RegQueryValueExW(key, L"LaunchCount", NULL, &type, (BYTE *)&counter, &size);
+    if ((round == 1 && status != ERROR_FILE_NOT_FOUND) || (round == 2 && (status || type != REG_DWORD || counter != 1))) {
+        RegCloseKey(key); return 0;
+    }
+    counter = (DWORD)round;
+    status = RegSetValueExW(key, L"LaunchCount", 0, REG_DWORD, (BYTE *)&counter, sizeof(counter));
+    RegCloseKey(key); return status == ERROR_SUCCESS;
 }
 
 static int matches(const char *expected) {
@@ -76,21 +97,26 @@ static int receipt(const wchar_t *path, int round, const char *phase, DWORD exit
             "\"phase\":\"%s\",\"applicationPid\":%lu,\"visibleEditor\":true,"
             "\"initialTextVerified\":true,\"editedTextVerified\":true,"
             "\"zoom\":3,\"windowWidth\":%ld,\"windowHeight\":%ld,"
-            "\"applicationExitCode\":%lu}\n", round, phase, app_pid,
-            window_bounds.right - window_bounds.left, window_bounds.bottom - window_bounds.top, exit_code);
+            "\"applicationExitCode\":%lu,\"registrySeedVerified\":%s,\"launchCounter\":%d}\n", round, phase, app_pid,
+            window_bounds.right - window_bounds.left, window_bounds.bottom - window_bounds.top, exit_code,
+            attach_mode ? "true" : "false", attach_mode ? round : 0);
     return fclose(file) == 0;
 }
 
 int wmain(int argc, wchar_t **argv) {
-    if (argc != 5 || (wcscmp(argv[1], L"1") && wcscmp(argv[1], L"2"))) return 2;
-    int round = _wtoi(argv[1]);
+    if (argc != 5) return 2;
+    attach_mode = !wcscmp(argv[1], L"--attach");
+    int round = _wtoi(argv[attach_mode ? 2 : 1]);
+    if (round != 1 && round != 2) return 2;
+    document_name = wcsrchr(argv[3], L'\\');
+    document_name = document_name ? document_name + 1 : argv[3];
     wchar_t command[32768], ready[32768], close_request[32768];
     if (wcschr(argv[2], L'"') || wcschr(argv[3], L'"')) return 3;
     if (swprintf(command, 32768, L"\"%ls\" -multiInst -nosession -noPlugin \"%ls\"", argv[2], argv[3]) < 0
         || swprintf(ready, 32768, L"%ls.ready", argv[4]) < 0
         || swprintf(close_request, 32768, L"%ls.close", argv[4]) < 0) return 4;
     STARTUPINFOW startup = {0}; PROCESS_INFORMATION process = {0}; startup.cb = sizeof(startup);
-    if (!CreateProcessW(argv[2], command, NULL, NULL, FALSE, 0, NULL, NULL, &startup, &process)) {
+    if (!attach_mode && !CreateProcessW(argv[2], command, NULL, NULL, FALSE, 0, NULL, NULL, &startup, &process)) {
         fprintf(stderr, "CreateProcess: %lu\n", GetLastError()); return 5;
     }
     app_pid = process.dwProcessId;
@@ -98,10 +124,14 @@ int wmain(int argc, wchar_t **argv) {
     while (GetTickCount64() - start < 90000) {
         EnumWindows(find_main, 0);
         if (editor && matches(round == 1 ? original : first)) break;
-        if (WaitForSingleObject(process.hProcess, 0) == WAIT_OBJECT_0) return 6;
+        if (process.hProcess && WaitForSingleObject(process.hProcess, 0) == WAIT_OBJECT_0) return 6;
         Sleep(100);
     }
     if (!main_window || !editor || !matches(round == 1 ? original : first)) return 7;
+    if (attach_mode) {
+        process.hProcess = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, app_pid);
+        if (!process.hProcess || !registry_persistence(round)) return 16;
+    }
     GetWindowRect(main_window, &window_bounds);
     if (window_bounds.right <= window_bounds.left || window_bounds.bottom <= window_bounds.top) return 8;
     /* Verify settings were loaded by the new process before editing again. */
@@ -128,7 +158,8 @@ int wmain(int argc, wchar_t **argv) {
     message(main_window, WM_CLOSE, 0, 0);
     if (WaitForSingleObject(process.hProcess, 30000) != WAIT_OBJECT_0) return 13;
     DWORD exit_code = 1; GetExitCodeProcess(process.hProcess, &exit_code);
-    CloseHandle(process.hThread); CloseHandle(process.hProcess);
+    if (process.hThread) CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
     if (exit_code) return 14;
     return receipt(argv[4], round, "closed", exit_code) ? 0 : 15;
 }

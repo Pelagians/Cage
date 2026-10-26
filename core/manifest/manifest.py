@@ -100,6 +100,15 @@ class RuntimeSpec:
                 "runtime.wineGraphics native Wayland is supported only by wine and staging providers"
             )
 
+        if provider == "wine-macos":
+            from runtime.macos import runtime_target
+            if (version != runtime_target()["version"] or wine_graphics != "winemac"
+                    or network != "host" or set(data) - {"provider", "version", "network", "wineGraphics"}):
+                raise ManifestError("wine-macos requires its pinned version, winemac display and explicit host network; runtime overrides are unsupported")
+            return cls(provider=provider, version=version, network=network, wine_graphics=wine_graphics)
+        if wine_graphics == "winemac":
+            raise ManifestError("winemac display is only qualified for wine-macos")
+
         from runtime.catalog import list_catalog_providers, resolve_catalog_version
 
         if resolve_catalog_version(provider, version, _optional_str(data, "channel")) is None:

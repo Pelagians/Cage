@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "cage.macos-runtime-proof-lock/v0",
+  "schemaVersion": "cage.desktop-runtime/v0",
   "repository": "metalsharp/MetalSharp-Wine",
   "releaseId": 421411349,
   "tag": "v2.0",
@@ -23,9 +23,24 @@
     "sha256": "94524db54176e813f1ea0a5a00cb814f764370a1d5513ac364f1bd09c46f0982"
   },
   "licenses": [
-    {"ref": "2e584552442490e135a5909f26966befe1526bb1", "path": "LICENSE", "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0", "name": "producer-LICENSE"},
-    {"ref": "f73af7a723116d80b94d852cf58dde2587c0b55f", "path": "LICENSE", "sha256": "ae025f125a5d639f0f7abe5146efa1e3d7453cc10b744b2910806fa3f46626ef", "name": "wine-LICENSE"},
-    {"ref": "bfb6ef17d77dfeb751a9e60775b61b7a5200627b", "path": "LICENSE", "sha256": "f34a779f56b36d22b20e1b990d23e583a6a7ca071331925fa46156441c77a1ee", "name": "fex-LICENSE"}
+    {
+      "ref": "2e584552442490e135a5909f26966befe1526bb1",
+      "path": "LICENSE",
+      "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0",
+      "name": "producer-LICENSE"
+    },
+    {
+      "ref": "f73af7a723116d80b94d852cf58dde2587c0b55f",
+      "path": "LICENSE",
+      "sha256": "ae025f125a5d639f0f7abe5146efa1e3d7453cc10b744b2910806fa3f46626ef",
+      "name": "wine-LICENSE"
+    },
+    {
+      "ref": "bfb6ef17d77dfeb751a9e60775b61b7a5200627b",
+      "path": "LICENSE",
+      "sha256": "f34a779f56b36d22b20e1b990d23e583a6a7ca071331925fa46156441c77a1ee",
+      "name": "fex-LICENSE"
+    }
   ],
   "runtimeDirectory": "metalsharp-wine-2.0-arm64",
   "applicationRecipe": "recipes/notepadplusplus-portable.cage.yaml",
@@ -40,5 +55,20 @@
     "WINEDLLOVERRIDES": "winemenubuilder.exe=d;mscoree,mshtml=",
     "WINEDEBUG": "-all,+timestamp,+pid,+process"
   },
-  "qualification": "isolated x64 GUI runtime experiment with ordinary host access; no native Cage target, sandbox, CFW, redistribution, or reproducible-build claim"
+  "qualification": "isolated x64 GUI runtime experiment with ordinary host access; no native Cage target, sandbox, CFW, redistribution, or reproducible-build claim",
+  "id": "metalsharp-wine-2.0-darwin-arm64",
+  "os": "darwin",
+  "architecture": "arm64",
+  "windowsArchitecture": "x86_64",
+  "prefixArchitecture": "win64",
+  "provider": "wine-macos",
+  "version": "11.20",
+  "graphics": "winemac",
+  "wine": "bin/wine",
+  "wineserver": "bin/wineserver",
+  "hostPageSizes": [
+    16384
+  ],
+  "minimumMacOS": "15.0",
+  "payloadDigest": "5faf3b1e92b9a5d2e1f332bd0067a132ca60e460ebbfcca70490f0778541a578"
 }
