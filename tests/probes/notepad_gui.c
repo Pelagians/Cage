@@ -5,8 +5,12 @@
  * Scintilla messages: https://www.scintilla.org/ScintillaDoc.html
  * Save command: Notepad++ v8.8.8 PowerEditor/src/menuCmdID.h.
  */
+#ifndef UNICODE
 #define UNICODE
+#endif
+#ifndef _UNICODE
 #define _UNICODE
+#endif
 #include <windows.h>
 #include <stdio.h>
 #include <wchar.h>
