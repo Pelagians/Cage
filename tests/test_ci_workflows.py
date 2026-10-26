@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import subprocess
+import tempfile
 from unittest.mock import patch
 
 import yaml
@@ -14,6 +17,41 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class CiWorkflowTests(unittest.TestCase):
+    def test_capability_setup_replaces_runner_mirror_list_without_changing_trust(self):
+        script = (ROOT / 'scripts/prepare-capability-ci.sh').read_text()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            sources = tmp / 'ubuntu.sources'
+            calls = tmp / 'apt-calls'
+            sudo = tmp / 'sudo'
+            sudo.write_text('#!/bin/bash\nif [[ "$1" == apt-get ]]; then\n'
+                            '  printf "%s\\n" "$*" >> "$APT_CALLS"\n'
+                            'else\n  exec "$@"\nfi\n')
+            sudo.chmod(0o755)
+            env = {**os.environ, 'PATH': f'{tmp}:/usr/bin:/bin',
+                   'GITHUB_ACTIONS': 'true', 'APT_CALLS': str(calls)}
+            isolated = script.replace('/etc/apt/sources.list.d/ubuntu.sources', str(sources))
+            for uri in ('mirror+file:/etc/apt/apt-mirrors.txt',
+                        'mirror+file:/etc/apt/apt-mirrors.txt/',
+                        'http://azure.archive.ubuntu.com/ubuntu/',
+                        'https://azure.archive.ubuntu.com/ubuntu'):
+                with self.subTest(uri=uri):
+                    calls.unlink(missing_ok=True)
+                    original = (f'Types: deb\nURIs: {uri}\nSuites: noble noble-updates noble-security\n'
+                                'Components: main universe\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n')
+                    sources.write_text(original)
+                    subprocess.run(['bash', '-c', isolated, '--', 'gcc', 'flatpak'], env=env, check=True, capture_output=True)
+                    self.assertEqual(sources.read_text(), original.replace(uri, 'https://archive.ubuntu.com/ubuntu/'))
+                    commands = calls.read_text().splitlines()
+                    self.assertEqual(len(commands), 2)
+                    self.assertTrue(commands[0].endswith(' update'))
+                    self.assertTrue(commands[1].endswith(' install -y gcc flatpak'))
+                    self.assertNotIn('allow-unauthenticated', calls.read_text())
+            calls.unlink()
+            refused = subprocess.run(['bash', '-c', isolated], env={**env, 'GITHUB_ACTIONS': 'false'}, capture_output=True)
+            self.assertEqual(refused.returncode, 64)
+            self.assertFalse(calls.exists())
+
     def test_python_tests_workflow_runs_full_suite_for_core_changes(self):
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github/workflows/tests.yml").read_text(encoding="utf-8")
