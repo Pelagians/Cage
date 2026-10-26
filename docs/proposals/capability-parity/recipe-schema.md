@@ -4,7 +4,8 @@ Status: `cage.app/v1` parsing/normalization and the initial capability subset ar
 implemented. The companion JSON Schema validates the projection containing
 `schemaVersion`, `id`, `execution` and `permissions`; other application fields
 reuse existing validators with explicit v1 adaptations. Export plans accept the
-online X11/All Devices candidate; that does not establish runtime qualification.
+online X11/All Devices candidate and the pinned Wine 11 x86_64 native Wayland
+candidate; that does not establish runtime qualification. See [Wayland](wayland.md).
 The strict selected-USB fixture remains a required-unsupported negative case.
 
 ## Recipe envelope

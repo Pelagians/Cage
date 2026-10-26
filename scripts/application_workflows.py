@@ -105,8 +105,12 @@ class NotepadPlusPlus:
     def fixture(self, path):path.write_text('Cage shared onboarding workflow\n')
 
     def change_preference(self, gui):
-        gui.command('xdotool', 'key', '--clearmodifiers', 'alt+v')
-        gui.command('xdotool', 'key', '--delay', '80', 'Home', *(['Down'] * 6), 'Right', 'Home', 'Return')
+        # The editor is already focused, with the pointer in its client area.
+        # Use Notepad++'s documented Ctrl+wheel action instead of navigating a
+        # newly opened native menu by item index before it is ready.
+        gui.command('xdotool', 'keydown', '--clearmodifiers', 'ctrl')
+        try:gui.command('xdotool', 'click', '4')
+        finally:gui.command('xdotool', 'keyup', 'ctrl')
 
     def preference(self, prefix):
         matches = list(prefix.glob('drive_c/users/*/AppData/Roaming/Notepad++/config.xml'))

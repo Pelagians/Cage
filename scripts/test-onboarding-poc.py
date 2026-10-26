@@ -37,6 +37,17 @@ def sha(path):
     with Path(path).open('rb') as f:return hashlib.file_digest(f, 'sha256').hexdigest()
 
 
+def retire_first_launch_payloads(cache, key):
+    """Retire only consumed payload copies in this newly created diagnostic cache."""
+    from artifact import releases
+    for manifest in (cache/'releases').glob('*/release.json'):
+        signed=releases.verify_manifest(manifest.read_bytes(),Path(str(manifest)+'.sig').read_bytes(),key)
+        for entry in signed['artifacts']:
+            package=manifest.parent/entry['package']['name']
+            assert not package.is_symlink() and releases.asset_valid(package,entry['package'])
+            package.unlink()
+
+
 def proof_container_processes(container_state):
     """Resolve host PIDs only after matching this proof's private state mount."""
     matched = []; pids = []
@@ -207,6 +218,22 @@ def shutdown_diagnostics(process, destination, executable, *, container_state=No
         except OSError:pass
         record['threads'] = threads; records.append(record)
     destination.with_suffix('.json').write_text(json.dumps(records, indent=2) + '\n')
+    if os.environ.get('CAGE_TEST_HOST_DIAGNOSTICS') == '1':
+        # The clean AppImage consumer has no debugger or ptrace capability.
+        # Ask its host observer only after the unchanged shutdown gate failed.
+        request = destination.with_name(destination.name + '-host-request.json')
+        targets = []
+        for record in records:
+            if record.get('comm', '').strip().casefold() != Path(executable).name[:15].casefold():continue
+            try:
+                start = (Path('/proc') / str(record['pid']) / 'stat').read_text().rsplit(')', 1)[1].split()[19]
+                targets.append({'pid': record['pid'], 'startTime': start})
+            except OSError:pass
+        staged = request.with_suffix('.tmp')
+        staged.write_text(json.dumps({'executable': executable, 'targets': targets}) + '\n')
+        staged.replace(request)
+        deadline = time.monotonic() + 60
+        while not request.with_suffix('.done').exists() and time.monotonic() < deadline:time.sleep(.2)
     # CI-only debugger, no auto-loaded scripts or network symbol fetching.
     # Attaching is diagnostic after failure; it cannot turn the trial into a pass.
     if os.environ.get('GITHUB_ACTIONS') == 'true' and shutil.which('gdb'):
@@ -325,6 +352,8 @@ def main():
     parser.add_argument('baseline'); parser.add_argument('candidate')
     parser.add_argument('--legacy'); parser.add_argument('--application', choices=WORKFLOWS, default='sumatrapdf')
     parser.add_argument('--trusted', action='store_true', help='Drive the same proof through signed release delivery')
+    parser.add_argument('--first-launch-only', action='store_true',
+                        help='CI diagnostic only: fresh trusted AppImage install and first save/normal shutdown; never qualification')
     parser.add_argument('--qualification', help='Completed matching application proof to bind in test releases')
     parser.add_argument('--runtime-migration', action='store_true', help='Qualify a same-application-version, explicitly allowed runtime transition')
     parser.add_argument('--rollback-repair', action='store_true', help='Qualify explicit repaired rollback with a new runtime identity')
@@ -332,6 +361,11 @@ def main():
     parser.add_argument('--repair-source-bundle', type=Path,
                         help='Initialize a declared private recovery fixture from this verified original producer seed; never run its runtime')
     args = parser.parse_args(); kind = args.format; workflow = WORKFLOWS[args.application]()
+    if args.first_launch_only and (kind != 'appimage' or not args.trusted or not args.qualification or args.legacy
+            or args.runtime_migration or args.rollback_repair or args.repair_source_bundle
+            or os.environ.get('GITHUB_ACTIONS') != 'true'
+            or os.environ.get('CAGE_TEST_DISCARD_PREFIXES') != '1'):
+        parser.error('first-launch diagnosis requires CI and a disposable fresh trusted AppImage proof')
     if args.rollback_repair and (args.legacy or args.runtime_migration):
         parser.error('repaired rollback is a distinct qualification, without legacy adoption or ordinary runtime migration')
     if args.rollback_repair and args.trusted and not args.baseline_qualification:
@@ -347,6 +381,8 @@ def main():
         parser.error('CAGE_TEST_INITIAL_RELAUNCHES must be between 0 and 25')
     if args.repair_source_bundle and initial_relaunches:
         parser.error('original-runtime relaunches require the separate exact-runtime diagnostic')
+    if args.first_launch_only and (initial_relaunches or stress_relaunches):
+        parser.error('fresh first-launch diagnosis cannot include warm relaunches')
     app = workflow.app_id
     baseline, candidate = (Path(p).resolve() if kind != 'oci' else p for p in (args.baseline, args.candidate))
     legacy = (args.legacy if kind == 'oci' else Path(args.legacy).resolve()) if args.legacy else None
@@ -390,6 +426,8 @@ def main():
     installed = None
     first_package = legacy or baseline
     release_urls={}; server=None; key=None; release_cache=evidence/'trusted-cache';baseline_version=None
+    if args.first_launch_only:
+        assert not state.exists() and not release_cache.exists(), 'fresh trial must not inherit an installation'
     if args.trusted:
         assert not legacy and kind!='container' and args.qualification
         from artifact import releases
@@ -579,6 +617,29 @@ def main():
         preference = workflow.preference(prefix()); assert preference not in (None, 'true', '0')
         first = prefix()
         initial_identity = _read_generations(state)
+        if args.first_launch_only:
+            assert len(initial_identity['generations']) == 1 and len(sessions) == 1
+            assert sha(original) == original_hash and source_identities() == original_sources
+            info=json.loads(subprocess.check_output([sys.executable,'-m','cage','release','info',app,
+                '--key',str(key),'--format',kind,'--cache-dir',str(release_cache)],env=env,text=True))
+            assert info['highWater'] == 1 and info['activeVersion'] == baseline_version
+            diagnostic={'schemaVersion':'cage.appimage-first-launch-diagnostic/v1',
+                'status':'observed','diagnosticOnly':True,'application':args.application,'format':kind,
+                'architecture':os.uname().machine,'pageSize':os.sysconf('SC_PAGE_SIZE'),
+                'sourceRevision':os.environ['CAGE_TEST_SOURCE_REVISION'],
+                'freshInstall':True,'highWater':1,'preference':preference,'sessions':sessions,
+                'exitCode':0,'wineStopped':True,'originalDocumentSha256':original_hash,
+                'documentsPreserved':True,'generations':initial_identity,**original_sources,
+                'physicalUsbSynchronization':'unqualified'}
+            # Only the new disposable trial's consumed payload is retired. Keep
+            # signatures/receipts and all failed trials; never touch producer
+            # packages or installed user recovery data.
+            subprocess.run([installed['installed'],'--cage-uninstall'],env=env,check=True)
+            shutil.rmtree(state)
+            retire_first_launch_payloads(release_cache,key)
+            (evidence/'first-launch-diagnostic.json').write_text(json.dumps(diagnostic,indent=2)+'\n')
+            print(json.dumps({'status':'observed','diagnosticOnly':True,'freshInstall':True,'sessions':1}),flush=True)
+            return
         for index in range(initial_relaunches):
             run(first_package, '1-initial-' + str(index + 1))
             assert prefix() == first and workflow.preference(first) == preference

@@ -153,6 +153,13 @@ def environment(release, effective):
             'CAGE_EXPECTED_FLATPAK_COMMIT':release['entry'].get('flatpakCommit','')}
 
 
+def verify_display_socket(display):
+    if display.get('backend') == 'wayland':
+        info=Path(display['socket']).lstat()
+        if (info.st_dev,info.st_ino)!=(display['device'],display['inode']):
+            raise r.ReleaseError('compositor socket changed after inspection; reinspect')
+
+
 def bubblewrap_args(release, appdir, prepared, root, effective, filter_fd, files=(), action=None):
     plan=release['entry']['plan'];app=plan['desktop']['id'];home=Path.home();data=Path(os.environ.get('XDG_DATA_HOME',home/'.local/share'))
     args=[_tool('bwrap'),'--die-with-parent','--new-session','--unshare-user','--unshare-pid','--unshare-ipc','--unshare-uts',
@@ -176,8 +183,13 @@ def bubblewrap_args(release, appdir, prepared, root, effective, filter_fd, files
          'USER':os.environ.get('USER','cage'),'LANG':os.environ.get('LANG','C.UTF-8'),
          'LC_CTYPE':'C.UTF-8','LOCPATH':'/run/cage/native/usr/lib/cage-native/locale',**environment(release,effective)}
     if effective['display']:
-        display=effective['display'];args+=['--ro-bind',display['socket'],display['socket'],'--ro-bind',display['authority'],'/run/cage/Xauthority']
-        env.update(DISPLAY=display['display'],XAUTHORITY='/run/cage/Xauthority')
+        display=effective['display'];verify_display_socket(display)
+        if display.get('backend') == 'wayland':
+            args+=['--perms','0700','--dir','/run/cage/wayland','--ro-bind',display['socket'],'/run/cage/wayland/wayland-0']
+            env.update(XDG_RUNTIME_DIR='/run/cage/wayland',WAYLAND_DISPLAY='wayland-0')
+        else:
+            args+=['--ro-bind',display['socket'],display['socket'],'--ro-bind',display['authority'],'/run/cage/Xauthority']
+            env.update(DISPLAY=display['display'],XAUTHORITY='/run/cage/Xauthority')
     for name,value in env.items():args+=['--setenv',name,value]
     args+=['/run/cage/native/usr/python/bin/python3','-I','/app/usr/libexec/desktop_launch.py','/app/usr/share/cage/'+app+'/desktop.json']
     if action:args+=['--cage-'+action]
@@ -210,12 +222,21 @@ def container_args(record, release, effective, files=(), action=None, *, seccomp
             args+=['--mount=type=bind,source='+entry['host']+',destination='+entry['host']+(',ro=true' if entry['access']=='read-only' else '')]
     env=environment(release,effective)
     if effective['display']:
-        display=effective['display'];args+=['--mount=type=bind,source='+display['socket']+',destination='+display['socket']+',ro=true',
+        display=effective['display'];verify_display_socket(display)
+        if display.get('backend') == 'wayland':
+            directory='/tmp/cage-runtime-'+str(os.getuid())
+            # Podman applies U to this new tmpfs as the selected container user;
+            # raw uid/gid tmpfs options are rejected by supported Podman 4.9.
+            args+=['--mount=type=tmpfs,destination='+directory+',tmpfs-mode=0700,U=true,nosuid,nodev,notmpcopyup',
+                   '--mount=type=bind,source='+display['socket']+',destination='+directory+'/wayland-0,ro=true']
+            env.update(WAYLAND_DISPLAY='wayland-0',CAGE_WINE_GRAPHICS='wayland')
+        else:
+            args+=['--mount=type=bind,source='+display['socket']+',destination='+display['socket']+',ro=true',
             '--mount=type=bind,source='+display['authority']+',destination=/tmp/cage-xauthority,ro=true']
         # XCB's FamilyLocal cookie lookup uses gethostname(). Keep that name
         # in a private UTS namespace; no host networking or UTS sharing is needed.
-        args+=['--hostname='+os.uname().nodename]
-        env.update(DISPLAY=display['display'],XAUTHORITY='/tmp/cage-xauthority')
+            args+=['--hostname='+os.uname().nodename]
+            env.update(DISPLAY=display['display'],XAUTHORITY='/tmp/cage-xauthority')
     for name,value in env.items():args+=['-e',name+'='+value]
     args+=[release['entry']['imageId']]
     if action:args+=['--cage-'+action]
@@ -239,6 +260,8 @@ def launch(record, release, folder, root, *, files=(), action=None, accepted=Non
         code=Path(capability_guard.__file__).read_text()+'\ncheck(json.loads('+repr(json.dumps(release['entry']['plan']))+'))\n'
         code+='import runpy, sys\nsys.argv = '+repr(['/app/libexec/cage-desktop-launch.py','/app/share/cage/'+app+'/desktop.json',
                 *(['--cage-'+action] if action else []),'--',*map(str,files)])+'\nrunpy.run_path(sys.argv[0], run_name="__main__")\n'
+        display=effective['display']
+        if display:verify_display_socket(display)
         args=['flatpak','run','--user','--commit='+release['entry']['flatpakCommit'],'--runtime-commit='+release['entry']['plan']['target']['platformCommit'],
               '--command=/usr/bin/python3',*['--env='+k+'='+v for k,v in env.items()],_ref({'plan':release['entry']['plan']}),'-I','-c',code]
         return r.command(args,stdin=subprocess.DEVNULL)

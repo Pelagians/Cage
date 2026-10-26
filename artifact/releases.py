@@ -384,9 +384,11 @@ def verify_capability_evidence(entry, proof):
         required.add('devices')
         if any(x['grant'] and x['resolved'].get('hotplug')=='required' for x in capabilities['requests']):required.add('hotplug')
     cases=evidence.get('cases',{})
+    display=next((x['grant']['backend'] for x in capabilities['requests'] if x['grant'] and x['grant']['kind']=='display'),'x11')
+    if display=='wayland':required.add('display')
     if (evidence.get('contractDigest')!=capabilities['contractDigest'] or evidence.get('baseline')!='cage.local-desktop/v1'
             or host.get('bootedNative') is not True or host.get('architecture')!='x86_64'
-            or host.get('os')!='ubuntu' or host.get('version')!='24.04' or host.get('desktop')!='x11'
+            or host.get('os')!='ubuntu' or host.get('version')!='24.04' or host.get('desktop')!=display
             or host.get('wine')!='wine-11.0' or host.get('apparmorEnabled') is not True
             or not isinstance(host.get('kernel'),str) or not host['kernel']
             or not isinstance(host.get('tools'),dict) or not host['tools']

@@ -60,7 +60,13 @@ def main():
            "XDG_RUNTIME_DIR": f"/tmp/cage-runtime-{uid}"}
     if mode == "build":
         env.setdefault("WINEPREFIX", env.get("CAGE_BUILD_PREFIX", "/tmp/cage-build-prefix"))
-    env.pop("WAYLAND_DISPLAY", None)
+    wayland = mode == 'desktop' and env.get('CAGE_MANAGED_V1') == '1' and env.get('CAGE_WINE_GRAPHICS') == 'wayland'
+    if wayland:
+        env.pop('DISPLAY', None);env.pop('XAUTHORITY', None);env.pop('WAYLAND_SOCKET', None)
+        if not env.get('WAYLAND_DISPLAY'):
+            raise SystemExit('native Wayland desktop mode requires its granted compositor socket')
+    else:
+        env.pop("WAYLAND_DISPLAY", None)
     server = None
     if mode != "desktop":
         read_fd, write_fd = os.pipe()
@@ -79,7 +85,7 @@ def main():
             os.close(read_fd)
             if write_fd is not None:
                 os.close(write_fd)
-    elif not env.get("DISPLAY"):
+    elif not wayland and not env.get("DISPLAY"):
         raise SystemExit("desktop mode requires an explicitly shared X11 display")
     encoded = env.get("CAGE_BUILD_SCRIPT_B64" if mode == "build" else "CAGE_LAUNCH_SCRIPT_B64")
     command = (["bash", "-c", base64.b64decode(encoded, validate=True).decode()] if encoded

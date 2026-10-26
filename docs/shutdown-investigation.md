@@ -1,5 +1,119 @@
 # Wine shutdown investigation
 
+## Original failure versus fresh-install observations
+
+Comparing the original failed ARM release (`8afc3e6c`, run `40252503312`)
+with fresh trial 1 (`d6b675e`, run `40272335827`) gives:
+
+| Evidence | Original failure | Successful fresh installs |
+| --- | --- | --- |
+| Runner image | `ubuntu-24.04-arm`, `20261012.149.1` | Same image/version |
+| Runner provisioner | `20261021.618` | Same version |
+| Declared runtime digest | `a7ed976a65a3551e9c997b6ad572a28fbb0fc216d598a7927acb298a3152dd8e` | Identical |
+| Export plan apart from seed digest | Original launch/environment, target pins, loader/closure and helper identities | Identical |
+| Seed digest | `51f2dbdef606ab00ddede19ba1a561e09d840c6cbcdcfab913b1753d5014efee` | `8075bfd7400ee6eb47bf49e25c61220a0e04b504a03c6a1c3cbf78452eef6635` |
+| AppImage SHA-256 | `54a10ab8846ff8427a84e77ef5cfb97027762d7cf247a880336c41b7e17133d5` | `c1b7ca3f2032e3fbbb828b7b70f4dd04c9cc60ff87b7a4c7be8433e7720a6f88` |
+| Producer-cache restore | Miss, including fallback keys | Exact primary-key hit |
+| Consumer Fedora base config | `6b10117125c5a5baae8b496d358966a59e4b8be3e9612134187dbc6a17c738af` | Identical base config; rebuilt consumer image differs |
+| Settings reload tasks after window close | Two | Absent in these ten fresh logs, but also present in other successful ARM sessions |
+
+The seed inventory digest covers file bytes, modes, paths and link targets;
+it is not just an export timestamp. The original onboarding artifact retained
+the seed digest and package receipt, but not the seed inventory or exact
+570 MB AppImage. The ten fresh trials independently installed one newly built
+seed; they did not reproduce that original package. These differences do not
+establish a faulty seed, cache or settings callback. In particular, the repeated
+close/quit messages and settings reloads also occur in successful sessions.
+
+The next bounded run sets `appimage_cold_producer=true` with
+`appimage_fresh_installs=10`. It skips the cache action entirely and refuses an
+existing store without removing it. It then follows the same ordinary and
+trusted onboarding proofs before the independent first launches. A producer
+context records the actual cache boundary, runner/kernel/CPU data; both produced
+seed inventories are retained for later comparison. Existing pins, signing
+qualification, exit/idle deadlines and failure-stop behavior stay unchanged.
+
+Cold diagnostic runs and failed desktop jobs retain the exact baseline,
+candidate and legacy producer AppImages plus receipts in a separate
+`onboarding-replay-*` artifact for 14 days. These are disposable CI producer
+packages, not post-launch prefixes or user documents. Future replay can check
+their exact package/seed identity instead of rebuilding another seed. The
+bounded record downloader must continue skipping these large binaries on the
+low-space local host. No original package or recovery data is replaced.
+
+## Fresh-install reproduction and capture verification
+
+The two completed ARM diagnostic cohorts passed 60 trusted AppImage sessions,
+but each cohort reused its initial prefix for the added relaunches. Neither
+produced a failure stack, and neither repairs the original post-merge timeout.
+
+Manual onboarding input `appimage_fresh_installs=10` instead runs ten independent
+trusted installs in new consumer homes, XDG state directories and release caches.
+Each performs only its first real document open, preference change, Save As,
+normal shutdown and idle check. The first failure stops the cohort with the same
+120-second application deadline and host stack observer. Trial state must be
+absent before installation, sequence must remain one and only one generation
+may exist. Source package hashes and document bytes must remain unchanged.
+
+These partial trials write `first-launch-diagnostic.json` with status `observed`
+and `diagnosticOnly=true`; they never write a qualifying `result.json`. Release
+creation still requires independently completed full application evidence. Only
+after a successful trial are its disposable prefix and verified consumed cache
+payload retired; signed manifests, proofs, receipts and diagnostic records stay.
+Failed trials, producer packages and user recovery data are not removed.
+
+The separate `observer-component` job exercises actual rootless PID mapping,
+host GDB attachment, registers and native stack output on both CI architectures.
+A normal native process must produce no request or dump. A deliberately stalled
+private `sleep` process triggers the real failure request path; the observer
+must collect a native `#0` frame while preserving the fixture's exit 73. This
+controlled deadline is confined to the component test. It does not change Wine
+deadlines, qualify an application or prove ARM64EC guest-frame unwinding. A real
+Wine failure capture is still required for that evidence. Consumer privileges
+stay unchanged, and the component grants namespace creation only to Podman
+while retaining the host's global AppArmor setting.
+
+## Post-merge ARM AppImage failure at `8afc3e6c`
+
+[The PR #22 post-merge onboarding run](https://github.com/Pelagians/Cage/actions/runs/40252503312/job/121347251449)
+failed in trusted ARM AppImage `1-original` at the unchanged 120-second shutdown
+deadline. The document was saved and the window closed. The retained process
+record shows one running SumatraPDF thread and waiting launcher ancestors, but
+no native stack. This does not establish whether the previously repaired lock
+path or another cleanup path is responsible. Its trusted lifecycle remains
+unqualified; the earlier successful PR run is separate evidence.
+
+The other 25 post-merge checks passed, including all three x86_64 v1 installed
+release cells, the nine generic runtime scenarios, and ARM repaired rollback
+and update/rollback. Physical USB synchronization remains unqualified.
+
+The clean consumer now requests host diagnostics only after a failed shutdown
+gate. A host observer owns the exact Podman invocation and resolves the failed
+application through that container's PID mapping, checking its host owner,
+executable name and start time. The existing CI debugger collects native
+registers, Wine syscall context and stacks before failure cleanup. No debugger,
+ptrace privilege or network access is added to the consumer. Observer errors
+remain diagnostic errors; the original trial still fails, and the child exit
+status is preserved. Normal sessions never attach a debugger.
+
+Manual `appimage_shutdown_relaunches=25` adds consecutive initial trusted
+AppImage save/close sessions. It stops at the first failure, without retrying a
+trial or changing its deadline, normal-exit, idle or preservation assertions.
+This is an investigation mechanism, not a runtime repair or evidence that the
+post-merge hang has been fixed. Existing application and recovery state are not
+used by these disposable tests.
+
+The PR update job at test merge `d970677b` also failed a separate Notepad++
+preference assertion after trusted AppImage `1-original` exited normally. Its
+saved-document screenshot and process log confirm completion of that session;
+the non-default zoom was not retained. The driver had sent an indexed native
+menu sequence immediately after opening View. It now uses the documented
+[Ctrl+mouse-wheel zoom action](https://github.com/notepad-plus-plus/npp-usermanual/blob/master/content/docs/views.md)
+in the already focused editor. The ordinary update driver shares the same
+action. The non-default preference and all subsequent preservation assertions
+remain mandatory; no session is retried. This input change does not repair or
+explain the SumatraPDF shutdown hang.
+
 This investigation keeps failed trials as failures. A GUI disappearing, an
 application log saying `exit code: 0`, or a later successful retry is not sufficient
 to qualify a clean Wine shutdown. The 120-second GUI shutdown deadline, zero exit

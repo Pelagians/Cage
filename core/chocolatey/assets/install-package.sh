@@ -50,6 +50,15 @@ timeout "${CAGE_CHOCOLATEY_INSTALL_TIMEOUT:-1800s}" "${choco_launcher[@]}" insta
 install_rc="$?"
 timeout "${CAGE_CHOCOLATEY_SETTLE_TIMEOUT:-120s}" wineserver -w
 settle_rc="$?"
+# The qualified package launcher is wineconsole: its GUI output need not reach
+# the parent log. Retain bounded native Chocolatey diagnostics on failure,
+# without retrying the command or changing its exit status.
+if [ "$install_rc" -ne 0 ] || [ "$settle_rc" -ne 0 ]; then
+  package_log="$(dirname "$choco_exe")/logs/chocolatey.log"
+  if [ -f "$package_log" ] && [ ! -L "$package_log" ]; then
+    tail -c 1048576 "$package_log" > "$logs_dir/package-install-failure.log"
+  fi
+fi
 lib_dir="$(dirname "$choco_exe")/lib"
 evidence_dir="${CAGE_BUNDLE_MOUNT:-/opt/cage}/metadata"
 helper_path="$(mktemp)"

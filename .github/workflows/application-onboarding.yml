@@ -1,4 +1,5 @@
 name: Application onboarding and legacy migration
+run-name: Onboarding (${{ inputs.appimage_cold_producer && 'cold-producer investigation' || inputs.appimage_fresh_installs == '10' && 'fresh-install investigation' || inputs.appimage_shutdown_relaunches == '25' && 'AppImage shutdown investigation' || github.event_name }})
 
 on:
   workflow_dispatch:
@@ -8,6 +9,20 @@ on:
         type: choice
         options: ['0', '25']
         default: '0'
+      appimage_shutdown_relaunches:
+        description: 'Additional consecutive trusted AppImage sessions; first failure stops, no retries'
+        type: choice
+        options: ['0', '25']
+        default: '0'
+      appimage_fresh_installs:
+        description: 'Independent fresh trusted AppImage first launches; diagnostic only, first failure stops'
+        type: choice
+        options: ['0', '10']
+        default: '0'
+      appimage_cold_producer:
+        description: 'Diagnostic: skip producer-cache restore and require an absent store; preserve exact packages'
+        type: boolean
+        default: false
   push:
     paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'pyproject.toml', 'recipes/sumatrapdf*', 'recipes/assets/**', 'scripts/*onboarding*', 'scripts/application_workflows.py', 'scripts/prepare-legacy-poc.py', 'scripts/prepare-sumatrapdf-poc.py', 'tests/**', '.github/workflows/application-onboarding.yml']
   pull_request:
@@ -17,10 +32,47 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.shutdown_relaunches || '0' }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.shutdown_relaunches || '0' }}-${{ inputs.appimage_fresh_installs || '0' }}-${{ inputs.appimage_cold_producer || false }}
   cancel-in-progress: false
 
 jobs:
+  observer-component:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Prepare the native observer component
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman uidmap slirp4netns fuse-overlayfs gdb apparmor-utils
+          python -m pip install PyYAML 'cryptography>=43'
+          mkdir -p "$HOME/.config/containers"
+          printf '[engine]\ncgroup_manager="cgroupfs"\nevents_logger="file"\n' > "$HOME/.config/containers/containers.conf"
+          # Grant only Podman namespace creation; retain the global restriction.
+          printf 'abi <abi/4.0>,\ninclude <tunables/global>\n/usr/bin/podman flags=(unconfined) {\n  userns,\n}\n' | sudo tee /etc/apparmor.d/cage-observer-podman
+          sudo apparmor_parser -r /etc/apparmor.d/cage-observer-podman
+          podman build -t localhost/cage-observer-tools -f - . <<'CONTAINER'
+          FROM registry.fedoraproject.org/fedora:44
+          RUN dnf -y --setopt=install_weak_deps=False install python3 python3-pyyaml python3-cryptography coreutils && dnf clean all
+          CONTAINER
+      - name: Verify actual failure-only native stack capture and unchanged exit status
+        run: python scripts/test-appimage-observer-poc.py --image localhost/cage-observer-tools --output dist/observer-component
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: failure-observer-${{ matrix.runner }}-${{ github.sha }}
+          path: dist/observer-component
+          retention-days: 14
+
   desktop:
     if: ${{ inputs.shutdown_relaunches != '25' }}
     strategy:
@@ -41,6 +93,8 @@ jobs:
       PYTHONDONTWRITEBYTECODE: '1'
       CAGE_TEST_DISCARD_PREFIXES: '1'
       CAGE_TEST_SOURCE_REVISION: ${{ github.sha }}
+      CAGE_TEST_APPIMAGE_RELAUNCHES: ${{ inputs.appimage_shutdown_relaunches || '0' }}
+      CAGE_TEST_FRESH_INSTALLS: ${{ inputs.appimage_fresh_installs || '0' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -58,6 +112,8 @@ jobs:
       - name: Contracts and failure recovery
         run: python -m pytest tests/ -q
       - uses: actions/cache@v4
+        id: desktop-cache
+        if: ${{ !inputs.appimage_cold_producer }}
         with:
           path: ${{ matrix.store }}
           key: onboarding-${{ matrix.arch }}-${{ hashFiles('runtime/desktop-wine-11.0.json', 'runtime/wine-arm64ec-11.20-fex-2610.json') }}
@@ -65,6 +121,15 @@ jobs:
             onboarding-${{ matrix.arch }}-
             update-proof-${{ matrix.arch }}-
             appimage-native-${{ matrix.arch }}-
+      - name: Record and verify the producer-cache boundary
+        env:
+          CAGE_TEST_COLD_PRODUCER: ${{ inputs.appimage_cold_producer && '1' || '0' }}
+          CAGE_TEST_CACHE_HIT: ${{ steps.desktop-cache.outputs.cache-hit }}
+        run: |
+          options=()
+          if [ "$CAGE_TEST_COLD_PRODUCER" = 1 ]; then options=(--cold); fi
+          python scripts/record-onboarding-producer.py --store "${{ matrix.store }}" \
+            --cache-hit "$CAGE_TEST_CACHE_HIT" "${options[@]}" --output dist/onboarding-evidence/producer-context.json
       - name: Prepare pinned application sources
         run: python scripts/prepare-sumatrapdf-poc.py --runtime ${{ matrix.provider }}
       - name: Build shared recipes and Flatpak packages
@@ -87,6 +152,16 @@ jobs:
           python scripts/prepare-legacy-poc.py flatpak dist/onboarding-bundles/sumatrapdf-portable-3.6 --flatpak-store ${{ matrix.store }} --output dist/onboarding-legacy.flatpak >dist/onboarding-evidence/legacy-flatpak-export.json
           python scripts/test-storage-poc.py dist/onboarding-legacy.flatpak.build >dist/onboarding-evidence/storage-legacy-flatpak.json
           wait "$candidate_pid"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from runtime.desktop_launch import digest_json
+          for version in ('3.6','3.6.1'):
+              path=Path('dist/onboarding-bundles/sumatrapdf-portable-'+version+'/metadata/desktop-build.json')
+              record=json.loads(path.read_text())
+              assert digest_json(record['inventory'])==record['seedDigest']
+              Path('dist/onboarding-evidence/seed-inventory-'+version+'.json').write_text(json.dumps(record,indent=2)+'\n')
+          PY
           SH
       - name: Qualify historical and trusted Flatpak delivery
         run: |
@@ -112,25 +187,56 @@ jobs:
           mkdir -p .cage/onboarding-consumer-home .cage/onboarding-appimage-tmp
           dbus-run-session -- xvfb-run -a -s '-screen 0 1920x1440x24 -extension MIT-SHM' bash -eu -o pipefail <<'SH'
           openbox >dist/onboarding-evidence/window-manager-appimage.log 2>&1 &
-          podman run --rm --net=none --userns=keep-id --user "$(id -u):$(id -g)" --hostname "$(hostname)" \
+          python scripts/observe-appimage-proof.py --cidfile "$RUNNER_TEMP/onboarding-appimage.cid" --evidence dist/onboarding-evidence/appimage -- \
+          podman run --cidfile "$RUNNER_TEMP/onboarding-appimage.cid" --rm --net=none --userns=keep-id --user "$(id -u):$(id -g)" --hostname "$(hostname)" \
             --security-opt label=disable -v "$PWD:$PWD" -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
             -v "$XAUTHORITY:$XAUTHORITY:ro" -w "$PWD" -e DISPLAY -e XAUTHORITY \
             -e HOME="$PWD/.cage/onboarding-consumer-home" -e APPIMAGE_EXTRACT_AND_RUN=1 \
-            -e TMPDIR="$PWD/.cage/onboarding-appimage-tmp" -e CAGE_TEST_DISCARD_PREFIXES=1 \
+            -e TMPDIR="$PWD/.cage/onboarding-appimage-tmp" -e CAGE_TEST_DISCARD_PREFIXES=1 -e GITHUB_ACTIONS -e CAGE_TEST_HOST_DIAGNOSTICS=1 \
             -e CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/appimage" \
             localhost/cage-onboarding-tools python3 scripts/test-onboarding-poc.py appimage dist/onboarding-3.6.AppImage dist/onboarding-3.6.1.AppImage --legacy dist/onboarding-legacy.AppImage
-          podman run --rm --net=none --userns=keep-id --user "$(id -u):$(id -g)" --hostname "$(hostname)" \
+          python scripts/observe-appimage-proof.py --cidfile "$RUNNER_TEMP/onboarding-trusted-appimage.cid" --evidence dist/onboarding-evidence/trusted-appimage -- \
+          podman run --cidfile "$RUNNER_TEMP/onboarding-trusted-appimage.cid" --rm --net=none --userns=keep-id --user "$(id -u):$(id -g)" --hostname "$(hostname)" \
             --security-opt label=disable -v "$PWD:$PWD" -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
             -v "$XAUTHORITY:$XAUTHORITY:ro" -w "$PWD" -e DISPLAY -e XAUTHORITY \
             -e HOME="$PWD/.cage/onboarding-consumer-home" -e APPIMAGE_EXTRACT_AND_RUN=1 \
-            -e TMPDIR="$PWD/.cage/onboarding-appimage-tmp" -e CAGE_TEST_DISCARD_PREFIXES=1 \
+            -e TMPDIR="$PWD/.cage/onboarding-appimage-tmp" -e CAGE_TEST_DISCARD_PREFIXES=1 -e GITHUB_ACTIONS -e CAGE_TEST_HOST_DIAGNOSTICS=1 \
             -e CAGE_TEST_EVIDENCE="$PWD/dist/onboarding-evidence/trusted-appimage" \
-            -e CAGE_TEST_SOURCE_REVISION \
+            -e CAGE_TEST_SOURCE_REVISION -e CAGE_TEST_INITIAL_RELAUNCHES="$CAGE_TEST_APPIMAGE_RELAUNCHES" \
             localhost/cage-onboarding-tools python3 scripts/test-onboarding-poc.py appimage dist/onboarding-3.6.AppImage dist/onboarding-3.6.1.AppImage --trusted --qualification dist/onboarding-evidence/appimage/result.json
+          for trial in $(seq 1 "$CAGE_TEST_FRESH_INSTALLS"); do
+            trial_evidence="$PWD/dist/onboarding-evidence/fresh-appimage-$trial"
+            trial_home="$PWD/.cage/onboarding-fresh-home-$trial"
+            mkdir "$trial_home"
+            python scripts/observe-appimage-proof.py --cidfile "$RUNNER_TEMP/onboarding-fresh-$trial.cid" --evidence "$trial_evidence" -- \
+            podman run --cidfile "$RUNNER_TEMP/onboarding-fresh-$trial.cid" --rm --net=none --userns=keep-id --user "$(id -u):$(id -g)" --hostname "$(hostname)" \
+              --security-opt label=disable -v "$PWD:$PWD" -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+              -v "$XAUTHORITY:$XAUTHORITY:ro" -w "$PWD" -e DISPLAY -e XAUTHORITY \
+              -e HOME="$trial_home" -e APPIMAGE_EXTRACT_AND_RUN=1 \
+              -e TMPDIR="$PWD/.cage/onboarding-appimage-tmp" -e CAGE_TEST_DISCARD_PREFIXES=1 \
+              -e GITHUB_ACTIONS -e CAGE_TEST_HOST_DIAGNOSTICS=1 -e CAGE_TEST_SOURCE_REVISION \
+              -e CAGE_TEST_INITIAL_RELAUNCHES=0 -e CAGE_TEST_EVIDENCE="$trial_evidence" \
+              localhost/cage-onboarding-tools python3 scripts/test-onboarding-poc.py appimage dist/onboarding-3.6.AppImage dist/onboarding-3.6.1.AppImage \
+                --trusted --first-launch-only --qualification dist/onboarding-evidence/appimage/result.json
+          done
           SH
       - name: Collect records without following Wine drive links
         if: always()
         run: python scripts/collect-onboarding-evidence.py
+      - name: Retain exact diagnostic producer packages for replay
+        if: ${{ !cancelled() && (failure() || inputs.appimage_cold_producer) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: onboarding-replay-${{ matrix.arch }}-${{ github.sha }}
+          compression-level: 0
+          retention-days: 14
+          path: |
+            dist/onboarding-3.6.AppImage
+            dist/onboarding-3.6.AppImage.json
+            dist/onboarding-3.6.1.AppImage
+            dist/onboarding-3.6.1.AppImage.json
+            dist/onboarding-legacy.AppImage
+            dist/onboarding-legacy.AppImage.json
       - name: Retain qualification evidence
         if: always()
         uses: actions/upload-artifact@v4

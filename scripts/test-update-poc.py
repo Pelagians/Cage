@@ -241,8 +241,8 @@ def main():
             gui.focus_editor(gui.window())
             assert readonly.read_text() == 'original read-only document\n'
         save('saved before update')
-        gui.command('xdotool', 'key', '--clearmodifiers', 'alt+v')
-        gui.command('xdotool', 'key', '--delay', '80', 'Home', *(['Down'] * 6), 'Right', 'Home', 'Return')
+        from application_workflows import NotepadPlusPlus
+        NotepadPlusPlus().change_preference(gui)
         subprocess.run(['scrot', str(evidence / 'baseline.png')], check=True)
         close(process)
         first = prefix()
