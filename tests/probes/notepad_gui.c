@@ -22,6 +22,7 @@
 #define SCI_GOTOPOS 2025
 #define SCI_SETZOOM 2373
 #define SCI_GETZOOM 2374
+#define SCI_GETREADONLY 2140
 #define IDM_FILE_SAVE 41006
 
 static const char original[] = "Original macOS document\n";
@@ -96,6 +97,20 @@ static int matches(const char *expected) {
     return 1;
 }
 
+static void report_mismatch(int round, const char *expected) {
+    LRESULT length = message(editor, SCI_GETLENGTH, 0, 0);
+    fprintf(stderr, "Round %d editor mismatch: expected length %zu, actual %lld, zoom %lld, readonly %lld\n",
+            round, strlen(expected), (long long)length,
+            (long long)message(editor, SCI_GETZOOM, 0, 0),
+            (long long)message(editor, SCI_GETREADONLY, 0, 0));
+    fprintf(stderr, "Expected bytes:");
+    for (size_t i = 0; expected[i]; ++i) fprintf(stderr, " %02x", (unsigned char)expected[i]);
+    fprintf(stderr, "\nActual bytes (at most 256):");
+    for (LRESULT i = 0; i < length && i < 256; ++i)
+        fprintf(stderr, " %02x", (unsigned int)message(editor, SCI_GETCHARAT, (WPARAM)i, 0));
+    fprintf(stderr, "\n");
+}
+
 static int receipt(const wchar_t *path, int round, const char *phase, DWORD exit_code) {
     FILE *file = _wfopen(path, L"wb");
     if (!file) return 0;
@@ -154,7 +169,9 @@ int wmain(int argc, wchar_t **argv) {
         } else message(editor, WM_CHAR, (WPARAM)text[i], 1);
     }
     const char *expected = round == 1 ? FIRST_TEXT : round == 2 ? SECOND_TEXT : round == 3 ? THIRD_TEXT : FOURTH_TEXT;
-    if (!matches(expected) || message(editor, SCI_GETZOOM, 0, 0) != 3) return 10;
+    if (!matches(expected) || message(editor, SCI_GETZOOM, 0, 0) != 3) {
+        report_mismatch(round, expected); return 10;
+    }
     message(main_window, WM_COMMAND, IDM_FILE_SAVE, 0);
     if (!receipt(ready, round, "saved-awaiting-host-verification", STILL_ACTIVE)) return 11;
     start = GetTickCount64();

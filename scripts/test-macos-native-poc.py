@@ -37,6 +37,7 @@ def main():
     result = {"schemaVersion": "cage.macos-native-functional-test/v0", "status": "failed", "forcedCleanup": False}
     processes, bundle, helper_env, runtime = [], None, None, None
     packaged, package_inventory = None, None
+    document, number = None, None
     try:
         if platform.system() != "Darwin" or platform.machine() != "arm64":
             raise RuntimeError("native Apple Silicon macOS required")
@@ -189,7 +190,16 @@ def main():
                       hostPageSize=os.sysconf("SC_PAGE_SIZE"), runnerImage=os.environ.get("ImageVersion"),
                       testedCommit=os.environ.get("GITHUB_SHA"), scope="native CLI and local ad-hoc-signed .app; ordinary host access")
     except BaseException as exc:
-        result.update(error=type(exc).__name__ + ": " + str(exc), forcedCleanup=True)
+        result.update(error=type(exc).__name__ + ": " + str(exc), failedRound=number, forcedCleanup=True)
+        # Preserve the actual failed UI and document before disposable-runner
+        # cleanup; never retry edits or substitute a successful receipt.
+        if document is not None and document.is_file():
+            shutil.copyfile(document, evidence / "failed-document.txt")
+        try:
+            command(["screencapture", "-x", evidence / "failure.png"], evidence / "failure-screenshot.log",
+                    check=False, timeout=10)
+        except Exception as capture_error:
+            result["screenshotError"] = str(capture_error)
         for process in processes:
             if process.poll() is None: process.terminate()
         if runtime is not None and helper_env is not None:
