@@ -23,6 +23,7 @@
 #define SCI_SETZOOM 2373
 #define SCI_GETZOOM 2374
 #define SCI_GETREADONLY 2140
+#define SCI_AUTOCACTIVE 2102
 #define IDM_FILE_SAVE 41006
 
 static const char original[] = "Original macOS document\n";
@@ -164,6 +165,15 @@ int wmain(int argc, wchar_t **argv) {
     const char *text = round == 1 ? first : round == 2 ? second : round == 3 ? third : fourth;
     for (size_t i = 0; text[i]; ++i) {
         if (text[i] == '\n') {
+            /* Repeated words offer completion; Enter would accept it instead
+             * of inserting a newline. Dismiss that UI as a user would, without
+             * changing settings, document bytes or the exact-text assertion. */
+            if (message(editor, SCI_AUTOCACTIVE, 0, 0)) {
+                fprintf(stderr, "Round %d: dismissing autocomplete before newline\n", round);
+                message(editor, WM_KEYDOWN, VK_ESCAPE, 1);
+                message(editor, WM_KEYUP, VK_ESCAPE, 1);
+                if (message(editor, SCI_AUTOCACTIVE, 0, 0)) return 17;
+            }
             message(editor, WM_KEYDOWN, VK_RETURN, 1);
             message(editor, WM_KEYUP, VK_RETURN, 1);
         } else message(editor, WM_CHAR, (WPARAM)text[i], 1);
