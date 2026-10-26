@@ -32,8 +32,10 @@ def build_execution_graph(manifest: Manifest) -> dict[str, Any]:
     phase_plan = build_plan(manifest)
     phase_nodes = [_phase_node(phase) for phase in phase_plan]
     capabilities = resolve_module_capabilities(manifest.modules)
+    native_wayland = (manifest.schema_version == 'cage.app/v1' and manifest.runtime.provider == 'wine'
+                      and manifest.runtime.version == '11.0' and manifest.runtime.wine_graphics == 'wayland')
     managed_desktop = bool((manifest.desktop.get('updates') or manifest.schema_version == 'cage.app/v1') and runtime.launcher == 'wine'
-                           and not manifest.runtime.runner and manifest.runtime.wine_graphics == 'xwayland')
+                           and not manifest.runtime.runner and (manifest.runtime.wine_graphics == 'xwayland' or native_wayland))
 
     builder_runtime_payload = _runtime_payload(runtime)
     runner_runtime_payload = dict(builder_runtime_payload)

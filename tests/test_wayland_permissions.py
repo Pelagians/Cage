@@ -1,5 +1,6 @@
 """Native Wayland selection and refusal boundaries; actual windows run in CI."""
 import copy
+import json
 import os
 from pathlib import Path
 import socket
@@ -23,6 +24,21 @@ def wayland_recipe():
 
 
 class WaylandPermissionsTests(unittest.TestCase):
+    def test_real_oci_export_keeps_wayland_managed_desktop_mode(self):
+        from artifact.bundle import create_bundle
+        from artifact.oci import create_oci_export_plan
+        from tests.bundle_fixtures import materialize_runnable_prefix
+        with tempfile.TemporaryDirectory() as tmp:
+            raw=wayland_recipe();raw.pop('sources');raw.pop('modules')
+            raw['runtime']['image']='ghcr.io/pelagians/cage-wine@sha256:'+'a'*64
+            manifest=Manifest.from_dict(raw);bundle=create_bundle(manifest,Path(tmp),dry_run=True)
+            materialize_runnable_prefix(bundle,entrypoint=manifest.launch.entrypoint)
+            path=bundle/'metadata/graph.json';graph=json.loads(path.read_text())
+            self.assertIn('desktop',graph['graphics']['supportedModes'])
+            exported=create_oci_export_plan(bundle,tag='localhost/cage-wayland-test',graphics='desktop')
+            self.assertEqual(exported['managedState']['target']['graphics'],'wayland')
+            self.assertIn('ENV CAGE_WINE_GRAPHICS="wayland"',exported['containerfile']['content'])
+
     def test_runtime_gate_is_explicit_and_never_falls_back_to_x11(self):
         raw=wayland_recipe()
         for kind in ('oci','flatpak','appimage'):
