@@ -9,6 +9,9 @@ v2.0 relocatable ARM64 tar archive, its byte size and SHA-256, the publisher's
 checksum manifest, the release/tag/source identities and Wine/FEX/graphics
 source gitlinks. The proof retains pinned license files, release metadata, a
 complete extracted inventory and a native core Mach-O/signature/import audit.
+BSD-tar AppleDouble sidecars are identified by format, size and a contained
+counterpart. Their hashes are retained without restoring publisher filesystem
+xattrs; payload signatures are verified after extraction.
 The archive's ad-hoc signatures are checked for integrity; this is not a
 Developer ID/notarization assertion or a reproducible-build claim. In particular,
 v2.0 predates the producer's WineForge attribution repair. This experiment does

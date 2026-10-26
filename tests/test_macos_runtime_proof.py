@@ -75,3 +75,18 @@ class MacOSProofTests(unittest.TestCase):
             manifest = load_manifest(ROOT / name)
             self.assertEqual(manifest.sources[0].sha256, lock["applicationSha256"])
             self.assertIn("x64", manifest.sources[0].url)
+
+    def test_only_bounded_appledouble_metadata_with_a_contained_counterpart_is_omitted(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            archive = root / "asset.tar.xz"
+            with tarfile.open(archive, "w:xz") as tar:
+                item = tarfile.TarInfo("runtime"); item.type = tarfile.DIRTYPE; tar.addfile(item)
+                item = tarfile.TarInfo("._runtime"); data = bytes.fromhex("0005160700020000") + b"metadata"
+                item.size = len(data); tar.addfile(item, io.BytesIO(data))
+                item = tarfile.TarInfo("runtime/file"); item.size = 7; tar.addfile(item, io.BytesIO(b"payload"))
+            evidence = root / "evidence"; evidence.mkdir()
+            runtime = proof.extract_runtime(archive, root / "out", "runtime", evidence)
+            self.assertEqual((runtime / "file").read_bytes(), b"payload")
+            self.assertFalse((root / "out/._runtime").exists())
+            self.assertEqual(len(json.loads((evidence / "archive-metadata.json").read_text())["omittedAppleDouble"]), 1)

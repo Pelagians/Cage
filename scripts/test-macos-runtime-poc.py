@@ -134,18 +134,37 @@ def provenance(lock, downloads, evidence):
     return archive
 
 
-def extract_runtime(archive, destination, directory):
+def extract_runtime(archive, destination, directory, evidence=None):
     with tarfile.open(archive, "r:xz") as source:
         members = source.getmembers()
         if len(members) > 100000 or sum(item.size for item in members) > 8 * 1024**3:
             raise ValueError("runtime extraction exceeds quota")
+        names = {item.name.rstrip("/") for item in members}
+        selected, metadata = [], []
         for item in members:
             parts = Path(item.name).parts
-            if not parts or parts[0] != directory or ".." in parts or item.name.startswith("/"):
+            if not parts or ".." in parts or item.name.startswith("/"):
                 raise ValueError("runtime archive member outside pinned root")
+            # BSD tar stores xattrs in AppleDouble sidecars, including one beside
+            # the top-level directory. Do not restore host provenance/quarantine
+            # xattrs. Recognize bounded metadata by its actual format and a
+            # corresponding contained payload member, never just its filename.
+            counterpart = Path(item.name).with_name(Path(item.name).name[2:]).as_posix() if Path(item.name).name.startswith("._") else None
+            if counterpart and item.isfile() and item.size <= 65536 and counterpart in names:
+                data = source.extractfile(item).read()
+                if data[:8] == bytes.fromhex("0005160700020000") and Path(counterpart).parts[0] == directory:
+                    metadata.append({"path": item.name, "size": item.size,
+                                     "sha256": hashlib.sha256(data).hexdigest()})
+                    continue
+            if parts[0] != directory:
+                raise ValueError("runtime archive member outside pinned root: " + item.name)
             if not (item.isfile() or item.isdir() or item.issym() or item.islnk()) or item.mode & 0o6000:
                 raise ValueError("runtime archive contains special or set-ID member")
-        source.extractall(destination, filter="data")
+            selected.append(item)
+        if evidence:
+            write(evidence / "archive-metadata.json", {"omittedAppleDouble": metadata,
+                  "policy": "retain metadata hashes; do not restore publisher filesystem xattrs"})
+        source.extractall(destination, members=selected, filter="data")
     return destination / directory
 
 
@@ -297,6 +316,8 @@ def functional(lock, runtime, work, evidence, probe):
     except BaseException:
         # This is failure cleanup only. The caller retains a failed result.
         write(evidence / "failure-cleanup.json", {"forcedCleanup": True, "scope": str(prefix)})
+        listing, _ = runtime_processes(runtime)
+        (evidence / "processes-at-failure.txt").write_text(listing)
         for process in processes:
             if process.poll() is None:
                 process.terminate()
@@ -334,13 +355,16 @@ def main():
         result.update(hostArchitecture=platform.machine(), hostPageSize=os.sysconf("SC_PAGE_SIZE"),
                       runnerImage=os.environ.get("ImageVersion"), workflowCommit=os.environ.get("GITHUB_SHA"),
                       probeSha256=args.probe_sha256, lockSha256=sha256(LOCK))
+        print("Verifying publisher release, source identities and downloaded bytes", flush=True)
         archive = provenance(lock, args.work / "downloads", args.evidence)
-        runtime = extract_runtime(archive, args.work, lock["runtimeDirectory"])
+        print("Extracting contained payload and checking native code signatures", flush=True)
+        runtime = extract_runtime(archive, args.work, lock["runtimeDirectory"], args.evidence)
         runtime_inventory = inventory_tree(runtime)
         write(args.evidence / "runtime-inventory.json", runtime_inventory)
         if not (runtime / "share/licenses/wine/LICENSE").is_file() or not (runtime / "share/licenses/fex/LICENSE").is_file():
             raise ValueError("runtime component notices missing")
         audit_macho(runtime, args.evidence)
+        print("Starting native Wine and the two-round GUI/shutdown proof", flush=True)
         result.update(functional(lock, runtime, args.work, args.evidence, args.probe.absolute()))
         if inventory_tree(runtime) != runtime_inventory:
             raise ValueError("upstream runtime bytes or metadata changed during execution")
