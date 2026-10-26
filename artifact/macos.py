@@ -33,13 +33,13 @@ def validate_recipe(manifest):
         if module.type == "registry" and (module.user != "application" or module.view != "default"):
             raise DesktopError("native registry builds initially support the default view/application user")
     policy = manifest.compatibility
-    if (policy.get("arch", "win64") != "win64"
-            or policy.get("graphics", {}).get("backend", "wined3d") not in {"wined3d", "none", "auto"}):
-        raise DesktopError("macOS initially qualifies win64 prefixes and builtin graphics only")
+    if policy.get("arch", "win64") != "win64" or policy.get("graphics"):
+        raise DesktopError("macOS initially qualifies win64 prefixes with its default winemac profile; graphics overrides are unqualified")
     if policy.get("dllPolicy"):
         raise DesktopError("custom DLL policy is not qualified by the initial macOS target")
     for name in {**policy.get("env", {}), **manifest.launch.env}:
-        if (not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) or name in {"PATH", "HOME", "TMPDIR"}
+        if (not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name)
+                or name in {"PATH", "HOME", "TMPDIR", "USER", "LOGNAME", "GRAPHICS_BACKEND", "OPENGL_BACKEND"}
                 or name.startswith(("WINE", "FEX_", "LD_", "DYLD_", "CAGE_", "GST_", "VK_", "ROSETTA_", "XDG_"))):
             raise DesktopError("native launch environment key is runtime-owned or invalid: " + name)
     return target

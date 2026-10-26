@@ -76,6 +76,12 @@ class MacOSTargetTests(unittest.TestCase):
         payload = m.to_dict(); payload['compatibility'] = {'env': {'FEX_TSOENABLED': '0'}}
         with self.assertRaisesRegex(DesktopError, 'runtime-owned'):
             validate_recipe(Manifest.from_dict(payload))
+        payload = m.to_dict(); payload['compatibility'] = {'graphics': {'backend': 'wined3d'}}
+        with self.assertRaisesRegex(DesktopError, 'graphics overrides'):
+            validate_recipe(Manifest.from_dict(payload))
+        payload = m.to_dict(); payload['launch']['env'] = {'GRAPHICS_BACKEND': 'dxvk'}
+        with self.assertRaisesRegex(DesktopError, 'runtime-owned'):
+            validate_recipe(Manifest.from_dict(payload))
         payload = m.to_dict(); payload['modules'] = [{'type': 'check', 'command': {'run': 'echo unsafe', 'exitCode': 0}}]
         with self.assertRaises((DesktopError, ManifestError)):
             validate_recipe(Manifest.from_dict(payload))

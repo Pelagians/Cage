@@ -55,7 +55,7 @@
     "WINEDLLOVERRIDES": "winemenubuilder.exe=d;mscoree,mshtml=",
     "WINEDEBUG": "-all,+timestamp,+pid,+process"
   },
-  "qualification": "isolated x64 GUI runtime experiment with ordinary host access; no native Cage target, sandbox, CFW, redistribution, or reproducible-build claim",
+  "qualification": "experimental native CLI target; per-application proof required; ordinary host access; no sandbox, CFW, .app packaging, redistribution or reproducible-build claim",
   "id": "metalsharp-wine-2.0-darwin-arm64",
   "os": "darwin",
   "architecture": "arm64",
