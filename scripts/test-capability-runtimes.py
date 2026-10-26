@@ -308,7 +308,8 @@ def run_case(release,record,work,paths,case,port,abstract,device,host_process,sh
     assert observer['window'] and win['windowCreated'] and win['nativeChildCompleted']
     if release['entry']['plan']['recipe']['runtime'].get('wineGraphics')=='wayland':
         assert win['waylandDriverLoaded'] is True and win['x11DriverLoaded'] is False,win
-        assert linux['display']=={'x11EnvironmentPresent':False,'waylandEnvironmentPresent':True,'x11SocketsVisible':False},linux['display']
+        assert linux['display']=={'x11EnvironmentPresent':False,'waylandEnvironmentPresent':True,
+                                 'x11SocketsVisible':False,'privateRuntimeDirectory':True},linux['display']
     assert win['wineDriveWrite'] is True
     assert win['settingsPreserved'] is True
     assert win['stateCounter']==counter,(kind,case,win['stateCounter'],counter)

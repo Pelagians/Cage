@@ -23,6 +23,14 @@ def readable(path):
     except OSError:return False
 
 
+def private_runtime_directory(path):
+    if not path:return False
+    try:
+        info=Path(path).lstat()
+        return stat.S_ISDIR(info.st_mode) and stat.S_IMODE(info.st_mode)==0o700 and info.st_uid==os.getuid()
+    except OSError:return False
+
+
 def writable(directory):
     owned=[]
     try:
@@ -88,6 +96,8 @@ def observe(args):
     result['display']={'x11EnvironmentPresent':bool(os.environ.get('DISPLAY')),
                        'waylandEnvironmentPresent':bool(os.environ.get('WAYLAND_DISPLAY')),
                        'x11SocketsVisible':bool(list(Path('/tmp/.X11-unix').glob('X*')))}
+    if os.environ.get('WAYLAND_DISPLAY'):
+        result['display']['privateRuntimeDirectory']=private_runtime_directory(os.environ.get('XDG_RUNTIME_DIR',''))
     if getattr(args,'old',None):result['filesystem']['previousRead']=readable(args.old)
     if getattr(args,'shm',None):result['baseline']['hostSharedMemoryVisible']=readable(args.shm)
     if getattr(args,'host_process_pid',None):

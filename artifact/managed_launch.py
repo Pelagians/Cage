@@ -225,7 +225,9 @@ def container_args(record, release, effective, files=(), action=None, *, seccomp
         display=effective['display'];verify_display_socket(display)
         if display.get('backend') == 'wayland':
             directory='/tmp/cage-runtime-'+str(os.getuid())
-            args+=['--tmpfs='+directory+':rw,nosuid,nodev,mode=0700,uid='+str(os.getuid())+',gid='+str(os.getgid()),
+            # Podman applies U to this new tmpfs as the selected container user;
+            # raw uid/gid tmpfs options are rejected by supported Podman 4.9.
+            args+=['--mount=type=tmpfs,destination='+directory+',tmpfs-mode=0700,U=true,nosuid,nodev,notmpcopyup',
                    '--mount=type=bind,source='+display['socket']+',destination='+directory+'/wayland-0,ro=true']
             env.update(WAYLAND_DISPLAY='wayland-0',CAGE_WINE_GRAPHICS='wayland')
         else:

@@ -51,7 +51,9 @@ shared-network grant retains its documented IP/abstract-socket scope; display
 selection does not narrow that independent permission. The Windows process must report that
 `winewayland.drv` is loaded and `winex11.drv` is absent. Its protocol log must show
 the named Wayland surface and buffer attachment; a native child separately
-checks that X11 sockets/environment are absent. All existing normal-exit,
+checks that X11 sockets/environment are absent and the granted runtime directory
+is owned by the application user with mode 0700. OCI uses Podman's tmpfs-specific
+ownership handling; it does not change ownership of any bound host path. All existing normal-exit,
 isolation, state-counter and retained-recovery assertions remain mandatory.
 
 Adding the job is not a qualification pass. Read the exact commit's

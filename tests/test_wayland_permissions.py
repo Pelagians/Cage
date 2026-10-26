@@ -113,6 +113,13 @@ class WaylandPermissionsTests(unittest.TestCase):
                     text=' '.join(command);self.assertIn('wayland-0',text)
                     self.assertNotIn('Xauthority',text);self.assertNotIn('.X11-unix',text);self.assertNotIn('DISPLAY=',text.replace('WAYLAND_DISPLAY=',''))
                 self.assertIn(str(path),args);self.assertNotIn(tmp,args)
+                # Ownership handling applies only to a fresh tmpfs, never to
+                # the host compositor socket or any other bind mount.
+                owned=[arg for arg in oci if ',U=true' in arg]
+                self.assertEqual(len(owned),1)
+                self.assertTrue(owned[0].startswith('--mount=type=tmpfs,'))
+                self.assertIn('tmpfs-mode=0700',owned[0])
+                self.assertTrue(all(',U=true' not in arg for arg in oci if arg.startswith('--mount=type=bind,')))
 
     def test_flatpak_native_x11_union_refuses_for_wayland(self):
         caps=compile_capabilities(wayland_recipe(),'flatpak')
