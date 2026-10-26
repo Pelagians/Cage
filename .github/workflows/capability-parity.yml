@@ -2,9 +2,9 @@ name: v1 capability and actual runtime parity
 on:
   workflow_dispatch:
   push:
-    paths: ['artifact/**', 'core/**', 'runtime/**', 'cage/**', 'builder/**', 'tests/**', 'packaging/**', 'scripts/check-capability*', 'scripts/test-capability*', '.github/workflows/capability-parity.yml']
+    paths: ['artifact/**', 'core/**', 'runtime/**', 'cage/**', 'builder/**', 'tests/**', 'packaging/**', 'scripts/check-capability*', 'scripts/test-capability*', 'scripts/prepare-capability-ci.sh', '.github/workflows/capability-parity.yml']
   pull_request:
-    paths: ['artifact/**', 'core/**', 'runtime/**', 'cage/**', 'builder/**', 'tests/**', 'packaging/**', 'scripts/check-capability*', 'scripts/test-capability*', '.github/workflows/capability-parity.yml']
+    paths: ['artifact/**', 'core/**', 'runtime/**', 'cage/**', 'builder/**', 'tests/**', 'packaging/**', 'scripts/check-capability*', 'scripts/test-capability*', 'scripts/prepare-capability-ci.sh', '.github/workflows/capability-parity.yml']
 permissions:
   contents: read
 concurrency:
@@ -25,8 +25,7 @@ jobs:
           python-version: '3.12'
       - name: Install test prerequisites
         run: |
-          sudo apt-get update
-          sudo apt-get install -y bubblewrap libseccomp2 squashfs-tools patchelf flatpak gcc gcc-mingw-w64-x86-64 apparmor-utils
+          bash scripts/prepare-capability-ci.sh bubblewrap libseccomp2 squashfs-tools patchelf flatpak gcc gcc-mingw-w64-x86-64 apparmor-utils
           # The wheel-content regression deliberately disables build isolation;
           # its backend must exist in this test interpreter as well.
           python -m pip install setuptools wheel -e '.[dev,releases]' jsonschema
@@ -56,6 +55,7 @@ jobs:
       - name: Report unrun three-format and hardware gates as blocked
         if: always()
         run: |
+          mkdir -p dist/capability-evidence
           python scripts/check-capability-parity-evidence.py recipes/myharmony-compat.cage.yaml dist/capability-evidence --output dist/capability-evidence/parity.json
       - uses: actions/upload-artifact@v4
         if: always()
@@ -78,8 +78,7 @@ jobs:
           python-version: '3.12'
       - name: Install actual runtime and GUI tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y bubblewrap libseccomp2 squashfs-tools patchelf flatpak podman crun uidmap slirp4netns fuse-overlayfs xvfb openbox xdotool xauth apparmor-utils
+          bash scripts/prepare-capability-ci.sh bubblewrap libseccomp2 squashfs-tools patchelf flatpak podman crun uidmap slirp4netns fuse-overlayfs xvfb openbox xdotool xauth apparmor-utils
           python -m pip install -e '.[releases]'
       - name: Keep the host namespace restriction and authorize only the test tool
         run: |
@@ -157,8 +156,7 @@ jobs:
           python-version: '3.12'
       - name: Install actual runtime and GUI tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y bubblewrap libseccomp2 squashfs-tools patchelf flatpak podman crun uidmap slirp4netns fuse-overlayfs xvfb openbox xdotool xauth weston apparmor-utils
+          bash scripts/prepare-capability-ci.sh bubblewrap libseccomp2 squashfs-tools patchelf flatpak podman crun uidmap slirp4netns fuse-overlayfs xvfb openbox xdotool xauth weston apparmor-utils
           python -m pip install -e '.[releases]'
       - name: Keep the host namespace restriction and authorize only the test tool
         run: |
@@ -243,8 +241,7 @@ jobs:
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android
       - name: Install actual runtime and GUI tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y bubblewrap libseccomp2 squashfs-tools patchelf flatpak podman crun uidmap slirp4netns fuse-overlayfs xvfb openbox xdotool xauth apparmor-utils
+          bash scripts/prepare-capability-ci.sh bubblewrap libseccomp2 squashfs-tools patchelf flatpak podman crun uidmap slirp4netns fuse-overlayfs xvfb openbox xdotool xauth apparmor-utils
           python -m pip install -e '.[releases]'
       - name: Keep the host namespace restriction and authorize only the test tool
         run: |
