@@ -21,7 +21,7 @@ from tests.test_macos_target import sealed
 class MacOSAppTests(unittest.TestCase):
     def test_app_planning_preserves_cli_identity_and_has_no_side_effects(self):
         with tempfile.TemporaryDirectory() as td:
-            root = Path(td); bundle = sealed(root / 'bundles')
+            root = Path(td).resolve(); bundle = sealed(root / 'bundles')
             with self.assertRaisesRegex(DesktopError, 'allow-host-access'):
                 create_macos_app_plan(bundle)
             with patch('artifact.macos_app.download') as acquire, contextlib.redirect_stdout(io.StringIO()) as out:
@@ -41,7 +41,9 @@ class MacOSAppTests(unittest.TestCase):
 
     def test_packaged_source_is_verified_and_launch_imports_without_host_cage(self):
         with tempfile.TemporaryDirectory() as td:
-            root = Path(td); bundle = sealed(root / 'bundles')
+            # macOS tempfile uses /var -> /private/var. Real exports require a
+            # canonical parent through build_lock; preserve that same boundary.
+            root = Path(td).resolve(); bundle = sealed(root / 'bundles')
             (bundle / 'build/home').mkdir(); (bundle / 'build/home/private').write_text('must not package')
             copied = root / 'application'; stage_bundle(bundle, copied)
             self.assertTrue(verify_bundle(copied)['valid']); self.assertFalse((copied / 'build/home').exists())
