@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "cage.macos-runtime-proof-lock/v0",
+  "repository": "metalsharp/MetalSharp-Wine",
+  "releaseId": 421411349,
+  "tag": "v2.0",
+  "sourceCommit": "2e584552442490e135a5909f26966befe1526bb1",
+  "sourceTree": "d98ad2af2997efa8119651bac54a989a6327ad22",
+  "sourcePins": {
+    "src/wine": "f73af7a723116d80b94d852cf58dde2587c0b55f",
+    "src/FEX": "bfb6ef17d77dfeb751a9e60775b61b7a5200627b",
+    "src/mullion": "cf0c427ca4fe6b57def7d046d5f48113e2e89978",
+    "src/winemetalgl": "aaf7f4f34123a346001917ffdc5c45b2e9441b9b"
+  },
+  "asset": {
+    "id": 667806597,
+    "name": "metalsharp-wine-2.0-arm64.tar.xz",
+    "size": 590631360,
+    "sha256": "57ee7b52222ed87e374f2a0073d300a121a0b8db8e327aeada0211abd79cff67"
+  },
+  "checksums": {
+    "name": "SHA256SUMS",
+    "size": 195,
+    "sha256": "94524db54176e813f1ea0a5a00cb814f764370a1d5513ac364f1bd09c46f0982"
+  },
+  "licenses": [
+    {"ref": "2e584552442490e135a5909f26966befe1526bb1", "path": "LICENSE", "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0", "name": "producer-LICENSE"},
+    {"ref": "f73af7a723116d80b94d852cf58dde2587c0b55f", "path": "LICENSE", "sha256": "ae025f125a5d639f0f7abe5146efa1e3d7453cc10b744b2910806fa3f46626ef", "name": "wine-LICENSE"},
+    {"ref": "bfb6ef17d77dfeb751a9e60775b61b7a5200627b", "path": "LICENSE", "sha256": "f34a779f56b36d22b20e1b990d23e583a6a7ca071331925fa46156441c77a1ee", "name": "fex-LICENSE"}
+  ],
+  "runtimeDirectory": "metalsharp-wine-2.0-arm64",
+  "applicationRecipe": "recipes/notepadplusplus-portable.cage.yaml",
+  "applicationSha256": "b8bc370b76653c194caf32450056030be580b9fa97348fb31b2e2e61ee8d2393",
+  "environment": {
+    "WINEARCH": "win64",
+    "WINE_4K_PAGES": "0",
+    "FEX_TSOENABLED": "1",
+    "FEX_X87REDUCEDPRECISION": "0",
+    "FEX_DISKCACHE": "0",
+    "WINEMSYNC": "0",
+    "WINEDLLOVERRIDES": "winemenubuilder.exe=d;mscoree,mshtml=",
+    "WINEDEBUG": "-all,+timestamp,+pid,+process"
+  },
+  "qualification": "isolated x64 GUI runtime experiment with ordinary host access; no native Cage target, sandbox, CFW, redistribution, or reproducible-build claim"
+}
