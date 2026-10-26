@@ -30,6 +30,17 @@ This is an investigation mechanism, not a runtime repair or evidence that the
 post-merge hang has been fixed. Existing application and recovery state are not
 used by these disposable tests.
 
+The PR update job at test merge `d970677b` also failed a separate Notepad++
+preference assertion after trusted AppImage `1-original` exited normally. Its
+saved-document screenshot and process log confirm completion of that session;
+the non-default zoom was not retained. The driver had sent an indexed native
+menu sequence immediately after opening View. It now uses the documented
+[Ctrl+mouse-wheel zoom action](https://github.com/notepad-plus-plus/npp-usermanual/blob/master/content/docs/views.md)
+in the already focused editor. The ordinary update driver shares the same
+action. The non-default preference and all subsequent preservation assertions
+remain mandatory; no session is retried. This input change does not repair or
+explain the SumatraPDF shutdown hang.
+
 This investigation keeps failed trials as failures. A GUI disappearing, an
 application log saying `exit code: 0`, or a later successful retry is not sufficient
 to qualify a clean Wine shutdown. The 120-second GUI shutdown deadline, zero exit
