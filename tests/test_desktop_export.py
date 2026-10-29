@@ -156,6 +156,12 @@ class DesktopContractTests(unittest.TestCase):
             self.assertTrue((build / "files/libexec/cage-desktop-launch.py").is_file())
             self.assertNotIn("cage.cli", (build / "files/libexec/cage-desktop-launch.py").read_text())
             self.assertTrue((build / "files/share/applications" / (plan["desktop"]["id"] + ".desktop")).is_file())
+            metadata = build.parent / 'payload-metadata'
+            self.assertEqual(json.loads((metadata / 'seed-inventory.json').read_text()),
+                             json.loads((bundle / 'metadata/desktop-build.json').read_text())['inventory'])
+            self.assertEqual(json.loads((metadata / 'manifest.cage.json').read_text()),
+                             json.loads((bundle / 'manifest.cage.json').read_text()))
+            self.assertTrue((metadata / 'component-sources.json').is_file())
 
 
 class DesktopStateTests(unittest.TestCase):

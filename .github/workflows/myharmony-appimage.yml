@@ -14,6 +14,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -52,7 +54,7 @@ jobs:
           dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1000x24' bash -eu -o pipefail <<'SH'
           openbox >dist/myharmony-evidence/window-manager.log 2>&1 &
           python -m cage build recipes/myharmony.cage.yaml --target appimage --flatpak-store .cage/flatpak --output dist/myharmony-bundles >dist/myharmony-evidence/build.json
-          python -m cage export appimage dist/myharmony-bundles/myharmony-1.0.308 --allow-host-access --flatpak-store .cage/flatpak --output dist/MyHarmony-1.0.308-x86_64.AppImage >dist/myharmony-evidence/export.json
+          python -m cage export appimage dist/myharmony-bundles/myharmony-1.0.308 --allow-host-access --keep-staging --flatpak-store .cage/flatpak --output dist/MyHarmony-1.0.308-x86_64.AppImage >dist/myharmony-evidence/export.json
           cp dist/*.AppImage.build/AppDir/usr/share/cage/*/native-dependencies.json dist/myharmony-evidence/
           cp dist/*.AppImage.build/AppDir/usr/share/cage/*/component-sources.json dist/myharmony-evidence/
           # Verify the actual packaged backend and native dependency closure.
@@ -61,7 +63,8 @@ jobs:
           test -n "$(find dist/*.AppImage.build/AppDir/usr/wine -name winebus.sys -print -quit)"
           test -n "$(find dist/*.AppImage.build/AppDir -name 'libusb-1.0.so*' -print -quit)"
           test -n "$(find dist/*.AppImage.build/AppDir -name 'libudev.so*' -print -quit)"
-          rm -rf dist/MyHarmony-1.0.308-x86_64.AppImage.build dist/myharmony-bundles/myharmony-1.0.308/build/flatpak
+          python scripts/test-storage-poc.py dist/MyHarmony-1.0.308-x86_64.AppImage.build >dist/myharmony-evidence/storage.json
+          rm -rf dist/myharmony-bundles/myharmony-1.0.308/build/flatpak
           cp dist/MyHarmony-1.0.308-x86_64.AppImage dist/myharmony-x86_64/
           cp packaging/myharmony/* dist/myharmony-x86_64/
           # HTTP 403 is an independently recorded CI service restriction. In
@@ -77,7 +80,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: myharmony-x86_64-${{ github.sha }}
+          name: myharmony-x86_64-${{ github.event.pull_request.head.sha || github.sha }}
           retention-days: 3
           if-no-files-found: warn
           path: |

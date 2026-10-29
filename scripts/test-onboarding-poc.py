@@ -29,6 +29,7 @@ sys.path.insert(0, str(ROOT))
 from runtime.desktop_launch import (inventory_tree, _read_generations, _generation, lifecycle_lock,
                                     digest_json, plan_identity, prepare_generation)
 from application_workflows import WORKFLOWS, share_test_windows
+from proof_storage import ProofPayloads
 spec = importlib.util.spec_from_file_location('gui', ROOT / 'scripts/test-flatpak-poc.py')
 gui = importlib.util.module_from_spec(spec); spec.loader.exec_module(gui)
 
@@ -385,6 +386,7 @@ def main():
         state = evidence / 'state' / app; documents = evidence / 'documents'
         if kind == 'oci':state.parent.mkdir(parents=True)
     documents.mkdir(parents=True)
+    payloads = ProofPayloads(state, evidence)
     document = documents / ('Original café' + workflow.extension); workflow.fixture(document)
     expected = document.read_bytes(); original = document; original_hash = sha(original)
     installed = None
@@ -567,6 +569,7 @@ def main():
         sessions.append(session)
         print(kind, label, 'passed', flush=True)
         share_test_windows(state, shared_windows)
+        payloads.record()
 
     try:
         subprocess.run(['xrdb', '-merge'], input='Xft.dpi: 192\n', text=True, check=True)
@@ -711,7 +714,7 @@ def main():
             (evidence/'result.json').write_text(json.dumps(result,indent=2)+'\n')
         if kind == 'appimage':
             subprocess.run([installed['installed'], '--cage-uninstall'], env=env, check=True)
-        if os.environ.get('CAGE_TEST_DISCARD_PREFIXES') == '1':shutil.rmtree(state)
+        payloads.finish()
         print(json.dumps({'status': 'passed', 'format': kind, 'sessions': len(sessions)}), flush=True)
     except BaseException:
         subprocess.run(['scrot', str(evidence / 'failure.png')], check=False)

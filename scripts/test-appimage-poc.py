@@ -13,6 +13,8 @@ import time
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from proof_storage import ProofPayloads
 spec = importlib.util.spec_from_file_location('gui', ROOT / 'scripts/test-flatpak-poc.py')
 gui = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gui)
@@ -38,6 +40,7 @@ def main():
     document = documents / 'AppImage café.txt'
     document.write_text('Original document\n')
     environment = {**os.environ, 'XDG_DATA_HOME': str(data)}
+    payloads = ProofPayloads(data / 'cage/appimage' / APP, EVIDENCE)
     # The caller selects FUSE or documented extraction fallback. The consumer
     # needs neither Wine nor Python: this Python process only drives GUI checks.
     if os.environ.get('CAGE_TEST_EXTRACT', '0') == '1':
@@ -79,6 +82,7 @@ def main():
                 except BlockingIOError:
                     return False
         gui.wait_for(lock_released, 'Wine services stopped and launch lock released', seconds=45)
+        payloads.record()
     try:
         handle = launch()
         gui.command('xdotool', 'key', '--clearmodifiers', 'ctrl+a')
@@ -130,6 +134,16 @@ def main():
             'privateRuntime': plan['target'].get('privateRuntime'),
             'legacyMinimumHostGlibc': plan['target'].get('minimumGlibc'), 'runtimeTarget': plan['target']}
         (EVIDENCE / 'functional-test.json').write_text(json.dumps(result, indent=2) + '\n')
+        payloads.finish()
+        if payloads.enabled:
+            # This proof made the relocation copy. Its exact original remains
+            # available; installed/recovery packages are never cleanup targets.
+            assert not moved.is_symlink() and moved.parent == EVIDENCE
+            assert sha(moved) == sha(package) == original_hash
+            moved.unlink()
+            (EVIDENCE / 'relocation-copy-cleanup.json').write_text(json.dumps({
+                'removed': str(moved), 'retainedOriginal': str(package), 'sha256': original_hash
+            }, indent=2) + '\n')
         print(json.dumps(result, indent=2))
     except BaseException:
         subprocess.run(['scrot', str(EVIDENCE / 'failure.png')], check=False)

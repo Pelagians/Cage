@@ -577,6 +577,7 @@ def cmd_export_oci(args):
         timeout=args.timeout,
         push=args.push,
         graphics=args.graphics,
+        keep_staging=args.keep_staging,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result.get("success") else 1
@@ -591,7 +592,8 @@ def cmd_export_flatpak(args):
         if not args.output:
             raise DesktopError("--output is required unless --dry-run")
         result = export_flatpak(bundle, output=args.output, store=args.flatpak_store,
-                                context_dir=args.context_dir, timeout=args.timeout)
+                                context_dir=args.context_dir, timeout=args.timeout,
+                                keep_staging=args.keep_staging)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 
@@ -606,7 +608,7 @@ def cmd_export_appimage(args):
             raise DesktopError("--output is required unless --dry-run")
         result = export_appimage(bundle, output=args.output, store=args.flatpak_store,
             allow_host_access=args.allow_host_access, context_dir=args.context_dir,
-            cache=args.tool_cache, timeout=args.timeout)
+            cache=args.tool_cache, timeout=args.timeout, keep_staging=args.keep_staging)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 
@@ -1048,7 +1050,8 @@ def build_parser():
     ep.add_argument("bundle", help="Desktop-target bundle path")
     ep.add_argument("--artifact-index", default=None)
     ep.add_argument("--output", help="Output .flatpak file")
-    ep.add_argument("--context-dir", help="New staging directory retained for inspection")
+    ep.add_argument("--context-dir", help="New staging directory; provenance is retained after cleanup")
+    ep.add_argument("--keep-staging", action="store_true", help="Retain completed build payloads for inspection")
     ep.add_argument("--flatpak-store", default=".cage/flatpak", help="Isolated build-time Flatpak store")
     ep.add_argument("--timeout", type=int, default=900)
     ep.add_argument("--dry-run", action="store_true")
@@ -1058,7 +1061,8 @@ def build_parser():
     ep.add_argument("bundle", help="Desktop-target bundle path")
     ep.add_argument("--artifact-index", default=None)
     ep.add_argument("--output", help="Output .AppImage file")
-    ep.add_argument("--context-dir", help="New staging directory retained for inspection")
+    ep.add_argument("--context-dir", help="New staging directory; provenance is retained after cleanup")
+    ep.add_argument("--keep-staging", action="store_true", help="Retain completed build payloads for inspection")
     ep.add_argument("--flatpak-store", default=".cage/flatpak", help="Build-time pinned native payload store")
     ep.add_argument("--tool-cache", default=".cage/appimage-tools", help="Checksum-verified tool cache")
     ep.add_argument("--allow-host-access", action="store_true",
@@ -1077,6 +1081,7 @@ def build_parser():
                     help="Application image session target")
     ep.add_argument("--engine", default=None, help="Container build engine (podman, docker). Auto-detect if omitted.")
     ep.add_argument("--context-dir", help="Optional build context directory to materialize")
+    ep.add_argument("--keep-staging", action="store_true", help="Retain completed build payloads for inspection")
     ep.add_argument("--timeout", type=int, default=600, help="Max seconds for image build/push commands")
     ep.add_argument("--push", action="store_true", help="Push the image after a successful local build")
     ep.set_defaults(func=cmd_export_oci)

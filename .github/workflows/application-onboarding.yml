@@ -9,9 +9,9 @@ on:
         options: ['0', '25']
         default: '0'
   push:
-    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'pyproject.toml', 'recipes/sumatrapdf*', 'recipes/assets/**', 'scripts/*onboarding*', 'scripts/application_workflows.py', 'scripts/prepare-legacy-poc.py', 'scripts/prepare-sumatrapdf-poc.py', 'tests/**', '.github/workflows/application-onboarding.yml']
+    paths: ['scripts/proof_storage.py', 'runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'pyproject.toml', 'recipes/sumatrapdf*', 'recipes/assets/**', 'scripts/*onboarding*', 'scripts/application_workflows.py', 'scripts/prepare-legacy-poc.py', 'scripts/prepare-sumatrapdf-poc.py', 'tests/**', '.github/workflows/application-onboarding.yml']
   pull_request:
-    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'pyproject.toml', 'recipes/sumatrapdf*', 'recipes/assets/**', 'scripts/*onboarding*', 'scripts/application_workflows.py', 'scripts/prepare-legacy-poc.py', 'scripts/prepare-sumatrapdf-poc.py', 'tests/**', '.github/workflows/application-onboarding.yml']
+    paths: ['scripts/proof_storage.py', 'runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'pyproject.toml', 'recipes/sumatrapdf*', 'recipes/assets/**', 'scripts/*onboarding*', 'scripts/application_workflows.py', 'scripts/prepare-legacy-poc.py', 'scripts/prepare-sumatrapdf-poc.py', 'tests/**', '.github/workflows/application-onboarding.yml']
 
 permissions:
   contents: read
@@ -40,9 +40,11 @@ jobs:
     env:
       PYTHONDONTWRITEBYTECODE: '1'
       CAGE_TEST_DISCARD_PREFIXES: '1'
-      CAGE_TEST_SOURCE_REVISION: ${{ github.sha }}
+      CAGE_TEST_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -135,7 +137,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: application-onboarding-desktop-${{ matrix.arch }}-${{ github.sha }}
+          name: application-onboarding-desktop-${{ matrix.arch }}-${{ github.event.pull_request.head.sha || github.sha }}
           retention-days: 14
           path: dist/onboarding-ci-evidence
 
@@ -159,6 +161,8 @@ jobs:
       CAGE_TEST_TRACE_SHUTDOWN: ${{ inputs.shutdown_relaunches == '25' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -210,6 +214,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: application-onboarding-containers-${{ matrix.provider }}-${{ github.sha }}
+          name: application-onboarding-containers-${{ matrix.provider }}-${{ github.event.pull_request.head.sha || github.sha }}
           retention-days: 14
           path: dist/onboarding-ci-evidence

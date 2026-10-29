@@ -3,9 +3,9 @@ name: Desktop AppImage proof
 on:
   workflow_dispatch:
   push:
-    paths: ['artifact/**', 'builder/**', 'runtime/**', 'cage/**', 'core/**', 'tests/**', 'scripts/*poc.py', 'scripts/appimage_consumer.py', 'pyproject.toml', '.github/workflows/appimage-exports.yml']
+    paths: ['scripts/proof_storage.py', 'artifact/**', 'builder/**', 'runtime/**', 'cage/**', 'core/**', 'tests/**', 'scripts/*poc.py', 'scripts/appimage_consumer.py', 'pyproject.toml', '.github/workflows/appimage-exports.yml']
   pull_request:
-    paths: ['artifact/**', 'builder/**', 'runtime/**', 'cage/**', 'core/**', 'tests/**', 'scripts/*poc.py', 'scripts/appimage_consumer.py', 'pyproject.toml', '.github/workflows/appimage-exports.yml']
+    paths: ['scripts/proof_storage.py', 'artifact/**', 'builder/**', 'runtime/**', 'cage/**', 'core/**', 'tests/**', 'scripts/*poc.py', 'scripts/appimage_consumer.py', 'pyproject.toml', '.github/workflows/appimage-exports.yml']
 
 permissions:
   contents: read
@@ -38,6 +38,8 @@ jobs:
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -77,10 +79,10 @@ jobs:
           # Retain receipts, not multiple unpacked copies of the same multi-GB
           # Wine payload. All following consumer checks use the actual image.
           mkdir -p dist/appimage-evidence/payload
-          cp dist/*.AppImage.build/AppDir/usr/share/cage/*/native-dependencies.json dist/appimage-evidence/payload/
-          cp dist/*.AppImage.build/AppDir/usr/share/cage/*/component-sources.json dist/appimage-evidence/payload/
+          cp dist/*.AppImage.build/payload-metadata/native-dependencies.json dist/appimage-evidence/payload/
+          cp dist/*.AppImage.build/payload-metadata/component-sources.json dist/appimage-evidence/payload/
           cp dist/*.AppImage.build/appdir-inventory.json dist/appimage-evidence/payload/
-          rm -rf -- dist/notepadplusplus-8.8.8-${{ matrix.arch }}.AppImage.build
+          python scripts/test-storage-poc.py dist/notepadplusplus-8.8.8-${{ matrix.arch }}.AppImage.build >dist/appimage-evidence/storage.json
           rm -rf -- dist/appimage-bundles/${{ matrix.recipe }}-8.8.8/build/flatpak
           # Prove the private runtime on the old 2.35 host ABI as well as
           # contemporary userlands; these share only X11 and test paths.
@@ -98,7 +100,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: appimage-${{ matrix.arch }}-${{ github.sha }}
+          name: appimage-${{ matrix.arch }}-${{ github.event.pull_request.head.sha || github.sha }}
           retention-days: 14
           if-no-files-found: warn
           path: |

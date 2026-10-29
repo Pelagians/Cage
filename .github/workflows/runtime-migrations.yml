@@ -27,9 +27,9 @@ on:
         type: boolean
         default: false
   push:
-    paths: ['runtime/**', 'container/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'scripts/*runtime-migration*', 'scripts/test-onboarding-poc.py', 'scripts/application_workflows.py', 'tests/**', '.github/workflows/runtime-migrations.yml']
+    paths: ['scripts/proof_storage.py', 'runtime/**', 'container/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'scripts/*runtime-migration*', 'scripts/test-onboarding-poc.py', 'scripts/application_workflows.py', 'tests/**', '.github/workflows/runtime-migrations.yml']
   pull_request:
-    paths: ['runtime/**', 'container/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'scripts/*runtime-migration*', 'scripts/test-onboarding-poc.py', 'scripts/application_workflows.py', 'tests/**', '.github/workflows/runtime-migrations.yml']
+    paths: ['scripts/proof_storage.py', 'runtime/**', 'container/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'scripts/*runtime-migration*', 'scripts/test-onboarding-poc.py', 'scripts/application_workflows.py', 'tests/**', '.github/workflows/runtime-migrations.yml']
 
 permissions:
   contents: read
@@ -41,7 +41,7 @@ concurrency:
 env:
   PYTHONDONTWRITEBYTECODE: '1'
   CAGE_TEST_DISCARD_PREFIXES: '1'
-  CAGE_TEST_SOURCE_REVISION: ${{ github.sha }}
+  CAGE_TEST_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
   # Existing generation-aware manager and original ARM Wine/FEX runtime.
   BASELINE_SOURCE: dd9646ab9468008e775b66a196ac91fbe023345c
 
@@ -67,6 +67,8 @@ jobs:
       CAGE_RUNTIME_PROPOSAL_FLAG: ${{ (inputs.rollback_repair || (github.event_name != 'workflow_dispatch' && matrix.arch == 'aarch64')) && '--rollback-repair' || '' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -141,7 +143,7 @@ jobs:
           PY
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           clean: false
       - name: Build and bind the candidate from the shared recipe
         run: |
@@ -169,7 +171,7 @@ jobs:
               root=Path(run_flatpak(['info','--user','--show-location',target['base']],store=store))/'files'
               file=root/'bin/7zz'
           else:file=materialize_payload(store/'arm64ec')/'lib64/wine-wow64/wine/aarch64-windows/libarm64ecfex.dll'
-          record={'sourceRevision':'${{ github.sha }}','target':target,'payloadSha256':hashlib.sha256(file.read_bytes()).hexdigest()}
+          record={'sourceRevision':'${{ github.event.pull_request.head.sha || github.sha }}','target':target,'payloadSha256':hashlib.sha256(file.read_bytes()).hexdigest()}
           assert record['payloadSha256']!=json.loads(Path('dist/onboarding-evidence/baseline-runtime.json').read_text())['payloadSha256'],'runtime payload must genuinely change'
           Path('dist/onboarding-evidence/candidate-runtime.json').write_text(json.dumps(record))
           PY
@@ -219,7 +221,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ${{ env.CAGE_RUNTIME_PROOF_MODE }}-desktop-${{ matrix.arch }}-${{ github.sha }}
+          name: ${{ env.CAGE_RUNTIME_PROOF_MODE }}-desktop-${{ matrix.arch }}-${{ github.event.pull_request.head.sha || github.sha }}
           retention-days: 14
           path: dist/onboarding-ci-evidence
 
@@ -288,7 +290,7 @@ jobs:
           SH
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           clean: false
       - name: Build the new runtime and bind shared migration policy
         run: |
@@ -352,6 +354,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ${{ env.CAGE_RUNTIME_PROOF_MODE }}-containers-${{ matrix.arch }}-${{ github.sha }}
+          name: ${{ env.CAGE_RUNTIME_PROOF_MODE }}-containers-${{ matrix.arch }}-${{ github.event.pull_request.head.sha || github.sha }}
           retention-days: 14
           path: dist/onboarding-ci-evidence

@@ -188,6 +188,18 @@ def record_export(context, bundle, kind, artifact):
         return {'managed': False, 'reason': str(exc), 'stagingRetained': True}
 
 
+def cleanup_export(context, record, *, keep_staging=False):
+    """After releasing the producer lock, revalidate and prune this export only."""
+    if not record.get('managed') or keep_staging:
+        return {**record, 'stagingRetained': True}
+    try:
+        cleanup = prune_context(context, min_age_hours=0, apply=True)
+        return {**record, 'cleanup': cleanup, 'stagingRetained': not bool(cleanup['removed'])}
+    except (OSError, ValueError, TypeError, KeyError, StorageError, subprocess.SubprocessError) as exc:
+        # A good retained package remains usable even if cleanup is interrupted.
+        return {**record, 'cleanup': {'reason': str(exc)}, 'stagingRetained': True}
+
+
 def _verify_artifact(artifact, context, *, sync=False):
     if artifact['kind'] == 'file':
         path = real_path(artifact['path'])

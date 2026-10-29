@@ -3,9 +3,9 @@ name: Export update and rollback proof
 on:
   workflow_dispatch:
   push:
-    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/notepadplusplus*', 'pyproject.toml', 'scripts/*update*poc.py', 'scripts/test-onboarding-poc.py', 'scripts/collect-onboarding-evidence.py', 'scripts/application_workflows.py', 'tests/test_trusted_releases.py', 'scripts/*storage*poc.py', 'tests/test_*updates.py', 'tests/test_storage.py', 'tests/test_desktop_integration.py', '.github/workflows/export-updates.yml']
+    paths: ['scripts/proof_storage.py', 'runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/notepadplusplus*', 'pyproject.toml', 'scripts/*update*poc.py', 'scripts/test-onboarding-poc.py', 'scripts/collect-onboarding-evidence.py', 'scripts/application_workflows.py', 'tests/test_trusted_releases.py', 'scripts/*storage*poc.py', 'tests/test_*updates.py', 'tests/test_storage.py', 'tests/test_desktop_integration.py', '.github/workflows/export-updates.yml']
   pull_request:
-    paths: ['runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/notepadplusplus*', 'pyproject.toml', 'scripts/*update*poc.py', 'scripts/test-onboarding-poc.py', 'scripts/collect-onboarding-evidence.py', 'scripts/application_workflows.py', 'tests/test_trusted_releases.py', 'scripts/*storage*poc.py', 'tests/test_*updates.py', 'tests/test_storage.py', 'tests/test_desktop_integration.py', '.github/workflows/export-updates.yml']
+    paths: ['scripts/proof_storage.py', 'runtime/**', 'artifact/**', 'builder/**', 'core/**', 'cage/**', 'recipes/notepadplusplus*', 'pyproject.toml', 'scripts/*update*poc.py', 'scripts/test-onboarding-poc.py', 'scripts/collect-onboarding-evidence.py', 'scripts/application_workflows.py', 'tests/test_trusted_releases.py', 'scripts/*storage*poc.py', 'tests/test_*updates.py', 'tests/test_storage.py', 'tests/test_desktop_integration.py', '.github/workflows/export-updates.yml']
 
 permissions:
   contents: read
@@ -34,9 +34,11 @@ jobs:
       PYTHONDONTWRITEBYTECODE: '1'
       CAGE_TEST_DISCARD_PREFIXES: '1'
       CAGE_TEST_DESKTOP_INTEGRATION: '1'
-      CAGE_TEST_SOURCE_REVISION: ${{ github.sha }}
+      CAGE_TEST_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -116,7 +118,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-updates-${{ matrix.arch }}-${{ github.sha }}
+          name: desktop-updates-${{ matrix.arch }}-${{ github.event.pull_request.head.sha || github.sha }}
           retention-days: 14
           path: |
             dist/update-*.AppImage
@@ -148,6 +150,8 @@ jobs:
       CAGE_TEST_DISCARD_PREFIXES: '1'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -189,7 +193,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: container-updates-${{ matrix.arch }}-${{ github.sha }}
+          name: container-updates-${{ matrix.arch }}-${{ github.event.pull_request.head.sha || github.sha }}
           retention-days: 14
           path: |
             dist/update-ci-evidence/

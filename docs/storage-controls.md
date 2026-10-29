@@ -5,6 +5,22 @@ packages. Storage commands reuse the artifact index, export receipts and existin
 prefix-generation records. They do not create a second application database,
 start Wine, repair state, pull images or install dependencies.
 
+Successful AppImage, Flatpak and OCI exports now automatically clean their own
+completed staging after releasing the producer lock. Cleanup reacquires that
+lock and uses the same inventory, retained-artifact and protected-path checks as
+manual pruning, with no minimum age for that just-completed export. Only the
+disposable payloads in the table below are removed. Source bundles, canonical
+build prefixes, packages/images, plans, inventories and provenance remain.
+Desktop seed inventories, manifests and component-source receipts are retained in
+`payload-metadata/` outside disposable staging, together with AppImage dependency
+receipts. Returned export JSON includes the cleanup outcome under `storage`.
+
+Use `--keep-staging` on `cage export appimage`, `flatpak` or `oci` when the full
+completed context is needed for inspection. Failed exports retain staging.
+Changed, busy, unregistered or otherwise ineligible staging is also retained;
+cleanup failure does not turn a usable export into a failed build. This is
+cleanup of the current export, not a sweep of old or unrelated directories.
+
 ```sh
 cage storage status
 cage doctor
@@ -78,7 +94,8 @@ cage storage prune --build-dir /path/to/export-context
 cage storage prune --min-age-hours 0
 ```
 
-The default minimum age is 24 hours. `--apply` is always required for deletion.
+The manual prune command defaults to a minimum age of 24 hours and requires
+`--apply` for deletion. Export completion performs its own automatic cleanup.
 Source bundles are protected; their canonical Wine prefixes are never pruned.
 Original output packages must still exist and match their recorded hashes.
 OCI cleanup checks the exact immutable image ID locally, independent of tag
@@ -97,6 +114,44 @@ inventory. It never guesses how to finish deleting unknown data.
 A directory name or old export receipt alone is not sufficient evidence of
 ownership. Older builds without the new completion record remain protected.
 There is no automatic legacy adoption or `--force` escape hatch.
+
+## Successful test runs
+
+The update, onboarding, AppImage GUI and clean-consumer proof harnesses clean
+their disposable Windows runtime copies by default after every assertion passes
+and the qualification result is saved. They claim an absent private state path
+before use, record runtime binaries only after normal shutdown, then verify the
+recorded file identities and hashes again under the application's lifecycle
+lock before deletion. Existing state cannot be claimed. Flatpak uses its fresh,
+random proof token inside the sandbox's data namespace; ordinary installed app
+state is not eligible.
+
+Only recorded, unchanged PE runtime binaries under committed generations'
+`drive_c/windows/system32` and `syswow64` are retired. Registry/settings files,
+user directories, saved documents, state/generation records, failed candidates,
+packages and recovery caches are retained in place. Logs, screenshots, result
+records and qualification inventories also remain. Unknown files, symlinks and
+hardlinked files are not adopted as disposable runtime payloads.
+
+`runtime-payload-inventory.json`, `removed-runtime-files.log` and
+`payload-cleanup.json` in the evidence directory record the cleanup. The journal
+uses JSON lines in a `.log` file so existing CI collectors retain it even after
+an interrupted cleanup. Cleanup requires a saved passing qualification result
+and refuses existing cleanup records rather than overwriting evidence. The state
+gets a retirement marker identifying it as historical test state whose runtime
+payload has been removed. It is not intended for further launches. Set
+`CAGE_TEST_DISCARD_PREFIXES=0` before a proof to retain its complete runtime for
+debugging or later relaunches. The existing value `1` now selects this bounded
+cleanup instead of deleting the whole state directory and its saved files.
+The AppImage GUI proof also removes its own relocation-test package copy after
+rechecking both copies against the original hash; the original exported package
+remains available and a separate removal receipt is saved. Debug opt-out keeps
+that duplicate too. Recovery-cache packages are never treated as test copies.
+
+Failed runs retain their payloads for diagnosis. Direct tests against an
+installed application and arbitrary older/custom harnesses do not automatically
+retire their state. No installed application generation is pruned by this test
+cleanup, and no rollback package is deleted.
 
 ## Build-only download cache
 

@@ -46,6 +46,8 @@ jobs:
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -106,7 +108,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: arm64-wine-fex-${{ github.sha }}
+          name: arm64-wine-fex-${{ github.event.pull_request.head.sha || github.sha }}
           if-no-files-found: warn
           retention-days: 14
           path: |
