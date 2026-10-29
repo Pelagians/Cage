@@ -178,7 +178,7 @@ jobs:
           IMAGE_UNDER_TEST: ${{ steps.image.outputs.image }}
           RELEASE_REF: ${{ matrix.published_ref }}
           ALIASES: ${{ matrix.published_alias_refs }}
-          COMMIT_TAG: ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.sha }}-${{ matrix.tag }}
+          COMMIT_TAG: ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ github.event.pull_request.head.sha || github.sha }}-${{ matrix.tag }}
         run: |
           set -euo pipefail
           tags=(--tag "$RELEASE_REF" --tag "$COMMIT_TAG")

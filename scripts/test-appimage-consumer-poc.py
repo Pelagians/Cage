@@ -12,6 +12,8 @@ import sys
 from appimage_consumer import consumer_glibc, private_runtime_maps
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from proof_storage import ProofPayloads
 spec = importlib.util.spec_from_file_location('gui', ROOT / 'scripts/test-flatpak-poc.py')
 gui = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gui)
@@ -31,6 +33,7 @@ def main():
     document = evidence / 'Consumer café file.txt'
     document.write_text('Original consumer document\n')
     prefix = data / 'cage/appimage' / gui.APP
+    payloads = ProofPayloads(prefix, evidence)
     container_name = 'cage-appimage-proof-' + str(os.getpid())
     argv = ['podman', 'run', '--rm', '--name', container_name, '--network', 'none', '--userns=keep-id',
         '--user', str(os.getuid()) + ':' + str(os.getgid()), '--hostname', socket.gethostname(),
@@ -65,6 +68,7 @@ def main():
         gui.wait_for(lambda: document.read_text() == expected, 'consumer exact saved document')
         gui.command('xdotool', 'key', '--clearmodifiers', 'alt+F4')
         assert process.wait(timeout=180) == 0
+        payloads.record()
         before = (prefix / 'state.json').read_bytes()
         package.rename(relocated_package)
         package = relocated_package
@@ -76,6 +80,7 @@ def main():
         subprocess.run(['scrot', str(evidence / 'relaunch.png')], check=True)
         gui.command('xdotool', 'key', '--clearmodifiers', 'alt+F4')
         assert process.wait(timeout=180) == 0
+        payloads.record()
         assert (prefix / 'state.json').read_bytes() == before
         result = {'schemaVersion': 'cage.appimage-consumer-test/v0', 'status': 'passed',
             'consumerImage': image, 'consumerImageId': gui.command('podman', 'image', 'inspect', '--format', '{{.Id}}', image),
@@ -85,6 +90,7 @@ def main():
             'save': True, 'relaunch': True, 'sameStateGeneration': True, 'savedContents': document.read_text(),
             'mode': 'extract-and-run', 'host': gui.command('uname', '-srmo')}
         (evidence / 'functional-test.json').write_text(json.dumps(result, indent=2) + '\n')
+        payloads.finish()
         print(json.dumps(result, indent=2))
     except BaseException:
         subprocess.run(['scrot', str(evidence / 'failure.png')], check=False)

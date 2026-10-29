@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from artifact.storage import build_lock, record_export
+from artifact.storage import build_lock, record_export, cleanup_export
 from artifact.inspection import verify_bundle
 from artifact.linux_state import declared_outputs, linux_state_identity
 
@@ -213,6 +213,7 @@ def export_oci_image(
     timeout: int = 600,
     push: bool = False,
     graphics: str = 'headless',
+    keep_staging: bool = False,
 ) -> dict[str, Any]:
     '''Build a runnable application OCI image from a verified Cage bundle.'''
     bundle = Path(bundle_path)
@@ -235,6 +236,7 @@ def export_oci_image(
     context = Path(context_dir).resolve() if context_dir is not None else Path(tempfile.mkdtemp(prefix='cage-oci-'))
     with build_lock(context):
         context = prepare_oci_build_context(bundle, plan, context)
+        _write_json(context / 'export-plan.json', plan)
         containerfile_path = context / plan['containerfile']['path']
         local_base_tag = _stage_local_base_image(selected_engine, plan['baseImage'], containerfile_path)
         image_id_file = context / '.cage-oci-image-id'
@@ -319,7 +321,9 @@ def export_oci_image(
                     'kind': 'oci', 'engine': selected_engine, 'id': image_id_file.read_text().strip()})
             except (OSError, ValueError, subprocess.SubprocessError) as exc:
                 result['storage'] = {'managed': False, 'reason': str(exc), 'stagingRetained': True}
-        return result
+    if result['success']:
+        result['storage'] = cleanup_export(context, result['storage'], keep_staging=keep_staging)
+    return result
 
 
 def _stage_local_base_image(engine: str, base_image: str, containerfile: Path) -> str | None:

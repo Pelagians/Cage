@@ -1,7 +1,7 @@
 """Native AppDir adapter over the sealed desktop plan; no application installer logic."""
 from __future__ import annotations
 
-from artifact.storage import build_lock, record_export
+from artifact.storage import build_lock, record_export, cleanup_export
 
 import hashlib
 import json
@@ -401,6 +401,12 @@ def prepare_appdir(bundle, plan, context, *, store, cache):
         'nativeDependencySource': 'Freedesktop platform OSTree commit ' + plan['sourceTarget']['platformCommit'],
         'notice': 'Preserve notices and provide corresponding sources before redistribution; no publication performed.'
     }, indent=2, sort_keys=True) + '\n')
+    # Keep inspection/provenance records outside disposable AppDir staging.
+    metadata = context / 'payload-metadata'
+    metadata.mkdir()
+    for name in ('native-dependencies.json', 'component-sources.json',
+                 'seed-inventory.json', 'desktop.json', 'manifest.cage.json'):
+        shutil.copyfile(destination / name, metadata / name)
     (context / 'export-plan.json').write_text(json.dumps(plan, indent=2, sort_keys=True) + '\n')
     (context / 'appdir-inventory.json').write_text(json.dumps(inventory_tree(appdir), sort_keys=True) + '\n')
     return appdir
@@ -428,7 +434,7 @@ exec "$HERE/usr/lib/cage-native/{loader}" --inhibit-cache \\
 
 
 def export_appimage(bundle, *, output, store, allow_host_access=False, context_dir=None,
-                    cache='.cage/appimage-tools', timeout=1800):
+                    cache='.cage/appimage-tools', timeout=1800, keep_staging=False):
     plan = create_appimage_export_plan(bundle, allow_host_access=allow_host_access)
     if platform.system() != 'Linux' or platform.machine() != plan['target']['architecture']:
         raise DesktopError('AppImage export requires a native Linux build runner for ' + plan['target']['architecture'])
@@ -470,4 +476,5 @@ def export_appimage(bundle, *, output, store, allow_host_access=False, context_d
             'mksquashfsVersion': subprocess.check_output(['mksquashfs', '-version'], text=True).splitlines()[0]}
         Path(str(output) + '.json').write_text(json.dumps(result, indent=2, sort_keys=True) + '\n')
         result['storage'] = record_export(context, bundle, 'appimage', {'kind': 'file', 'path': str(output), 'sha256': result['sha256']})
-        return result
+    result['storage'] = cleanup_export(context, result['storage'], keep_staging=keep_staging)
+    return result

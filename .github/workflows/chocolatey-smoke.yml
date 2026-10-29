@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      CAGE_RUNTIME_IMAGE: cage-wine-cfw-candidate:${{ github.sha }}
+      CAGE_RUNTIME_IMAGE: cage-wine-cfw-candidate:${{ github.event.pull_request.head.sha || github.sha }}
       # Diagnostic bounds: fail fast enough to capture the live Wine/managed-host process tree.
       CAGE_CHOCOLATEY_VERIFY_TIMEOUT: '60s'
       CAGE_CHOCOLATEY_VERIFY_SETTLE_TIMEOUT: '30s'
@@ -48,6 +48,8 @@ jobs:
       CAGE_CHOCOLATEY_FEATURE_SETTLE_TIMEOUT: '30s'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -150,7 +152,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: chocolatey-lifecycle-${{ github.sha }}
+          name: chocolatey-lifecycle-${{ github.event.pull_request.head.sha || github.sha }}
           if-no-files-found: warn
           retention-days: 14
           path: |

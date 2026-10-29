@@ -13,6 +13,7 @@ on:
       - 'recipes/**'
       - 'core/**'
       - 'tests/**'
+      - 'scripts/**'
       - 'pyproject.toml'
       - '.github/workflows/tests.yml'
   pull_request:
@@ -26,6 +27,7 @@ on:
       - 'recipes/**'
       - 'core/**'
       - 'tests/**'
+      - 'scripts/**'
       - 'pyproject.toml'
       - '.github/workflows/tests.yml'
   workflow_dispatch:
@@ -38,6 +40,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -59,7 +63,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pytest-${{ github.sha }}
+          name: pytest-${{ github.event.pull_request.head.sha || github.sha }}
           if-no-files-found: error
           retention-days: 14
           path: /tmp/cage-pytest.log

@@ -23,6 +23,7 @@ spec = importlib.util.spec_from_file_location('gui', ROOT / 'scripts/test-flatpa
 gui = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gui)
 from application_workflows import share_test_windows
+from proof_storage import ProofPayloads
 
 
 def sha(path):
@@ -116,6 +117,7 @@ def main():
         state.parent.mkdir()
     else:
         raise ValueError('unknown adapter')
+    payloads = ProofPayloads(state, evidence)
     def prefix():
         record = json.loads((state / 'state.json').read_text())
         return state / record['active'] if record.get('schemaVersion') == 'cage.desktop-generations/v1' else state / 'prefix'
@@ -200,6 +202,7 @@ def main():
         gui.wait_for(lambda: not subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', 'Notepad\\+\\+'],
                     capture_output=True).stdout, 'GUI shutdown')
         share_test_windows(state, shared_windows)
+        payloads.record()
     def executable_hash():
         assert not (prefix() / "drive_c/Program Files/Notepad++/updater").exists(), "bundled self-updater must be excluded"
         return sha(prefix() / 'drive_c/Program Files/Notepad++/notepad++.exe')
@@ -337,8 +340,7 @@ def main():
             result['sourceImageIds'] = image_ids
         (evidence / 'result.json').write_text(json.dumps(result, indent=2, sort_keys=True) + '\n')
         print(json.dumps(result, indent=2))
-        if os.environ.get('CAGE_TEST_DISCARD_PREFIXES') == '1':
-            shutil.rmtree(state)  # Only this proof's fresh, private state root.
+        payloads.finish()
     except BaseException:
         subprocess.run(['scrot', str(evidence / 'failure.png')], check=False)
         windows = subprocess.run(['xdotool','search','--onlyvisible','--name','.*'], capture_output=True, text=True)

@@ -284,6 +284,74 @@ class StorageTests(unittest.TestCase):
         with self.assertRaises(storage.StorageError):
             storage.complete_export(protected, bundle, 'appimage', artifact)
 
+    def test_success_cleanup_uses_existing_validation_and_has_debug_opt_out(self):
+        context, package, bundle = self.context()
+        recorded = {'managed': True, 'marker': str(context / storage.MARKER)}
+        kept = storage.cleanup_export(context, recorded, keep_staging=True)
+        self.assertTrue(kept['stagingRetained'])
+        result = storage.cleanup_export(context, recorded)
+        self.assertFalse(result['stagingRetained'])
+        self.assertEqual(result['cleanup']['removed'], ['AppDir'])
+        self.assertTrue(package.is_file())
+        self.assertEqual((bundle / 'settings').read_text(), 'keep source')
+        # The CI checker validates auto-cleaned contexts as well as manual cleanup.
+        subprocess.run([sys.executable, 'scripts/test-storage-poc.py', str(context)],
+                       check=True, capture_output=True)
+
+    def test_success_cleanup_retains_changed_or_unmanaged_staging(self):
+        context, _, _ = self.context()
+        (context / 'AppDir/new-document').write_text('user work')
+        result = storage.cleanup_export(context, {'managed': True})
+        self.assertTrue(result['stagingRetained'])
+        self.assertFalse(result['cleanup']['eligible'])
+        self.assertEqual((context / 'AppDir/new-document').read_text(), 'user work')
+        self.assertNotIn('cleanup', storage.cleanup_export(context, {'managed': False}))
+
+    def test_flatpak_export_cleans_only_after_success_and_can_keep_staging(self):
+        from artifact.flatpak import export_flatpak
+        for outcome in ('success', 'failure', 'keep'):
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory(dir=self.root) as tmp:
+                root = Path(tmp)
+                bundle = root / 'source'
+                bundle.mkdir()
+                (bundle / 'saved.txt').write_text('retain source')
+                context, package = root / 'build', root / 'application.flatpak'
+                plan = {'desktop': {'id': 'org.example.App'},
+                        'target': {'architecture': 'x86_64', 'remoteUrl': 'https://example.invalid'},
+                        'permissions': []}
+                def prepare(*args, **kwargs):
+                    app = context / 'app'
+                    app.mkdir(parents=True)
+                    (app / 'payload').write_bytes(b'generated runtime')
+                    (context / 'export-plan.json').write_text(json.dumps(plan))
+                    return app
+                def build(argv, **kwargs):
+                    if argv[0] == 'build-export':
+                        if outcome == 'failure':
+                            raise OSError('failed producer')
+                        ref = context / 'repository/refs/heads/app/org.example.App/x86_64/stable'
+                        ref.parent.mkdir(parents=True)
+                        ref.write_text('a' * 64)
+                    elif argv[0] == 'build-bundle':
+                        Path(str(package) + '.partial').write_bytes(b'complete package')
+                with patch('artifact.flatpak.create_flatpak_export_plan', return_value=plan), \
+                     patch('artifact.flatpak.ensure_target'), \
+                     patch('artifact.flatpak.prepare_flatpak_context', side_effect=prepare), \
+                     patch('artifact.flatpak.run_flatpak', side_effect=build):
+                    if outcome == 'failure':
+                        with self.assertRaises(OSError):
+                            export_flatpak(bundle, output=package, store=root / 'store', context_dir=context)
+                        self.assertTrue((context / 'app/payload').exists())
+                        self.assertFalse((context / storage.MARKER).exists())
+                    else:
+                        result = export_flatpak(bundle, output=package, store=root / 'store',
+                                                context_dir=context, keep_staging=outcome == 'keep')
+                        self.assertEqual((context / 'app').exists(), outcome == 'keep')
+                        self.assertEqual(result['storage']['stagingRetained'], outcome == 'keep')
+                        self.assertEqual(package.read_bytes(), b'complete package')
+                        self.assertTrue((context / 'export-plan.json').exists())
+                self.assertEqual((bundle / 'saved.txt').read_text(), 'retain source')
+
     def test_parent_swap_after_validation_cannot_delete_external_files(self):
         context, _, _ = self.context()
         outside = self.root / 'outside'

@@ -1,7 +1,7 @@
 """Flatpak layout and assembly over the shared desktop contract."""
 from __future__ import annotations
 
-from artifact.storage import build_lock, record_export
+from artifact.storage import build_lock, record_export, cleanup_export
 
 import hashlib
 import json
@@ -100,10 +100,14 @@ def prepare_flatpak_context(bundle, plan, context, *, store):
                         f'<launchable type="desktop-id">{desktop["id"]}.desktop</launchable>'
                         '<description><p>A Windows application packaged with Cage and Wine.</p></description></component>\n')
     (context / "export-plan.json").write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n")
+    metadata = context / 'payload-metadata'
+    metadata.mkdir()
+    for name in ('seed-inventory.json', 'desktop.json', 'manifest.cage.json', 'component-sources.json'):
+        shutil.copyfile(destination / name, metadata / name)
     return build_dir
 
 
-def export_flatpak(bundle, *, output, store, context_dir=None, timeout=900):
+def export_flatpak(bundle, *, output, store, context_dir=None, timeout=900, keep_staging=False):
     plan = create_flatpak_export_plan(bundle)
     output = Path(output).resolve()
     if output.is_relative_to(Path(bundle).resolve()):
@@ -135,4 +139,5 @@ def export_flatpak(bundle, *, output, store, context_dir=None, timeout=900):
                   "commit": commit}
         Path(str(output) + ".json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
         result['storage'] = record_export(context, bundle, 'flatpak', {'kind': 'file', 'path': str(output), 'sha256': result['sha256']})
-        return result
+    result['storage'] = cleanup_export(context, result['storage'], keep_staging=keep_staging)
+    return result
