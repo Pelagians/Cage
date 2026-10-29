@@ -8,7 +8,7 @@ import re
 import shutil
 import stat
 
-from artifact.storage import directory_fd, real_path, _entry
+from artifact.storage import directory_fd, real_path, read_json, _entry
 from runtime.desktop_launch import _read_generations
 
 
@@ -82,62 +82,69 @@ class ProofPayloads:
                                 entry = _entry(parent, name)
                             if not stat.S_ISREG(entry['stat'][2]):
                                 continue
-                            # Never silently adopt a later changed binary.
-                            self.entries.setdefault(relative, entry)
+                            self.entries[relative] = entry
 
     def finish(self):
         """Called after all assertions and qualification records were saved."""
         result = {'schemaVersion': 'cage.proof-payload-cleanup/v1', 'state': str(self.state),
                   'status': 'retained', 'removedFiles': [], 'savedDataAndPackagesRetained': True}
         receipt = self.evidence / 'payload-cleanup.json'
+        inventory = self.evidence / 'runtime-payload-inventory.json'
+        journal = self.evidence / 'removed-runtime-files.log'
+        retirement = self.state / 'retired-test-payload.json'
+        # Refuse old evidence before creating records or removing any payload.
+        for path in (receipt, inventory, journal, retirement):
+            if real_path(path).exists():
+                raise ValueError('existing cleanup evidence; payload retained: ' + str(path))
+        if self.enabled and self.identity is None:
+            raise ValueError('no stopped proof payload was recorded; state retained')
         if not self.enabled:
             result['reason'] = 'CAGE_TEST_DISCARD_PREFIXES=0'
-            receipt.write_text(json.dumps(result, indent=2) + '\n')
-            return result
-        if self.identity is None:
-            raise ValueError('no stopped proof payload was recorded; state retained')
-        if not self.entries:
+        elif not self.entries:
             result['reason'] = 'no independent runtime copies to remove'
-            receipt.write_text(json.dumps(result, indent=2) + '\n')
-            return result
-        with self.locked():
-            # Revalidate the entire removal set before starting any deletion.
-            for relative, expected in self.entries.items():
-                path = real_path(self.state / relative)
-                with directory_fd(path.parent) as parent:
-                    if _entry(parent, path.name) != expected or path.stat().st_nlink != 1:
-                        raise ValueError('proof payload changed; retained: ' + relative)
-            (self.evidence / 'runtime-payload-inventory.json').write_text(
-                json.dumps(self.entries, sort_keys=True) + '\n')
-            # Persist the qualification result and complete inventory before
-            # retiring its disposable runtime copies.
-            with directory_fd(self.evidence) as parent:
-                for name in ('runtime-payload-inventory.json', 'result.json', 'functional-test.json'):
-                    if not (self.evidence / name).exists():
-                        continue
-                    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent)
-                    try:
-                        os.fsync(fd)
-                    finally:
-                        os.close(fd)
-                os.fsync(parent)
-            before = shutil.disk_usage(self.state).free
-            # An interrupted cleanup still leaves a per-file removal receipt.
-            with (self.evidence / 'removed-runtime-files.jsonl').open('x') as log:
+        else:
+            with self.locked():
+                qualifications = [self.evidence / name for name in ('result.json', 'functional-test.json')
+                                  if (self.evidence / name).exists() or (self.evidence / name).is_symlink()]
+                if not qualifications or any(read_json(path).get('status') != 'passed' for path in qualifications):
+                    raise ValueError('saved passing qualification required; payload retained')
+                # Revalidate the entire removal set before starting any deletion.
                 for relative, expected in self.entries.items():
                     path = real_path(self.state / relative)
                     with directory_fd(path.parent) as parent:
                         if _entry(parent, path.name) != expected or path.stat().st_nlink != 1:
-                            raise ValueError('proof payload changed; remaining files retained')
-                        os.unlink(path.name, dir_fd=parent)
-                    log.write(json.dumps({'path': relative, **expected}) + '\n')
-                    log.flush()
-                    result['removedFiles'].append(relative)
-            result.update(status='cleaned', freeBeforeBytes=before,
-                          freeAfterBytes=shutil.disk_usage(self.state).free)
-            receipt.write_text(json.dumps(result, indent=2) + '\n')
-            (self.state / 'retired-test-payload.json').write_text(json.dumps({
-                'status': 'retired', 'receipt': str(receipt),
-                'notice': 'Historical test state; runtime copies removed. Settings, documents and state records retained. Not runnable.'
-            }, indent=2) + '\n')
+                            raise ValueError('proof payload changed; retained: ' + relative)
+                with inventory.open('x') as handle:
+                    handle.write(json.dumps(self.entries, sort_keys=True) + '\n')
+                # Persist qualification and complete inventory before retirement.
+                with directory_fd(self.evidence) as parent:
+                    for path in (inventory, *qualifications):
+                        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent)
+                        try:
+                            os.fsync(fd)
+                        finally:
+                            os.close(fd)
+                    os.fsync(parent)
+                before = shutil.disk_usage(self.state).free
+                # The existing CI collectors retain .log files, including a
+                # partial JSON-lines journal from an interrupted cleanup.
+                with journal.open('x') as log:
+                    for relative, expected in self.entries.items():
+                        path = real_path(self.state / relative)
+                        with directory_fd(path.parent) as parent:
+                            if _entry(parent, path.name) != expected or path.stat().st_nlink != 1:
+                                raise ValueError('proof payload changed; remaining files retained')
+                            os.unlink(path.name, dir_fd=parent)
+                        log.write(json.dumps({'path': relative, **expected}) + '\n')
+                        log.flush()
+                        result['removedFiles'].append(relative)
+                result.update(status='cleaned', freeBeforeBytes=before,
+                              freeAfterBytes=shutil.disk_usage(self.state).free)
+                with retirement.open('x') as handle:
+                    handle.write(json.dumps({
+                        'status': 'retired', 'receipt': str(receipt),
+                        'notice': 'Historical test state; runtime copies removed. Settings, documents and state records retained. Not runnable.'
+                    }, indent=2) + '\n')
+        with receipt.open('x') as handle:
+            handle.write(json.dumps(result, indent=2) + '\n')
         return result

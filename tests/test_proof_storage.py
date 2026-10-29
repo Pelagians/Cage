@@ -68,7 +68,7 @@ class ProofStorageTests(unittest.TestCase):
         self.populate()
         cleanup.record()
         self.assertTrue((self.state / 'prefix/drive_c/windows/system32/wine.dll').exists())
-        self.assertFalse((self.evidence / 'removed-runtime-files.jsonl').exists())
+        self.assertFalse((self.evidence / 'removed-runtime-files.log').exists())
 
     def test_tampered_runtime_blocks_all_deletion_even_with_restored_mtime(self):
         cleanup = ProofPayloads(self.state, self.evidence)
@@ -179,6 +179,77 @@ class ProofStorageTests(unittest.TestCase):
                 module.main()
         claim.assert_called_once_with(state, evidence)
         self.assertTrue(state.exists())
+
+
+    def test_missing_or_failed_qualification_blocks_all_deletion(self):
+        cleanup = ProofPayloads(self.state, self.evidence)
+        self.populate()
+        cleanup.record()
+        result = self.evidence / 'result.json'
+        for status in (None, 'failed', 'pending'):
+            with self.subTest(status=status):
+                if status is None:
+                    result.unlink()
+                else:
+                    result.write_text(json.dumps({'status': status}))
+                with self.assertRaisesRegex(ValueError, 'saved passing qualification'):
+                    cleanup.finish()
+                self.assertTrue((self.state / 'prefix/drive_c/windows/system32/wine.dll').exists())
+                self.assertFalse((self.evidence / 'runtime-payload-inventory.json').exists())
+        result.write_text('{"status":"passed"}')
+        (self.evidence / 'functional-test.json').write_text('{"status":"failed"}')
+        with self.assertRaisesRegex(ValueError, 'saved passing qualification'):
+            cleanup.finish()
+        self.assertFalse((self.evidence / 'removed-runtime-files.log').exists())
+
+    def test_existing_cleanup_evidence_is_never_overwritten(self):
+        cleanup = ProofPayloads(self.state, self.evidence)
+        self.populate()
+        cleanup.record()
+        paths = [self.evidence / name for name in (
+            'payload-cleanup.json', 'runtime-payload-inventory.json', 'removed-runtime-files.log')]
+        paths.append(self.state / 'retired-test-payload.json')
+        for path in paths:
+            with self.subTest(path=path.name):
+                path.write_bytes(b'previous qualification evidence')
+                with self.assertRaisesRegex(ValueError, 'existing cleanup evidence'):
+                    cleanup.finish()
+                self.assertEqual(path.read_bytes(), b'previous qualification evidence')
+                self.assertTrue((self.state / 'prefix/drive_c/windows/system32/wine.dll').exists())
+                path.unlink()
+
+    def test_interrupted_cleanup_journal_survives_actual_ci_collection(self):
+        import importlib.util
+        cleanup = ProofPayloads(self.state, self.evidence)
+        self.populate()
+        cleanup.record()
+        unlink = os.unlink
+        removed = []
+        def interrupt(name, **kwargs):
+            if removed:
+                raise OSError('interrupted cleanup')
+            unlink(name, **kwargs)
+            removed.append(name)
+        with patch('scripts.proof_storage.os.unlink', side_effect=interrupt):
+            with self.assertRaisesRegex(OSError, 'interrupted cleanup'):
+                cleanup.finish()
+        journal = self.evidence / 'removed-runtime-files.log'
+        records = [json.loads(line) for line in journal.read_text().splitlines()]
+        self.assertEqual(len(records), 1)
+        self.assertFalse((self.state / records[0]['path']).exists())
+        self.assertTrue((self.state / 'generations' / ('a' * 32) / 'drive_c/windows/system32/wine.dll').exists())
+        self.assertEqual((self.state / 'prefix/user.reg').read_text(), 'saved settings')
+        self.assertEqual((self.evidence / 'rollback.flatpak').read_bytes(), b'rollback package')
+        self.assertFalse((self.state / 'retired-test-payload.json').exists())
+        spec = importlib.util.spec_from_file_location('cleanup_evidence_collector',
+            Path(__file__).resolve().parents[1] / 'scripts/collect-onboarding-evidence.py')
+        collector = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(collector)
+        destination = self.evidence.parent / 'collected'
+        collector.collect(self.evidence, destination)
+        self.assertEqual((destination / journal.name).read_bytes(), journal.read_bytes())
+        self.assertTrue((destination / 'runtime-payload-inventory.json').is_file())
+        self.assertFalse((destination / 'data').exists())
 
 
 if __name__ == '__main__':

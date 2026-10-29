@@ -133,8 +133,11 @@ packages and recovery caches are retained in place. Logs, screenshots, result
 records and qualification inventories also remain. Unknown files, symlinks and
 hardlinked files are not adopted as disposable runtime payloads.
 
-`runtime-payload-inventory.json`, `removed-runtime-files.jsonl` and
-`payload-cleanup.json` in the evidence directory record the cleanup. The state
+`runtime-payload-inventory.json`, `removed-runtime-files.log` and
+`payload-cleanup.json` in the evidence directory record the cleanup. The journal
+uses JSON lines in a `.log` file so existing CI collectors retain it even after
+an interrupted cleanup. Cleanup requires a saved passing qualification result
+and refuses existing cleanup records rather than overwriting evidence. The state
 gets a retirement marker identifying it as historical test state whose runtime
 payload has been removed. It is not intended for further launches. Set
 `CAGE_TEST_DISCARD_PREFIXES=0` before a proof to retain its complete runtime for
