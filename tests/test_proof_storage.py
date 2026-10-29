@@ -153,5 +153,33 @@ class ProofStorageTests(unittest.TestCase):
                 ProofPayloads(data / 'app', self.evidence.parent / 'other-proof')
 
 
+    def test_update_claims_private_state_before_appimage_installation(self):
+        import importlib.util
+        import sys
+        root = Path(__file__).resolve().parents[1]
+        spec = importlib.util.spec_from_file_location('cleanup_update_proof', root / 'scripts/test-update-poc.py')
+        module = importlib.util.module_from_spec(spec)
+        with patch.object(sys, 'path', [str(root / 'scripts'), *sys.path]):
+            spec.loader.exec_module(module)
+        baseline, candidate = self.evidence / 'baseline.AppImage', self.evidence / 'candidate.AppImage'
+        baseline.write_bytes(b'baseline package')
+        candidate.write_bytes(b'candidate package')
+        evidence = self.evidence / 'fresh-run'
+        state = evidence / 'data/cage/appimage' / module.gui.APP
+        def install(argv, **kwargs):
+            self.assertIn('--cage-install', argv)
+            # The real integration installer creates state for its DPI policy.
+            state.mkdir(parents=True)
+            raise RuntimeError('stop after installation')
+        with patch.dict(os.environ, {'CAGE_TEST_EVIDENCE': str(evidence), 'CAGE_TEST_DESKTOP_INTEGRATION': '0'}), \
+             patch.object(sys, 'argv', ['test-update-poc.py', 'appimage', str(baseline), str(candidate)]), \
+             patch.object(module, 'ProofPayloads', wraps=ProofPayloads) as claim, \
+             patch.object(module.subprocess, 'check_output', side_effect=install):
+            with self.assertRaisesRegex(RuntimeError, 'stop after installation'):
+                module.main()
+        claim.assert_called_once_with(state, evidence)
+        self.assertTrue(state.exists())
+
+
 if __name__ == '__main__':
     unittest.main()

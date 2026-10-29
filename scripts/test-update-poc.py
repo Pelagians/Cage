@@ -64,7 +64,6 @@ def main():
     flatpak_desktop = None
     if kind == 'appimage':
         env['XDG_DATA_HOME'] = str(evidence / 'data')
-        installed = json.loads(subprocess.check_output([str(baseline), '--cage-install'], env=env, text=True))
         state = evidence / 'data/cage/appimage' / gui.APP
     elif kind == 'flatpak':
         subprocess.run(['flatpak', 'install', '--user', '--noninteractive', '--reinstall', '-y', '--no-related', '--no-deps',
@@ -118,6 +117,8 @@ def main():
     else:
         raise ValueError('unknown adapter')
     payloads = ProofPayloads(state, evidence)
+    if kind == 'appimage':
+        installed = json.loads(subprocess.check_output([str(baseline), '--cage-install'], env=env, text=True))
     def prefix():
         record = json.loads((state / 'state.json').read_text())
         return state / record['active'] if record.get('schemaVersion') == 'cage.desktop-generations/v1' else state / 'prefix'
