@@ -1,0 +1,567 @@
+# Cage usage reference
+
+Start with the [README](../README.md) to install Cage and build your first
+bundle. Run the commands in this guide from the repository root unless a
+section specifies another directory.
+
+## Architecture
+
+```
+application recipe (YAML, CLI-generated, or normalized JSON)
+  │
+  ▼
+┌─────────────────┐       ┌──────────────────────────┐
+│ Runtime Provider│──────▶│ Catalog Runtime Image     │
+│ wine/staging/UMU│       │ ghcr.io/.../cage-wine │
+└──────┬──────────┘       └──────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────────────────────┐
+│              Builder Pipeline                      │
+│ resolve → module build steps → export prefix   │
+└──────────────────────────────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────────────────┐
+│ Application Artifact                           │
+│ built prefix + launch contract + metadata      │
+│ bundle dir today, runnable OCI image export   │
+└──────────────────────────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────────────────┐
+│ Runtime State / Exports                        │
+│ persisted separately; never mutates artifact   │
+└──────────────────────────────────────────────┘
+```
+
+## Application Recipes
+
+### Desktop exports
+
+The experimental [AppImage exporter](appimage-exports.md) reuses the same
+portable application recipes and persistent-prefix launcher as Flatpak. Native
+x86_64 and ARM64 outputs include Wine and Python; this initial AppImage target
+requires glibc 2.43 or newer and explicit acceptance of ordinary host access.
+
+Explicit [safe updates and rollback](export-updates.md) share qualified
+recipe migrations across Flatpak, AppImage and persistent Wine containers.
+Previous generations are retained; rollback carries current documents forward.
+
+[Storage controls and diagnostics](storage-controls.md) report protected
+application state and disk usage. `cage storage prune` previews cleanup of
+verified completed export staging; deletion requires `--apply`. Prefixes,
+settings, documents, retained generations and rollback packages remain protected.
+`cage doctor` checks state, recovery packages, free space and selected bundles.
+
+### Desktop Flatpak proof of concept
+
+The optional `--target flatpak` build target reuses ordered Cage recipes and
+exports a configured Windows application with a packaged Wine runtime. The
+first supported proof is checksum-pinned portable Notepad++ 8.8.8 on Linux
+x86_64. See [desktop export instructions and validation](desktop-exports.md)
+for building, installing, permissions, persistence, and current limits.
+
+The default container, CFW, Selkies, OCI and Kubernetes workflows retain their
+existing targets. Desktop builds require separate runtime qualification.
+
+An explicit experimental `wine-arm64ec` provider adds native ARM64 Wine/FEX
+containers and aarch64 Flatpak exports, including the Asahi 16 KB kernel case.
+See [ARM64 build, run and qualification instructions](arm64-wine-fex.md).
+
+Cage accepts strict YAML application recipes as the primary shareable
+authoring format for users and businesses. JSON remains valid for generated,
+normalized, or CLI-driven workflows. YAML is intentionally strict: unknown
+fields, duplicate keys, anchors, aliases, and merge keys are rejected so
+recipes normalize into one clear object model.
+
+A recipe describes an application: provider/version, ordered modules,
+compatibility policy, launch command, sources, and exports. It
+does not ask users to manage Wine prefixes directly.
+
+
+
+## Runtime Providers and Runner Versions
+
+`runtime.version` may be a pinned runner version or a mutable catalog alias.
+Aliases are convenience inputs only; Cage resolves them before writing bundle
+metadata. For example:
+
+```yaml
+runtime:
+  provider: wine
+  version: latest
+```
+
+currently resolves to Wine `11.0`, and bundle metadata records both
+`requestedVersion: latest` and `resolvedVersion: 11.0`. Use pinned versions or
+resolved OCI digests for customer/production reproducibility.
+
+Current curated runtime image set:
+
+| Provider | Aliases | Pinned versions |
+| --- | --- | --- |
+| `wine` | `latest`/`stable` -> `11.0`; `previous` -> `10.0`; `legacy` -> `9.0` | `11.0`, `10.0`, `9.0` |
+| `staging` | `latest`/`staging-latest` -> `11.10`; `previous` -> `11.9`; `baseline` -> `11.0` | `11.10`, `11.9`, `11.0` |
+| `umu-proton-ge` | `latest` -> `GE-Proton11-1`; `previous` -> `GE-Proton10-34`; `legacy` -> `GE-Proton9-27` | `GE-Proton11-1`, `GE-Proton10-34`, `GE-Proton9-27` |
+
+Downloadable Wine runner archives are separate from the runtime image catalog. Recipes may request a runner archive with `runtime.runner`:
+
+```yaml
+runtime:
+  provider: wine
+  version: "9.0"
+  runner: pol-8.2
+```
+
+The initial `pol-*` aliases are Bottles-compatible labels for PlayOnLinux/Phoenicis-hosted upstream Wine x86 tarballs, not a separate PlayOnLinux provider:
+
+| Runner alias | Upstream Wine | Initial use |
+| --- | --- | --- |
+| `pol-8.2` | Wine 8.2 x86 | legacy 32-bit apps such as Office 2007/2010 evidence |
+| `pol-4.3` | Wine 4.3 x86 | legacy 32-bit apps such as Office 2013/2016 evidence |
+| `pol-3.0.3` | Wine 3.0.3 x86 | fallback evidence path for Office 2007/2010 |
+
+Use `cage runners ensure <alias>` to populate the local cache and `cage runners diagnose <alias-or-path>` to detect missing host/runtime libraries such as the 32-bit ELF loader before attempting a real build/run. Real `cage build`, `cage run`, and `cage compat test --mode build|run` can mount a cached runner into the runtime container with `--runner-cache-dir`; the host may report `missing-elf-interpreter` while the container execution path still works because Wine runtime images install i386 support.
+
+## Compatibility Policy
+
+Harder Windows applications often need deliberate compatibility policy, not just a generic Wine image. Cage supports a first-class `compatibility` block:
+
+```yaml
+compatibility:
+  arch: win64
+  windowsVersion: win10
+  graphics:
+    backend: dxvk        # wined3d, dxvk, vkd3d, vkd3d-proton, auto, none
+    fallback: wined3d
+  dllPolicy:
+    d3d11: native,builtin
+    d3dcompiler_47: native
+    mscoree: disabled
+    mshtml: disabled
+  env:
+    WINEDEBUG: "-all"
+```
+
+Cage normalizes this to `cage.compatibility-policy/v0` and records it in bundle graph/provenance/OCI metadata. `WINEARCH` precedes prefix creation, `winecfg -v <windowsVersion>` runs before ordered modules, and global DLL policy plus compatibility environment apply at launch. Build operations begin with inherited `WINEDLLOVERRIDES` cleared; use ordered `dll` modules to change loader behavior for subsequent installers. Legacy `config.wine.dllOverrides` remains a launch policy. A global policy may intentionally differ from the build-time registry state.
+
+This is intentionally a high-level policy layer. Explicit loader ordering, COM timing controls, and trace/debug knobs are not primary schema.
+
+
+## BYO Installers, BYO Files, and Suite Apps
+
+Harder business apps often come from licensed customer-provided media, not public downloads. Cage recipes can make that source policy explicit and can layer pre-installed file trees deterministically:
+
+```yaml
+sources:
+  - id: suite-files
+    type: files
+    path: sources/vendor-suite/Program Files/Vendor Suite
+    policy: bring-your-own-files
+
+modules:
+  - type: files
+    mappings:
+      - source: sources/vendor-suite/Program Files/Vendor Suite
+        target: C:/Program Files/Vendor Suite
+        mode: merge
+```
+
+`mode: merge` copies the contents of the source directory into the target directory. Installers use the unified `install` module with an EXE or MSI mechanism. ISO media exposure and safe extraction are separate ordered operations; the recipe identifies the installer explicitly. See [ordered modules and artifact construction](ordered-modules.md) for schemas, path rules, and Linux state capture.
+
+Small sequencing examples: [MSI, files, registry, check](../examples/ordered-install.cage.yaml), [Chocolatey interleaving](../examples/chocolatey-interleaved.cage.yaml), [Linux customization](../examples/linux-customization.cage.yaml), [read-only ISO media](../examples/iso-install.cage.yaml), and [archive extraction](../examples/extract-install.cage.yaml). Their `sources/` inputs are placeholders for your own verified media.
+
+Use `media stage` to copy or extract local BYO media into a normalized workspace tree before writing/running recipes:
+
+```bash
+cage media stage ~/Downloads/vendor-suite.zip --name vendor-suite --workspace .
+# writes ./sources/vendor-suite/media and ./sources/vendor-suite/metadata/media-stage.json
+```
+
+The staged copy normalizes ownership/mode issues from read-only media and rejects archive path traversal. ISO staging requires a local extractor such as `bsdtar` or `7z`.
+
+Suite apps can also declare named entrypoints and file associations:
+
+```yaml
+entrypoints:
+  - id: writer
+    name: Vendor Writer
+    executable: C:/Program Files/Vendor Suite/Writer.exe
+  - id: sheet
+    name: Vendor Sheet
+    executable: C:/Program Files/Vendor Suite/Sheet.exe
+
+fileAssociations:
+  - entrypoint: writer
+    extensions:
+      - .docx
+    mime:
+      - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+```
+
+Application-specific or proprietary recipes, including Office-shaped recipes, belong in customer/private repositories rather than public Cage.
+
+## Source Integrity and Compatibility Evidence
+
+Before spending time in Wine, verify that recipe sources are actually present and hash-correct:
+
+```bash
+cage sources verify examples/notepad-plus-plus.cage.yaml --workspace .
+```
+
+The output is `schemaVersion: cage.source-integrity/v0` and reports every declared source, module source, file mapping, resolved local path, sha256 result, warning, and error. v0 builds consume local workspace files; remote URLs are recorded as provenance but must be materialized locally for module steps.
+
+For BYO media, run a separate policy audit before spending time in Wine:
+
+```bash
+cage sources audit examples/notepad-plus-plus.cage.yaml --workspace .
+```
+
+The audit emits `schemaVersion: cage.source-policy/v0`, scans local source paths/names only, and blocks suspicious activation/KMS/crack/bypass/product-key artifact names without reading file contents into the report.
+
+For a compatibility evidence pass:
+
+```bash
+# Dependency-light planning evidence
+cage compat test examples/notepad-plus-plus.cage.yaml \
+  --workspace . \
+  --output dist \
+  --graphics headless \
+  --engine docker \
+  --mode dry-run
+
+# Real container build evidence after local sources are present
+cage compat test examples/notepad-plus-plus.cage.yaml \
+  --workspace . \
+  --output dist-real \
+  --graphics headless \
+  --engine docker \
+  --mode build \
+  --runner-cache-dir "$HOME/cage-runners" \
+  --build-timeout 2400
+
+# Real build plus bounded app launch evidence
+cage compat test examples/notepad-plus-plus.cage.yaml \
+  --workspace . \
+  --output dist-run \
+  --graphics headless \
+  --engine docker \
+  --mode run \
+  --runner-cache-dir "$HOME/cage-runners" \
+  --build-timeout 2400 \
+  --run-timeout 60
+```
+
+The output is `schemaVersion: cage.compat-test/v0`. `--mode dry-run` includes source integrity, dry-run bundle creation, bundle verification, and a `cage.run-plan/v0` launch plan carrying runtime and compatibility policy. `--mode build` performs the real container build and records build execution evidence. `--mode run` records real build evidence plus `cage.run-result/v0` app launch evidence. Failed real builds attach `schemaVersion: cage.failure-analysis/v0` and write `metadata/failure-analysis.json` plus `metadata/failure-summary.md` inside the bundle when Windows/Wine installer logs are available.
+
+Analyze an existing failed bundle or log tree directly with:
+
+```bash
+cage failure analyze dist/my-app-1.0.0
+# emits cage.failure-analysis/v0 and writes metadata/failure-analysis.json + failure-summary.md
+```
+
+The failure analyzer scans `logs/`, `prefix/drive_c/users/*/Temp`, and `prefix/drive_c/windows/temp` for `.log`/`.txt` files, prioritizes first MSI/Catalyst failure windows such as `Return value 3`, `MSI(ERROR)`, `Failed to install product`, and `ErrorCode`, and redacts product-key-like tokens and common secret assignments from report excerpts.
+
+The packaged seed corpus is available with:
+
+```bash
+cage compat corpus
+```
+
+It emits `schemaVersion: cage.compat-corpus/v0` with starter apps/tier labels such as Notepad++, 7-Zip, PuTTY, WinSCP, DB Browser for SQLite, .NET sample, COM sample, Office BYO installer/files candidates, and blocked driver-required app classes.
+
+The beginner Notepad++ recipe in `examples/` uses Chocolatey and a host-network build. `recipes/notepadplusplus.cage.yaml` is the separate bridge-network CFW proof used by the runtime tests.
+
+## Local Artifact Index
+
+`cage build` registers materialized bundles in a local artifact index at:
+
+```text
+dist/.cage/artifacts.json
+```
+
+The index uses `schemaVersion: cage.artifact-index/v0` and maps app names
+and versions to verified bundle directories. This lets normal run/export flows
+use app references instead of requiring users to remember bundle paths:
+
+```bash
+cage artifacts list
+cage artifacts resolve my-app
+cage artifacts resolve my-app@1.0.0
+
+cage run --dry-run --graphics headless my-app
+cage export oci my-app --tag ghcr.io/pelagians/cage-app-my-app:1.0.0 --dry-run
+```
+
+A bare app name resolves to the latest registered version for that application.
+Use `name@version` when a specific version is required. Direct bundle paths such
+as `dist/my-app-1.0.0` remain supported for debugging and automation.
+
+## Running Built Artifacts
+
+`cage run` currently consumes a verified bundle, not the original manifest. The
+command reads `metadata/graph.json`, verifies the bundle contract, selects the
+graph-resolved `runnerRuntime.image`, and launches the graph-resolved entrypoint
+inside the catalog runtime container.
+
+```bash
+# Machine-readable run plan only
+cage run --dry-run --graphics headless dist/my-app-1.0.0
+
+# Headless execution through the catalog build/runtime image
+cage run --graphics headless dist/my-app-1.0.0 \
+  --runner-cache-dir "$HOME/cage-runners"
+
+# Visible execution with bridge networking and host-loopback-published Selkies HTTPS ports
+cage run --graphics selkies --network bridge --selkies-port 3001 dist/my-app-1.0.0
+```
+
+For v0, the bundle is mounted read-only at `/opt/cage/bundle`; the prefix
+is copied to `/tmp/cage-prefix` before launch so normal Wine runtime
+mutation does not alter the sealed bundle artifact. When bundle metadata includes
+`runtime.runner`, a populated runner cache is mounted read-only at
+`/opt/cage-runner`, `CAGE_RUNNER_BIN=/opt/cage-runner/bin` is exported,
+and that directory is prepended to `PATH` so the selected cached Wine runner is
+used inside the container.
+
+## OCI Application Image Export
+
+`cage export oci` consumes a verified bundle and turns it into a runnable
+application OCI image. Dry-run mode prints the `cage.oci-export-plan/v0`
+contract without requiring Docker or Podman:
+
+```bash
+cage export oci dist/my-app-1.0.0 \
+  --tag ghcr.io/pelagians/cage-app-my-app:1.0.0 \
+  --dry-run
+```
+
+Real export stages a build context, writes `metadata/artifact.json` into the
+staged bundle copy, generates a `Containerfile`, adds
+`/usr/local/bin/cage-app-launch`, then runs the selected build engine:
+
+```bash
+cage export oci dist/my-app-1.0.0 \
+  --tag ghcr.io/pelagians/cage-app-my-app:1.0.0 \
+  --engine docker
+
+# Build, push, and record repo digest identity when available
+cage export oci my-app \
+  --tag ghcr.io/pelagians/cage-app-my-app:1.0.0 \
+  --engine docker \
+  --push
+
+# Verify OCI labels match embedded Cage artifact metadata
+cage image verify ghcr.io/pelagians/cage-app-my-app:1.0.0 --engine docker
+```
+
+The source bundle is not mutated. The image layout is:
+
+```text
+/opt/cage/bundle      immutable embedded bundle
+/var/lib/cage/state   mutable runtime state
+/exports                  explicit app/user outputs
+/usr/local/bin/cage-app-launch
+```
+
+The embedded artifact metadata uses `schemaVersion: cage.artifact-image/v0`
+and records requested/resolved runtime versions, runner, launcher, base image,
+launch contract, graphics contract, state path, and exports path.
+
+## Kubernetes Manifest Export
+
+`cage export kube` consumes a verified bundle or app-name reference and emits
+Kubernetes YAML for a previously built/pushed Cage application image. It does
+not call `kubectl`, create namespaces, or apply resources.
+
+Digest-pinned image refs are required by default:
+
+```bash
+cage export kube my-app \
+  --image ghcr.io/pelagians/cage-app-my-app@sha256:... \
+  --namespace cage-apps \
+  --output k8s/my-app.yaml
+```
+
+Dry-run mode prints the `cage.kube-export/v0` plan, including generated YAML:
+
+```bash
+cage export kube my-app \
+  --image ghcr.io/pelagians/cage-app-my-app@sha256:... \
+  --dry-run
+```
+
+By default the emitter creates a Deployment plus PVCs for runtime state and
+exports. Use `--no-pvc` for smoke/demo manifests that use `emptyDir` volumes.
+Mutable tags are rejected unless `--allow-mutable-tag` is supplied explicitly.
+Kubernetes labels are normalized for selector/tooling safety; exact Cage
+metadata such as schema, raw app name, version, and image ref is preserved in
+annotations.
+
+## Cage WINE Container
+
+The runtime provider containers are the OCI execution substrate.
+See [docs/container-architecture.md](container-architecture.md).
+
+`runtime/catalog.json` is the source of truth for supported runtime
+provider versions, Dockerfiles, build args, local image refs, and
+published GHCR image refs. CI generates its build matrix from this file,
+and Forge resolves manifests through the same catalog.
+
+```bash
+# List available catalog-backed container build definitions
+cage container list
+
+# Build the current Wine Stable runtime alias
+cage container build wine latest
+
+# Build a pinned previous Wine Stable runtime
+cage container build wine 10.0
+
+# Build current Wine Staging
+cage container build staging latest
+
+# Build current UMU + GE-Proton runtime
+cage container build umu-proton-ge latest
+
+# Get the resolved published OCI image reference for a provider+version alias
+cage container ref wine latest
+# → ghcr.io/pelagians/cage-wine:11.0
+
+# Build from Docker compose for local development
+# (Compose is a dev convenience; runtime/catalog.json is authoritative.)
+docker compose -f container/docker-compose.yml build wine
+```
+
+### Container Directory Layout
+
+```
+container/
+├── build.sh                          # Build all providers
+├── docker-compose.yml                # Local dev compose
+├── common/
+│   └── wine-env.sh                   # Standard Wine environment
+├── runtimes/                         # Universal Selkies runtime family
+│   ├── wine/Dockerfile               # Wine Stable/Staging: channel build argument
+│   └── umu-proton-ge/Dockerfile      # UMU + GE-Proton: build, headless, interactive
+└── selkies/root/                     # Cage s6/task, app hook, and graphics overlay
+```
+
+## Reference Repos
+
+Cage's design draws from the broader Wine/Proton ecosystem:
+
+| Repo | What Cage Takes |
+|---|---|
+| [Bottles](https://github.com/bottlesdevs/Bottles) | Wine command wrappers, dependency manager pattern, template-based prefix creation, registry rule management |
+| [wine-utils](https://github.com/rmi1974/wine-utils) | Reproducible Wine builds from source, build provenance tracking, patch management |
+| [umu-launcher](https://github.com/Open-Wine-Components/umu-launcher) | Runtime download/verify pipeline, SHA256 verification, file-locking pattern, Proton version management |
+| [umu-protonfixes](https://github.com/Open-Wine-Components/umu-protonfixes) | Verb/component catalog (`*.verb`), game engine detection, store-agnostic fix layering |
+| [Steam Runtime](https://github.com/valvesoftware/steam-runtime) | Layer composition model, build-runtime.py pattern, template-based manifest generation |
+| [Pelagian Shell](https://github.com/Pelagians/pelagian-shell) | Immutable `/init`/s6, Selkies streaming, Wayland/Labwc, and consumer-hook substrate |
+| [docker-wine](https://github.com/scottyhardy/docker-wine) | Container ergonomics: UID/GID mapping, display modes, Wayland/Labwc/RDP/audio concerns; Cage does not adopt its mutable desktop-container goal |
+| [LSW](https://github.com/barrersoftware/lsw) | Foundation-first compatibility architecture and path/registry translation awareness; Cage does not adopt its no-Wine/kernel/PE-loader goal |
+
+### Pelagian Shell window and runtime contract
+
+Cage runtime images inherit the digest-pinned Pelagian Shell session policy.
+Ordinary desktop windows receive Shell-owned server decorations, with a visible
+title and close control; Shell owns the one workspace, automatic layout, and
+window classification. Cage owns application launch and runtime setup. Wine
+applications keep their normal Wine/XWayland decoration behavior, and Cage does
+not add Electron adapters or application-specific Labwc rules. Ephemeral
+Wayland, Labwc, and session D-Bus sockets live under `/run/pelagian-shell`;
+Wine prefixes and other persistent application data stay under `/config`.
+
+See the [Pelagian Shell window-chrome contract](https://github.com/Pelagians/pelagian-shell/blob/main/docs/window-chrome.md).
+
+Detailed analysis in [docs/reference-study.md](reference-study.md).
+
+Proposed follow-up work from hard BYO installer probes is tracked in [docs/legacy-installer-debugging-backlog.md](legacy-installer-debugging-backlog.md). Production hardening work for runtime network isolation, BlueBuild-style Chocolatey module support, and the PowerShell wrapper proof recipe is tracked in [docs/production-hardening-roadmap.md](production-hardening-roadmap.md).
+
+## Project Structure
+
+```
+Cage/
+├── pyproject.toml               # Python packaging metadata and console script
+├── cage/                     # Installable CLI package (`cage`)
+├── cmd/cage.py              # Repo-local development shim
+├── core/
+│   ├── manifest.py              # Manifest model, validation, loading
+│   ├── modules.py               # BlueBuild-style build-time module expansion
+│   ├── prefix.py                # Prefix abstraction
+│   └── provenance.py            # Provenance tracking
+├── runtime/
+│   ├── catalog.json             # Supported runtime catalog (CI + Forge source of truth)
+│   ├── catalog.py               # Catalog loader + CI matrix generator
+│   ├── launcher.py              # Verified bundle run planning/execution
+│   └── providers.py             # Catalog-backed provider resolution + OCI image binding
+├── builder/
+│   ├── pipeline.py              # Build phase orchestration
+│   └── installer.py             # Application installation steps
+├── container/                   # OCI container build definitions
+│   ├── build.sh                 # Build script for all providers
+│   ├── docker-compose.yml       # Local dev compose
+│   ├── common/                  # Shared Wine environment
+│   ├── runtimes/                # Universal Selkies catalog images
+│   └── selkies/                 # Cage s6/task, app hook, and graphics overlay
+├── artifact/
+│   ├── bundle.py                # Bundle writer (sealed artifact)
+│   ├── graph.py                 # Resolved execution graph writer
+│   ├── inspection.py            # Bundle inspect/verify contract checks
+│   ├── index.py                 # Local app-name artifact index
+│   ├── oci.py                   # Runnable application OCI export
+│   ├── kube.py                  # Kubernetes manifest export
+│   └── exporter.py              # Bundle export utilities
+├── tests/                       # Unit tests
+├── docs/                        # Architecture docs, ADRs
+└── examples/                    # Example recipes/manifests
+```
+
+## Development
+
+```bash
+# Run tests
+python3 -m unittest discover
+
+# Verify local tool installation
+TMP_UV_HOME="$(mktemp -d)"
+UV_LINK_MODE=copy UV_TOOL_DIR="$TMP_UV_HOME/tools" UV_TOOL_BIN_DIR="$TMP_UV_HOME/bin" \
+  uv tool install --force --reinstall --refresh .
+"$TMP_UV_HOME/bin/cage" --help
+
+# Verify installed/package CLI works
+python3 -m cage --help
+python3 cmd/cage.py --help
+
+# Validate syntax of all Python files
+python3 -m compileall .
+
+# Build all containers (requires Docker)
+bash container/build.sh
+
+# Or build a specific container
+bash container/build.sh wine default
+```
+
+## Desktop integration and releases
+
+Desktop MIME handlers, file forwarding and UI scaling are described in
+[desktop integration and scaling](desktop-integration.md). New exports can
+follow the desktop's logical DPI; `--cage-dpi 192` selects an explicit 2x scale
+without manually configuring Wine.
+
+[Application onboarding and supported legacy migration](application-onboarding.md)
+adds a second pinned portable application, SumatraPDF, using the same recipe for
+Flatpak, AppImage and containers, with explicit recovery snapshots before adoption.
+
+[Trusted releases](trusted-releases.md) add publisher signatures, exact-package
+qualification and explicit install/update/rollback commands over the same state
+manager, with retained offline recovery and no required hosted service.
+
+[Safe runtime migrations](runtime-migrations.md) extend those transactions
+with exact, qualified runtime transitions while retaining prior prefixes and
+packages. XWayland remains the default; native Wine Wayland is a separate future
+qualification path.
